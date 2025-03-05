@@ -6,6 +6,7 @@ from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
+import os
 
 def generate_launch_description():
     # Launch arguments
@@ -31,6 +32,12 @@ def generate_launch_description():
         default_value='false',  # Set default to false to disable the GUI publisher
         description='Flag to enable joint_state_publisher_gui'
     )
+
+    use_joint_state_publisher_arg = DeclareLaunchArgument(
+        'use_joint_state_publisher',
+        default_value='true',
+        description='Use the joint_state_publisher'
+    )
     
     # Include RoArm launch file
     roarm_launch = IncludeLaunchDescription(
@@ -41,7 +48,8 @@ def generate_launch_description():
             ])
         ]),
         launch_arguments={
-            'gui': LaunchConfiguration('use_gui')
+            'gui': LaunchConfiguration('use_gui'),
+            'use_joint_state_publisher': LaunchConfiguration('use_joint_state_publisher')
         }.items()
     )
     
@@ -87,6 +95,7 @@ def generate_launch_description():
         declare_use_camera,
         declare_run_demo,
         declare_use_gui,
+        use_joint_state_publisher_arg,
         roarm_launch,
         depthai_launch,
         animation_command_node,

@@ -10,6 +10,10 @@ class AnimationCommand(Node):
     def __init__(self):
         super().__init__('animation_command')
         
+        # Parameter to control if this node should publish joint states
+        self.declare_parameter('publish_joint_states', True)
+        self.should_publish = self.get_parameter('publish_joint_states').get_parameter_value().bool_value
+        
         # Create subscription for animation commands
         self.command_subscription = self.create_subscription(
             String,
@@ -63,6 +67,9 @@ class AnimationCommand(Node):
     
     def publish_joint_states(self):
         """Publish current joint states."""
+        if not self.should_publish:
+            return
+        
         msg = JointState()
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.name = self.joint_names

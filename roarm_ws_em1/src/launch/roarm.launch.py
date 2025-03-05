@@ -30,6 +30,7 @@ def generate_launch_description():
   use_robot_state_pub = LaunchConfiguration('use_robot_state_pub')
   use_rviz = LaunchConfiguration('use_rviz')
   use_sim_time = LaunchConfiguration('use_sim_time')
+  use_joint_state_publisher = LaunchConfiguration('use_joint_state_publisher', default='false')
  
   # Declare the launch arguments  
   declare_urdf_model_path_cmd = DeclareLaunchArgument(
@@ -44,7 +45,7 @@ def generate_launch_description():
      
   declare_use_joint_state_publisher_cmd = DeclareLaunchArgument(
     name='gui',
-    default_value='True',
+    default_value='False',
     description='Flag to enable joint_state_publisher_gui')
    
   declare_use_robot_state_pub_cmd = DeclareLaunchArgument(
@@ -61,19 +62,25 @@ def generate_launch_description():
     name='use_sim_time',
     default_value='True',
     description='Use simulation (Gazebo) clock if true')
+
+  declare_use_joint_state_publisher = DeclareLaunchArgument(
+    'use_joint_state_publisher',
+    default_value='false',
+    description='Whether to start the joint state publisher'
+  )
     
   # Specify the actions
  
   # Publish the joint state values for the non-fixed joints in the URDF file.
   start_joint_state_publisher_cmd = Node(
-    condition=UnlessCondition(gui),
+    condition=IfCondition(use_joint_state_publisher),
     package='joint_state_publisher',
     executable='joint_state_publisher',
     name='joint_state_publisher')
  
   # A GUI to manipulate the joint state values
   start_joint_state_publisher_gui_node = Node(
-    condition=IfCondition(gui),
+    condition=IfCondition(use_joint_state_publisher),
     package='joint_state_publisher_gui',
     executable='joint_state_publisher_gui',
     name='joint_state_publisher_gui')
@@ -106,6 +113,7 @@ def generate_launch_description():
   ld.add_action(declare_use_robot_state_pub_cmd)  
   ld.add_action(declare_use_rviz_cmd) 
   ld.add_action(declare_use_sim_time_cmd)
+  ld.add_action(declare_use_joint_state_publisher)
  
   # Add any actions
   ld.add_action(start_joint_state_publisher_cmd)
