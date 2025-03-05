@@ -43,6 +43,9 @@ class ArmController(Node):
         msg.name = self.joint_names
         msg.position = self.current_positions
         self.joint_publisher.publish(msg)
+        # Only log occasionally to avoid flooding
+        if int(time.time()) % 10 == 0:  # Log every 10 seconds
+            self.get_logger().info(f'Current joint positions: {self.current_positions}')
     
     def move_to_position(self, positions, duration=1.0):
         """Move to a specific position over a duration."""

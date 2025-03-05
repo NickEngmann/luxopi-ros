@@ -11,6 +11,7 @@ def generate_launch_description():
     # Launch arguments
     use_camera = LaunchConfiguration('use_camera', default='true')
     run_demo = LaunchConfiguration('run_demo', default='false')
+    use_gui = LaunchConfiguration('use_gui', default='false')
     
     # Declare launch arguments
     declare_use_camera = DeclareLaunchArgument(
@@ -25,6 +26,12 @@ def generate_launch_description():
         description='Whether to run the demo sequence'
     )
     
+    declare_use_gui = DeclareLaunchArgument(
+        name='use_gui',
+        default_value='false',  # Set default to false to disable the GUI publisher
+        description='Flag to enable joint_state_publisher_gui'
+    )
+    
     # Include RoArm launch file
     roarm_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource([
@@ -32,7 +39,10 @@ def generate_launch_description():
                 FindPackageShare('roarm'),
                 'launch/roarm.launch.py'
             ])
-        ])
+        ]),
+        launch_arguments={
+            'gui': LaunchConfiguration('use_gui')
+        }.items()
     )
     
     # Include DepthAI camera launch file
@@ -76,6 +86,7 @@ def generate_launch_description():
     return LaunchDescription([
         declare_use_camera,
         declare_run_demo,
+        declare_use_gui,
         roarm_launch,
         depthai_launch,
         animation_command_node,
