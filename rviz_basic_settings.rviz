@@ -5,10 +5,6 @@ Panels:
     Property Tree Widget:
       Expanded:
         - /Global Options1
-        - /Status1
-        - /RobotModel1
-        - /TF1
-        - /TF1/Frames1
       Splitter Ratio: 0.5
     Tree Height: 617
   - Class: rviz_common/Selection
@@ -42,7 +38,7 @@ Visualization Manager:
         Y: 0
         Z: 0
       Plane: XY
-      Plane Cell Count: 10
+      Plane Cell Count: 5
       Reference Frame: <Fixed Frame>
       Value: true
     - Alpha: 1
@@ -102,12 +98,13 @@ Visualization Manager:
           Value: true
       Name: RobotModel
       TF Prefix: ""
-      Update Interval: 0
+      Update Interval: 0.2
       Value: true
       Visual Enabled: true
+      Cast Shadows: false
     - Class: rviz_default_plugins/TF
       Enabled: true
-      Frame Timeout: 15
+      Frame Timeout: 5
       Frames:
         All Enabled: false
         base_footprint:
@@ -115,9 +112,9 @@ Visualization Manager:
         base_link:
           Value: false
         drivewhl_l_link:
-          Value: true
+          Value: false
         drivewhl_r_link:
-          Value: true
+          Value: false
         front_caster:
           Value: false
         gps_link:
@@ -130,7 +127,7 @@ Visualization Manager:
       Name: TF
       Show Arrows: false
       Show Axes: true
-      Show Names: true
+      Show Names: false
       Tree:
         base_footprint:
           base_link:
@@ -146,13 +143,14 @@ Visualization Manager:
               {}
             lidar_link:
               {}
-      Update Interval: 0
+      Update Interval: 0.2
       Value: true
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
     Fixed Frame: base_link
     Frame Rate: 5
+    Enable Smooth Transitions: false
   Name: root
   Tools:
     - Class: rviz_default_plugins/Interact

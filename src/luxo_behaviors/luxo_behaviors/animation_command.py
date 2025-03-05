@@ -55,6 +55,8 @@ class AnimationCommand(Node):
             'excited': self.excited_hop,
             'sad': self.sad_droop,
             'sweep': self.light_sweep,
+            'playful': self.playful_bounce,
+            'startled': self.startled_jump,
             'stop': self.stop_animation
         }
         
@@ -154,26 +156,32 @@ class AnimationCommand(Node):
         # Starting from current position
         start_pos = self.current_positions.copy()
         
-        # Keyframe positions
+        # Keyframe positions with enhanced dynamics
         keyframes = [
-            # Small head tilt, slight base rotation
-            [0.2, start_pos[1], start_pos[2], 0.5],
+            # Quick "notice something" movement (anticipation)
+            [0.0, start_pos[1]+0.1, start_pos[2]-0.1, -0.2],
             
-            # Lean forward
-            [0.2, 0.5, 1.2, 0.5],
+            # Hesitant approach - slight tilt (personality)
+            [0.2, 0.4, 0.9, 0.3],
             
-            # Look more intently with further head tilt
-            [0.3, 0.5, 1.2, 0.8],
+            # Lean in to investigate (overlapping action)
+            [0.3, 0.6, 1.3, 0.5],
             
-            # Hold position
-            [0.3, 0.5, 1.2, 0.8],
+            # Quick surprised reaction (snappy timing)
+            [0.3, 0.4, 1.1, 0.9],
             
-            # Return to a neutral position with head still slightly tilted
-            [0.0, 0.3, 0.7, 0.3]
+            # More intense inspection - tilt head other way (contrast)
+            [0.3, 0.5, 1.2, -0.3],
+            
+            # Final examination with head tilt (follow-through)
+            [0.2, 0.5, 1.2, 0.7],
+            
+            # Return with slight lingering interest (easy-in)
+            [0.0, 0.3, 0.7, 0.2]
         ]
         
-        # Duration for each keyframe (in seconds)
-        durations = [0.8, 0.8, 0.6, 1.0, 1.2]
+        # Duration for each keyframe (in seconds) - varied timing
+        durations = [0.4, 0.7, 0.6, 0.3, 0.5, 0.8, 1.0]
         
         # Start the animation
         self.start_animation(keyframes, durations)
@@ -183,21 +191,36 @@ class AnimationCommand(Node):
         """Make the arm do an excited little hop like Luxo Jr."""
         # Keyframe positions
         keyframes = [
-            # Crouch down (prepare to hop)
-            [0.0, 0.8, 1.5, 0.0],
+            # Initial anticipation - slight lean back
+            [0.0, 0.4, 0.8, 0.3],
+            
+            # Deep crouch down (prepare to hop - anticipation)
+            [0.0, 0.9, 1.6, -0.2],
             
             # Quick extension upward (the hop)
-            [0.0, 0.2, 0.8, 0.7],
+            [0.0, 0.1, 0.6, 0.8],
             
-            # Slight bounce on landing
+            # Hold at apex briefly (emphasis)
+            [0.0, 0.1, 0.6, 0.9],
+            
+            # Start coming down
+            [0.0, 0.3, 0.8, 0.6],
+            
+            # Land with impact (squash)
+            [0.0, 0.7, 1.2, 0.3],
+            
+            # Bounce up slightly (follow-through)
             [0.0, 0.4, 0.9, 0.5],
             
-            # Return to neutral but with "head" up
-            [0.0, 0.3, 0.7, 0.4]
+            # Smaller secondary bounce (overlapping action)
+            [0.0, 0.5, 1.0, 0.4],
+            
+            # Settle to excited "standing" pose
+            [0.0, 0.3, 0.7, 0.5]
         ]
         
-        # Faster durations for more energetic movement
-        durations = [0.6, 0.3, 0.4, 0.7]
+        # Varied durations for more dynamic movement
+        durations = [0.5, 0.6, 0.2, 0.1, 0.2, 0.15, 0.3, 0.2, 0.5]
         
         # Start the animation
         self.start_animation(keyframes, durations)
@@ -207,24 +230,39 @@ class AnimationCommand(Node):
         """Make the arm droop down sadly."""
         # Keyframe positions
         keyframes = [
-            # Start looking down slightly
-            [0.0, 0.3, 0.7, -0.3],
+            # Initial reaction - slight recoil (anticipation)
+            [0.0, 0.2, 0.6, 0.1],
             
-            # Begin to droop
-            [-0.2, 0.5, 0.9, -0.5],
+            # Start looking down with hesitation
+            [0.0, 0.3, 0.7, -0.2],
             
-            # Full droop with head down
-            [-0.2, 0.7, 1.2, -1.0],
+            # First droop with slight shake (emotion)
+            [-0.1, 0.5, 0.9, -0.4],
+            
+            # Attempt to look up (personality)
+            [-0.1, 0.4, 0.8, -0.1],
+            
+            # Give up - deeper droop (contrast in motion)
+            [-0.2, 0.6, 1.1, -0.7],
+            
+            # Final dramatic slump (emphasis)
+            [-0.2, 0.8, 1.3, -1.2],
+            
+            # Small defeated movement (subtle secondary action)
+            [-0.2, 0.75, 1.25, -1.1],
             
             # Hold the sad position
             [-0.2, 0.7, 1.2, -1.0],
             
-            # Slowly return to neutral
-            [0.0, 0.3, 0.7, 0.0]
+            # Very slow return halfway
+            [-0.1, 0.5, 0.9, -0.5],
+            
+            # Final return to neutral with lingering droop
+            [0.0, 0.3, 0.7, -0.1]
         ]
         
-        # Slower durations for a sad mood
-        durations = [1.0, 1.2, 1.0, 1.5, 2.0]
+        # Slower, heavier durations for sadness
+        durations = [0.5, 0.8, 0.7, 0.9, 0.8, 1.0, 0.5, 1.5, 1.8, 1.5]
         
         # Start the animation
         self.start_animation(keyframes, durations)
@@ -235,33 +273,150 @@ class AnimationCommand(Node):
         # Set a neutral position for the arm
         neutral_arm = [0.0, 0.4, 0.9, 0.3]
         
-        # Keyframe positions - only changing the base rotation and head tilt
+        # Keyframe positions with more character
         keyframes = [
-            # Start position (left side)
-            [-1.0, neutral_arm[1], neutral_arm[2], neutral_arm[3]],
+            # Alert starting position
+            [0.0, 0.3, 0.8, 0.5],
             
-            # Mid-left with head up slightly
-            [-0.6, neutral_arm[1], neutral_arm[2], 0.5],
+            # Quick turn to left side (anticipation)
+            [-0.8, 0.3, 0.8, 0.3],
             
-            # Center position with head normal
-            [0.0, neutral_arm[1], neutral_arm[2], 0.3],
+            # Extend further left with curiosity
+            [-1.1, 0.35, 0.85, 0.6],
             
-            # Mid-right with head up slightly
-            [0.6, neutral_arm[1], neutral_arm[2], 0.5],
+            # Peer downward on left side
+            [-1.0, 0.5, 1.0, -0.2],
             
-            # Far right position
-            [1.0, neutral_arm[1], neutral_arm[2], 0.3],
+            # Up quickly (searching)
+            [-0.9, 0.3, 0.7, 0.7],
             
-            # Return to center
-            [0.0, neutral_arm[1], neutral_arm[2], 0.0]
+            # Move to mid-left and pause
+            [-0.5, 0.35, 0.8, 0.4],
+            
+            # Glance down mid-left
+            [-0.5, 0.45, 0.95, -0.1],
+            
+            # Quick center check
+            [0.0, 0.4, 0.9, 0.5],
+            
+            # Skip to mid-right (urgency)
+            [0.5, 0.35, 0.8, 0.4],
+            
+            # Peer down mid-right
+            [0.5, 0.45, 0.95, -0.1],
+            
+            # Quick look up (double-take)
+            [0.6, 0.3, 0.7, 0.7],
+            
+            # Swing to far right
+            [1.1, 0.35, 0.85, 0.6],
+            
+            # Final check down right
+            [1.0, 0.5, 1.0, -0.2],
+            
+            # Found something! (emphasis)
+            [0.8, 0.3, 0.7, 0.8],
+            
+            # Return to center with excitement
+            [0.0, 0.3, 0.7, 0.5]
         ]
         
-        # Durations for a smooth scanning movement
-        durations = [0.8, 0.6, 0.6, 0.6, 0.8, 1.0]
+        # Varied durations for more dynamic searching
+        durations = [0.5, 0.4, 0.3, 0.6, 0.3, 0.5, 0.6, 0.4, 0.4, 0.6, 0.3, 0.5, 0.6, 0.3, 0.8]
         
         # Start the animation
         self.start_animation(keyframes, durations)
         self.get_logger().info('Executing light sweep animation')
+
+    def playful_bounce(self):
+        """Make the arm perform a playful, energetic bounce sequence."""
+        # Keyframe positions
+        keyframes = [
+            # Start posture - slightly alert
+            [0.0, 0.3, 0.7, 0.3],
+            
+            # Quick wiggle right (anticipation)
+            [0.3, 0.35, 0.75, 0.4],
+            
+            # Quick wiggle left (anticipation)
+            [-0.3, 0.35, 0.75, 0.4],
+            
+            # Crouch down (preparing)
+            [0.0, 0.7, 1.3, 0.2],
+            
+            # Big bounce up
+            [0.0, 0.1, 0.5, 0.8],
+            
+            # Land with impact
+            [0.0, 0.6, 1.1, 0.3],
+            
+            # Small bounce 1
+            [0.2, 0.3, 0.7, 0.5],
+            
+            # Land and crouch right
+            [0.3, 0.6, 1.1, 0.3],
+            
+            # Small bounce 2
+            [-0.2, 0.3, 0.7, 0.6],
+            
+            # Land and crouch left
+            [-0.3, 0.6, 1.1, 0.3],
+            
+            # Final small hop to center
+            [0.0, 0.2, 0.6, 0.7],
+            
+            # Return to calm but happy pose
+            [0.0, 0.3, 0.7, 0.4]
+        ]
+        
+        # Energetic timing with pauses for emphasis
+        durations = [0.4, 0.2, 0.2, 0.5, 0.2, 0.15, 0.3, 0.2, 0.3, 0.2, 0.3, 0.5]
+        
+        # Start the animation
+        self.start_animation(keyframes, durations)
+        self.get_logger().info('Executing playful bounce animation')
+
+    def startled_jump(self):
+        """Make the arm perform a startled jump and cautious recovery."""
+        # Keyframe positions
+        keyframes = [
+            # Calm starting position
+            [0.0, 0.3, 0.7, 0.0],
+            
+            # Freeze momentarily (anticipation)
+            [0.0, 0.3, 0.7, 0.0],
+            
+            # Dramatic jump back and up (exaggeration)
+            [-0.3, 0.1, 0.4, 1.0],
+            
+            # Hold at apex briefly
+            [-0.3, 0.1, 0.4, 1.0],
+            
+            # Quick recoil further back
+            [-0.5, 0.2, 0.6, 0.8],
+            
+            # Cautious posture, angled away
+            [-0.4, 0.5, 1.0, 0.6],
+            
+            # Hesitant peek forward
+            [-0.2, 0.4, 0.9, 0.4],
+            
+            # Small nervous movement back
+            [-0.3, 0.45, 0.95, 0.5],
+            
+            # Slightly more confident lean forward
+            [-0.1, 0.4, 0.85, 0.3],
+            
+            # Final return to neutral but slightly alert
+            [0.0, 0.3, 0.7, 0.2]
+        ]
+        
+        # Varied timing - fast for startle, slow for caution
+        durations = [0.3, 0.2, 0.15, 0.2, 0.2, 0.6, 0.8, 0.4, 0.7, 1.0]
+        
+        # Start the animation
+        self.start_animation(keyframes, durations)
+        self.get_logger().info('Executing startled jump animation')
 
 def main(args=None):
     rclpy.init(args=args)
