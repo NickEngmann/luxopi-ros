@@ -3,4 +3,3 @@ build/
 log/
 install/
 *.pyc
-*.txt
