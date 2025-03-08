@@ -30,6 +30,9 @@ setup(
             'animation_command = luxo_behaviors.animation_command:main',
             'camera_interaction = luxo_behaviors.camera_interaction:main',
             'demo_mode = luxo_behaviors.demo_mode:main',
+            'hardware_interface = luxo_behaviors.hardware_interface:main',
+            'position_test = luxo_behaviors.position_test:main',
+            'direct_test = luxo_behaviors.direct_test:main',
         ],
     },
 )
