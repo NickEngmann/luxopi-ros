@@ -16,17 +16,21 @@ class PositionTestNode(Node):
             '/joint_states', 
             10)
         
-        # Joint names
-        self.joint_names = ['base_to_L1', 'L1_to_L2', 'L2_to_L3', 'L3_to_L4']
+        # Joint names - updated to match RoArm conventions
+        self.joint_names = ['base', 'shoulder', 'elbow', 'wrist', 'hand']
         
         # Define test positions (in radians) - more gentle for real hardware
+        # Based on the RoArm's range limits from the API documentation
         self.test_positions = [
-            [0.0, 0.0, 0.0, 0.0],             # Home position
-            [0.1, 0.1, 0.1, 0.1],             # Small movement of all joints
-            [0.2, 0.1, 0.1, 0.1],             # Slightly more base rotation
-            [0.2, 0.2, 0.2, 0.1],             # Increase shoulder and elbow
-            [0.2, 0.2, 0.2, 0.2],             # Add wrist movement
-            [0.0, 0.0, 0.0, 0.0]              # Back to home
+            [0.0, 0.0, 0.0, 0.0, 3.14],              # Home position with closed gripper
+            [0.2, 0.2, 0.2, 0.2, 3.14],              # Small movement of all joints
+            [0.5, 0.0, 0.0, 0.0, 3.14],              # Just base rotation
+            [0.0, 0.5, 0.0, 0.0, 3.14],              # Just shoulder movement
+            [0.0, 0.0, 0.5, 0.0, 3.14],              # Just elbow movement
+            [0.0, 0.0, 0.0, 0.5, 3.14],              # Just wrist movement
+            [0.0, 0.0, 0.0, 0.0, 1.57],              # Open gripper
+            [0.3, 0.3, 0.3, 0.3, 1.57],              # Combined movement with open gripper
+            [0.0, 0.0, 0.0, 0.0, 3.14]               # Back to home with closed gripper
         ]
         
         # Position index
