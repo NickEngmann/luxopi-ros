@@ -164,3 +164,28 @@ Please read `CONTRIBUTING.md` for details on our code of conduct and the process
 
 ## License
 This project is licensed under the MIT License - see the `LICENSE` file for details.
+
+
+## Running with Collision Detection Enabled
+
+Step-by-Step Instructions
+
+```
+cd ~/ros2_project_ws
+colcon build --packages-select luxo_behaviors
+source install/setup.bash
+```
+
+First terminal: Launch the DepthAI camera with point cloud
+
+`ros2 launch depthai_ros_driver pointcloud.launch.py params_file:=./luxopijr.yaml`
+
+Second terminal: Wait until the camera is fully initialized, then launch your robot control system
+`ros2 launch luxo_behaviors hardware_system.launch.py test_mode:=animation enable_collision:=True`
+
+Third terminal: To send animation commands
+
+`ros2 topic pub /roarm/animation_command std_msgs/msg/String "data: 'curious'" --once`
+
+To monitor collision status:
+`ros2 topic echo /collision_status`
