@@ -31,6 +31,7 @@ setup(
             'camera_interaction = luxo_behaviors.camera_interaction:main',
             'demo_mode = luxo_behaviors.demo_mode:main',
             'hardware_interface = luxo_behaviors.hardware_interface:main',
+            'collision_detection = luxo_behaviors.collision_detection:main',
             'position_test = luxo_behaviors.position_test:main',
             'direct_test = luxo_behaviors.direct_test:main',
         ],
