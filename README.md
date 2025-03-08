@@ -102,6 +102,28 @@ colcon test-result --all --verbose
 ## Working with the Robot Arm
 See the `ROBOT_ARM_API.md` file for details about the robot arm API and command reference.
 
+## Animation Commands
+
+The robot arm supports various pre-defined animation sequences. You can trigger these animations by publishing String messages to the `/roarm/animation_command` topic:
+
+```bash
+# Available animation commands:
+ros2 topic pub --once /roarm/animation_command std_msgs/String "data: curious"   # Make the arm look around curiously
+ros2 topic pub --once /roarm/animation_command std_msgs/String "data: excited"   # Make the arm perform an excited hop
+ros2 topic pub --once /roarm/animation_command std_msgs/String "data: sad"       # Make the arm droop sadly
+ros2 topic pub --once /roarm/animation_command std_msgs/String "data: sweep"     # Make the arm sweep like a desk lamp searching
+ros2 topic pub --once /roarm/animation_command std_msgs/String "data: playful"   # Make the arm do playful bounces
+ros2 topic pub --once /roarm/animation_command std_msgs/String "data: startled"  # Make the arm perform a startled jump
+ros2 topic pub --once /roarm/animation_command std_msgs/String "data: grab"      # Make the arm grab and release with gripper
+ros2 topic pub --once /roarm/animation_command std_msgs/String "data: stop"      # Stop any currently running animation
+```
+
+You can launch the animation command node with different modes:
+```bash
+# Launch hardware system with animation mode
+ros2 launch luxo_behaviors hardware_system.launch.py test_mode:=animation
+```
+
 ## Calibration
 The arm requires calibration before first use:
 ```bash

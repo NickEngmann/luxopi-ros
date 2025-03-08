@@ -19,9 +19,9 @@ setup(
     ],
     install_requires=['setuptools'],
     zip_safe=True,
-    maintainer='user',
-    maintainer_email='user@example.com',
-    description='Luxo Jr-style animations for RoArm-M2-S',
+    maintainer='cyril',
+    maintainer_email='cyril@thegarage.dev',
+    description='Luxo Jr-style animations for RoArm-M3',
     license='Apache License 2.0',
     tests_require=['pytest'],
     entry_points={
