@@ -155,7 +155,7 @@ class RoArmHardwareInterface(Node):
         try:
             # Add description to logs
             if description:
-                self.get_logger().info(f"Sending {description}: {cmd_str}")
+                self.get_logger().debug(f"Sending {description}: {cmd_str}")
             
             # Ensure command ends with newline
             if not cmd_str.endswith('\n'):
@@ -194,10 +194,10 @@ class RoArmHardwareInterface(Node):
                             # Try to parse as JSON for better logging
                             try:
                                 json_data = json.loads(data)
-                                self.get_logger().info(f"Received: {json.dumps(json_data)}")
+                                self.get_logger().debug(f"Received: {json.dumps(json_data)}")
                             except json.JSONDecodeError:
                                 # Not JSON, just log as text
-                                self.get_logger().info(f"Received: {data}")
+                                self.get_logger().debug(f"Received: {data}")
                 except Exception as e:
                     self.get_logger().error(f"Error reading from serial: {e}")
             else:
