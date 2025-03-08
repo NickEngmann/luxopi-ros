@@ -2,6 +2,7 @@
 
 import rclpy
 from rclpy.node import Node
+from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSDurabilityPolicy, QoSHistoryPolicy
 from sensor_msgs.msg import PointCloud2, JointState
 import numpy as np
 import struct
@@ -19,6 +20,8 @@ class CollisionDetectionNode(Node):
         self.declare_parameter('point_cloud_topic', '/oak/points')
         self.declare_parameter('joint_states_topic', '/joint_states')
         self.declare_parameter('override_animation', True)
+        self.declare_parameter('qos_reliability', 0)  # 0=BEST_EFFORT, 1=RELIABLE
+        self.declare_parameter('qos_durability', 0)   # 0=VOLATILE, 1=TRANSIENT_LOCAL
         
         # Get parameters
         self.safety_distance = self.get_parameter('safety_distance').value
@@ -26,13 +29,25 @@ class CollisionDetectionNode(Node):
         self.point_cloud_topic = self.get_parameter('point_cloud_topic').value
         self.joint_states_topic = self.get_parameter('joint_states_topic').value
         self.override_animation = self.get_parameter('override_animation').value
+        qos_reliability = self.get_parameter('qos_reliability').value
+        qos_durability = self.get_parameter('qos_durability').value
         
-        # Subscribe to point cloud data
+        # Set up QoS profile for point cloud - CRITICAL for compatibility
+        point_cloud_qos = QoSProfile(
+            reliability=QoSReliabilityPolicy.BEST_EFFORT if qos_reliability == 0 else QoSReliabilityPolicy.RELIABLE,
+            durability=QoSDurabilityPolicy.VOLATILE if qos_durability == 0 else QoSDurabilityPolicy.TRANSIENT_LOCAL,
+            history=QoSHistoryPolicy.KEEP_LAST,
+            depth=5
+        )
+        
+        # Subscribe to point cloud data with specific QoS
         self.point_cloud_sub = self.create_subscription(
             PointCloud2,
             self.point_cloud_topic,
             self.point_cloud_callback,
-            10)
+            qos_profile=point_cloud_qos)
+        
+        self.get_logger().info(f"Subscribing to {self.point_cloud_topic} with QoS: reliability={'BEST_EFFORT' if qos_reliability == 0 else 'RELIABLE'}, durability={'VOLATILE' if qos_durability == 0 else 'TRANSIENT_LOCAL'}")
             
         # Subscribe to joint states coming from animation
         self.joint_states_sub = self.create_subscription(
@@ -65,20 +80,43 @@ class CollisionDetectionNode(Node):
         self.original_joints = None
         self.last_collision_time = self.get_clock().now()
         self.consecutive_collision_count = 0
+        self.last_status_time = self.get_clock().now()
+        self.point_cloud_received = False
         
         # Tracking previous joint state
         self.previous_joint_state = None
         
         # Create a timer for regular status updates
-        self.timer = self.create_timer(0.1, self.publish_status)
+        self.status_timer = self.create_timer(1.0, self.publish_status)
+        
+        # Create a timer to check if point cloud data is being received
+        self.cloud_check_timer = self.create_timer(5.0, self.check_point_cloud)
         
         self.get_logger().info('Collision detection node initialized')
         self.get_logger().info(f'Safety distance: {self.safety_distance}m')
         self.get_logger().info(f'Override animation: {self.override_animation}')
     
+    def check_point_cloud(self):
+        """Check if point cloud data is being received."""
+        if not self.point_cloud_received:
+            self.get_logger().warn(f"No point cloud data received on {self.point_cloud_topic}. Check camera and QoS settings.")
+        else:
+            # Reset flag to check if new data arrives before next timer
+            self.point_cloud_received = False
+    
     def point_cloud_callback(self, msg):
         """Process point cloud data to detect potential collisions."""
         try:
+            # Flag that we've received point cloud data
+            self.point_cloud_received = True
+            
+            # Log message occasionally
+            current_time = self.get_clock().now()
+            time_since_last = (current_time - self.last_status_time).nanoseconds / 1e9
+            if time_since_last > 10.0:  # Log every 10 seconds
+                self.get_logger().info(f"Receiving point cloud data from {self.point_cloud_topic}")
+                self.last_status_time = current_time
+            
             # Extract points from point cloud (sample for efficiency)
             points = self.process_point_cloud(msg)
             
@@ -290,6 +328,13 @@ class CollisionDetectionNode(Node):
             warning_msg = Bool()
             warning_msg.data = True
             self.collision_warning_pub.publish(warning_msg)
+            status_msg = String()
+            status_msg.data = "COLLISION STATUS: Obstacle detected"
+            self.collision_status_pub.publish(status_msg)
+        else:
+            status_msg = String()
+            status_msg.data = "COLLISION STATUS: Path clear"
+            self.collision_status_pub.publish(status_msg)
 
 def main(args=None):
     rclpy.init(args=args)
