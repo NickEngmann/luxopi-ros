@@ -345,8 +345,8 @@ class DirectTestNode(Node):
                 "T": 101,
                 "joint": i,
                 "rad": 0.3,  # Small movement
-                "spd": 10,
-                "acc": 10
+                "spd": 0,
+                "acc": 2
             }
             self.send_command(cmd_dict=cmd, description=f"Move {joint} joint")
             time.sleep(2)
@@ -360,12 +360,12 @@ class DirectTestNode(Node):
         self.get_logger().info("--- GRIPPER TEST ---")
         
         # Open gripper
-        self.send_command(cmd_dict={"T": 106, "cmd": 1.57, "spd": 10, "acc": 10}, 
+        self.send_command(cmd_dict={"T": 106, "cmd": 1.57, "spd": 0, "acc": 2}, 
                           description="Open gripper")
         time.sleep(2)
         
         # Close gripper
-        self.send_command(cmd_dict={"T": 106, "cmd": 3.14, "spd": 10, "acc": 10}, 
+        self.send_command(cmd_dict={"T": 106, "cmd": 3.14, "spd": 0, "acc": 2}, 
                           description="Close gripper")
         time.sleep(2)
         
@@ -381,8 +381,8 @@ class DirectTestNode(Node):
             "wrist": 0.3,
             "roll": 0,
             "hand": 3.14,
-            "spd": 10,
-            "acc": 10
+            "spd": 0,
+            "acc": 2
         }
         self.send_command(cmd_dict=cmd, description="Move all joints")
         time.sleep(3)
@@ -396,8 +396,8 @@ class DirectTestNode(Node):
             "wrist": 0,
             "roll": 0,
             "hand": 3.14,
-            "spd": 10,
-            "acc": 10
+            "spd": 0,
+            "acc": 2
         }
         self.send_command(cmd_dict=cmd, description="Return to home position")
         time.sleep(3)
@@ -442,8 +442,8 @@ class DirectTestNode(Node):
             "t": 0,
             "r": 0,
             "h": 180,  # Hand at 180 degrees
-            "spd": 10,
-            "acc": 10
+            "spd": 0,
+            "acc": 2
         }
         self.send_command(cmd_dict=cmd, description="Return to neutral using angles")
         time.sleep(3)
