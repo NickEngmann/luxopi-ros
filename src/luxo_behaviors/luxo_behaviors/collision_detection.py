@@ -14,25 +14,37 @@ class CollisionDetectionNode(Node):
     def __init__(self):
         super().__init__('collision_detection')
         
-        # Parameters
-        self.declare_parameter('safety_distance', 0.3)  # meters
+        # Parameters with more aggressive defaults for close detection
+        self.declare_parameter('safety_distance', 0.5)     # ~20 inches
+        self.declare_parameter('near_threshold', 0.25)     # ~10 inches
         self.declare_parameter('robot_base_frame', 'oak')
         self.declare_parameter('point_cloud_topic', '/oak/points')
         self.declare_parameter('joint_states_topic', '/joint_states')
         self.declare_parameter('override_animation', True)
-        self.declare_parameter('qos_reliability', 0)  # 0=BEST_EFFORT, 1=RELIABLE
-        self.declare_parameter('qos_durability', 0)   # 0=VOLATILE, 1=TRANSIENT_LOCAL
+        self.declare_parameter('qos_reliability', 0)       # 0=BEST_EFFORT, 1=RELIABLE
+        self.declare_parameter('qos_durability', 0)        # 0=VOLATILE, 1=TRANSIENT_LOCAL
+        self.declare_parameter('min_near_points', 1)       # Reduced to just 1 point
+        self.declare_parameter('point_sampling_rate', 20)  # Increased sampling (was 100)
+        self.declare_parameter('close_point_density_threshold', 3) # New: density of points per bin
         
         # Get parameters
         self.safety_distance = self.get_parameter('safety_distance').value
+        self.near_threshold = self.get_parameter('near_threshold').value
+        self.min_near_points = self.get_parameter('min_near_points').value
         self.robot_base_frame = self.get_parameter('robot_base_frame').value
         self.point_cloud_topic = self.get_parameter('point_cloud_topic').value
         self.joint_states_topic = self.get_parameter('joint_states_topic').value
         self.override_animation = self.get_parameter('override_animation').value
+        self.point_sampling_rate = self.get_parameter('point_sampling_rate').value
+        self.close_point_density_threshold = self.get_parameter('close_point_density_threshold').value
         qos_reliability = self.get_parameter('qos_reliability').value
         qos_durability = self.get_parameter('qos_durability').value
+        
+        # State tracking
         self.previous_points_count = 0
         self.consecutive_clear_count = 0
+        self.last_min_distances = []  # Store recent minimum distances
+        self.close_range_density = []  # Store density of points in close range
         
         # Set up QoS profile for point cloud - CRITICAL for compatibility
         point_cloud_qos = QoSProfile(
@@ -94,9 +106,14 @@ class CollisionDetectionNode(Node):
         # Create a timer to check if point cloud data is being received
         self.cloud_check_timer = self.create_timer(5.0, self.check_point_cloud)
         
+        # Create a timer for point drop detection
+        self.point_drop_timer = self.create_timer(0.5, self.check_point_drop)
+        
         self.get_logger().info('Collision detection node initialized')
         self.get_logger().info(f'Safety distance: {self.safety_distance}m')
+        self.get_logger().info(f'Near threshold: {self.near_threshold}m')
         self.get_logger().info(f'Override animation: {self.override_animation}')
+        self.get_logger().info(f'Point sampling rate: 1/{self.point_sampling_rate}')
     
     def check_point_cloud(self):
         """Check if point cloud data is being received."""
@@ -105,6 +122,18 @@ class CollisionDetectionNode(Node):
         else:
             # Reset flag to check if new data arrives before next timer
             self.point_cloud_received = False
+    
+    def check_point_drop(self):
+        """Monitor for significant drops in point count which can indicate close objects."""
+        if hasattr(self, 'current_points_count') and hasattr(self, 'previous_points_count'):
+            drop_ratio = 0
+            if self.previous_points_count > 100:  # Only calculate if we had enough points before
+                drop_ratio = self.current_points_count / max(1, self.previous_points_count)
+            
+            # Significant drop indicates an object is very close (possibly blocking part of the camera)
+            if drop_ratio < 0.5 and self.previous_points_count > 100 and self.current_points_count < 50:
+                self.get_logger().warn(f"Detected significant point drop: {self.previous_points_count} -> {self.current_points_count}")
+                self.update_collision_status(True, estimated_distance=0.15)  # Assume ~6 inches
     
     def point_cloud_callback(self, msg):
         """Process point cloud data to detect potential collisions."""
@@ -120,16 +149,24 @@ class CollisionDetectionNode(Node):
                 self.last_status_time = current_time
                 self.get_logger().info(f"Processing point cloud with {len(msg.data)} data points, height: {msg.height}, width: {msg.width}")
             
-            # Extract points from point cloud (sample for efficiency)
+            # Extract points from point cloud (with higher sampling rate)
             points = self.process_point_cloud(msg)
-
-            valid_points_ratio = len(points) / (msg.height * msg.width / 100)  # Sample 1%
-            if valid_points_ratio < 0.01 and len(points) < 50:
-                self.get_logger().warn("Very few valid points - camera may be blocked")
-                self.update_collision_status(True, 0.0)
             
+            # Store point count for drop detection
+            self.previous_points_count = getattr(self, 'current_points_count', len(points))
+            self.current_points_count = len(points)
+
+            # Handle no points case
             if len(points) == 0:
-                # No valid points, can't make collision decisions
+                self.get_logger().warn("No valid points extracted - possible very close object blocking camera")
+                self.update_collision_status(True, estimated_distance=0.1)  # Assume ~4 inches
+                return
+            
+            # Handle very few points case
+            valid_points_ratio = len(points) / (msg.height * msg.width / self.point_sampling_rate)
+            if valid_points_ratio < 0.01 and len(points) < 20:
+                self.get_logger().warn(f"Very few valid points ({len(points)}) - camera may be blocked by close object")
+                self.update_collision_status(True, estimated_distance=0.15)  # Assume ~6 inches
                 return
                 
             # Convert from camera optical frame to robot's perspective
@@ -139,77 +176,111 @@ class CollisionDetectionNode(Node):
             robot_y = -points[:, 0]  # Negative camera X becomes robot Y (left)
             robot_z = -points[:, 1]  # Negative camera Y becomes robot Z (up)
             
+            # Calculate raw distances from camera
+            raw_distances = np.sqrt(points[:, 0]**2 + points[:, 1]**2 + points[:, 2]**2)
+            
+            # Look for anomalies in the distance distribution that might indicate close objects
+            # For stereo cameras, invalid close points often appear as gaps or clusters
+            min_raw_distance = np.min(raw_distances) if len(raw_distances) > 0 else float('inf')
+            
             # Filter for points in front of the robot (positive X)
-            # and within a reasonable workspace
-            workspace_mask = (robot_x > 0) & (robot_x < 1.0) & \
-                            (np.abs(robot_y) < 0.5) & \
-                            (robot_z > -0.2) & (robot_z < 0.8)
+            # and within a reasonable workspace - WIDER RANGE FOR CLOSE DETECTION
+            workspace_mask = (robot_x > -0.1) & (robot_x < 1.0) & \
+                            (np.abs(robot_y) < 0.6) & \
+                            (robot_z > -0.3) & (robot_z < 0.9)
             
             workspace_points = np.column_stack((
                 robot_x[workspace_mask],
                 robot_y[workspace_mask],
                 robot_z[workspace_mask]
             ))
-
-            # self.get_logger().info(f"Filtered to {len(workspace_points)} points in workspace")
-            if not hasattr(self, 'previous_points_count'):
-                self.previous_points_count = len(workspace_points)
-                
-            if len(workspace_points) < 50 and self.previous_points_count > 200:
-                self.get_logger().warn("Sudden drop in point count - possible very close object")
-                self.update_collision_status(True, 0.1)  # Treat as collision at 10cm
-                self.previous_points_count = len(workspace_points)
-                return
+            
             if len(workspace_points) == 0:
-                # No obstacles in the workspace
+                # Special case: No points in workspace but we had raw points
+                # This can happen when an object is very close and blocks the workspace view
+                if len(points) > 0 and min_raw_distance < 0.5:
+                    self.get_logger().warn(f"Object potentially blocking workspace view at {min_raw_distance:.2f}m")
+                    self.update_collision_status(True, estimated_distance=min_raw_distance)
+                    return
+                
                 self.update_collision_status(False)
                 return
                 
             # Calculate distances to robot base
             distances = np.sqrt(np.sum(workspace_points**2, axis=1))
 
-            # Get both minimum distance and number of close points
+            # Get minimum distance and track recent history
             min_distance = np.min(distances) if len(distances) > 0 else float('inf')
-
-            # Add a stronger mechanism to clear the collision state
-            if min_distance > (self.safety_distance + 0.1):  # Clear margin
-                # We're well above the safety threshold, ensure we clear any stuck state
-                if self.collision_detected:
-                    if not hasattr(self, 'consecutive_clear_count'):
-                        self.consecutive_clear_count = 0
-                    self.consecutive_clear_count += 1
-                    if self.consecutive_clear_count > 3:
-                        self.get_logger().info(f"Clearing collision state - distance {min_distance:.2f}m is safe")
-                        self.collision_detected = False
-                        self.consecutive_collision_count = 0
-                        self.update_collision_status(False, min_distance)
-                        self.consecutive_clear_count = 0
-                else:
-                    self.consecutive_clear_count = 0
-
-            # Count points within safety threshold
-            close_points = np.sum(distances < self.safety_distance)
-            self.get_logger().info(f"Min distance: {min_distance:.2f}m, Close points: {close_points}")
-
-            # Collision detection logic with two criteria
-            collision_detected = min_distance < (self.safety_distance - 0.05) 
-
-            # Special case for very few points total (camera blocked or very close object)
-            if len(workspace_points) < 10 and len(workspace_points) > 0 and min_distance < 0.5:
-                collision_detected = True
-                self.get_logger().warn("Few points detected at close range - likely collision")
+            self.last_min_distances.append(min_distance)
+            if len(self.last_min_distances) > 5:  # Keep only recent history
+                self.last_min_distances.pop(0)
             
-            # Create distance histogram for better understanding
-            if len(distances) > 20:  # Only if we have enough points
-                hist, bins = np.histogram(distances, bins=10, range=(0, 2.0))
-                hist_str = " | ".join([f"{bins[i]:.1f}-{bins[i+1]:.1f}m: {hist[i]}" for i in range(len(hist))])
-                self.get_logger().info(f"Distance histogram: {hist_str}")
+            # Get stable minimum distance (helps with noisy readings)
+            stable_min_distance = min(self.last_min_distances) if self.last_min_distances else min_distance
+            
+            # If min distance is always around the same value, it might be a floor or constant object
+            # Detect this by checking variance
+            distance_variance = np.var(self.last_min_distances) if len(self.last_min_distances) >= 3 else 1.0
+            if distance_variance < 0.001 and 0.64 <= stable_min_distance <= 0.7:
+                self.get_logger().info(f"Constant minimum distance detected ({stable_min_distance:.2f}m) - may be floor or background")
+            
+            # Count points within safety threshold and near threshold
+            close_points = np.sum(distances < self.safety_distance)
+            near_points = np.sum(distances < self.near_threshold)
+            very_near_points = np.sum(distances < (self.near_threshold / 2))  # Points within half the near threshold
+            
+            self.get_logger().info(f"Min distance: {min_distance:.2f}m, Close: {close_points}, Near: {near_points}, Very near: {very_near_points}")
+
+            # Create detailed histograms for monitoring - FOCUS ON CLOSE RANGE
+            if len(distances) > 10:  # Only if we have enough points
+                # Create a detailed histogram for close ranges with finer bins
+                close_bins = [0, 0.1, 0.15, 0.20, 0.25, 0.3, 0.4, 0.5, 0.7, 1.0]
+                close_hist, bins = np.histogram(distances, bins=close_bins)
+                
+                # Store density of points in close range
+                close_range_density = [close_hist[i] for i in range(5)]  # First 5 bins (0-0.3m)
+                self.close_range_density.append(close_range_density)
+                if len(self.close_range_density) > 3:  # Keep only recent history
+                    self.close_range_density.pop(0)
+                
+                # Calculate average density
+                avg_density = np.mean(self.close_range_density, axis=0) if self.close_range_density else close_range_density
+                
+                close_hist_str = " | ".join([f"{bins[i]:.2f}-{bins[i+1]:.2f}m: {close_hist[i]}" for i in range(len(close_hist))])
+                self.get_logger().info(f"Close range histogram: {close_hist_str}")
+                
+                # Check for density in critical close range (first 5 bins)
+                for i in range(5):  # Check each of the first 5 close range bins
+                    if close_hist[i] >= self.close_point_density_threshold:
+                        bin_start, bin_end = close_bins[i], close_bins[i+1]
+                        self.get_logger().warn(f"Significant point density detected in {bin_start:.2f}-{bin_end:.2f}m range: {close_hist[i]} points")
+                        
+                        # Use the middle of the bin as the estimated distance
+                        estimated_distance = (bin_start + bin_end) / 2
+                        
+                        # Trigger collision detection if these are consistently present
+                        if avg_density[i] >= self.close_point_density_threshold:
+                            self.get_logger().warn(f"Consistent object detected at ~{estimated_distance:.2f}m")
+                            self.update_collision_status(True, estimated_distance)
+                            return
+
+            # Enhanced collision detection with multiple criteria
+            # 1. At least one point is very near
+            # 2. Several points are within the near threshold
+            # 3. Minimum distance is significantly within safety distance
+            collision_detected = (very_near_points > 0) or \
+                                (near_points >= self.min_near_points) or \
+                                (min_distance < (self.safety_distance - 0.05)) or \
+                                (min_raw_distance < self.near_threshold)  # Check raw distances too
+            
+            # Update status and publish warnings
+            self.update_collision_status(collision_detected, min_distance)
             
         except Exception as e:
             self.get_logger().error(f'Error processing point cloud: {str(e)}')
     
     def process_point_cloud(self, cloud_msg):
-        """Extract points from PointCloud2 message."""
+        """Extract points from PointCloud2 message with higher sampling rate."""
         # Get basic cloud info
         fields = cloud_msg.fields
         point_step = cloud_msg.point_step
@@ -221,9 +292,9 @@ class CollisionDetectionNode(Node):
         for field in fields:
             offsets[field.name] = field.offset
         
-        # Process points (sample every 100th point for efficiency)
+        # Process points with increased sampling
         points = []
-        for i in range(0, len(data), point_step * 100):
+        for i in range(0, len(data), point_step * self.point_sampling_rate):
             if i + point_step <= len(data):
                 # Extract x, y, z (assuming float32 datatype - 7)
                 try:
@@ -231,7 +302,8 @@ class CollisionDetectionNode(Node):
                     y = struct.unpack_from('<f', data, i + offsets['y'])[0]
                     z = struct.unpack_from('<f', data, i + offsets['z'])[0]
                     
-                    # Filter out NaN or infinite values
+                    # Less restrictive filtering - we want to detect close objects
+                    # even if they produce unusual readings
                     if (not math.isnan(x) and not math.isnan(y) and not math.isnan(z) and
                         not math.isinf(x) and not math.isinf(y) and not math.isinf(z)):
                         points.append([x, y, z])
@@ -241,12 +313,18 @@ class CollisionDetectionNode(Node):
         
         return np.array(points) if points else np.empty((0, 3))
     
-    def update_collision_status(self, collision_detected, min_distance=float('inf')):
+    def update_collision_status(self, collision_detected, min_distance=float('inf'), estimated_distance=None):
         """Update collision status and publish warnings if needed."""
         current_time = self.get_clock().now()
         
+        # Use estimated distance if provided
+        distance = estimated_distance if estimated_distance is not None else min_distance
+        
+        # Make very close objects trigger immediately
+        force_trigger = collision_detected and distance < self.near_threshold
+        
         # Allow for force-clearing the collision state
-        force_clear = not collision_detected and min_distance > (self.safety_distance + 0.1)
+        force_clear = not collision_detected and distance > (self.safety_distance + 0.1)
         
         if collision_detected:
             # Increase consecutive collision counter
@@ -258,12 +336,15 @@ class CollisionDetectionNode(Node):
             # Update last collision time
             self.last_collision_time = current_time
             
-            # Log and publish only when collision status changes or every few detections
-            if self.consecutive_collision_count == 1 or self.consecutive_collision_count % 5 == 0:
-                self.get_logger().warn(f'Potential collision detected! Distance: {min_distance:.2f}m')
+            # Log and publish when collision status changes, for very close objects, or periodically
+            if force_trigger or self.consecutive_collision_count == 1 or self.consecutive_collision_count % 5 == 0:
+                if distance < self.near_threshold:
+                    self.get_logger().warn(f'CLOSE RANGE COLLISION ALERT! Object at {distance:.2f}m')
+                else:
+                    self.get_logger().warn(f'Collision risk detected! Distance: {distance:.2f}m')
                 
                 status_msg = String()
-                status_msg.data = f"COLLISION WARNING: Object at {min_distance:.2f}m"
+                status_msg.data = f"COLLISION WARNING: Object at {distance:.2f}m"
                 self.collision_status_pub.publish(status_msg)
                 
                 warning_msg = Bool()
@@ -272,10 +353,10 @@ class CollisionDetectionNode(Node):
         elif force_clear or (not self.collision_detected):
             # Clear collision state immediately if force_clear is True
             if self.collision_detected or force_clear:
-                self.get_logger().info(f'Collision warning cleared. Distance: {min_distance:.2f}m')
+                self.get_logger().info(f'Collision warning cleared. Distance: {distance:.2f}m')
                 
                 status_msg = String()
-                status_msg.data = f"Path clear: {min_distance:.2f}m"
+                status_msg.data = f"Path clear: {distance:.2f}m"
                 self.collision_status_pub.publish(status_msg)
                 
                 warning_msg = Bool()
@@ -296,7 +377,7 @@ class CollisionDetectionNode(Node):
                     self.get_logger().info('Collision warning cleared')
                     
                     status_msg = String()
-                    status_msg.data = f"Path clear: {min_distance:.2f}m"
+                    status_msg.data = f"Path clear: {distance:.2f}m"
                     self.collision_status_pub.publish(status_msg)
                     
                     warning_msg = Bool()
