@@ -1,10 +1,11 @@
 /oak:
   ros__parameters:
     camera:
-      i_nn_type: none
+      i_nn_type: rgb  # Set to 'rgb' for RGB-based neural networks
       i_pipeline_type: RGBD
     rgb:
-      i_resolution: '720p'
+      i_resolution: '1080p'
+      i_fps: 15.0
       i_publish_topic: true
     stereo:
       i_publish_topic: true
@@ -12,4 +13,7 @@
       i_subpixel: true
       i_lr_check: true
       i_align_depth: true
+      i_decimation_factor: 2
       i_right_rect_publish_topic: true
+      i_dot_projector_brightness: 800  # Range 0-1200
+      i_flood_light_brightness: 800    # Range 0-1500

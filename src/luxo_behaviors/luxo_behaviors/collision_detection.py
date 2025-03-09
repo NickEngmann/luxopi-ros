@@ -31,6 +31,8 @@ class CollisionDetectionNode(Node):
         self.override_animation = self.get_parameter('override_animation').value
         qos_reliability = self.get_parameter('qos_reliability').value
         qos_durability = self.get_parameter('qos_durability').value
+        self.previous_points_count = 0
+        self.consecutive_clear_count = 0
         
         # Set up QoS profile for point cloud - CRITICAL for compatibility
         point_cloud_qos = QoSProfile(
@@ -116,9 +118,15 @@ class CollisionDetectionNode(Node):
             if time_since_last > 10.0:  # Log every 10 seconds
                 self.get_logger().info(f"Receiving point cloud data from {self.point_cloud_topic}")
                 self.last_status_time = current_time
+                self.get_logger().info(f"Processing point cloud with {len(msg.data)} data points, height: {msg.height}, width: {msg.width}")
             
             # Extract points from point cloud (sample for efficiency)
             points = self.process_point_cloud(msg)
+
+            valid_points_ratio = len(points) / (msg.height * msg.width / 100)  # Sample 1%
+            if valid_points_ratio < 0.01 and len(points) < 50:
+                self.get_logger().warn("Very few valid points - camera may be blocked")
+                self.update_collision_status(True, 0.0)
             
             if len(points) == 0:
                 # No valid points, can't make collision decisions
@@ -142,7 +150,16 @@ class CollisionDetectionNode(Node):
                 robot_y[workspace_mask],
                 robot_z[workspace_mask]
             ))
-            
+
+            # self.get_logger().info(f"Filtered to {len(workspace_points)} points in workspace")
+            if not hasattr(self, 'previous_points_count'):
+                self.previous_points_count = len(workspace_points)
+                
+            if len(workspace_points) < 50 and self.previous_points_count > 200:
+                self.get_logger().warn("Sudden drop in point count - possible very close object")
+                self.update_collision_status(True, 0.1)  # Treat as collision at 10cm
+                self.previous_points_count = len(workspace_points)
+                return
             if len(workspace_points) == 0:
                 # No obstacles in the workspace
                 self.update_collision_status(False)
@@ -150,13 +167,43 @@ class CollisionDetectionNode(Node):
                 
             # Calculate distances to robot base
             distances = np.sqrt(np.sum(workspace_points**2, axis=1))
-            min_distance = np.min(distances)
+
+            # Get both minimum distance and number of close points
+            min_distance = np.min(distances) if len(distances) > 0 else float('inf')
+
+            # Add a stronger mechanism to clear the collision state
+            if min_distance > (self.safety_distance + 0.1):  # Clear margin
+                # We're well above the safety threshold, ensure we clear any stuck state
+                if self.collision_detected:
+                    if not hasattr(self, 'consecutive_clear_count'):
+                        self.consecutive_clear_count = 0
+                    self.consecutive_clear_count += 1
+                    if self.consecutive_clear_count > 3:
+                        self.get_logger().info(f"Clearing collision state - distance {min_distance:.2f}m is safe")
+                        self.collision_detected = False
+                        self.consecutive_collision_count = 0
+                        self.update_collision_status(False, min_distance)
+                        self.consecutive_clear_count = 0
+                else:
+                    self.consecutive_clear_count = 0
+
+            # Count points within safety threshold
+            close_points = np.sum(distances < self.safety_distance)
+            self.get_logger().info(f"Min distance: {min_distance:.2f}m, Close points: {close_points}")
+
+            # Collision detection logic with two criteria
+            collision_detected = min_distance < (self.safety_distance - 0.05) 
+
+            # Special case for very few points total (camera blocked or very close object)
+            if len(workspace_points) < 10 and len(workspace_points) > 0 and min_distance < 0.5:
+                collision_detected = True
+                self.get_logger().warn("Few points detected at close range - likely collision")
             
-            # Check if any points are too close
-            collision_detected = min_distance < self.safety_distance
-            
-            # Update collision status
-            self.update_collision_status(collision_detected, min_distance)
+            # Create distance histogram for better understanding
+            if len(distances) > 20:  # Only if we have enough points
+                hist, bins = np.histogram(distances, bins=10, range=(0, 2.0))
+                hist_str = " | ".join([f"{bins[i]:.1f}-{bins[i+1]:.1f}m: {hist[i]}" for i in range(len(hist))])
+                self.get_logger().info(f"Distance histogram: {hist_str}")
             
         except Exception as e:
             self.get_logger().error(f'Error processing point cloud: {str(e)}')
@@ -198,6 +245,9 @@ class CollisionDetectionNode(Node):
         """Update collision status and publish warnings if needed."""
         current_time = self.get_clock().now()
         
+        # Allow for force-clearing the collision state
+        force_clear = not collision_detected and min_distance > (self.safety_distance + 0.1)
+        
         if collision_detected:
             # Increase consecutive collision counter
             self.consecutive_collision_count += 1
@@ -219,10 +269,10 @@ class CollisionDetectionNode(Node):
                 warning_msg = Bool()
                 warning_msg.data = True
                 self.collision_warning_pub.publish(warning_msg)
-        else:
-            # If we were previously in collision state, log the all-clear
-            if self.collision_detected:
-                self.get_logger().info('Collision warning cleared')
+        elif force_clear or (not self.collision_detected):
+            # Clear collision state immediately if force_clear is True
+            if self.collision_detected or force_clear:
+                self.get_logger().info(f'Collision warning cleared. Distance: {min_distance:.2f}m')
                 
                 status_msg = String()
                 status_msg.data = f"Path clear: {min_distance:.2f}m"
@@ -235,6 +285,31 @@ class CollisionDetectionNode(Node):
             # Reset collision status
             self.collision_detected = False
             self.consecutive_collision_count = 0
+        else:
+            # Only clear if we have several consecutive non-collision frames
+            # This helps prevent flapping between states
+            if self.collision_detected:
+                self.consecutive_clear_count += 1
+                
+                # Only clear after several consecutive clear frames
+                if self.consecutive_clear_count >= 5:  # Require 5 clear frames to remove warning
+                    self.get_logger().info('Collision warning cleared')
+                    
+                    status_msg = String()
+                    status_msg.data = f"Path clear: {min_distance:.2f}m"
+                    self.collision_status_pub.publish(status_msg)
+                    
+                    warning_msg = Bool()
+                    warning_msg.data = False
+                    self.collision_warning_pub.publish(warning_msg)
+                    
+                    # Reset collision status
+                    self.collision_detected = False
+                    self.consecutive_collision_count = 0
+                    self.consecutive_clear_count = 0
+            else:
+                # Reset clear counter
+                self.consecutive_clear_count = 0
     
     def joint_states_callback(self, msg):
         """Process joint states to enforce safety limits based on collision detection."""
