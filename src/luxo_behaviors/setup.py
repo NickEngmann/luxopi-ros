@@ -26,6 +26,7 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
+            'apds9960_ros_node = luxo_behaviors.apds9960_ros_node:main',
             'arm_controller = luxo_behaviors.arm_controller:main',
             'animation_command = luxo_behaviors.animation_command:main',
             'camera_interaction = luxo_behaviors.camera_interaction:main',

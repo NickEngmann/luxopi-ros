@@ -1,0 +1,24 @@
+/oak:
+  ros__parameters:
+    camera:
+      i_nn_type: none  # Explicitly disable neural network
+      i_pipeline_type: RGBD
+    
+    stereo:
+      i_publish_topic: true
+      i_board_socket_id: 2
+      i_subpixel: true
+      i_lr_check: true  # Left-right consistency check
+      i_extended_disp: true
+      i_decimation_factor: 2  # Enable decimation as recommended in warnings
+      i_enable_spatial_filter: true
+      i_enable_temporal_filter: true
+      i_align_depth: true  # Align to RGB as required
+      i_depth_preset: HIGH_ACCURACY
+      i_stereo_conf_threshold: 200  # Confidence threshold
+    
+    # Enable IR emitters for better passive stereo
+    camera:
+      i_enable_ir: true
+      i_laser_dot_brightness: 1200
+      i_floodlight_brightness: 1000

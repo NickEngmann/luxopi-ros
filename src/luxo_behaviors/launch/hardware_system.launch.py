@@ -10,6 +10,7 @@ def generate_launch_description():
     test_mode = LaunchConfiguration('test_mode')
     enable_collision = LaunchConfiguration('enable_collision')
     safety_distance = LaunchConfiguration('safety_distance')
+    enable_apds9960 = LaunchConfiguration('enable_apds9960')
     
     # Declare launch arguments
     declare_test_mode = DeclareLaunchArgument(
@@ -30,6 +31,12 @@ def generate_launch_description():
         description='Safety distance in meters'
     )
     
+    declare_enable_apds9960 = DeclareLaunchArgument(
+        'enable_apds9960',
+        default_value='True',
+        description='Enable APDS9960 proximity and gesture sensor'
+    )
+    
     # Hardware interface node
     hardware_interface_node = Node(
         package='luxo_behaviors',
@@ -44,6 +51,18 @@ def generate_launch_description():
             # Reduce logging to avoid cluttering the console
             {'ros__parameters': {'log_level': 'error'}}
         ]
+    )
+    
+    # APDS9960 proximity and gesture sensor node
+    apds9960_node = Node(
+        package='luxo_behaviors',
+        executable='apds9960_ros_node',  # Remove the .py extension
+        name='apds9960_node',
+        output='screen',
+        parameters=[
+            {'proximity_threshold': 5}
+        ],
+        condition=IfCondition(enable_apds9960)
     )
     
     # Position test node - basic movement patterns
@@ -93,14 +112,16 @@ def generate_launch_description():
         declare_test_mode,
         declare_enable_collision,
         declare_safety_distance,
+        declare_enable_apds9960,
         
         # Launch info
         LogInfo(msg=["Starting hardware system with test_mode=", test_mode, 
-                    ", collision=", enable_collision]),
+                    ", collision=", enable_collision, ", apds9960=", enable_apds9960]),
         
         # Nodes
         hardware_interface_node,
         position_test_node,
         animation_command_node,
-        collision_detection_node
+        collision_detection_node,
+        apds9960_node
     ])

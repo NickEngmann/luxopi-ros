@@ -1,0 +1,24 @@
+/**:
+  ros__parameters:
+    camera:
+      i_enable_imu: true
+      i_enable_ir: true
+      i_nn_type: spatial
+      i_pipeline_type: RGBD
+      i_enable_sync: true
+    right:
+      i_publish_topic: true
+    left:
+      i_publish_topic: true
+    nn:
+      i_nn_config_path: depthai_ros_driver/mobilenet
+    pipeline_gen:
+      i_enable_sync: true
+    imu:
+      i_enable_rotation: true
+      i_get_base_device_timestamp: true
+    rgb:
+      i_publish_topic: true
+    stereo:
+      i_publish_topic: true
+      i_synced: true
