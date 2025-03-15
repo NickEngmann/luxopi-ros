@@ -24,13 +24,13 @@ class CollisionNode(Node):
         self.apds.enable_gesture = True
         
         # Initialize VL53L4CD sensors
-        self.vl53_left = adafruit_vl53l4cd.VL53L4CD(self.i2c, 0x59)  # Left sensor with custom address
-        self.vl53_right = adafruit_vl53l4cd.VL53L4CD(self.i2c)  # Right sensor with default address
+        self.vl53_right = adafruit_vl53l4cd.VL53L4CD(self.i2c, 0x59)  # Left sensor with custom address
+        self.vl53_left = adafruit_vl53l4cd.VL53L4CD(self.i2c)  # Right sensor with default address
         
         # Configure VL53L4CD sensors
         for vl53 in (self.vl53_left, self.vl53_right):
             vl53.inter_measurement = 0
-            vl53.timing_budget = 200
+            vl53.timing_budget = 100
             vl53.start_ranging()
             
         # Set the proximity threshold for collision detection
@@ -38,7 +38,7 @@ class CollisionNode(Node):
         self.proximity_threshold = self.get_parameter('proximity_threshold').value
         
         # Set the distance threshold for side collision detection (in cm)
-        self.declare_parameter('side_distance_threshold', 6.0)
+        self.declare_parameter('side_distance_threshold', 8.0)
         self.side_distance_threshold = self.get_parameter('side_distance_threshold').value
         
         # Previous distance readings for consecutive detection
@@ -172,6 +172,7 @@ class CollisionNode(Node):
                     collision_msg = Bool()
                     collision_msg.data = False
                     self.left_collision_pub.publish(collision_msg)
+                    self.get_logger().debug(f"Left collision debug --- Distance: {left_distance:.1f} cm")
                     
                 # Save current reading for next comparison
                 self.prev_left_distance = left_distance
@@ -201,6 +202,7 @@ class CollisionNode(Node):
                     collision_msg = Bool()
                     collision_msg.data = False
                     self.right_collision_pub.publish(collision_msg)
+                    self.get_logger().debug(f"Right collision debug --- Distance: {right_distance:.1f} cm")
                     
                 # Save current reading for next comparison
                 self.prev_right_distance = right_distance
