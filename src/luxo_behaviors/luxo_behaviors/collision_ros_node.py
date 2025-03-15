@@ -1,0 +1,219 @@
+#!/usr/bin/env python3
+
+import rclpy
+from rclpy.node import Node
+from std_msgs.msg import String, Bool, Int16, Float32
+import board
+from adafruit_apds9960.apds9960 import APDS9960
+import adafruit_vl53l4cd
+import time
+import threading
+import queue
+
+class CollisionNode(Node):
+    def __init__(self):
+        super().__init__('collision_node')
+        
+        # Initialize I2C
+        self.i2c = board.I2C()  # uses board.SCL and board.SDA
+        
+        # Initialize APDS9960 sensor
+        self.apds = APDS9960(self.i2c)
+        self.apds.enable_proximity = True
+        self.apds.proximity_gain = 1
+        self.apds.enable_gesture = True
+        
+        # Initialize VL53L4CD sensors
+        self.vl53_left = adafruit_vl53l4cd.VL53L4CD(self.i2c, 0x59)  # Left sensor with custom address
+        self.vl53_right = adafruit_vl53l4cd.VL53L4CD(self.i2c)  # Right sensor with default address
+        
+        # Configure VL53L4CD sensors
+        for vl53 in (self.vl53_left, self.vl53_right):
+            vl53.inter_measurement = 0
+            vl53.timing_budget = 200
+            vl53.start_ranging()
+            
+        # Set the proximity threshold for collision detection
+        self.declare_parameter('proximity_threshold', 5)
+        self.proximity_threshold = self.get_parameter('proximity_threshold').value
+        
+        # Set the distance threshold for side collision detection (in cm)
+        self.declare_parameter('side_distance_threshold', 6.0)
+        self.side_distance_threshold = self.get_parameter('side_distance_threshold').value
+        
+        # Previous distance readings for consecutive detection
+        self.prev_left_distance = float('inf')
+        self.prev_right_distance = float('inf')
+        
+        # Previous proximity reading for consecutive detection
+        self.prev_proximity = 0
+        
+        # Publishers for APDS9960
+        self.collision_pub = self.create_publisher(Bool, '/head_collision_warning', 10)
+        self.gesture_pub = self.create_publisher(String, '/gestures', 10)
+        self.proximity_pub = self.create_publisher(Int16, '/proximity', 10)
+        
+        # Publishers for VL53L4CD
+        self.left_collision_pub = self.create_publisher(Bool, '/left_collision_warning', 10)
+        self.right_collision_pub = self.create_publisher(Bool, '/right_collision_warning', 10)
+        self.left_distance_pub = self.create_publisher(Float32, '/left_distance', 10)
+        self.right_distance_pub = self.create_publisher(Float32, '/right_distance', 10)
+        
+        # Create a queue for thread communication
+        self.gesture_queue = queue.Queue()
+        
+        # Start gesture detection in its own thread
+        self.gesture_thread = threading.Thread(target=self.gesture_detection, daemon=True)
+        self.gesture_thread.start()
+        
+        # Create timer for proximity readings
+        self.timer = self.create_timer(0.2, self.proximity_callback)
+        
+        # Create timer for distance readings
+        self.distance_timer = self.create_timer(0.2, self.distance_callback)
+        
+        self.get_logger().info('Collision node initialized')
+        self.get_logger().info(f'Proximity threshold set to: {self.proximity_threshold}')
+        self.get_logger().info(f'Side distance threshold set to: {self.side_distance_threshold} cm')
+
+    def gesture_detection(self):
+        """Gesture detection function running in a separate thread"""
+        while True:
+            try:
+                # Call gesture() in its own thread
+                gesture = self.apds.gesture()
+                if gesture:  # Only put on queue if there's a valid gesture
+                    if gesture == 0x01:
+                        self.gesture_queue.put("up")
+                    elif gesture == 0x02:
+                        self.gesture_queue.put("down")
+                    elif gesture == 0x03:
+                        self.gesture_queue.put("left")
+                    elif gesture == 0x04:
+                        self.gesture_queue.put("right")
+                time.sleep(0.01)  # Small sleep to prevent CPU overload
+            except Exception as e:
+                self.get_logger().error(f"Gesture thread error: {e}")
+                time.sleep(1)
+
+    def proximity_callback(self):
+        """Timer callback for proximity readings"""
+        try:
+            # Read proximity
+            proximity = self.apds.proximity
+            
+            # Publish raw proximity value
+            proximity_msg = Int16()
+            proximity_msg.data = proximity
+            self.proximity_pub.publish(proximity_msg)
+            
+            # Check for collision - require two consecutive readings above threshold
+            collision_detected = proximity > self.proximity_threshold and self.prev_proximity > self.proximity_threshold
+            collision_msg = Bool()
+            collision_msg.data = collision_detected
+            self.collision_pub.publish(collision_msg)
+            
+            if collision_detected:
+                self.get_logger().warn(f"Head Collision warning! Proximity: {proximity}")
+            
+            # Save current proximity for next comparison
+            self.prev_proximity = proximity
+            
+            # Check if there are any gestures in the queue
+            while not self.gesture_queue.empty():
+                gesture = self.gesture_queue.get_nowait()
+                self.get_logger().info(f"Gesture detected: {gesture}")
+                
+                # Publish gesture
+                gesture_msg = String()
+                gesture_msg.data = gesture
+                self.gesture_pub.publish(gesture_msg)
+                
+        except Exception as e:
+            self.get_logger().error(f"Proximity callback error: {e}")
+
+    def distance_callback(self):
+        """Timer callback for VL53L4CD distance readings"""
+        try:
+            left_ready = False
+            right_ready = False
+            
+            # Check if sensors have data ready
+            if self.vl53_left.data_ready:
+                left_ready = True
+                self.vl53_left.clear_interrupt()
+                
+            if self.vl53_right.data_ready:
+                right_ready = True
+                self.vl53_right.clear_interrupt()
+                
+            # Process left sensor data if ready
+            if left_ready:
+                left_distance = self.vl53_left.distance
+                
+                # Ignore readings below 1cm (treat as invalid)
+                if left_distance < 1.0:
+                    self.get_logger().debug(f"Ignoring invalid left distance reading: {left_distance:.1f} cm")
+                    return
+                
+                # Publish raw distance value
+                left_msg = Float32()
+                left_msg.data = left_distance
+                self.left_distance_pub.publish(left_msg)
+                
+                # Check for collision (two consecutive readings below threshold)
+                if left_distance < self.side_distance_threshold and self.prev_left_distance < self.side_distance_threshold:
+                    collision_msg = Bool()
+                    collision_msg.data = True
+                    self.left_collision_pub.publish(collision_msg)
+                    self.get_logger().warn(f"Left collision warning! Distance: {left_distance:.1f} cm")
+                else:
+                    # Ensure we publish False when not in collision state
+                    collision_msg = Bool()
+                    collision_msg.data = False
+                    self.left_collision_pub.publish(collision_msg)
+                    
+                # Save current reading for next comparison
+                self.prev_left_distance = left_distance
+                
+            # Process right sensor data if ready
+            if right_ready:
+                right_distance = self.vl53_right.distance
+                
+                # Ignore readings below 1cm (treat as invalid)
+                if right_distance < 1.0:
+                    self.get_logger().debug(f"Ignoring invalid right distance reading: {right_distance:.1f} cm")
+                    return
+                
+                # Publish raw distance value
+                right_msg = Float32()
+                right_msg.data = right_distance
+                self.right_distance_pub.publish(right_msg)
+                
+                # Check for collision (two consecutive readings below threshold)
+                if right_distance < self.side_distance_threshold and self.prev_right_distance < self.side_distance_threshold:
+                    collision_msg = Bool()
+                    collision_msg.data = True
+                    self.right_collision_pub.publish(collision_msg)
+                    self.get_logger().warn(f"Right collision warning! Distance: {right_distance:.1f} cm")
+                else:
+                    # Ensure we publish False when not in collision state
+                    collision_msg = Bool()
+                    collision_msg.data = False
+                    self.right_collision_pub.publish(collision_msg)
+                    
+                # Save current reading for next comparison
+                self.prev_right_distance = right_distance
+                
+        except Exception as e:
+            self.get_logger().error(f"Distance callback error: {e}")
+
+def main(args=None):
+    rclpy.init(args=args)
+    node = CollisionNode()
+    rclpy.spin(node)
+    node.destroy_node()
+    rclpy.shutdown()
+
+if __name__ == '__main__':
+    main()

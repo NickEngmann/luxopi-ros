@@ -8,9 +8,9 @@ from launch_ros.actions import Node
 def generate_launch_description():
     # Launch arguments
     test_mode = LaunchConfiguration('test_mode')
-    enable_collision = LaunchConfiguration('enable_collision')
+    enable_depth_collision = LaunchConfiguration('enable_depth_collision')
     safety_distance = LaunchConfiguration('safety_distance')
-    enable_apds9960 = LaunchConfiguration('enable_apds9960')
+    sense_collision = LaunchConfiguration('sense_collision')
     
     # Declare launch arguments
     declare_test_mode = DeclareLaunchArgument(
@@ -19,8 +19,8 @@ def generate_launch_description():
         description='Test mode: "position" for position_test or "animation" for animation_command'
     )
     
-    declare_enable_collision = DeclareLaunchArgument(
-        'enable_collision',
+    declare_enable_depth_collision = DeclareLaunchArgument(
+        'enable_depth_collision',
         default_value='False',
         description='Enable collision detection'
     )
@@ -31,8 +31,8 @@ def generate_launch_description():
         description='Safety distance in meters'
     )
     
-    declare_enable_apds9960 = DeclareLaunchArgument(
-        'enable_apds9960',
+    declare_sense_collision = DeclareLaunchArgument(
+        'sense_collision',
         default_value='True',
         description='Enable APDS9960 proximity and gesture sensor'
     )
@@ -56,13 +56,13 @@ def generate_launch_description():
     # APDS9960 proximity and gesture sensor node
     apds9960_node = Node(
         package='luxo_behaviors',
-        executable='apds9960_ros_node',  # Remove the .py extension
+        executable='collision_ros_node',  # Remove the .py extension
         name='apds9960_node',
         output='screen',
         parameters=[
             {'proximity_threshold': 5}
         ],
-        condition=IfCondition(enable_apds9960)
+        condition=IfCondition(sense_collision)
     )
     
     # Position test node - basic movement patterns
@@ -103,20 +103,20 @@ def generate_launch_description():
             {'qos_reliability': 0},  # 0=BEST_EFFORT, 1=RELIABLE
             {'qos_durability': 0},   # 0=VOLATILE, 1=TRANSIENT_LOCAL
         ],
-        condition=IfCondition(enable_collision)
+        condition=IfCondition(enable_depth_collision)
     )
     
     # Create and return launch description
     return LaunchDescription([
         # Launch arguments
         declare_test_mode,
-        declare_enable_collision,
+        declare_enable_depth_collision,
         declare_safety_distance,
-        declare_enable_apds9960,
+        declare_sense_collision,
         
         # Launch info
         LogInfo(msg=["Starting hardware system with test_mode=", test_mode, 
-                    ", collision=", enable_collision, ", apds9960=", enable_apds9960]),
+                    ", collision=", enable_depth_collision, ", apds9960=", sense_collision]),
         
         # Nodes
         hardware_interface_node,
