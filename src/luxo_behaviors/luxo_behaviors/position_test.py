@@ -23,13 +23,15 @@ class PositionTestNode(Node):
         # Based on the RoArm's range limits from the API documentation
         self.test_positions = [
             [0.0, 0.0, 0.0, 0.0, 3.14],              # Home position with closed gripper
-            [0.2, 0.2, 0.2, 0.2, 3.14],              # Small movement of all joints
-            [0.5, 0.0, 0.0, 0.0, 3.14],              # Just base rotation
-            [0.0, 0.5, 0.0, 0.0, 3.14],              # Just shoulder movement
-            [0.0, 0.0, 0.5, 0.0, 3.14],              # Just elbow movement
-            [0.0, 0.0, 0.0, 0.5, 3.14],              # Just wrist movement
+            [0.0, -2.0, 1.0, 0.0, 3.14],             # Sitting position 1 - arm folded back
+            [0.0, -2.0, 2.0, 0.0, 3.14],             # Sitting position 2 - more extreme fold
+            [0.0, -2.0, 2.0, 2.0, 3.14],             # Sitting position 3 - compact fold
+            [0.5, 0.0, 0.0, 0.0, 3.14],              # default with base rotation
+            [0.0, 0.5, 0.0, 0.0, 3.14],              # default with shoulder movement
+            [0.0, 0.0, 0.5, 0.0, 3.14],              # default with elbow movement
+            [0.0, 0.0, 0.0, 0.5, 3.14],              # default with wrist movement
             [0.0, 0.0, 0.0, 0.0, 1.57],              # Open gripper
-            [0.3, 0.3, 0.3, 0.3, 1.57],              # Combined movement with open gripper
+            [0.3, -0.8, 1.3, 0.5, 1.57],             # Sitting position with open gripper
             [0.0, 0.0, 0.0, 0.0, 3.14]               # Back to home with closed gripper
         ]
         
@@ -39,8 +41,8 @@ class PositionTestNode(Node):
         self.current_position = self.test_positions[0].copy()
         
         # Timing parameters
-        self.move_duration = 3.0  # seconds to reach target
-        self.hold_duration = 2.0  # seconds to hold position
+        self.move_duration = 4.0  # seconds to reach target
+        self.hold_duration = 3.0  # seconds to hold position
         self.start_time = self.get_clock().now()
         self.state = "holding"  # "moving" or "holding"
         

@@ -289,43 +289,107 @@ class EnhancedAnimationCommand(Node):
         
         # Keyframe positions with Disney animation principles
         keyframes = [
-            # Anticipation: crouch down before the jump
-            [base_pos, 0.6, 1.1, 0.2, gripper_pos * 0.7],  # Open gripper a bit for excitement
+            # Initial excited wiggle (anticipation)
+            [base_pos+0.2, 0.35, 0.7, 0.3, gripper_pos * 0.8],  # Open gripper for excitement
             
-            # Exaggerate squash - deeper crouch with slight angle
-            [base_pos+0.1, 0.9, 1.7, -0.3, gripper_pos * 0.6],
+            # Opposite wiggle (building energy)
+            [base_pos-0.2, 0.32, 0.68, 0.35, gripper_pos * 0.7], 
             
-            # Quick stretch - jumping up (snappy timing)
-            [base_pos, 0.05, 0.5, 0.9, gripper_pos * 0.5],  # Open gripper more
+            # Final anticipation - crouch down deeply before jump
+            [base_pos, 0.7, 1.3, 0.0, gripper_pos * 0.6],
             
-            # Follow through - slight overshoot at top
-            [base_pos-0.1, 0.0, 0.4, 1.1, gripper_pos * 0.4],
+            # Exaggerate squash - compress even more with slight angle
+            [base_pos+0.1, 1.0, 1.8, -0.3, gripper_pos * 0.5],
             
-            # Secondary action - wiggle at apex
-            [base_pos+0.2, 0.05, 0.45, 1.0, gripper_pos * 0.5],
+            # Begin compact fold (extreme squash)
+            [base_pos, -1.0, 1.0, 0.0, gripper_pos * 0.5],
             
-            # Start coming down with anticipation
-            [base_pos, 0.2, 0.6, 0.8, gripper_pos * 0.6],
+            # Maximum compression - compact fold for powerful jump
+            [base_pos, -2.0, 2.0, 2.0, gripper_pos * 0.45],  
             
-            # Squash on impact - exaggerate landing
-            [base_pos-0.1, 0.8, 1.3, 0.2, gripper_pos * 0.7],
+            # Explosive release - extremely quick stretch upward
+            [base_pos, 0.0, 0.3, 1.0, gripper_pos * 0.4],
             
-            # Follow through - bounce up with overlapping action
-            [base_pos+0.15, 0.3, 0.8, 0.6, gripper_pos * 0.8],
+            # Maximum extension at apex (extreme stretch)
+            [base_pos, -0.3, 0.1, 1.4, gripper_pos * 0.3],  # Wide open gripper
             
-            # Secondary bounce with diminishing energy
-            [base_pos-0.05, 0.5, 1.0, 0.4, gripper_pos * 0.9],
+            # Follow through - dramatic overshoot at top
+            [base_pos-0.2, -0.4, 0.0, 1.6, gripper_pos * 0.25],
             
-            # Settle with continued motion - slow in
-            [base_pos, 0.3, 0.7, 0.5, gripper_pos]
+            # Secondary action - excited wiggle at apex
+            [base_pos+0.3, -0.35, 0.05, 1.5, gripper_pos * 0.3],
+            
+            # Second wiggle (overlapping action)
+            [base_pos-0.25, -0.35, 0.05, 1.5, gripper_pos * 0.35],
+            
+            # Start descent with anticipation
+            [base_pos, -0.1, 0.3, 1.2, gripper_pos * 0.4],
+            
+            # Continue descent with arcing motion
+            [base_pos+0.2, 0.2, 0.6, 0.8, gripper_pos * 0.5],
+            
+            # Dramatic squash on impact - exaggerate landing
+            [base_pos+0.1, 1.1, 1.7, 0.0, gripper_pos * 0.6],
+            
+            # Compression at landing - absorb energy
+            [base_pos, 1.2, 1.8, -0.2, gripper_pos * 0.65],
+            
+            # Secondary bounce preparation - small anticipation
+            [base_pos-0.1, 0.8, 1.5, 0.1, gripper_pos * 0.7],
+            
+            # Secondary smaller bounce - reduced height
+            [base_pos-0.05, 0.2, 0.6, 0.8, gripper_pos * 0.75],
+            
+            # Small apex on second bounce
+            [base_pos+0.1, 0.15, 0.5, 0.9, gripper_pos * 0.7],
+            
+            # Second landing - less dramatic
+            [base_pos+0.15, 0.6, 1.2, 0.3, gripper_pos * 0.8],
+            
+            # Final tiny bounce preparation
+            [base_pos, 0.5, 1.0, 0.4, gripper_pos * 0.85],
+            
+            # Final tiny hop
+            [base_pos-0.05, 0.3, 0.8, 0.6, gripper_pos * 0.9],
+            
+            # Settle with continued motion - follow through
+            [base_pos+0.05, 0.35, 0.75, 0.5, gripper_pos * 0.95],
+            
+            # Final satisfied position - slight anticipation for next action
+            [base_pos, 0.3, 0.7, 0.5, gripper_pos * 0.9]
         ]
         
-        # Varied durations for more dynamic movement - quick up, slower down
-        durations = [0.4, 0.3, 0.15, 0.1, 0.1, 0.2, 0.12, 0.25, 0.2, 0.4]
+        # Varied durations for more dynamic movement
+        # Extremely quick for explosive moments, longer for anticipation and recovery
+        durations = [
+            0.2,  # Initial wiggle
+            0.2,  # Opposite wiggle
+            0.3,  # Crouch down
+            0.25, # Deeper crouch
+            0.2,  # Begin compact fold
+            0.3,  # Maximum compression
+            0.1,  # Explosive release (extremely quick!)
+            0.08, # Maximum extension
+            0.08, # Overshoot at top
+            0.1,  # Excited wiggle
+            0.1,  # Second wiggle
+            0.15, # Start descent
+            0.15, # Continue descent
+            0.1,  # Impact landing
+            0.15, # Compression
+            0.2,  # Secondary bounce preparation
+            0.15, # Secondary bounce up
+            0.1,  # Small apex
+            0.15, # Second landing
+            0.12, # Final tiny bounce prep
+            0.1,  # Final tiny hop
+            0.2,  # Settling
+            0.3   # Final position
+        ]
         
         # Start the animation
         self.start_animation(keyframes, durations)
-        self.get_logger().info('Executing enhanced excited hop animation')
+        self.get_logger().info('Executing enhanced dynamic excited hop animation')
 
     def sad_droop(self):
         """Make the arm droop down sadly with Disney principles."""
@@ -335,10 +399,10 @@ class EnhancedAnimationCommand(Node):
         
         # Keyframe positions with Disney animation principles
         keyframes = [
-            # Anticipation - slight upward movement
+            # Anticipation - slight upward movement showing initial energy
             [base_pos, 0.15, 0.5, 0.2, gripper_pos],
             
-            # Staging - clear pose showing emotion beginning
+            # Staging - brief moment of realization 
             [base_pos-0.05, 0.25, 0.65, 0.0, gripper_pos],
             
             # Slow in - start of the droop movement
@@ -350,37 +414,75 @@ class EnhancedAnimationCommand(Node):
             # Attempt to look up (showing character resistance)
             [base_pos-0.1, 0.35, 0.75, -0.2, gripper_pos * 1.1],
             
-            # Deeper droop - giving up (exaggeration)
+            # Begin folding - giving up (exaggeration and emotional staging)
             [base_pos-0.2, 0.6, 1.1, -0.7, gripper_pos * 1.2],  # Even tighter grip
             
-            # Squash - complete slump (solid drawing)
-            [base_pos-0.25, 0.9, 1.4, -1.0, gripper_pos * 1.3],
+            # Heavy droop - more dramatic folding
+            [base_pos-0.25, 0.9, 1.6, -0.9, gripper_pos * 1.25],
             
-            # Small movement - sigh (follow through)
-            [base_pos-0.2, 0.85, 1.35, -0.95, gripper_pos * 1.25],
+            # Full slump - extreme folding position (staging the emotion)
+            [base_pos-0.3, -1.0, 1.5, -0.8, gripper_pos * 1.3],
+            
+            # Even more compression - collapsing with weight of sadness
+            [base_pos-0.35, -1.5, 1.8, 0.0, gripper_pos * 1.35],
+            
+            # Maximum sad position - full compact fold (extreme squash)
+            [base_pos-0.4, -2.0, 2.0, 1.0, gripper_pos * 1.4],
+            
+            # Small movement - deep sigh (follow through)
+            [base_pos-0.35, -1.9, 1.9, 1.1, gripper_pos * 1.35],
             
             # Another small movement (appeal - showing emotion)
-            [base_pos-0.25, 0.8, 1.3, -1.05, gripper_pos * 1.3],
+            [base_pos-0.4, -2.0, 2.0, 1.0, gripper_pos * 1.4],
             
-            # Very slight movement (secondary action)
-            [base_pos-0.2, 0.75, 1.25, -1.0, gripper_pos * 1.25],
+            # Very slight movement (secondary action - slight trembling)
+            [base_pos-0.38, -1.95, 1.95, 0.95, gripper_pos * 1.38],
             
-            # Long pause in sad position (timing)
-            [base_pos-0.15, 0.7, 1.2, -0.9, gripper_pos * 1.2],
+            # Long pause in sad position (timing - dwelling in emotion)
+            [base_pos-0.4, -2.0, 2.0, 1.0, gripper_pos * 1.4],
             
-            # Very slow recovery starts (slow out)
-            [base_pos-0.1, 0.6, 1.0, -0.7, gripper_pos * 1.15],
+            # Very slow recovery starts (slow out - reluctant to move)
+            [base_pos-0.35, -1.5, 1.7, 0.5, gripper_pos * 1.3],
             
-            # Final return to neutral with lingering effect
+            # Continue slow recovery - still low energy
+            [base_pos-0.3, -1.0, 1.5, 0.0, gripper_pos * 1.25],
+            
+            # Still drooping but less extreme
+            [base_pos-0.2, -0.5, 1.2, -0.5, gripper_pos * 1.2],
+            
+            # Final return to neutral with lingering effect (emotional follow-through)
+            [base_pos-0.1, 0.2, 0.9, -0.5, gripper_pos * 1.15],
+            
+            # Settling into resigned position
             [base_pos, 0.4, 0.8, -0.3, gripper_pos]
         ]
         
-        # Slower, heavier durations for sadness
-        durations = [0.4, 0.5, 0.6, 0.3, 0.7, 0.8, 1.0, 0.4, 0.5, 0.7, 1.5, 1.2, 1.0]
+        # Slower, heavier durations for sadness - long pauses and slow movements
+        durations = [
+            0.4,  # Initial moment
+            0.5,  # Realization
+            0.6,  # Start drooping
+            0.3,  # Hesitation
+            0.7,  # Resistance attempt
+            0.8,  # Giving up 
+            0.9,  # Heavy droop
+            1.0,  # Full slump
+            1.0,  # More compression
+            1.2,  # Maximum sad position
+            0.6,  # Deep sigh
+            0.5,  # Small movement
+            0.7,  # Trembling
+            2.0,  # Long emotional pause
+            1.5,  # Very slow recovery starts
+            1.3,  # Continue recovery
+            1.2,  # Still drooping
+            1.0,  # Final return movement
+            1.0   # Settling
+        ]
         
         # Start the animation
         self.start_animation(keyframes, durations)
-        self.get_logger().info('Executing enhanced sad droop animation')
+        self.get_logger().info('Executing enhanced emotional sad droop animation')
 
     def light_sweep(self):
         """Make the arm sweep like searching with Disney principles."""
@@ -468,7 +570,7 @@ class EnhancedAnimationCommand(Node):
         
         # Keyframe positions with Disney animation principles
         keyframes = [
-            # Anticipation - slight wiggle in place
+            # Initial pose - slight anticipation wiggle
             [base_pos, 0.35, 0.8, 0.4, gripper_pos * 0.9],  # Slightly open gripper
             
             # More anticipation - opposite wiggle (build energy)
@@ -477,55 +579,98 @@ class EnhancedAnimationCommand(Node):
             # Even more anticipation - swing other way
             [base_pos-0.25, 0.3, 0.75, 0.5, gripper_pos * 0.8],
             
-            # Squash - deep crouch (exaggeration)
-            [base_pos, 0.7, 1.4, 0.3, gripper_pos * 0.75],
+            # Deeper anticipation - start folding back (extreme squash)
+            [base_pos, -1.0, 1.0, 0.0, gripper_pos * 0.7],
             
-            # Stretch - big bounce up (snappy timing)
-            [base_pos, 0.05, 0.4, 0.9, gripper_pos * 0.5],  # Open gripper more
+            # Maximum compression - compact fold (extreme squash)
+            [base_pos, -2.0, 2.0, 2.0, gripper_pos * 0.6],  # Using your sitting position 3
+            
+            # Hold compact state briefly (timing - building anticipation)
+            [base_pos, -2.0, 2.0, 1.8, gripper_pos * 0.55],
+            
+            # Explosive release - big bounce up (extreme stretch)
+            [base_pos, 0.0, 0.2, 1.2, gripper_pos * 0.4],  # Open gripper more
+            
+            # Maximum extension at apex (exaggeration)
+            [base_pos, -0.2, 0.1, 1.5, gripper_pos * 0.35],
             
             # Follow through - slight overshoot at apex
-            [base_pos+0.1, 0.0, 0.35, 1.0, gripper_pos * 0.45],
+            [base_pos+0.2, -0.1, 0.1, 1.6, gripper_pos * 0.3],
             
-            # Secondary action - wiggle at apex
-            [base_pos-0.1, 0.0, 0.35, 1.0, gripper_pos * 0.4],
+            # Secondary action - joyful wiggle at apex
+            [base_pos-0.2, -0.1, 0.1, 1.5, gripper_pos * 0.3],
             
-            # Arcs - begin to fall in curved motion
-            [base_pos+0.05, 0.15, 0.5, 0.8, gripper_pos * 0.45],
+            # Begin to fall in curved motion (arcs)
+            [base_pos+0.1, 0.2, 0.4, 0.9, gripper_pos * 0.4],
             
-            # Squash - land with impact (exaggeration)
-            [base_pos+0.15, 0.65, 1.2, 0.25, gripper_pos * 0.6],
+            # Squash - land with dramatic impact
+            [base_pos+0.2, 0.8, 1.5, 0.1, gripper_pos * 0.5],
             
-            # Follow through - slight compression after landing
-            [base_pos+0.2, 0.7, 1.25, 0.2, gripper_pos * 0.65],
+            # Follow through - compression after landing
+            [base_pos+0.3, 0.9, 1.6, 0.0, gripper_pos * 0.55],
             
-            # Stretch - small bounce 1 (diminishing energy)
-            [base_pos+0.3, 0.25, 0.65, 0.6, gripper_pos * 0.7],
+            # Prepare for second bounce - fold back again
+            [base_pos+0.2, -1.0, 1.0, 0.5, gripper_pos * 0.6],
             
-            # Squash - land and crouch right
-            [base_pos+0.4, 0.6, 1.15, 0.3, gripper_pos * 0.75],
+            # Second compact fold - not as extreme
+            [base_pos+0.1, -1.8, 1.8, 1.5, gripper_pos * 0.65],
             
-            # Stretch - small bounce 2 with rotation (arcs)
-            [base_pos-0.3, 0.2, 0.6, 0.65, gripper_pos * 0.8],
+            # Second bounce - smaller height (diminishing energy)
+            [base_pos-0.3, 0.1, 0.4, 0.9, gripper_pos * 0.7],
             
-            # Squash - land and crouch left
-            [base_pos-0.4, 0.55, 1.1, 0.25, gripper_pos * 0.85],
+            # Secondary action at second apex
+            [base_pos-0.4, 0.05, 0.35, 1.0, gripper_pos * 0.65],
             
-            # Stretch - final small hop to center
-            [base_pos, 0.15, 0.55, 0.75, gripper_pos * 0.9],
+            # Second landing with less impact
+            [base_pos-0.5, 0.7, 1.3, 0.2, gripper_pos * 0.75],
+            
+            # Mini-fold for final bounce
+            [base_pos-0.3, -0.5, 1.0, 1.0, gripper_pos * 0.8],
+            
+            # Final small hop toward center
+            [base_pos, 0.15, 0.5, 0.8, gripper_pos * 0.85],
             
             # Follow through - slight overshoot at landing
-            [base_pos+0.05, 0.35, 0.75, 0.45, gripper_pos * 0.95],
+            [base_pos+0.05, 0.4, 0.85, 0.45, gripper_pos * 0.9],
             
             # Settle with continued motion - slow in
-            [base_pos, 0.3, 0.7, 0.5, gripper_pos]
+            [base_pos, 0.3, 0.7, 0.5, gripper_pos * 0.95],
+            
+            # Final satisfied position
+            [base_pos, 0.35, 0.75, 0.4, gripper_pos]
         ]
         
-        # Energetic timing with snappy movements and pauses for emphasis
-        durations = [0.3, 0.15, 0.15, 0.4, 0.15, 0.1, 0.1, 0.2, 0.1, 0.1, 0.25, 0.15, 0.25, 0.15, 0.25, 0.15, 0.4]
+        # Energetic timing with dynamic variations
+        # Quick compression, explosive stretch, slower recovery
+        durations = [
+            0.3,  # Initial wiggle
+            0.15, # Opposite wiggle
+            0.15, # Another wiggle
+            0.3,  # Start folding
+            0.25, # Complete fold
+            0.2,  # Hold fold (anticipation)
+            0.1,  # Explosive release (very quick!)
+            0.1,  # Maximum extension
+            0.08, # Overshoot
+            0.08, # Wiggle at apex
+            0.25, # Begin falling
+            0.1,  # Impact land
+            0.15, # Compression
+            0.2,  # Second fold start
+            0.2,  # Second compact
+            0.15, # Second bounce
+            0.12, # Second apex
+            0.15, # Second land
+            0.2,  # Mini-fold
+            0.15, # Final hop
+            0.15, # Overshoot
+            0.3,  # Settle
+            0.4   # Final position
+        ]
         
         # Start the animation
         self.start_animation(keyframes, durations)
-        self.get_logger().info('Executing enhanced playful bounce animation')
+        self.get_logger().info('Executing enhanced dynamic playful bounce animation')
 
   
     def startled_jump(self):
@@ -536,55 +681,90 @@ class EnhancedAnimationCommand(Node):
         
         # Keyframe positions with Disney principles
         keyframes = [
-            # Calm starting position
+            # Calm, unsuspecting starting position
             [base_pos, 0.3, 0.7, 0.0, gripper_pos],
             
-            # Freeze momentarily (anticipation) - actually just slightly tense up
-            [base_pos, 0.32, 0.72, -0.05, gripper_pos * 1.1],  # Close gripper tighter
+            # Tiny freeze with subtle tension (anticipation)
+            [base_pos, 0.32, 0.72, -0.05, gripper_pos * 1.1],  # Tighten gripper
             
-            # Extreme surprise reaction (exaggeration)
-            [base_pos-0.4, 0.05, 0.3, 1.2, gripper_pos * 0.5],  # Open gripper in shock
+            # Ultra-quick compression (extreme squash before jump)
+            [base_pos, -1.0, 1.0, 0.0, gripper_pos * 1.15],  # Even tighter grip in panic
             
-            # Hold stretched position briefly (timing)
-            [base_pos-0.45, 0.0, 0.25, 1.3, gripper_pos * 0.45],
+            # Explosive panic reaction (extreme stretch, exaggeration)
+            [base_pos-0.4, -0.3, 0.1, 1.6, gripper_pos * 0.4],  # Gripper flies open in shock
             
-            # Follow through - slight overshoot backward
-            [base_pos-0.55, 0.1, 0.4, 1.1, gripper_pos * 0.5],
+            # Maximum extension with overshoot (follow-through)
+            [base_pos-0.6, -0.4, 0.0, 1.8, gripper_pos * 0.3],  # Maximum shock expression
             
-            # Secondary action - slight shake
-            [base_pos-0.5, 0.15, 0.45, 1.0, gripper_pos * 0.55],
+            # Secondary action - violent shake at apex
+            [base_pos-0.5, -0.35, 0.05, 1.7, gripper_pos * 0.35],
             
-            # Cautious position, angled away (staging)
-            [base_pos-0.45, 0.5, 1.0, 0.7, gripper_pos * 0.6],
+            # Quick opposing shake (overlapping action)
+            [base_pos-0.7, -0.35, 0.05, 1.7, gripper_pos * 0.4],
+            
+            # Initial settling but still alert (slow out)
+            [base_pos-0.55, -0.15, 0.3, 1.3, gripper_pos * 0.45],
+            
+            # Begin cautious stance (staging)
+            [base_pos-0.45, 0.5, 1.0, 0.7, gripper_pos * 0.5],
+            
+            # Nervous bounce back (secondary action)
+            [base_pos-0.6, 0.4, 0.9, 0.8, gripper_pos * 0.55],
             
             # Hesitant peek forward (appeal - showing character)
-            [base_pos-0.3, 0.45, 0.95, 0.5, gripper_pos * 0.65],
+            [base_pos-0.3, 0.45, 0.95, 0.5, gripper_pos * 0.6],
             
-            # Small nervous movement back (secondary action)
-            [base_pos-0.35, 0.5, 1.0, 0.6, gripper_pos * 0.7],
+            # Quick startled recoil (timing)
+            [base_pos-0.5, 0.5, 1.0, 0.7, gripper_pos * 0.55],
             
-            # Another hesitant peek (overlapping action)
-            [base_pos-0.25, 0.4, 0.9, 0.4, gripper_pos * 0.75],
+            # Another hesitant peek, braver this time (overlapping action)
+            [base_pos-0.2, 0.4, 0.9, 0.4, gripper_pos * 0.65],
             
-            # Quick nervous glance around (timing)
-            [base_pos+0.1, 0.35, 0.85, 0.5, gripper_pos * 0.8],
+            # Quick nervous glance right (timing, exaggeration)
+            [base_pos+0.3, 0.35, 0.85, 0.5, gripper_pos * 0.6],
             
-            # Back to cautious position (arc motion)
-            [base_pos-0.15, 0.4, 0.9, 0.45, gripper_pos * 0.85],
+            # Rapid glance left (arcs, secondary action)
+            [base_pos-0.4, 0.35, 0.85, 0.5, gripper_pos * 0.65],
             
-            # Slightly more confident lean forward (slow out)
-            [base_pos-0.05, 0.35, 0.8, 0.35, gripper_pos * 0.9],
+            # Glance back right, less extreme (diminishing energy)
+            [base_pos+0.2, 0.35, 0.85, 0.5, gripper_pos * 0.7],
             
-            # Final return to neutral but slightly alert (solid drawing)
-            [base_pos, 0.3, 0.7, 0.25, gripper_pos * 0.95]
+            # Back to cautious center position (arc motion)
+            [base_pos-0.1, 0.4, 0.9, 0.45, gripper_pos * 0.75],
+            
+            # Beginning to relax but still alert (slow in)
+            [base_pos-0.05, 0.35, 0.8, 0.35, gripper_pos * 0.8],
+            
+            # Calming down but with lingering vigilance
+            [base_pos, 0.3, 0.7, 0.25, gripper_pos * 0.9]
         ]
         
-        # Varied durations for snappy startled movement followed by cautious recovery
-        durations = [0.3, 0.2, 0.15, 0.2, 0.2, 0.15, 0.5, 0.6, 0.4, 0.6, 0.3, 0.5, 0.7, 0.6]
+        # Varied durations for dynamic startled movement
+        durations = [
+            0.3,  # Calm starting position
+            0.2,  # Subtle tension
+            0.1,  # Ultra-quick compression (very fast!)
+            0.08, # Explosive reaction (extremely fast!)
+            0.1,  # Maximum extension
+            0.08, # Shake at apex
+            0.08, # Opposing shake
+            0.15, # Initial settling
+            0.2,  # Cautious stance
+            0.15, # Nervous bounce
+            0.25, # Hesitant peek
+            0.15, # Startled recoil
+            0.3,  # Another peek
+            0.15, # Nervous glance right
+            0.15, # Rapid glance left
+            0.2,  # Less extreme glance
+            0.25, # Back to center
+            0.4,  # Beginning to relax
+            0.5   # Final vigilant pose
+        ]
         
         # Start the animation
         self.start_animation(keyframes, durations)
-        self.get_logger().info('Executing enhanced startled jump animation')
+        self.get_logger().info('Executing enhanced dynamic startled jump animation')
 
     def grab_release(self):
         """Make the arm grab and release with the gripper using Disney principles."""
@@ -678,46 +858,83 @@ class EnhancedAnimationCommand(Node):
             # Initial pose - upright, alert
             [base_pos, 0.3, 0.7, 0.3, gripper_pos * 0.9],  # Slightly open gripper
             
-            # Tilt "head" slightly (staging, establishing character)
-            [base_pos+0.1, 0.25, 0.65, 0.5, gripper_pos * 0.85],
+            # Anticipation - slight pause, "processing" the question
+            [base_pos+0.05, 0.28, 0.68, 0.35, gripper_pos * 0.85],
             
-            # Secondary action - slight rotation
-            [base_pos+0.15, 0.25, 0.65, 0.55, gripper_pos * 0.8],
+            # Tilt "head" slightly (staging, establishing character)
+            [base_pos+0.1, 0.25, 0.65, 0.5, gripper_pos * 0.8],
+            
+            # Secondary action - slight rotation showing contemplation
+            [base_pos+0.2, 0.25, 0.65, 0.55, gripper_pos * 0.75],
             
             # Main thinking pose - "hand on chin" equivalent
             [base_pos+0.2, 0.35, 0.75, 0.2, gripper_pos * 0.7],
             
-            # Slight downward tilt (staging)
-            [base_pos+0.2, 0.4, 0.8, 0.0, gripper_pos * 0.65],
+            # Deeper thought - fold back partially (using compact position)
+            [base_pos+0.15, -0.5, 0.8, 0.4, gripper_pos * 0.65],
             
-            # Hold in thought (timing)
-            [base_pos+0.2, 0.42, 0.82, -0.05, gripper_pos * 0.65],
+            # Slight downward tilt while folded (staging)
+            [base_pos+0.2, -0.6, 0.9, 0.3, gripper_pos * 0.65],
+            
+            # Hold in deep thought (timing)
+            [base_pos+0.2, -0.7, 1.0, 0.2, gripper_pos * 0.65],
             
             # Small "hmm" movement (appeal)
-            [base_pos+0.25, 0.4, 0.8, 0.0, gripper_pos * 0.6],
+            [base_pos+0.25, -0.65, 0.95, 0.25, gripper_pos * 0.6],
             
-            # Look up slightly (as if having an idea)
-            [base_pos+0.2, 0.3, 0.7, 0.3, gripper_pos * 0.6],
+            # Another contemplative pose - shifting position
+            [base_pos-0.15, -0.5, 0.8, 0.3, gripper_pos * 0.6],
             
-            # "Eureka" movement (exaggeration)
-            [base_pos+0.1, 0.2, 0.6, 0.7, gripper_pos * 0.5],  # Open gripper more
+            # Look up slightly (as if having an idea forming)
+            [base_pos-0.1, -0.3, 0.7, 0.5, gripper_pos * 0.6],
             
-            # Excited response to idea (secondary action)
-            [base_pos, 0.15, 0.55, 0.8, gripper_pos * 0.45],
+            # Unfold more as idea develops (arc motion)
+            [base_pos, 0.1, 0.5, 0.7, gripper_pos * 0.55],
+            
+            # "Eureka" movement - dramatic unfolding (exaggeration)
+            [base_pos+0.1, 0.0, 0.3, 1.1, gripper_pos * 0.5],  # Open gripper more
+            
+            # Excited response to idea - full extension (stretch)
+            [base_pos, -0.2, 0.2, 1.3, gripper_pos * 0.45],
+            
+            # Bouncy movement showing excitement (secondary action)
+            [base_pos+0.2, -0.15, 0.15, 1.4, gripper_pos * 0.4],
             
             # Quick confirmation nod (follow through)
-            [base_pos, 0.25, 0.65, 0.5, gripper_pos * 0.5],
+            [base_pos, 0.1, 0.3, 1.0, gripper_pos * 0.5],
             
-            # Final satisfied position
+            # Satisfied bounce (appeal)
+            [base_pos-0.1, 0.2, 0.5, 0.7, gripper_pos * 0.6],
+            
+            # Final satisfied position with slight lean
             [base_pos, 0.3, 0.7, 0.4, gripper_pos * 0.7]
         ]
         
         # Varied durations for natural thinking pattern with longer pauses
-        durations = [0.5, 0.6, 0.4, 0.7, 0.6, 1.2, 0.5, 0.8, 0.4, 0.3, 0.4, 0.6]
+        durations = [
+            0.5,  # Initial pose
+            0.6,  # Anticipation pause
+            0.4,  # Head tilt
+            0.5,  # Rotation
+            0.7,  # Hand on chin pose
+            0.8,  # Fold back
+            0.5,  # Downward tilt
+            1.2,  # Hold in thought (long pause)
+            0.4,  # "Hmm" movement
+            0.7,  # Shift position
+            0.6,  # Look up
+            0.5,  # Unfold more
+            0.4,  # Eureka moment
+            0.3,  # Excited response
+            0.3,  # Bouncy movement
+            0.4,  # Confirmation nod
+            0.5,  # Satisfied bounce
+            0.6   # Final position
+        ]
         
         # Start the animation
         self.start_animation(keyframes, durations)
-        self.get_logger().info('Executing thinking animation')
+        self.get_logger().info('Executing enhanced thinking animation')
 
     def waving_animation(self):
         """Make the arm wave hello/goodbye with Disney principles."""
@@ -847,54 +1064,108 @@ class EnhancedAnimationCommand(Node):
         base_pos = self.current_positions[0]
         gripper_pos = self.current_positions[4] if len(self.current_positions) > 4 else 3.14
         
-        # Keyframe positions with Disney principles
+        # Keyframe positions with Disney animation principles
         keyframes = [
-            # Starting position - slightly hunched
-            [base_pos, 0.4, 0.9, 0.1, gripper_pos * 1.1],  # Closed gripper
+            # Starting position - compressed, tired looking pose
+            [base_pos, 0.6, 1.2, -0.2, gripper_pos * 1.2],  # Very closed gripper (tension)
             
-            # Initial small stretch up (anticipation)
-            [base_pos, 0.35, 0.85, 0.2, gripper_pos * 1.05],
+            # Initial tiny stretch movement (anticipation)
+            [base_pos+0.1, 0.55, 1.15, -0.1, gripper_pos * 1.15],
             
-            # Slight contraction (more anticipation)
-            [base_pos, 0.45, 0.95, 0.0, gripper_pos * 1.1],
+            # Slight contraction - building tension (more anticipation)
+            [base_pos+0.05, 0.65, 1.25, -0.3, gripper_pos * 1.2],
             
-            # Begin big stretch (stretch principle)
-            [base_pos, 0.25, 0.6, 0.4, gripper_pos * 0.9],  # Start opening gripper
+            # First small stretch attempt - not quite there yet
+            [base_pos, 0.4, 1.0, 0.1, gripper_pos * 1.1],
+            
+            # Bigger contraction - really preparing (extreme anticipation)
+            [base_pos, -0.5, 1.0, 0.0, gripper_pos * 1.2],  # Folded back position
+            
+            # Compact fold for maximum tension (extreme squash)
+            [base_pos, -1.5, 1.8, 1.0, gripper_pos * 1.25],  # Using folded position
+            
+            # Begin big stretch upward (initial stretch)
+            [base_pos, 0.2, 0.5, 0.6, gripper_pos * 0.9],  # Start opening gripper
             
             # Continue stretch upward with tilt (exaggeration)
-            [base_pos+0.2, 0.15, 0.4, 0.7, gripper_pos * 0.7],
+            [base_pos+0.3, 0.0, 0.3, 1.0, gripper_pos * 0.7],
             
-            # Maximum stretch with twist (solid drawing, appeal)
-            [base_pos+0.3, 0.05, 0.3, 1.0, gripper_pos * 0.5],  # Widely open gripper
+            # Maximum stretch with twist right (extreme stretch)
+            [base_pos+0.5, -0.2, 0.2, 1.4, gripper_pos * 0.5],  # Widely open gripper
             
-            # Hold stretch at apex (timing)
-            [base_pos+0.3, 0.05, 0.3, 1.0, gripper_pos * 0.5],
+            # Hold stretch at apex with slight wobble (timing, appeal)
+            [base_pos+0.45, -0.25, 0.15, 1.45, gripper_pos * 0.45],
             
-            # Stretch to other side (secondary action, arcs)
-            [base_pos-0.3, 0.05, 0.3, 1.0, gripper_pos * 0.5],
+            # Stretch to left side with arcing motion (arcs)
+            [base_pos-0.5, -0.2, 0.2, 1.4, gripper_pos * 0.5],  # Maintain stretch
             
-            # Hold other side stretch
-            [base_pos-0.3, 0.05, 0.3, 1.0, gripper_pos * 0.5],
+            # Hold left stretch with slight adjustment (secondary action)
+            [base_pos-0.45, -0.25, 0.15, 1.45, gripper_pos * 0.45],
             
-            # Start relaxing (slow out)
-            [base_pos-0.2, 0.15, 0.4, 0.8, gripper_pos * 0.6],
+            # Second phase - bend down stretch (solid drawing)
+            [base_pos, 0.7, 1.4, -0.5, gripper_pos * 0.6],  # Different direction stretch
             
-            # Continue relaxing (follow through)
-            [base_pos, 0.25, 0.6, 0.5, gripper_pos * 0.7],
+            # Maximum down stretch (exaggeration)
+            [base_pos, 0.9, 1.7, -0.8, gripper_pos * 0.55],
+            
+            # Hold down stretch with slight shake (appeal)
+            [base_pos+0.1, 0.85, 1.65, -0.75, gripper_pos * 0.6],
+            
+            # Start relaxing with a sigh (slow out)
+            [base_pos-0.1, 0.7, 1.5, -0.5, gripper_pos * 0.65],
+            
+            # Twist stretch - rotate base fully (secondary action)
+            [base_pos+0.8, 0.5, 1.2, -0.2, gripper_pos * 0.7],
+            
+            # Counter twist - opposite direction (follow through)
+            [base_pos-0.8, 0.5, 1.2, -0.2, gripper_pos * 0.7],
+            
+            # Final folded stretch position (squash and stretch)
+            [base_pos, -1.0, 1.5, 1.0, gripper_pos * 0.8],  # One more good stretch
+            
+            # Begin final relaxing (follow through)
+            [base_pos, 0.1, 0.6, 0.7, gripper_pos * 0.85],
+            
+            # Continue relaxing with satisfaction (arc motion)
+            [base_pos, 0.2, 0.7, 0.5, gripper_pos * 0.9],
             
             # Small bounce in relaxation (overlapping action)
-            [base_pos, 0.3, 0.7, 0.4, gripper_pos * 0.8],
+            [base_pos, 0.3, 0.75, 0.35, gripper_pos * 0.95],
             
-            # Final settled position with satisfaction
-            [base_pos, 0.35, 0.8, 0.3, gripper_pos * 0.9]
+            # Final settled position with satisfaction and slight wiggle
+            [base_pos+0.1, 0.35, 0.8, 0.3, gripper_pos]
         ]
         
-        # Durations for stretching - slow extend, hold, then relax
-        durations = [0.4, 0.3, 0.5, 0.6, 0.7, 0.8, 1.0, 0.8, 1.0, 0.7, 0.6, 0.4, 0.5]
+        # Varied durations for a more satisfying stretch experience
+        durations = [
+            0.5,  # Tired starting position
+            0.3,  # Initial tiny stretch
+            0.4,  # Building tension
+            0.5,  # First small attempt
+            0.6,  # Bigger contraction
+            0.7,  # Maximum compact tension
+            0.5,  # Begin big stretch
+            0.6,  # Continue stretch
+            0.7,  # Maximum stretch right
+            1.2,  # Hold and savor stretch (long hold)
+            0.8,  # Stretch to left
+            1.0,  # Hold left stretch
+            0.6,  # Bend down stretch
+            0.7,  # Maximum down
+            0.8,  # Hold with shake
+            0.6,  # Start relaxing
+            0.4,  # Twist stretch
+            0.4,  # Counter twist
+            0.8,  # Final folded stretch
+            0.5,  # Begin final relaxing
+            0.6,  # Continue relaxing
+            0.4,  # Bounce in relaxation
+            0.7   # Final settled position
+        ]
         
         # Start the animation
         self.start_animation(keyframes, durations)
-        self.get_logger().info('Executing stretching animation')
+        self.get_logger().info('Executing enhanced satisfying stretch animation')
 
     def nodding_animation(self):
         """Make the arm nod yes with Disney principles."""
