@@ -41,6 +41,12 @@ class CollisionNode(Node):
         self.declare_parameter('side_distance_threshold', 8.0)
         self.side_distance_threshold = self.get_parameter('side_distance_threshold').value
         
+        # Define severity thresholds (in cm)
+        self.declare_parameter('danger_threshold', 5.0)
+        self.declare_parameter('warning_threshold', 15.0)
+        self.danger_threshold = self.get_parameter('danger_threshold').value
+        self.warning_threshold = self.get_parameter('warning_threshold').value
+        
         # Previous distance readings for consecutive detection
         self.prev_left_distance = float('inf')
         self.prev_right_distance = float('inf')
@@ -59,6 +65,12 @@ class CollisionNode(Node):
         self.left_distance_pub = self.create_publisher(Float32, '/left_distance', 10)
         self.right_distance_pub = self.create_publisher(Float32, '/right_distance', 10)
         
+        # Enhanced collision detail publishers
+        self.collision_details_pub = self.create_publisher(String, '/collision_details', 10)
+        self.front_severity_pub = self.create_publisher(String, '/front_collision_severity', 10)
+        self.left_severity_pub = self.create_publisher(String, '/left_collision_severity', 10)
+        self.right_severity_pub = self.create_publisher(String, '/right_collision_severity', 10)
+        
         # Create a queue for thread communication
         self.gesture_queue = queue.Queue()
         
@@ -75,6 +87,17 @@ class CollisionNode(Node):
         self.get_logger().info('Collision node initialized')
         self.get_logger().info(f'Proximity threshold set to: {self.proximity_threshold}')
         self.get_logger().info(f'Side distance threshold set to: {self.side_distance_threshold} cm')
+        self.get_logger().info(f'Danger threshold set to: {self.danger_threshold} cm')
+        self.get_logger().info(f'Warning threshold set to: {self.warning_threshold} cm')
+
+    def determine_severity(self, distance):
+        """Determine collision severity based on distance"""
+        if distance < self.danger_threshold:
+            return "danger"
+        elif distance < self.warning_threshold:
+            return "warning"
+        else:
+            return "safe"
 
     def gesture_detection(self):
         """Gesture detection function running in a separate thread"""
@@ -113,8 +136,24 @@ class CollisionNode(Node):
             collision_msg.data = collision_detected
             self.collision_pub.publish(collision_msg)
             
+            # Determine severity for front collision
+            # For APDS9960, higher proximity value means closer object
             if collision_detected:
-                self.get_logger().warn(f"Head Collision warning! Proximity: {proximity}")
+                severity = "danger" if proximity > self.proximity_threshold * 2 else "warning"
+                self.get_logger().warn(f"Head Collision warning! Proximity: {proximity}, Severity: {severity}")
+                
+                # Publish detailed collision information
+                severity_msg = String()
+                severity_msg.data = severity
+                self.front_severity_pub.publish(severity_msg)
+                
+                details_msg = String()
+                details_msg.data = f"front:{proximity}:{severity}"
+                self.collision_details_pub.publish(details_msg)
+            else:
+                severity_msg = String()
+                severity_msg.data = "safe"
+                self.front_severity_pub.publish(severity_msg)
             
             # Save current proximity for next comparison
             self.prev_proximity = proximity
@@ -161,18 +200,31 @@ class CollisionNode(Node):
                 left_msg.data = left_distance
                 self.left_distance_pub.publish(left_msg)
                 
+                # Determine severity level
+                severity = self.determine_severity(left_distance)
+                
+                # Publish severity
+                severity_msg = String()
+                severity_msg.data = severity
+                self.left_severity_pub.publish(severity_msg)
+                
                 # Check for collision (two consecutive readings below threshold)
                 if left_distance < self.side_distance_threshold and self.prev_left_distance < self.side_distance_threshold:
                     collision_msg = Bool()
                     collision_msg.data = True
                     self.left_collision_pub.publish(collision_msg)
-                    self.get_logger().warn(f"Left collision warning! Distance: {left_distance:.1f} cm")
+                    self.get_logger().warn(f"Left collision warning! Distance: {left_distance:.1f} cm, Severity: {severity}")
+                    
+                    # Publish detailed collision information
+                    details_msg = String()
+                    details_msg.data = f"left:{left_distance:.1f}:{severity}"
+                    self.collision_details_pub.publish(details_msg)
                 else:
                     # Ensure we publish False when not in collision state
                     collision_msg = Bool()
                     collision_msg.data = False
                     self.left_collision_pub.publish(collision_msg)
-                    self.get_logger().debug(f"Left collision debug --- Distance: {left_distance:.1f} cm")
+                    self.get_logger().debug(f"Left collision debug --- Distance: {left_distance:.1f} cm, Severity: {severity}")
                     
                 # Save current reading for next comparison
                 self.prev_left_distance = left_distance
@@ -191,18 +243,31 @@ class CollisionNode(Node):
                 right_msg.data = right_distance
                 self.right_distance_pub.publish(right_msg)
                 
+                # Determine severity level
+                severity = self.determine_severity(right_distance)
+                
+                # Publish severity
+                severity_msg = String()
+                severity_msg.data = severity
+                self.right_severity_pub.publish(severity_msg)
+                
                 # Check for collision (two consecutive readings below threshold)
                 if right_distance < self.side_distance_threshold and self.prev_right_distance < self.side_distance_threshold:
                     collision_msg = Bool()
                     collision_msg.data = True
                     self.right_collision_pub.publish(collision_msg)
-                    self.get_logger().warn(f"Right collision warning! Distance: {right_distance:.1f} cm")
+                    self.get_logger().warn(f"Right collision warning! Distance: {right_distance:.1f} cm, Severity: {severity}")
+                    
+                    # Publish detailed collision information
+                    details_msg = String()
+                    details_msg.data = f"right:{right_distance:.1f}:{severity}"
+                    self.collision_details_pub.publish(details_msg)
                 else:
                     # Ensure we publish False when not in collision state
                     collision_msg = Bool()
                     collision_msg.data = False
                     self.right_collision_pub.publish(collision_msg)
-                    self.get_logger().debug(f"Right collision debug --- Distance: {right_distance:.1f} cm")
+                    self.get_logger().debug(f"Right collision debug --- Distance: {right_distance:.1f} cm, Severity: {severity}")
                     
                 # Save current reading for next comparison
                 self.prev_right_distance = right_distance
