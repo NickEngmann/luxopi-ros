@@ -30,11 +30,8 @@ class RoArmHardwareInterface(Node):
         self.declare_parameter('collision_recovery_timeout', 3.0)  # seconds
         
         # Additional parameters for proactive avoidance
-        self.declare_parameter('enable_proactive_avoidance', True)
         self.declare_parameter('proactive_threshold', 15.0)  # cm
-        self.declare_parameter('idle_check_interval', 2.0)  # seconds
         self.declare_parameter('avoidance_playfulness', 0.3)  # 0.0-1.0 random factor
-        self.declare_parameter('max_idle_time', 30.0)  # seconds before returning to home
         self.declare_parameter('side_avoidance_magnitude', 0.5)  # Rotation magnitude for side avoidance
         self.declare_parameter('consecutive_collision_threshold', 3)  # How many repeated collisions trigger stronger response
         self.declare_parameter('escape_threshold', 10)  # How many consecutive collisions trigger escape mode
@@ -45,9 +42,7 @@ class RoArmHardwareInterface(Node):
         # Add parameter for rest position
         self.declare_parameter('enable_rest_position', True)  # Enable/disable the rest position behavior
         self.declare_parameter('base_rest_position', [0.0, -2.0, 2.0, 1.0, 3.14])  # Base rest position
-        self.declare_parameter('rest_variation_range', 0.15)  # Range for position variation
-        self.declare_parameter('idle_timeout', 30.0)  # Time before returning to rest
-        
+        self.declare_parameter('rest_variation_range', 0.15)  # Range for position variation        
         # Make sure to define use_hardware_joint_names parameter
         self.declare_parameter('use_hardware_joint_names', False)
         
@@ -62,11 +57,8 @@ class RoArmHardwareInterface(Node):
         self.max_deceleration = self.get_parameter('max_deceleration').value
         self.collision_recovery_timeout = self.get_parameter('collision_recovery_timeout').value
         
-        self.enable_proactive_avoidance = self.get_parameter('enable_proactive_avoidance').value
         self.proactive_threshold = self.get_parameter('proactive_threshold').value
-        self.idle_check_interval = self.get_parameter('idle_check_interval').value
         self.avoidance_playfulness = self.get_parameter('avoidance_playfulness').value
-        self.max_idle_time = self.get_parameter('max_idle_time').value
         self.side_avoidance_magnitude = self.get_parameter('side_avoidance_magnitude').value
         self.consecutive_collision_threshold = self.get_parameter('consecutive_collision_threshold').value
         self.escape_threshold = self.get_parameter('escape_threshold').value
@@ -78,7 +70,6 @@ class RoArmHardwareInterface(Node):
         self.enable_rest_position = self.get_parameter('enable_rest_position').value
         self.base_rest_position = self.get_parameter('base_rest_position').value
         self.rest_variation_range = self.get_parameter('rest_variation_range').value
-        self.idle_timeout = self.get_parameter('idle_timeout').value
         
         # Make sure to get the parameter value
         self.use_hardware_joint_names = self.get_parameter('use_hardware_joint_names').value
@@ -116,8 +107,6 @@ class RoArmHardwareInterface(Node):
         
         # Idle state tracking
         self.last_movement_time = time.time()
-        self.idle_avoidance_active = False
-        self.safe_position_memory = []  # Remember previously safe positions
         self.last_proactive_check = 0.0
         self.home_position = [0.0, 0.3, 0.7, 0.4, 3.14]  # Default safe home (not used for rest)
         self.is_returning_to_rest = False  # Flag to track when we're returning to rest
@@ -249,16 +238,10 @@ class RoArmHardwareInterface(Node):
             # Add a health check timer to ensure safety_timer is still running
             self.timer_health_check = self.create_timer(5.0, self.safety_timer_watchdog)
             
-            # Add a timer for proactive avoidance when idle
-            self.idle_timer = self.create_timer(self.idle_check_interval, self.idle_safety_check)
             self.get_logger().info("RoArm hardware interface initialized")
             
             if self.enable_collision_avoidance:
                 self.get_logger().info("Collision avoidance enabled")
-                if self.enable_proactive_avoidance:
-                    self.get_logger().info("Proactive avoidance enabled - arm will actively avoid obstacles when idle")
-                else:
-                    self.get_logger().info("Proactive avoidance disabled - arm will only avoid obstacles during movement")
             else:
                 self.get_logger().warn("Collision avoidance disabled - robot will not react to obstacles")
         else:
@@ -277,35 +260,35 @@ class RoArmHardwareInterface(Node):
             elapsed_time = current_time - self.last_watchdog_check_time
             
             # If it's been too long since the last safety check (more than 2s when it should run every 0.1s)
-            if elapsed_time > 2 and self.enable_collision_avoidance:
-                with self.safety_timer_lock:
-                    timer_elapsed = current_time - self.safety_timer_creation_time
-                    call_count = self.safety_timer_call_count
-                    is_active = self.safety_timer_active
-                    last_exception = self.safety_timer_last_exception
+            # if elapsed_time > 2 and self.enable_collision_avoidance:
+            #     with self.safety_timer_lock:
+            #         timer_elapsed = current_time - self.safety_timer_creation_time
+            #         call_count = self.safety_timer_call_count
+            #         is_active = self.safety_timer_active
+            #         last_exception = self.safety_timer_last_exception
                     
-                self.get_logger().warn(f"WATCHDOG: Safety timer appears inactive for {elapsed_time:.2f}s, status: active={is_active}, " +
-                                      f"calls={call_count}, age={timer_elapsed:.1f}s, exception={last_exception}")
+            #     self.get_logger().warn(f"WATCHDOG: Safety timer appears inactive for {elapsed_time:.2f}s, status: active={is_active}, " +
+            #                           f"calls={call_count}, age={timer_elapsed:.1f}s, exception={last_exception}")
                 
-                # Cancel the existing timer if it exists but isn't working
-                try:
-                    if hasattr(self, 'safety_timer'):
-                        self.get_logger().info("Attempting to cancel old safety timer")
-                        self.safety_timer.cancel()
-                except Exception as e:
-                    self.get_logger().error(f"Error cancelling safety timer: {e}")
+            #     # Cancel the existing timer if it exists but isn't working
+            #     try:
+            #         if hasattr(self, 'safety_timer'):
+            #             self.get_logger().info("Attempting to cancel old safety timer")
+            #             self.safety_timer.cancel()
+            #     except Exception as e:
+            #         self.get_logger().error(f"Error cancelling safety timer: {e}")
                 
-                # Create a new timer with a unique identifier
-                self.recreate_safety_timer()
+            #     # Create a new timer with a unique identifier
+            #     self.recreate_safety_timer()
                 
-                # Force an immediate safety check
-                try:
-                    self.safety_monitor_callback()
-                except Exception as e:
-                    self.get_logger().error(f"Error in forced safety check: {e}")
-                    self.safety_timer_last_exception = str(e)
-            else:
-                self.get_logger().debug(f"WATCHDOG: Safety timer health check passed ({elapsed_time:.2f}s)")
+            #     # Force an immediate safety check
+            #     try:
+            #         self.safety_monitor_callback()
+            #     except Exception as e:
+            #         self.get_logger().error(f"Error in forced safety check: {e}")
+            #         self.safety_timer_last_exception = str(e)
+            # else:
+            #     self.get_logger().debug(f"WATCHDOG: Safety timer health check passed ({elapsed_time:.2f}s)")
             
             # Update the watchdog timestamp after the check
             self.last_watchdog_check_time = current_time
@@ -377,10 +360,6 @@ class RoArmHardwareInterface(Node):
                     if self.collision_status['front']['consecutive_count'] % 5 == 0:
                         self.get_logger().warn(f"Persistent front collision! Count: {self.collision_status['front']['consecutive_count']}")
                         
-                    # Force an immediate check for avoidance
-                    if self.enable_proactive_avoidance and not self.is_animating():
-                        self.last_proactive_check = 0.0  # Force immediate check
-                        
                     # Check if we need to trigger escape mode
                     if self.collision_status['front']['consecutive_count'] > self.escape_threshold:
                         self.get_logger().warn(f"Persistent collision detected ({self.collision_status['front']['consecutive_count']}), attempting to escape")
@@ -415,10 +394,6 @@ class RoArmHardwareInterface(Node):
                     if self.collision_status['left']['consecutive_count'] % 5 == 0:
                         self.get_logger().warn(f"Persistent left collision! Count: {self.collision_status['left']['consecutive_count']}")
                         
-                    # Force an immediate check for avoidance
-                    if self.enable_proactive_avoidance and not self.is_animating():
-                        self.last_proactive_check = 0.0  # Force immediate check
-                        
                     # Check if we need to trigger escape mode
                     if self.collision_status['left']['consecutive_count'] > self.escape_threshold:
                         self.get_logger().warn(f"Persistent collision detected ({self.collision_status['left']['consecutive_count']}), attempting to escape")
@@ -452,10 +427,6 @@ class RoArmHardwareInterface(Node):
                     # Log every few counts to avoid excessive logging
                     if self.collision_status['right']['consecutive_count'] % 5 == 0:
                         self.get_logger().warn(f"Persistent right collision! Count: {self.collision_status['right']['consecutive_count']}")
-                        
-                    # Force an immediate check for avoidance
-                    if self.enable_proactive_avoidance and not self.is_animating():
-                        self.last_proactive_check = 0.0  # Force immediate check
                         
                     # Check if we need to trigger escape mode
                     if self.collision_status['right']['consecutive_count'] > self.escape_threshold:
@@ -669,34 +640,6 @@ class RoArmHardwareInterface(Node):
                             self.handle_high_risk_collision(direction, distance)
         except Exception as e:
             self.get_logger().error(f"Error processing collision details: {e}")
-    
-    def handle_high_risk_collision(self, direction, distance):
-        """Handle high-risk collisions by attempting path adjustment"""
-        now = time.time()
-        
-        # Don't retrigger if we've had one very recently (to prevent oscillation)
-        # # But allow more frequent triggers for persistent collisions
-        # if now - self.last_collision_time < 0.3:  # Reduced from 0.5 to 0.3
-        #     # If we have a persistent collision, force the avoidance even if throttled
-        #     with self.collision_lock:
-        #         if self.collision_status[direction]['consecutive_count'] > 3:
-        #             # Ignore throttling for persistent collisions
-        #             pass
-        #         else:
-        #             return
-            
-        self.last_collision_time = now
-        self.get_logger().warn(f"HIGH RISK COLLISION DETECTED! {direction} at {distance:.1f}cm - attempting path adjustment")
-        
-        # Update last movement time
-        self.last_movement_time = now
-        
-        # Try significant path adjustment to avoid collision
-        self.perform_collision_avoidance(direction, distance, emergency=True)
-        
-        # Clear the safe position memory since the environment has changed
-        self.safe_position_memory = []
-        self.get_logger().warn(f"CLEARED SAFE POSITION MEMORY")
     
     def perform_collision_avoidance(self, direction, distance, emergency=False):
         """Perform collision avoidance with more significant adjustments for emergency cases"""
@@ -1034,6 +977,36 @@ class RoArmHardwareInterface(Node):
         if adjustment_msgs:
             self.get_logger().debug(f"Dynamic collision avoidance: {', '.join(adjustment_msgs)}")
             
+            # Check if we're already close to the adjusted position
+            # to avoid sending redundant commands that don't change position
+            if self._at_position(adjusted_targets, 0.1):
+                self.get_logger().info("Already at adjusted position - skipping adjustment")
+                
+                # If we've been at this position for a while and still have collisions,
+                # we need a more dramatic response
+                current_time = time.time()
+                if not hasattr(self, 'last_failed_adjustment_time'):
+                    self.last_failed_adjustment_time = current_time
+                
+                # If we've been stuck for more than 2 seconds, try escape mode
+                if current_time - self.last_failed_adjustment_time > 2.0:
+                    # Find the most persistent collision
+                    if right_status['consecutive_count'] > max(front_status['consecutive_count'], left_status['consecutive_count']):
+                        direction = 'right'
+                    elif left_status['consecutive_count'] > front_status['consecutive_count']:
+                        direction = 'left'
+                    else:
+                        direction = 'front'
+                        
+                    self.get_logger().warn(f"Adjustments ineffective - activating escape mode for {direction}")
+                    self._activate_escape_mode(direction)
+                    self.last_failed_adjustment_time = current_time
+                
+                return
+                
+            # Reset the failed adjustment timer since we're sending a new command
+            self.last_failed_adjustment_time = time.time()
+            
             # Send the adjusted target positions to the arm
             self.send_safe_joint_command(adjusted_targets, "Collision avoidance adjustment")
             self.get_logger().debug(f"ADJUSTMENT SENT: {[round(p, 2) for p in adjusted_targets]}")
@@ -1327,242 +1300,12 @@ class RoArmHardwareInterface(Node):
             
         super().destroy_node()
     
-    def record_safe_position(self):
-        """Record the current position as safe if no collisions are detected"""
-        # Only record if we're not in a collision state
-        with self.collision_lock:
-            if (not self.collision_status['front']['active'] and 
-                not self.collision_status['left']['active'] and 
-                not self.collision_status['right']['active']):
-                
-                # Create a copy of the current joints
-                safe_pos = self.current_joints.copy()
-                
-                # Limit the size of the memory
-                if len(self.safe_position_memory) > 5:
-                    self.safe_position_memory.pop(0)  # Remove oldest
-                    
-                # Add to memory if it's different enough from existing positions
-                if not self.safe_position_memory or self._different_enough(safe_pos, self.safe_position_memory[-1]):
-                    self.safe_position_memory.append(safe_pos)
-                    self.get_logger().debug(f"Recorded new safe position: {[round(p, 2) for p in safe_pos]}")
-    
     def _different_enough(self, pos1, pos2, threshold=0.2):
         """Check if two positions are different enough to be considered distinct"""
         # Calculate Euclidean distance in joint space
         sum_squared = sum((p1 - p2) ** 2 for p1, p2 in zip(pos1, pos2))
         return math.sqrt(sum_squared) > threshold
-        
-    def idle_safety_check(self):
-        """Check for obstacles when the arm is idle and move proactively if needed"""
-        if not self.enable_proactive_avoidance:
-            return
-            
-        current_time = time.time()
-        
-        # Check if escape mode is active
-        if self.escape_mode_active:
-            # Nothing else to do here - the safety monitor callback will handle escape mode
-            return
-            
-        # Update our record of safe positions occasionally
-        if current_time - self.last_movement_time > 1.0:  # If we've been still for 1 second
-            self.record_safe_position()
-        
-        # Check if we've been idle for a while
-        idle_time = current_time - self.last_movement_time
-        
-        # Return to rest position if we've been idle for the timeout period
-        # and we're not already in the process of returning to rest
-        if idle_time > self.idle_timeout and not self.is_returning_to_rest:
-            self.get_logger().info(f"Been idle for {idle_time:.1f}s, returning to rest position")
-            self.go_to_rest_position("Idle timeout rest position")
-            return
-        
-        # Skip the rest if we're already in an avoidance maneuver
-        if self.idle_avoidance_active:
-            return
-            
-        # Make idle collision checks more responsive - check more frequently
-        # Reduced from 1.0 to 0.5 seconds for faster response
-        if current_time - self.last_proactive_check < 0.5:
-            return
-            
-        self.last_proactive_check = current_time
-            
-        # Check for obstacles that need proactive avoidance
-        with self.collision_lock:
-            most_critical_direction = None
-            lowest_distance = float('inf')
-            highest_consecutive_count = 0
-            
-            # Check all directions and choose the most critical one
-            for direction in ['front', 'left', 'right']:
-                status = self.collision_status[direction]
-                
-                # Lower the threshold for idle response - more sensitive when idle
-                # Original was self.proactive_threshold
-                idle_threshold = self.proactive_threshold * 1.2  # 20% more sensitive when idle
-                
-                # Check if this direction has a collision and is within threshold
-                if status['active'] or status['distance'] < idle_threshold:
-                    
-                    # Calculate criticality score based on distance and consecutive count
-                    # Lower distance or higher consecutive count means higher priority
-                    criticality_score = status['consecutive_count'] * 2  # Weight consecutive detections heavily
-                    
-                    if status['severity'] == 'danger':
-                        criticality_score += 10  # Add high priority for danger situations
-                    elif status['severity'] == 'warning':
-                        criticality_score += 5   # Add medium priority for warnings
-                    
-                    # Convert distance to a comparable score (closer = higher score)
-                    distance_factor = 1.0 - (status['distance'] / idle_threshold)
-                    criticality_score += distance_factor * 5
-                    
-                    # If this is more critical than previous, select it
-                    if (most_critical_direction is None or 
-                        criticality_score > highest_consecutive_count or
-                        (criticality_score == highest_consecutive_count and status['distance'] < lowest_distance)):
-                        
-                        most_critical_direction = direction
-                        lowest_distance = status['distance']
-                        highest_consecutive_count = criticality_score
-            
-            # If we found a critical direction, respond to it
-            if most_critical_direction:
-                self._begin_proactive_avoidance(
-                    most_critical_direction, 
-                    self.collision_status[most_critical_direction]['distance'],
-                    self.collision_status[most_critical_direction]['consecutive_count']
-                )
-                # Also log the severity for better debugging
-                self.get_logger().info(f"Proactive avoidance triggered by {most_critical_direction} " +
-                    f"({self.collision_status[most_critical_direction]['severity']}) at " +
-                    f"{self.collision_status[most_critical_direction]['distance']:.2f}cm")
-    
-    def _begin_proactive_avoidance(self, direction, distance, consecutive_count=0):
-        """Start a proactive avoidance movement when idle and object detected"""
-        # Avoid triggering too frequently
-        current_time = time.time()
-        
-        # Don't start a new avoidance if we just did one
-        if current_time - self.last_movement_time < 1.5:
-            return
-            
-        self.idle_avoidance_active = True
-        self.last_avoidance_direction = direction
-        
-        # Log the avoidance action
-        self.get_logger().info(f"Starting proactive avoidance for {direction} obstacle at {distance:.1f}cm (consecutive: {consecutive_count})")
-        
-        # Calculate an avoidance movement based on the direction
-        self._execute_avoidance_movement(direction, distance, consecutive_count)
-    
-    def _execute_avoidance_movement(self, direction, distance, consecutive_count=0):
-        """Execute a specific avoidance movement based on obstacle direction and distance"""
-        try:
-            # Start with current position
-            new_position = self.current_joints.copy()
-            
-            # Determine scale of movement based on proximity (closer = bigger movements)
-            # Map distance from proactive_threshold to emergency_stop_distance into 0.1-1.0 range
-            avoidance_scale = 1.0 - (distance - self.emergency_stop_distance) / (self.proactive_threshold - self.emergency_stop_distance)
-            avoidance_scale = max(0.1, min(1.0, avoidance_scale))  # Clamp to 0.1-1.0
-            
-            # Enhance response for warnings - respond more seriously to warnings
-            if consecutive_count > 0:
-                # Scale up based on consecutive detections to make more decisive moves
-                persistence_factor = min(3.0, 1.0 + (consecutive_count / 5.0))
-                avoidance_scale *= persistence_factor
-            
-            # Handle very close objects with extra urgency
-            if distance < self.hard_limit_distance * 1.5:  # If object is quite close
-                avoidance_scale = min(1.5, avoidance_scale * 1.3)  # Increase avoidance intensity by 30%
-                self.get_logger().warn(f"Enhanced avoidance for close object at {distance:.2f}cm")
-            
-            # Add playfulness - small random variations
-            playful_factor = random.uniform(0.7, 1.0) if random.random() < self.avoidance_playfulness else 1.0
-            
-            # Check if we have any safe positions in memory to return to
-            use_safe_memory = consecutive_count < 5 and self.safe_position_memory
-            if use_safe_memory:
-                # Pick a random safe position with preference for more recent ones
-                index_weights = [i+1 for i in range(len(self.safe_position_memory))]
-                chosen_index = random.choices(range(len(self.safe_position_memory)), 
-                                             weights=index_weights, k=1)[0]
-                safe_pos = self.safe_position_memory[chosen_index]
-                
-                # Modify the safe position slightly for playfulness
-                new_position = [p + random.uniform(-0.05, 0.05) * self.avoidance_playfulness 
-                               for p in safe_pos]
-                
-                self.get_logger().info(f"Moving to previously safe position with playful adjustments")
-                self.move_to_safe_position(new_position)
-                return
-            
-            # If no safe positions or persistent collision, calculate a decisive evasion
-            if direction == 'front':
-                # Front obstacles - pull back and maybe rotate slightly
-                # More aggressive retreat for persistent collisions
-                shoulder_adjustment = 0.2 * avoidance_scale * playful_factor * (1 + consecutive_count * 0.1)
-                elbow_adjustment = 0.4 * avoidance_scale * playful_factor * (1 + consecutive_count * 0.1)
-                
-                # Pull back more aggressively for persistent collisions
-                new_position[1] += shoulder_adjustment  # Increase shoulder angle (pull back)
-                new_position[2] += elbow_adjustment     # Increase elbow angle (fold arm)
-                
-                # For persistent collisions, make more dramatic movements
-                if consecutive_count > self.consecutive_collision_threshold:
-                    # Try rotating away more decisively to break the cycle
-                    rotation_dir = 1 if random.random() > 0.5 else -1  # Random direction
-                    new_position[0] += rotation_dir * 0.4 * avoidance_scale
-                    
-                    # Pull back even more dramatically
-                    new_position[1] += 0.3 * avoidance_scale
-                    
-                    self.get_logger().warn("Persistent front collision: executing dramatic evasion")
-                else:
-                    # Add a slight random rotation for more natural movement
-                    new_position[0] += random.uniform(-0.25, 0.25) * self.avoidance_playfulness
-                
-            elif direction == 'left':
-                # Left obstacles - rotate right decisively
-                rotation = self.side_avoidance_magnitude * 1.2 * avoidance_scale * playful_factor
-                
-                # Increase rotation magnitude for persistent collisions
-                if consecutive_count > self.consecutive_collision_threshold:
-                    rotation *= 1.8
-                    self.get_logger().warn("Persistent left collision: executing dramatic rotation")
-                
-                new_position[0] += rotation  # Rotate clockwise (to the right)
-                
-                # Pull back slightly too for more clearance
-                if consecutive_count > 0 or random.random() < 0.7:  # More likely to pull back
-                    new_position[1] += 0.15 * avoidance_scale
-                    
-            elif direction == 'right':
-                # Right obstacles - rotate left decisively
-                rotation = self.side_avoidance_magnitude * 1.2 * avoidance_scale * playful_factor
-                
-                # Increase rotation magnitude for persistent collisions
-                if consecutive_count > self.consecutive_collision_threshold:
-                    rotation *= 1.8
-                    self.get_logger().warn("Persistent right collision: executing dramatic rotation")
-                
-                new_position[0] -= rotation  # Rotate counter-clockwise (to the left)
-                
-                # Pull back slightly too for more clearance
-                if consecutive_count > 0 or random.random() < 0.7:  # More likely to pull back
-                    new_position[1] += 0.15 * avoidance_scale
-            
-            # Move to the new position
-            self.move_to_safe_position(new_position)
-            
-        except Exception as e:
-            self.get_logger().error(f"Error in avoidance movement: {e}")
-            self.idle_avoidance_active = False
-    
+ 
     def _is_position_in_unsafe_zone(self, position):
         """Check if a position is in any of the recorded unsafe zones"""
         for unsafe_pos, radius in self.unsafe_zones:
@@ -1617,13 +1360,9 @@ class RoArmHardwareInterface(Node):
             # Short delay to let the movement start
             time.sleep(0.1)
             
-            # Reset the avoidance flag regardless of success
-            self.idle_avoidance_active = False
-            
             return success
         except Exception as e:
             self.get_logger().error(f"Error in move_to_safe_position: {e}")
-            self.idle_avoidance_active = False
             return False
     
     def _generate_rest_position(self):
