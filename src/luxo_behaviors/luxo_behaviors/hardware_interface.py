@@ -28,7 +28,6 @@ class RoArmHardwareInterface(Node):
         self.declare_parameter('enable_collision_avoidance', True)
         self.declare_parameter('soft_limit_distance', 10.0)  # cm
         self.declare_parameter('hard_limit_distance', 5.0)   # cm
-        self.declare_parameter('emergency_stop_distance', 3.0)  # cm
         self.declare_parameter('max_deceleration', 2.0)  # rad/s²
         self.declare_parameter('collision_recovery_timeout', 3.0)  # seconds
         
@@ -43,11 +42,13 @@ class RoArmHardwareInterface(Node):
         self.declare_parameter('escape_threshold', 20)  # How many consecutive collisions trigger escape mode
         self.declare_parameter('max_retreat_angle', 0.8)  # Maximum shoulder/elbow retreat angle
         self.declare_parameter('escape_mode_duration', 10.0)  # How long to avoid an area after escaping (seconds)
+        self.declare_parameter('max_escape_attempts', 5)  # Maximum attempts before forced rest position
         
         # Add parameter for rest position
         self.declare_parameter('enable_rest_position', True)  # Enable/disable the rest position behavior
         self.declare_parameter('base_rest_position', [0.0, -2.0, 2.0, 1.0, 3.14])  # Base rest position
         self.declare_parameter('rest_variation_range', 0.15)  # Range for position variation
+        self.declare_parameter('idle_timeout', 30.0)  # Time before returning to rest
         
         # Make sure to define use_hardware_joint_names parameter
         self.declare_parameter('use_hardware_joint_names', False)
@@ -60,7 +61,6 @@ class RoArmHardwareInterface(Node):
         self.enable_collision_avoidance = self.get_parameter('enable_collision_avoidance').value
         self.soft_limit_distance = self.get_parameter('soft_limit_distance').value
         self.hard_limit_distance = self.get_parameter('hard_limit_distance').value
-        self.emergency_stop_distance = self.get_parameter('emergency_stop_distance').value
         self.max_deceleration = self.get_parameter('max_deceleration').value
         self.collision_recovery_timeout = self.get_parameter('collision_recovery_timeout').value
         
@@ -74,8 +74,9 @@ class RoArmHardwareInterface(Node):
         self.escape_threshold = self.get_parameter('escape_threshold').value
         self.max_retreat_angle = self.get_parameter('max_retreat_angle').value
         self.escape_mode_duration = self.get_parameter('escape_mode_duration').value
+        self.max_escape_attempts = self.get_parameter('max_escape_attempts').value
         
-        # Get parameters for rest position (renamed from initial_folding parameters)
+        # Get parameters for rest position
         self.enable_rest_position = self.get_parameter('enable_rest_position').value
         self.base_rest_position = self.get_parameter('base_rest_position').value
         self.rest_variation_range = self.get_parameter('rest_variation_range').value
@@ -101,8 +102,7 @@ class RoArmHardwareInterface(Node):
             'right': {'active': False, 'distance': float('inf'), 'severity': 'safe', 'consecutive_count': 0}
         }
         self.collision_lock = threading.Lock()
-        self.emergency_stop_active = False
-        self.last_emergency_stop_time = 0.0
+        self.last_collision_time = 0.0
         self.last_avoidance_direction = None  # Track which direction last triggered avoidance
         
         # Idle state tracking
@@ -119,6 +119,7 @@ class RoArmHardwareInterface(Node):
         self.unsafe_zones = []  # List of positions to avoid
         self.last_escape_direction = None  # Track last escape direction
         self.retreat_level = 0  # Tracks how far we've retreated
+        self.escape_attempts = 0  # Count escape attempts
         
         # Joint state tracking
         self.current_joints = [0.0, 0.0, 0.0, 0.0, 3.14]  # base, shoulder, elbow, wrist, hand
@@ -257,14 +258,19 @@ class RoArmHardwareInterface(Node):
                         
                 # Check if we need to trigger escape mode
                 if self.collision_status['front']['consecutive_count'] > self.escape_threshold:
-                    self.get_logger().warn(f"Persistent collision detected ({self.collision_status['front']['consecutive_count']}), returning to idle state")
-                    self.return_to_idle_state("Persistent collision idle return")
+                    self.get_logger().warn(f"Persistent collision detected ({self.collision_status['front']['consecutive_count']}), attempting to escape")
                     if not self.escape_mode_active:
                         self._activate_escape_mode('front')
+                    elif self.escape_attempts >= self.max_escape_attempts:
+                        self.get_logger().warn("Multiple escape attempts failed, returning to rest position")
+                        self.go_to_rest_position("Escape failure rest position")
+                        self.escape_mode_active = False
+                        self.escape_attempts = 0
             elif was_active and not msg.data:
                 self.get_logger().info("Front collision warning cleared")
                 self.collision_status['front']['consecutive_count'] = 0
     
+    # Similar changes for left_collision_callback and right_collision_callback
     def left_collision_callback(self, msg):
         with self.collision_lock:
             was_active = self.collision_status['left']['active']
@@ -282,6 +288,11 @@ class RoArmHardwareInterface(Node):
                 if self.collision_status['left']['consecutive_count'] > self.escape_threshold:
                     if not self.escape_mode_active:
                         self._activate_escape_mode('left')
+                    elif self.escape_attempts >= self.max_escape_attempts:
+                        self.get_logger().warn("Multiple escape attempts failed, returning to rest position")
+                        self.go_to_rest_position("Escape failure rest position")
+                        self.escape_mode_active = False
+                        self.escape_attempts = 0
             elif was_active and not msg.data:
                 self.get_logger().info("Left collision warning cleared")
                 self.collision_status['left']['consecutive_count'] = 0
@@ -303,6 +314,11 @@ class RoArmHardwareInterface(Node):
                 if self.collision_status['right']['consecutive_count'] > self.escape_threshold:
                     if not self.escape_mode_active:
                         self._activate_escape_mode('right')
+                    elif self.escape_attempts >= self.max_escape_attempts:
+                        self.get_logger().warn("Multiple escape attempts failed, returning to rest position")
+                        self.go_to_rest_position("Escape failure rest position")
+                        self.escape_mode_active = False
+                        self.escape_attempts = 0
             elif was_active and not msg.data:
                 self.get_logger().info("Right collision warning cleared")
                 self.collision_status['right']['consecutive_count'] = 0
@@ -315,13 +331,13 @@ class RoArmHardwareInterface(Node):
         self.escape_mode_active = True
         self.escape_mode_start_time = time.time()
         self.last_escape_direction = direction
-        self.retreat_level = 0  # Start fresh retreat sequence
+        self.escape_attempts += 1
         
         # Record current position as unsafe
         unsafe_pos = self.current_joints.copy()
         self._add_unsafe_zone(unsafe_pos)
         
-        self.get_logger().warn(f"ESCAPE MODE ACTIVATED: Persistent {direction} collision detected!")
+        self.get_logger().warn(f"ESCAPE MODE ACTIVATED: Persistent {direction} collision detected! (Attempt #{self.escape_attempts})")
         
         # If in animation, use a gentler escape that won't completely interrupt
         if in_animation:
@@ -494,73 +510,80 @@ class RoArmHardwareInterface(Node):
                         self.collision_status[direction]['distance'] = distance
                         self.collision_status[direction]['severity'] = severity
                         
-                        # Check for emergency stop condition
-                        if distance <= self.emergency_stop_distance and severity == "danger":
-                            self.trigger_emergency_stop(direction, distance)
+                        # Check for high-risk collisions - adjust path instead of emergency stop
+                        if distance <= self.hard_limit_distance and severity == "danger":
+                            self.handle_high_risk_collision(direction, distance)
         except Exception as e:
             self.get_logger().error(f"Error processing collision details: {e}")
     
-    def trigger_emergency_stop(self, direction, distance):
-        """Initiate emergency stop procedure"""
+    def handle_high_risk_collision(self, direction, distance):
+        """Handle high-risk collisions by attempting path adjustment"""
         now = time.time()
         
-        # Don't retrigger emergency stop if we're already handling one
-        # or if we've had one very recently (to prevent oscillation)
-        if self.emergency_stop_active or (now - self.last_emergency_stop_time < self.collision_recovery_timeout):
+        # Don't retrigger if we've had one very recently (to prevent oscillation)
+        if now - self.last_collision_time < 1.0:
             return
             
-        self.emergency_stop_active = True
-        self.last_emergency_stop_time = now
-        self.get_logger().error(f"EMERGENCY STOP triggered! {direction} collision at {distance:.1f}cm")
+        self.last_collision_time = now
+        self.get_logger().warn(f"High risk collision detected! {direction} at {distance:.1f}cm - attempting path adjustment")
         
         # Update last movement time
         self.last_movement_time = now
         
-        # Stop all joint movement with controlled deceleration
-        self.execute_emergency_stop()
+        # Try significant path adjustment to avoid collision
+        self.perform_collision_avoidance(direction, distance, emergency=True)
         
         # Clear the safe position memory since the environment has changed
         self.safe_position_memory = []
     
-    def execute_emergency_stop(self):
-        """Execute a controlled emergency stop with smooth deceleration"""
-        # Calculate current velocities first
-        self.estimate_joint_velocities()
-        
-        # Calculate deceleration time based on current velocities
-        max_vel = max(abs(v) for v in self.joint_velocities)
-        if max_vel < 0.01:  # Almost stationary
-            self.emergency_stop_active = False
-            return
+    def perform_collision_avoidance(self, direction, distance, emergency=False):
+        """Perform collision avoidance with more significant adjustments for emergency cases"""
+        try:
+            # Calculate current velocities first to understand motion
+            self.estimate_joint_velocities()
             
-        decel_time = max_vel / self.max_deceleration
-        steps = max(10, int(decel_time / 0.05))  # Minimum 10 steps
-        
-        self.get_logger().warn(f"Executing controlled stop over {decel_time:.2f}s ({steps} steps)")
-        
-        # Start from current position
-        current_pos = self.current_joints.copy()
-        
-        # Gradually reduce velocities to zero
-        for i in range(1, steps + 1):
-            decel_factor = 1.0 - (i / steps)
+            # Start with current position
+            new_position = self.current_joints.copy()
             
-            # Calculate new velocities and positions
-            new_velocities = [v * decel_factor for v in self.joint_velocities]
-            new_positions = [current_pos[j] + new_velocities[j] * (decel_time / steps) 
-                            for j in range(len(current_pos))]
+            # Adjustment magnitude depends on emergency status
+            magnitude = 1.5 if emergency else 0.8
             
-            # Send command to joints
-            self.send_safe_joint_command(new_positions, "Emergency stop deceleration")
+            if direction == 'front':
+                # Pull back shoulder and elbow
+                new_position[1] += 0.3 * magnitude  # Shoulder back
+                new_position[2] += 0.4 * magnitude  # Elbow fold
+                
+                # Add slight random rotation to help escape
+                rotation = random.uniform(-0.3, 0.3) * magnitude
+                new_position[0] += rotation
+                
+            elif direction == 'left':
+                # Rotate to the right
+                new_position[0] += 0.4 * magnitude
+                new_position[1] += 0.1 * magnitude  # Slight shoulder back
+                
+            elif direction == 'right':
+                # Rotate to the left
+                new_position[0] -= 0.4 * magnitude
+                new_position[1] += 0.1 * magnitude  # Slight shoulder back
             
-            # Short sleep for smoother motion
-            time.sleep(decel_time / steps)
-        
-        # Final stop command with zero velocity
-        self.send_safe_joint_command(new_positions, "Emergency stop complete")
-        self.emergency_stop_active = False
-        
-        self.get_logger().warn("Emergency stop completed - robot has stopped")
+            # Send command with high priority
+            self.send_safe_joint_command(new_position, "High-priority collision avoidance")
+            
+            # If emergency and avoidance doesn't work after multiple attempts,
+            # schedule a return to rest position
+            consecutive_count = self.collision_status[direction]['consecutive_count']
+            if emergency and consecutive_count > self.escape_threshold:
+                self.get_logger().warn(f"Multiple path adjustments failed, will return to rest position")
+                self.go_to_rest_position("Emergency rest return")
+                
+                # Reset collision counts after going to rest
+                with self.collision_lock:
+                    for direction in self.collision_status:
+                        self.collision_status[direction]['consecutive_count'] = 0
+                
+        except Exception as e:
+            self.get_logger().error(f"Error in collision avoidance: {e}")
     
     def estimate_joint_velocities(self):
         """Estimate current joint velocities based on recent commands"""
@@ -732,20 +755,17 @@ class RoArmHardwareInterface(Node):
             else:
                 # Exit thread if connection is lost
                 break
-    
+
     def safety_monitor_callback(self):
         """Periodic callback to monitor safety and adjust motion if needed"""
         if not self.enable_collision_avoidance:
-            return
-            
-        # Skip if emergency stop is active
-        if self.emergency_stop_active:
             return
             
         try:
             # Check if escape mode is active and should be updated or deactivated
             current_time = time.time()
             if self.escape_mode_active:
+                # Check if escape mode has been active too long
                 if current_time - self.escape_mode_start_time > self.escape_mode_duration:
                     self.escape_mode_active = False
                     self.get_logger().info("Escape mode deactivated - normal operation resuming")
@@ -773,16 +793,26 @@ class RoArmHardwareInterface(Node):
                             )
                             
                         if persistent_collision:
-                            # Still in collision - try another escape move, but check if in animation first
-                            if self.is_animating():
-                                # Use gentler escape for animations
-                                self._execute_animation_safe_escape(self.last_escape_direction)
+                            # Still in collision - try another escape move
+                            self.escape_attempts += 1
+                            
+                            if self.escape_attempts >= self.max_escape_attempts:
+                                # Too many failed attempts, return to rest
+                                self.get_logger().warn(f"Escape attempts exceeded ({self.escape_attempts}/{self.max_escape_attempts}), returning to rest")
+                                self.go_to_rest_position("Escape failure rest position")
+                                self.escape_mode_active = False
+                                self.escape_attempts = 0
                             else:
-                                self._execute_escape_maneuver(self.last_escape_direction)
+                                # Try another escape attempt
+                                if self.is_animating():
+                                    # Use gentler escape for animations
+                                    self._execute_animation_safe_escape(self.last_escape_direction)
+                                else:
+                                    self._execute_escape_maneuver(self.last_escape_direction)
             
-            # Check if we need to recover from a recent emergency stop
-            if current_time - self.last_emergency_stop_time < self.collision_recovery_timeout:
-                # We're in recovery period - only allow very slow, deliberate movements
+            # Check if we need to recover from a recent collision
+            if current_time - self.last_collision_time < self.collision_recovery_timeout:
+                # We're in recovery period - only allow slow, deliberate movements
                 return
                 
             # Get current collision status
@@ -791,21 +821,21 @@ class RoArmHardwareInterface(Node):
                 left_status = self.collision_status['left'].copy()
                 right_status = self.collision_status['right'].copy()
             
-            # Check if any emergency conditions exist
-            if ((front_status['severity'] == 'danger' and front_status['distance'] <= self.emergency_stop_distance) or
-                (left_status['severity'] == 'danger' and left_status['distance'] <= self.emergency_stop_distance) or
-                (right_status['severity'] == 'danger' and right_status['distance'] <= self.emergency_stop_distance)):
+            # Check for high-risk collisions (replaces emergency stop logic)
+            if ((front_status['severity'] == 'danger' and front_status['distance'] <= self.hard_limit_distance) or
+                (left_status['severity'] == 'danger' and left_status['distance'] <= self.hard_limit_distance) or
+                (right_status['severity'] == 'danger' and right_status['distance'] <= self.hard_limit_distance)):
                 
                 # Determine which direction has the closest obstacle
                 if front_status['distance'] <= min(left_status['distance'], right_status['distance']):
-                    self.trigger_emergency_stop('front', front_status['distance'])
+                    self.handle_high_risk_collision('front', front_status['distance'])
                 elif left_status['distance'] <= right_status['distance']:
-                    self.trigger_emergency_stop('left', left_status['distance'])
+                    self.handle_high_risk_collision('left', left_status['distance'])
                 else:
-                    self.trigger_emergency_stop('right', right_status['distance'])
+                    self.handle_high_risk_collision('right', right_status['distance'])
                 return
                 
-            # If we're actively moving (e.g. from animation commands), check for dynamic adjustment
+            # If we're actively moving, check for dynamic adjustment
             time_since_last_movement = time.time() - self.last_movement_time
             if time_since_last_movement < 0.5:  # We've moved recently
                 # If we already have an active collision, we might need to adjust the path
@@ -1466,7 +1496,7 @@ class RoArmHardwareInterface(Node):
             
         self.last_rest_position = rest_position
         return rest_position
-    
+
     def go_to_rest_position(self, description="Rest position"):
         """Move to a rest position with random variation"""
         if not self.enable_rest_position or not self.is_connected():
@@ -1480,12 +1510,20 @@ class RoArmHardwareInterface(Node):
             
             self.get_logger().info(f"Moving to rest position: {[round(p, 2) for p in rest_position]}")
             
-            # Move to the rest position
+            # Move to the rest position - override unsafe zones in this case
             success = self.move_to_safe_position(
                 rest_position, 
                 description, 
                 override_checks=True  # Override collision checks for rest position
             )
+            
+            # Reset collision counters and escape status when we return to rest
+            if success:
+                self.escape_mode_active = False
+                self.escape_attempts = 0
+                with self.collision_lock:
+                    for direction in self.collision_status:
+                        self.collision_status[direction]['consecutive_count'] = 0
             
             # Reset the returning flag after motion is complete
             self.is_returning_to_rest = False
@@ -1495,7 +1533,7 @@ class RoArmHardwareInterface(Node):
             self.get_logger().error(f"Error moving to rest position: {e}")
             self.is_returning_to_rest = False
             return False
-    
+
     def rest_position_callback(self):
         """Move the arm to the rest position after startup"""
         # Skip if already triggered (our custom one-shot implementation)
