@@ -5,14 +5,12 @@ from rclpy.node import Node
 from sensor_msgs.msg import JointState
 from std_msgs.msg import Bool, String, Float32
 import json
-import serial
 import threading
 import math
 import time
-import os
-import subprocess
 import numpy as np
 import random
+from luxo_behaviors.serial_manager import SerialManager
 
 class RoArmHardwareInterface(Node):
     def __init__(self):
@@ -127,10 +125,24 @@ class RoArmHardwareInterface(Node):
         self.joint_velocities = [0.0, 0.0, 0.0, 0.0, 0.0]
         self.last_command_time = self.get_clock().now()
         
-        # Serial port setup
-        self.connect_serial()
+        # Initialize the SerialManager
+        self.serial_manager = SerialManager(
+            self, 
+            self.serial_port, 
+            self.baud_rate, 
+            self.read_throttle
+        )
+        
+        # Connect to the serial port
+        self.connection_active = self.serial_manager.connect()
         
         if self.connection_active:
+            # Initialize the arm if torque is enabled
+            if self.enable_torque_on_start:
+                self.serial_manager.enable_torque()
+                time.sleep(0.5)
+                self.serial_manager.initialize_arm()
+            
             # Changed subscription to joint_states_target
             self.subscription = self.create_subscription(
                 JointState,
@@ -599,163 +611,25 @@ class RoArmHardwareInterface(Node):
         self.last_command_time = current_time
         self.current_joints = self.target_joints.copy()
     
-    def check_fix_permissions(self):
-        """Check and fix permissions on the serial port if needed"""
-        try:
-            self.get_logger().info(f"Checking permissions on {self.serial_port}")
-            
-            # Check if we have read/write access
-            if not os.access(self.serial_port, os.R_OK | os.W_OK):
-                self.get_logger().warn(f"Insufficient permissions on {self.serial_port}, attempting to fix")
-                
-                try:
-                    # Try to fix permissions using sudo chmod
-                    cmd = ['sudo', 'chmod', '777', self.serial_port]
-                    result = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
-                    
-                    if result.returncode == 0:
-                        self.get_logger().info("Successfully updated port permissions")
-                        return True
-                    else:
-                        self.get_logger().error(f"Failed to update permissions: {result.stderr}")
-                        return False
-                        
-                except subprocess.SubprocessError as e:
-                    self.get_logger().error(f"Failed to run chmod command: {e}")
-                    return False
-            
-            return True  # Permissions are already OK
-            
-        except Exception as e:
-            self.get_logger().error(f"Error checking/fixing permissions: {e}")
-            return False
-    
-    def connect_serial(self):
-        """Establish connection to the serial port"""
-        # Check permissions first
-        if not self.check_fix_permissions():
-            self.get_logger().warn("Continuing without fixing permissions, may fail")
-        
-        try:
-            self.ser = serial.Serial(self.serial_port, baudrate=self.baud_rate, dsrdtr=None, timeout=1)
-            self.ser.setRTS(False)
-            self.ser.setDTR(False)
-            self.get_logger().info(f"Serial port {self.serial_port} connected successfully at {self.baud_rate} baud")
-            
-            # Update connection status
-            with self.connection_lock:
-                self.connection_active = True
-            
-            # Start a thread to read responses from the arm
-            self.read_thread = threading.Thread(target=self.read_serial)
-            self.read_thread.daemon = True
-            self.read_thread.start()
-            
-            # Initialize the arm by enabling torque if configured
-            if self.enable_torque_on_start:
-                self.enable_torque()
-                time.sleep(0.5)
-                self.initialize_arm()
-            
-            return True
-            
-        except serial.SerialException as e:
-            self.get_logger().error(f"Failed to open serial port: {e}")
-            with self.connection_lock:
-                self.connection_active = False
-            return False
-    
-    def enable_torque(self):
-        """Enable torque on the arm."""
-        # Send torque lock command (T:210, cmd:1)
-        torque_cmd = json.dumps({'T': 210, 'cmd': 1})
-        success = self.send_command(torque_cmd, "Enabling torque lock")
-        if success:
-            self.get_logger().info("Torque lock enabled")
-        else:
-            self.get_logger().error("Failed to enable torque")
-        return success
-    
-    def disable_torque(self):
-        """Disable torque on the arm."""
-        # Send torque unlock command (T:210, cmd:0)
-        torque_cmd = json.dumps({'T': 210, 'cmd': 0})
-        success = self.send_command(torque_cmd, "Disabling torque lock")
-        if success:
-            self.get_logger().info("Torque lock disabled")
-        else:
-            self.get_logger().error("Failed to disable torque")
-        return success
-    
-    def initialize_arm(self):
-        """Initialize the arm by moving to home position."""
-        # Send initialization command (T:100)
-        init_cmd = json.dumps({'T': 100})
-        success = self.send_command(init_cmd, "Initializing arm position")
-        if success:
-            self.get_logger().info("Arm initialized to home position")
-        else:
-            self.get_logger().error("Failed to initialize arm position")
-        return success
+    def is_connected(self):
+        """Check if the serial connection is active"""
+        return self.serial_manager.is_connected()
     
     def send_command(self, cmd_str, description=""):
-        """Send a command to the robot arm."""
-        if not self.is_connected():
-            self.get_logger().error("Cannot send command: Serial connection is not active")
-            return False
-        
-        try:
-            # Add description to logs
-            if description:
-                self.get_logger().debug(f"Sending {description}: {cmd_str}")
-            
-            # Ensure command ends with newline
-            if not cmd_str.endswith('\n'):
-                cmd_str += '\n'
-            
-            # Write command to serial port
-            self.ser.write(cmd_str.encode())
-            self.ser.flush()
-            
-            # Allow time to process
-            time.sleep(0.1)
-            
-            return True
-        except Exception as e:
-            self.get_logger().error(f"Serial write error: {e}")
-            with self.connection_lock:
-                self.connection_active = False
-            return False
+        """Send a command to the robot arm using the serial manager."""
+        return self.serial_manager.send_command(cmd_str, description)
     
-    def is_connected(self):
-        """Thread-safe method to check connection status"""
-        with self.connection_lock:
-            return self.connection_active and hasattr(self, 'ser') and self.ser and self.ser.is_open
+    def enable_torque(self):
+        """Enable torque on the arm using the serial manager."""
+        return self.serial_manager.enable_torque()
     
-    def read_serial(self):
-        """Read serial data in a separate thread."""
-        while not self.stop_thread:
-            if self.is_connected():
-                try:
-                    # Apply throttling to reduce CPU usage
-                    time.sleep(self.read_throttle)
-                    
-                    if self.ser.in_waiting > 0:
-                        data = self.ser.readline().decode('utf-8').strip()
-                        if data:
-                            # Try to parse as JSON for better logging
-                            try:
-                                json_data = json.loads(data)
-                                self.get_logger().debug(f"Received: {json.dumps(json_data)}")
-                            except json.JSONDecodeError:
-                                # Not JSON, just log as text
-                                self.get_logger().debug(f"Received: {data}")
-                except Exception as e:
-                    self.get_logger().error(f"Error reading from serial: {e}")
-            else:
-                # Exit thread if connection is lost
-                break
-
+    def disable_torque(self):
+        """Disable torque on the arm using the serial manager."""
+        return self.serial_manager.disable_torque()
+    
+    def initialize_arm(self):
+        """Initialize the arm position using the serial manager."""
+        return self.serial_manager.initialize_arm()
     def safety_monitor_callback(self):
         """Periodic callback to monitor safety and adjust motion if needed"""
         if not self.enable_collision_avoidance:
@@ -1169,17 +1043,14 @@ class RoArmHardwareInterface(Node):
     def destroy_node(self):
         """Clean up when node is destroyed."""
         self.get_logger().info("Shutting down hardware interface")
-        self.stop_thread = True
         
         # Disable torque before closing
         if self.is_connected():
             self.disable_torque()
         
-        if self.read_thread:
-            self.read_thread.join(timeout=1.0)
-            
-        if hasattr(self, 'ser') and self.ser and self.ser.is_open:
-            self.ser.close()
+        # Close the serial connection
+        if hasattr(self, 'serial_manager'):
+            self.serial_manager.close()
             
         super().destroy_node()
     
@@ -1616,7 +1487,7 @@ def main(args=None):
     # Create and run the node
     hardware_interface = RoArmHardwareInterface()
     
-    if hardware_interface.is_connected():
+    if hardware_interface.serial_manager.is_connected():
         rclpy.spin(hardware_interface)
     
     # Clean up is handled in destroy_node
