@@ -766,13 +766,15 @@ class RoArmHardwareInterface(Node):
             adjusted_targets[3] -= (shoulder_adjustment + elbow_adjustment) * 0.5
         
         # Send the adjusted target positions to the arm
-        if front_factor > 0.5 or left_factor > 0.5 or right_factor > 0.5:
+        # Only log if there's an actual adjustment (front_factor > 0)
+        if front_factor > 0.1 or left_factor > 0.1 or right_factor > 0.1:
             self.get_logger().info(f"Dynamic collision avoidance: adjusting path (front factor: {front_factor:.2f}, persistence: {front_status['consecutive_count']})")
             
-        self.send_safe_joint_command(adjusted_targets, "Collision avoidance adjustment")
-        
-        # Update last movement time when we make an adjustment
-        self.last_movement_time = time.time()
+            # Only send command if there's an actual adjustment to make
+            self.send_safe_joint_command(adjusted_targets, "Collision avoidance adjustment")
+            
+            # Update last movement time when we make an adjustment
+            self.last_movement_time = time.time()
     
     def calculate_adjustment_factor(self, status):
         """Calculate adjustment factor (0.0-1.0) based on collision status"""
@@ -794,7 +796,7 @@ class RoArmHardwareInterface(Node):
     
     def joint_states_callback(self, msg):
         """Handle joint states and send to hardware with collision avoidance."""
-        if not self.is_connected() or self.emergency_stop_active:
+        if not self.is_connected():
             return
         
         try:
@@ -867,10 +869,6 @@ class RoArmHardwareInterface(Node):
         if not self.is_connected():
             return False
             
-        if self.emergency_stop_active:
-            self.get_logger().warn("Emergency stop active - ignoring command")
-            return False
-            
         # Apply safety limits based on collision status
         if self.enable_collision_avoidance:
             with self.collision_lock:
@@ -916,6 +914,10 @@ class RoArmHardwareInterface(Node):
     def publish_actual_joint_states(self, positions):
         """Publish the actual joint positions after collision avoidance."""
         try:
+            # Add state tracking to avoid repeated identical messages
+            if not hasattr(self, '_last_published_positions'):
+                self._last_published_positions = None    
+            
             # Create a joint state message with the actual positions
             msg = JointState()
             msg.header.stamp = self.get_clock().now().to_msg()
@@ -931,17 +933,21 @@ class RoArmHardwareInterface(Node):
             # Set the actual positions - ensure we have a Python list, not just an array reference
             msg.position = list(positions)
             
-            # Add debug logging
-            self.get_logger().debug(f"Publishing to /joint_states: {[round(p, 2) for p in positions]}")
+            # Check if positions are the same as previously published
+            if (self._last_published_positions is not None and 
+                len(self._last_published_positions) == len(positions) and
+                all(abs(a - b) < 0.001 for a, b in zip(positions, self._last_published_positions))):
+                # Skip logging the same position again
+                hello_world = True
+            else:
+                # Add debug logging
+                self.get_logger().debug(f"Publishing to /joint_states: {[round(p, 2) for p in positions]}")
             
+            # Remember this position for next comparison
+            self._last_published_positions = list(positions)
+
             # Publish the message
             self.joint_states_publisher.publish(msg)
-            
-            # Test if message was published (this adds a bit of overhead but helps debugging)
-            # Remove this once confirmed working
-            test_msg = self.joint_states_publisher.get_subscription_count()
-            if test_msg == 0:
-                self.get_logger().debug("No subscribers to /joint_states - message might not be received")
             
         except Exception as e:
             self.get_logger().error(f"Error publishing actual joint states: {e}")
@@ -1107,7 +1113,7 @@ class RoArmHardwareInterface(Node):
             return
         
         # Skip the rest if we're already in an avoidance maneuver
-        if self.idle_avoidance_active or self.emergency_stop_active:
+        if self.idle_avoidance_active:
             return
             
         # Make idle collision checks more responsive - check more frequently
@@ -1472,12 +1478,8 @@ class RoArmHardwareInterface(Node):
         """Publish the current joint states periodically to ensure topic is active."""
         try:
             if hasattr(self, 'current_joints') and len(self.current_joints) > 0:
-                self.get_logger().debug("Publishing current joint states to /joint_states")
+                # Always publish the joint states (important for ROS control)
                 self.publish_actual_joint_states(self.current_joints)
-                
-                # Log less frequently to avoid console spam
-                if int(time.time()) % 10 == 0:  # Log every 10 seconds
-                    self.get_logger().info(f"Publishing to /joint_states: {[round(p, 2) for p in self.current_joints]}")
         except Exception as e:
             self.get_logger().error(f"Error in direct publish timer: {e}")
 
