@@ -1,8 +1,8 @@
-# Install script for directory: /home/pi/ros2_project_ws/roarm_ws_em1/src
+# Install script for directory: /home/pi/luxopi-ros/roarm_ws_em1/src
 
 # Set the install prefix
 if(NOT DEFINED CMAKE_INSTALL_PREFIX)
-  set(CMAKE_INSTALL_PREFIX "/home/pi/ros2_project_ws/roarm_ws_em1/src/install/roarm")
+  set(CMAKE_INSTALL_PREFIX "/home/pi/luxopi-ros/roarm_ws_em1/src/install/roarm")
 endif()
 string(REGEX REPLACE "/$" "" CMAKE_INSTALL_PREFIX "${CMAKE_INSTALL_PREFIX}")
 
@@ -44,25 +44,25 @@ endif()
 
 if("x${CMAKE_INSTALL_COMPONENT}x" STREQUAL "xUnspecifiedx" OR NOT CMAKE_INSTALL_COMPONENT)
   file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/share/roarm" TYPE DIRECTORY FILES
-    "/home/pi/ros2_project_ws/roarm_ws_em1/src/config"
-    "/home/pi/ros2_project_ws/roarm_ws_em1/src/launch"
-    "/home/pi/ros2_project_ws/roarm_ws_em1/src/maps"
-    "/home/pi/ros2_project_ws/roarm_ws_em1/src/meshes"
-    "/home/pi/ros2_project_ws/roarm_ws_em1/src/models"
-    "/home/pi/ros2_project_ws/roarm_ws_em1/src/params"
-    "/home/pi/ros2_project_ws/roarm_ws_em1/src/rviz"
-    "/home/pi/ros2_project_ws/roarm_ws_em1/src/src"
-    "/home/pi/ros2_project_ws/roarm_ws_em1/src/urdf"
-    "/home/pi/ros2_project_ws/roarm_ws_em1/src/worlds"
+    "/home/pi/luxopi-ros/roarm_ws_em1/src/config"
+    "/home/pi/luxopi-ros/roarm_ws_em1/src/launch"
+    "/home/pi/luxopi-ros/roarm_ws_em1/src/maps"
+    "/home/pi/luxopi-ros/roarm_ws_em1/src/meshes"
+    "/home/pi/luxopi-ros/roarm_ws_em1/src/models"
+    "/home/pi/luxopi-ros/roarm_ws_em1/src/params"
+    "/home/pi/luxopi-ros/roarm_ws_em1/src/rviz"
+    "/home/pi/luxopi-ros/roarm_ws_em1/src/src"
+    "/home/pi/luxopi-ros/roarm_ws_em1/src/urdf"
+    "/home/pi/luxopi-ros/roarm_ws_em1/src/worlds"
     )
 endif()
 
 if("x${CMAKE_INSTALL_COMPONENT}x" STREQUAL "xUnspecifiedx" OR NOT CMAKE_INSTALL_COMPONENT)
-  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/share/ament_index/resource_index/package_run_dependencies" TYPE FILE FILES "/home/pi/ros2_project_ws/roarm_ws_em1/src/build/roarm/ament_cmake_index/share/ament_index/resource_index/package_run_dependencies/roarm")
+  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/share/ament_index/resource_index/package_run_dependencies" TYPE FILE FILES "/home/pi/luxopi-ros/roarm_ws_em1/src/build/roarm/ament_cmake_index/share/ament_index/resource_index/package_run_dependencies/roarm")
 endif()
 
 if("x${CMAKE_INSTALL_COMPONENT}x" STREQUAL "xUnspecifiedx" OR NOT CMAKE_INSTALL_COMPONENT)
-  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/share/ament_index/resource_index/parent_prefix_path" TYPE FILE FILES "/home/pi/ros2_project_ws/roarm_ws_em1/src/build/roarm/ament_cmake_index/share/ament_index/resource_index/parent_prefix_path/roarm")
+  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/share/ament_index/resource_index/parent_prefix_path" TYPE FILE FILES "/home/pi/luxopi-ros/roarm_ws_em1/src/build/roarm/ament_cmake_index/share/ament_index/resource_index/parent_prefix_path/roarm")
 endif()
 
 if("x${CMAKE_INSTALL_COMPONENT}x" STREQUAL "xUnspecifiedx" OR NOT CMAKE_INSTALL_COMPONENT)
@@ -70,7 +70,7 @@ if("x${CMAKE_INSTALL_COMPONENT}x" STREQUAL "xUnspecifiedx" OR NOT CMAKE_INSTALL_
 endif()
 
 if("x${CMAKE_INSTALL_COMPONENT}x" STREQUAL "xUnspecifiedx" OR NOT CMAKE_INSTALL_COMPONENT)
-  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/share/roarm/environment" TYPE FILE FILES "/home/pi/ros2_project_ws/roarm_ws_em1/src/build/roarm/ament_cmake_environment_hooks/ament_prefix_path.dsv")
+  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/share/roarm/environment" TYPE FILE FILES "/home/pi/luxopi-ros/roarm_ws_em1/src/build/roarm/ament_cmake_environment_hooks/ament_prefix_path.dsv")
 endif()
 
 if("x${CMAKE_INSTALL_COMPONENT}x" STREQUAL "xUnspecifiedx" OR NOT CMAKE_INSTALL_COMPONENT)
@@ -78,42 +78,42 @@ if("x${CMAKE_INSTALL_COMPONENT}x" STREQUAL "xUnspecifiedx" OR NOT CMAKE_INSTALL_
 endif()
 
 if("x${CMAKE_INSTALL_COMPONENT}x" STREQUAL "xUnspecifiedx" OR NOT CMAKE_INSTALL_COMPONENT)
-  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/share/roarm/environment" TYPE FILE FILES "/home/pi/ros2_project_ws/roarm_ws_em1/src/build/roarm/ament_cmake_environment_hooks/path.dsv")
+  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/share/roarm/environment" TYPE FILE FILES "/home/pi/luxopi-ros/roarm_ws_em1/src/build/roarm/ament_cmake_environment_hooks/path.dsv")
 endif()
 
 if("x${CMAKE_INSTALL_COMPONENT}x" STREQUAL "xUnspecifiedx" OR NOT CMAKE_INSTALL_COMPONENT)
-  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/share/roarm" TYPE FILE FILES "/home/pi/ros2_project_ws/roarm_ws_em1/src/build/roarm/ament_cmake_environment_hooks/local_setup.bash")
+  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/share/roarm" TYPE FILE FILES "/home/pi/luxopi-ros/roarm_ws_em1/src/build/roarm/ament_cmake_environment_hooks/local_setup.bash")
 endif()
 
 if("x${CMAKE_INSTALL_COMPONENT}x" STREQUAL "xUnspecifiedx" OR NOT CMAKE_INSTALL_COMPONENT)
-  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/share/roarm" TYPE FILE FILES "/home/pi/ros2_project_ws/roarm_ws_em1/src/build/roarm/ament_cmake_environment_hooks/local_setup.sh")
+  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/share/roarm" TYPE FILE FILES "/home/pi/luxopi-ros/roarm_ws_em1/src/build/roarm/ament_cmake_environment_hooks/local_setup.sh")
 endif()
 
 if("x${CMAKE_INSTALL_COMPONENT}x" STREQUAL "xUnspecifiedx" OR NOT CMAKE_INSTALL_COMPONENT)
-  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/share/roarm" TYPE FILE FILES "/home/pi/ros2_project_ws/roarm_ws_em1/src/build/roarm/ament_cmake_environment_hooks/local_setup.zsh")
+  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/share/roarm" TYPE FILE FILES "/home/pi/luxopi-ros/roarm_ws_em1/src/build/roarm/ament_cmake_environment_hooks/local_setup.zsh")
 endif()
 
 if("x${CMAKE_INSTALL_COMPONENT}x" STREQUAL "xUnspecifiedx" OR NOT CMAKE_INSTALL_COMPONENT)
-  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/share/roarm" TYPE FILE FILES "/home/pi/ros2_project_ws/roarm_ws_em1/src/build/roarm/ament_cmake_environment_hooks/local_setup.dsv")
+  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/share/roarm" TYPE FILE FILES "/home/pi/luxopi-ros/roarm_ws_em1/src/build/roarm/ament_cmake_environment_hooks/local_setup.dsv")
 endif()
 
 if("x${CMAKE_INSTALL_COMPONENT}x" STREQUAL "xUnspecifiedx" OR NOT CMAKE_INSTALL_COMPONENT)
-  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/share/roarm" TYPE FILE FILES "/home/pi/ros2_project_ws/roarm_ws_em1/src/build/roarm/ament_cmake_environment_hooks/package.dsv")
+  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/share/roarm" TYPE FILE FILES "/home/pi/luxopi-ros/roarm_ws_em1/src/build/roarm/ament_cmake_environment_hooks/package.dsv")
 endif()
 
 if("x${CMAKE_INSTALL_COMPONENT}x" STREQUAL "xUnspecifiedx" OR NOT CMAKE_INSTALL_COMPONENT)
-  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/share/ament_index/resource_index/packages" TYPE FILE FILES "/home/pi/ros2_project_ws/roarm_ws_em1/src/build/roarm/ament_cmake_index/share/ament_index/resource_index/packages/roarm")
+  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/share/ament_index/resource_index/packages" TYPE FILE FILES "/home/pi/luxopi-ros/roarm_ws_em1/src/build/roarm/ament_cmake_index/share/ament_index/resource_index/packages/roarm")
 endif()
 
 if("x${CMAKE_INSTALL_COMPONENT}x" STREQUAL "xUnspecifiedx" OR NOT CMAKE_INSTALL_COMPONENT)
   file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/share/roarm/cmake" TYPE FILE FILES
-    "/home/pi/ros2_project_ws/roarm_ws_em1/src/build/roarm/ament_cmake_core/roarmConfig.cmake"
-    "/home/pi/ros2_project_ws/roarm_ws_em1/src/build/roarm/ament_cmake_core/roarmConfig-version.cmake"
+    "/home/pi/luxopi-ros/roarm_ws_em1/src/build/roarm/ament_cmake_core/roarmConfig.cmake"
+    "/home/pi/luxopi-ros/roarm_ws_em1/src/build/roarm/ament_cmake_core/roarmConfig-version.cmake"
     )
 endif()
 
 if("x${CMAKE_INSTALL_COMPONENT}x" STREQUAL "xUnspecifiedx" OR NOT CMAKE_INSTALL_COMPONENT)
-  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/share/roarm" TYPE FILE FILES "/home/pi/ros2_project_ws/roarm_ws_em1/src/package.xml")
+  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/share/roarm" TYPE FILE FILES "/home/pi/luxopi-ros/roarm_ws_em1/src/package.xml")
 endif()
 
 if(CMAKE_INSTALL_COMPONENT)
@@ -124,5 +124,5 @@ endif()
 
 string(REPLACE ";" "\n" CMAKE_INSTALL_MANIFEST_CONTENT
        "${CMAKE_INSTALL_MANIFEST_FILES}")
-file(WRITE "/home/pi/ros2_project_ws/roarm_ws_em1/src/build/roarm/${CMAKE_INSTALL_MANIFEST}"
+file(WRITE "/home/pi/luxopi-ros/roarm_ws_em1/src/build/roarm/${CMAKE_INSTALL_MANIFEST}"
      "${CMAKE_INSTALL_MANIFEST_CONTENT}")

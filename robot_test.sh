@@ -1,4 +1,4 @@
 #!/bin/bash
-cd ~/ros2_project_ws
+cd ~/luxopi-ros
 colcon build --packages-select luxo_behaviors
 source install/setup.bash

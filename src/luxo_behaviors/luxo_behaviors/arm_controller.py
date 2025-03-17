@@ -1,4 +1,4 @@
-# ~/ros2_project_ws/src/luxo_behaviors/luxo_behaviors/arm_controller.py
+# ~/luxopi-ros/src/luxo_behaviors/luxo_behaviors/arm_controller.py
 #!/usr/bin/env python3
 
 import rclpy

@@ -2,7 +2,7 @@
 # ament_cmake_core/cmake/uninstall_target/ament_cmake_uninstall_target.cmake.in
 
 function(ament_cmake_uninstall_target_remove_empty_directories path)
-  set(install_space "/home/pi/ros2_project_ws/roarm_ws_em1/src/install/roarm")
+  set(install_space "/home/pi/luxopi-ros/roarm_ws_em1/src/install/roarm")
   if(install_space STREQUAL "")
     message(FATAL_ERROR "The CMAKE_INSTALL_PREFIX variable must not be empty")
   endif()
@@ -29,7 +29,7 @@ function(ament_cmake_uninstall_target_remove_empty_directories path)
 endfunction()
 
 # uninstall files installed using the standard install() function
-set(install_manifest "/home/pi/ros2_project_ws/roarm_ws_em1/src/build/roarm/install_manifest.txt")
+set(install_manifest "/home/pi/luxopi-ros/roarm_ws_em1/src/build/roarm/install_manifest.txt")
 if(NOT EXISTS "${install_manifest}")
   message(FATAL_ERROR "Cannot find install manifest: ${install_manifest}")
 endif()

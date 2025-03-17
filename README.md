@@ -31,8 +31,8 @@ This project contains ROS2 packages for controlling and visualizing the RoArm ro
 ### Clone the repository
 ```bash
 cd ~
-git clone https://github.com/yourusername/roarm.git ros2_project_ws
-cd ros2_project_ws
+git clone https://github.com/yourusername/roarm.git luxopi-ros
+cd luxopi-ros
 ```
 
 ### Install Dependencies
@@ -171,7 +171,7 @@ This project is licensed under the MIT License - see the `LICENSE` file for deta
 Step-by-Step Instructions
 
 ```
-cd ~/ros2_project_ws
+cd ~/luxopi-ros
 colcon build --packages-select luxo_behaviors
 source install/setup.bash
 ```

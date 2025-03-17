@@ -27,10 +27,10 @@ class EnhancedAnimationCommand(Node):
             self.command_callback,
             10)
         
-        # Create publisher for joint states
+        # Create publisher for joint states (now publishing to target topic)
         self.joint_publisher = self.create_publisher(
             JointState, 
-            '/joint_states', 
+            '/joint_states_target',  # Changed from '/joint_states' to '/joint_states_target'
             10)
         
         # Current joint positions
@@ -86,17 +86,18 @@ class EnhancedAnimationCommand(Node):
             'curious': self.curious_look,
             'excited': self.excited_hop,
             'sad': self.sad_droop,
+            'idle': self.idle_state,
             'sweep': self.light_sweep,
             'playful': self.playful_bounce,
             'startled': self.startled_jump,
             'grab': self.grab_release,
-            'think': self.thinking_animation,       # New animation
-            'wave': self.waving_animation,          # New animation
-            'dance': self.dancing_animation,        # New animation
-            'stretch': self.stretching_animation,   # New animation
-            'nod': self.nodding_animation,          # New animation
-            'shake': self.head_shake_animation,     # New animation
-            'write': self.writing_animation,        # New animation
+            'think': self.thinking_animation,       
+            'wave': self.waving_animation,          
+            'dance': self.dancing_animation,        
+            'stretch': self.stretching_animation,   
+            'nod': self.nodding_animation,          
+            'shake': self.head_shake_animation,     
+            'write': self.writing_animation,        
             'random': self.random_animation,        # Plays a random animation
             'stop': self.stop_animation
         }
@@ -208,7 +209,30 @@ class EnhancedAnimationCommand(Node):
         
         # Move to the position
         self.get_logger().info(f'Animation step {self.current_step+1}/{len(self.animation_steps)}')
-        self.move_to_position(next_position, duration, easing=use_easing)
+        
+        # Check if destination is significantly different from current position
+        # This helps detect if collisions or escape maneuvers have moved us far from expected
+        if self.current_step > 0 and hasattr(self, 'previous_position'):
+            # Get our current position
+            curr_pos = self.current_positions
+            expected_pos = self.previous_position
+            
+            # Calculate difference 
+            diff_magnitude = sum([(curr - expected)**2 for curr, expected in zip(curr_pos, expected_pos)])
+            if diff_magnitude > 1.0:  # Significant deviation
+                self.get_logger().warn(f"Detected significant position deviation (mag={diff_magnitude:.2f}) - " +
+                                      f"current: {[round(p, 2) for p in curr_pos]}, " +
+                                      f"expected: {[round(p, 2) for p in expected_pos]}")
+                
+                # Adjust timing to be a bit slower after deviation to allow for smoother recovery
+                duration = duration * 1.5
+                self.get_logger().info(f"Increasing move duration to {duration:.2f}s for smoother recovery")
+        
+        # Try to move to the position
+        success = self.move_to_position(next_position, duration, easing=use_easing)
+        
+        # Remember this target position for next comparison
+        self.previous_position = next_position
         
         # Increment step and schedule next one
         self.current_step += 1
@@ -390,6 +414,54 @@ class EnhancedAnimationCommand(Node):
         # Start the animation
         self.start_animation(keyframes, durations)
         self.get_logger().info('Executing enhanced dynamic excited hop animation')
+
+    def idle_state(self):
+        """Make the arm return to its idle state with slight variation, then look around briefly."""
+        # Starting from current position
+        start_pos = self.current_positions.copy()
+        gripper_pos = self.current_positions[4] if len(self.current_positions) > 4 else 3.14
+    
+        # Calculate relative positions from current state
+        base_center = start_pos[0]
+        
+        # Target idle state position with variation
+        target_base = 0.0 + random.uniform(-0.1, 0.1)
+        target_shoulder = -2.0 + random.uniform(-0.15, 0.15)
+        target_elbow = 2.0 + random.uniform(-0.1, 0.1)
+        target_wrist = 1.0 + random.uniform(-0.2, 0.2)
+        target_gripper = 3.14 + random.uniform(-0.1, 0.1)
+        
+        # Random amounts to look left and right (different values)
+        look_right_amount = random.uniform(0.2, 0.4)
+        look_left_amount = random.uniform(0.2, 0.5)  # Potentially more to the left
+        
+        # Keyframe positions - first go to idle position, then look around
+        keyframes = [
+            # First transition to the idle position
+            [target_base, target_shoulder, target_elbow, target_wrist, target_gripper],
+            
+            # Brief pause in idle position
+            [target_base, target_shoulder, target_elbow, target_wrist, target_gripper],
+            
+            # Look right with random amount
+            [target_base + look_right_amount, target_shoulder, target_elbow, target_wrist, target_gripper],
+            
+            # Look back to center
+            [target_base, target_shoulder, target_elbow, target_wrist, target_gripper],
+            
+            # Look left with different random amount
+            [target_base - look_left_amount, target_shoulder, target_elbow, target_wrist, target_gripper],
+            
+            # Return to idle position with slight variation
+            [target_base + random.uniform(-0.05, 0.05), target_shoulder, target_elbow, target_wrist, target_gripper]
+        ]
+    
+        # Duration for each keyframe (in seconds) - longer for initial positioning, quicker for looking around
+        durations = [1.0, 0.7, 0.5, 0.4, 0.5, 0.6]
+    
+        # Start the animation
+        self.start_animation(keyframes, durations)
+        self.get_logger().info('Executing idle animation: first returning to idle, then looking around')
 
     def sad_droop(self):
         """Make the arm droop down sadly with Disney principles."""
@@ -1338,6 +1410,7 @@ class EnhancedAnimationCommand(Node):
             self.curious_look,
             self.excited_hop,
             self.sad_droop,
+            self.idle_state,
             self.light_sweep,
             self.playful_bounce,
             self.startled_jump,

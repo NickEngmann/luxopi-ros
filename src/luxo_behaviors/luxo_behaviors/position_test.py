@@ -13,7 +13,7 @@ class PositionTestNode(Node):
         # Create publisher for joint states
         self.joint_publisher = self.create_publisher(
             JointState, 
-            '/joint_states', 
+            '/joint_states_target',  # Changed from '/joint_states' to '/joint_states_target'
             10)
         
         # Joint names - updated to match RoArm conventions

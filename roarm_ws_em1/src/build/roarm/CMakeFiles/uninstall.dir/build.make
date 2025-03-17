@@ -53,10 +53,10 @@ RM = /usr/bin/cmake -E rm -f
 EQUALS = =
 
 # The top-level source directory on which CMake was run.
-CMAKE_SOURCE_DIR = /home/pi/ros2_project_ws/roarm_ws_em1/src
+CMAKE_SOURCE_DIR = /home/pi/luxopi-ros/roarm_ws_em1/src
 
 # The top-level build directory on which CMake was run.
-CMAKE_BINARY_DIR = /home/pi/ros2_project_ws/roarm_ws_em1/src/build/roarm
+CMAKE_BINARY_DIR = /home/pi/luxopi-ros/roarm_ws_em1/src/build/roarm
 
 # Utility rule file for uninstall.
 
@@ -78,6 +78,6 @@ CMakeFiles/uninstall.dir/clean:
 .PHONY : CMakeFiles/uninstall.dir/clean
 
 CMakeFiles/uninstall.dir/depend:
-	cd /home/pi/ros2_project_ws/roarm_ws_em1/src/build/roarm && $(CMAKE_COMMAND) -E cmake_depends "Unix Makefiles" /home/pi/ros2_project_ws/roarm_ws_em1/src /home/pi/ros2_project_ws/roarm_ws_em1/src /home/pi/ros2_project_ws/roarm_ws_em1/src/build/roarm /home/pi/ros2_project_ws/roarm_ws_em1/src/build/roarm /home/pi/ros2_project_ws/roarm_ws_em1/src/build/roarm/CMakeFiles/uninstall.dir/DependInfo.cmake --color=$(COLOR)
+	cd /home/pi/luxopi-ros/roarm_ws_em1/src/build/roarm && $(CMAKE_COMMAND) -E cmake_depends "Unix Makefiles" /home/pi/luxopi-ros/roarm_ws_em1/src /home/pi/luxopi-ros/roarm_ws_em1/src /home/pi/luxopi-ros/roarm_ws_em1/src/build/roarm /home/pi/luxopi-ros/roarm_ws_em1/src/build/roarm /home/pi/luxopi-ros/roarm_ws_em1/src/build/roarm/CMakeFiles/uninstall.dir/DependInfo.cmake --color=$(COLOR)
 .PHONY : CMakeFiles/uninstall.dir/depend
 

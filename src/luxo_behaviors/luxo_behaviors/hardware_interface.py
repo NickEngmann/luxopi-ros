@@ -44,6 +44,16 @@ class RoArmHardwareInterface(Node):
         self.declare_parameter('max_retreat_angle', 0.8)  # Maximum shoulder/elbow retreat angle
         self.declare_parameter('escape_mode_duration', 10.0)  # How long to avoid an area after escaping (seconds)
         
+        # Add parameter for rest position
+        self.declare_parameter('enable_rest_position', False)  # Enable/disable the rest position behavior
+        self.declare_parameter('initial_rest_delay', 15.0)    # Seconds to wait before first moving to rest
+        self.declare_parameter('base_rest_position', [0.0, -2.0, 2.0, 0.0, 3.14])  # Base rest position
+        self.declare_parameter('rest_variation_range', 0.15)  # Range for position variation
+        self.declare_parameter('idle_timeout', 30.0)  # Seconds before returning to rest due to idle
+        
+        # Make sure to define use_hardware_joint_names parameter
+        self.declare_parameter('use_hardware_joint_names', False)
+        
         # Get parameters
         self.serial_port = self.get_parameter('serial_port').value
         self.baud_rate = self.get_parameter('baud_rate').value
@@ -67,10 +77,25 @@ class RoArmHardwareInterface(Node):
         self.max_retreat_angle = self.get_parameter('max_retreat_angle').value
         self.escape_mode_duration = self.get_parameter('escape_mode_duration').value
         
+        # Get parameters for rest position (renamed from initial_folding parameters)
+        self.enable_rest_position = self.get_parameter('enable_rest_position').value
+        self.initial_rest_delay = self.get_parameter('initial_rest_delay').value
+        self.base_rest_position = self.get_parameter('base_rest_position').value
+        self.rest_variation_range = self.get_parameter('rest_variation_range').value
+        self.idle_timeout = self.get_parameter('idle_timeout').value
+        
+        # Make sure to get the parameter value
+        self.use_hardware_joint_names = self.get_parameter('use_hardware_joint_names').value
+        
         # Connection control
         self.connection_active = False
         self.connection_lock = threading.Lock()
         self.stop_thread = False
+        
+        # Rest position tracking
+        self.rest_position_timer_triggered = False
+        self.rest_position_done = False
+        self.last_rest_position = None  # Track the last used rest position
         
         # Collision tracking
         self.collision_status = {
@@ -88,7 +113,8 @@ class RoArmHardwareInterface(Node):
         self.idle_avoidance_active = False
         self.safe_position_memory = []  # Remember previously safe positions
         self.last_proactive_check = 0.0
-        self.home_position = [0.0, 0.3, 0.7, 0.4, 3.14]  # Default safe home
+        self.home_position = [0.0, 0.3, 0.7, 0.4, 3.14]  # Default safe home (not used for rest)
+        self.is_returning_to_rest = False  # Flag to track when we're returning to rest
         
         # Escape mode variables
         self.escape_mode_active = False
@@ -107,12 +133,29 @@ class RoArmHardwareInterface(Node):
         self.connect_serial()
         
         if self.connection_active:
-            # Create subscription to joint_states
+            # Changed subscription to joint_states_target
             self.subscription = self.create_subscription(
                 JointState,
-                'joint_states',
+                'joint_states_target',  # Changed from 'joint_states' to 'joint_states_target'
                 self.joint_states_callback,
                 10)
+            
+            # Add publisher for actual joint states after collision avoidance
+            self.get_logger().info("Creating publisher for actual joint states on /joint_states")
+            self.joint_states_publisher = self.create_publisher(
+                JointState,
+                '/joint_states',
+                10)
+                
+            # Add publisher for joint_states_target for sending idle state commands
+            self.joint_states_target_publisher = self.create_publisher(
+                JointState,
+                '/joint_states_target',
+                10)
+                
+            # Add a direct publishing timer to ensure we're sending messages regularly
+            # This guarantees joint state publishing even if no target commands are received
+            self.direct_pub_timer = self.create_timer(0.1, self.publish_current_joint_states)
             
             # Create subscriptions to collision topics
             self.front_collision_sub = self.create_subscription(
@@ -184,6 +227,11 @@ class RoArmHardwareInterface(Node):
             # Add a timer for proactive avoidance when idle
             self.idle_timer = self.create_timer(self.idle_check_interval, self.idle_safety_check)
             
+            # Add a timer for rest position (renamed from initial_fold_timer)
+            if self.enable_rest_position:
+                self.get_logger().info(f"Will move to rest position in {self.initial_rest_delay} seconds")
+                self.rest_position_timer = self.create_timer(self.initial_rest_delay, self.rest_position_callback)
+            
             self.get_logger().info("RoArm hardware interface initialized")
             
             if self.enable_collision_avoidance:
@@ -205,16 +253,22 @@ class RoArmHardwareInterface(Node):
             if msg.data and not was_active:
                 self.get_logger().warn("Front collision warning activated")
                 self.collision_status['front']['consecutive_count'] = 0
+                # Force an immediate check for avoidance when we first detect a collision
+                if self.enable_proactive_avoidance and not self.is_animating():
+                    self.last_proactive_check = 0.0  # Force immediate check
             elif msg.data and was_active:
                 # Increment consecutive detection counter
                 self.collision_status['front']['consecutive_count'] += 1
-                if self.collision_status['front']['consecutive_count'] % self.consecutive_collision_threshold == 0:
+                if self.collision_status['front']['consecutive_count'] % self.consecutive_collision_threshold == 0: or return to idle
                     self.get_logger().warn(f"Persistent front collision! Count: {self.collision_status['front']['consecutive_count']}")
-                
-                # Check if we need to trigger escape mode
-                if self.collision_status['front']['consecutive_count'] > self.escape_threshold:
-                    if not self.escape_mode_active:
-                        self._activate_escape_mode('front')
+                    # Force more frequent checks for persistent collisions
+                    if self.enable_proactive_avoidance and not self.is_animating():
+                        self.last_proactive_check = 0.0  # Force immediate checker 10 consecutive warnings
+                >= 10:
+                # Check if we need to trigger escape mode ({self.collision_status['front']['consecutive_count']}), returning to idle state")
+                if self.collision_status['front']['consecutive_count'] > self.escape_threshold:                self.return_to_idle_state("Persistent collision idle return")
+                    if not self.escape_mode_active:a:
+                        self._activate_escape_mode('front').info("Front collision warning cleared")
             elif was_active and not msg.data:
                 self.get_logger().info("Front collision warning cleared")
                 self.collision_status['front']['consecutive_count'] = 0
@@ -263,6 +317,9 @@ class RoArmHardwareInterface(Node):
     
     def _activate_escape_mode(self, direction):
         """Activate escape mode for persistent collisions"""
+        # Check if we're currently in an animation - if so, we should be more careful
+        in_animation = self.is_animating()
+        
         self.escape_mode_active = True
         self.escape_mode_start_time = time.time()
         self.last_escape_direction = direction
@@ -274,8 +331,62 @@ class RoArmHardwareInterface(Node):
         
         self.get_logger().warn(f"ESCAPE MODE ACTIVATED: Persistent {direction} collision detected!")
         
-        # Immediately execute a decisive escape maneuver
-        self._execute_escape_maneuver(direction)
+        # If in animation, use a gentler escape that won't completely interrupt
+        if in_animation:
+            self.get_logger().info("Animation in progress - using gentler escape maneuver")
+            self._execute_animation_safe_escape(direction)
+        else:
+            # Normal dramatic escape for non-animation situations
+            self._execute_escape_maneuver(direction)
+            
+        # Set a short timeout for animation cases to allow resuming animation
+        if in_animation:
+            self.escape_mode_duration = 3.0  # Short timeout
+        else:
+            self.escape_mode_duration = 10.0  # Normal timeout
+    
+    def _execute_animation_safe_escape(self, direction):
+        """Execute a gentler escape maneuver that won't completely disrupt animations"""
+        try:
+            # Start with current position
+            new_position = self.current_joints.copy()
+            
+            # Smaller adjustments than the normal escape maneuver
+            if direction == 'front':
+                # Smaller rotation and retreat
+                rotation_angle = 0.3 if random.random() > 0.5 else -0.3
+                shoulder_retreat = 0.2
+                elbow_retreat = 0.3
+                
+                new_position[0] += rotation_angle
+                new_position[1] += shoulder_retreat
+                new_position[2] += elbow_retreat
+                new_position[3] -= (shoulder_retreat + elbow_retreat) * 0.3
+                
+                self.get_logger().warn(f"Executing animation-safe front escape")
+                
+            elif direction == 'left':
+                # Smaller right rotation
+                rotation_angle = 0.4
+                new_position[0] += rotation_angle
+                new_position[1] += 0.1
+                
+                self.get_logger().warn(f"Executing animation-safe right rotation escape")
+                
+            elif direction == 'right':
+                # Smaller left rotation
+                rotation_angle = 0.4
+                new_position[0] -= rotation_angle
+                new_position[1] += 0.1
+                
+                self.get_logger().warn(f"Executing animation-safe left rotation escape")
+            
+            # Move to the new position with high priority
+            self.move_to_safe_position(new_position, "Animation-safe escape", True)
+            
+        except Exception as e:
+            self.get_logger().error(f"Error in animation-safe escape maneuver: {e}")
+            self.escape_mode_active = False
     
     def _add_unsafe_zone(self, position, radius=0.3):
         """Add a position to the list of unsafe zones to avoid"""
@@ -646,15 +757,36 @@ class RoArmHardwareInterface(Node):
                 if current_time - self.escape_mode_start_time > self.escape_mode_duration:
                     self.escape_mode_active = False
                     self.get_logger().info("Escape mode deactivated - normal operation resuming")
+                    
+                    # Force publish current position to ensure animation can continue
+                    self.publish_actual_joint_states(self.current_joints)
                 else:
                     # Check if we're still seeing the same collision that triggered escape mode
                     with self.collision_lock:
-                        if (self.last_escape_direction == 'front' and self.collision_status['front']['active'] or
-                            self.last_escape_direction == 'left' and self.collision_status['left']['active'] or
-                            self.last_escape_direction == 'right' and self.collision_status['right']['active']):
+                        # Make this check less aggressive during animations
+                        if self.is_animating():
+                            # During animation, we're less reactive to avoid interruptions
+                            persistent_collision = False
+                        else:
+                            persistent_collision = (
+                                (self.last_escape_direction == 'front' and 
+                                 self.collision_status['front']['active'] and 
+                                 self.collision_status['front']['consecutive_count'] > self.consecutive_collision_threshold) or
+                                (self.last_escape_direction == 'left' and 
+                                 self.collision_status['left']['active'] and 
+                                 self.collision_status['left']['consecutive_count'] > self.consecutive_collision_threshold) or
+                                (self.last_escape_direction == 'right' and 
+                                 self.collision_status['right']['active'] and 
+                                 self.collision_status['right']['consecutive_count'] > self.consecutive_collision_threshold)
+                            )
                             
-                            # Still in collision - try another escape move
-                            self._execute_escape_maneuver(self.last_escape_direction)
+                        if persistent_collision:
+                            # Still in collision - try another escape move, but check if in animation first
+                            if self.is_animating():
+                                # Use gentler escape for animations
+                                self._execute_animation_safe_escape(self.last_escape_direction)
+                            else:
+                                self._execute_escape_maneuver(self.last_escape_direction)
             
             # Check if we need to recover from a recent emergency stop
             if current_time - self.last_emergency_stop_time < self.collision_recovery_timeout:
@@ -769,40 +901,70 @@ class RoArmHardwareInterface(Node):
         if not self.is_connected() or self.emergency_stop_active:
             return
         
-        # Update last movement time
-        self.last_movement_time = time.time()
-        
-        # Extract joint positions (in radians)
-        names = msg.name
-        positions = msg.position
-        
-        # Find indices for our joints (RoArm naming convention)
-        indices = {}
-        for i, name in enumerate(names):
-            if name in self.get_joint_mappings().keys():
-                indices[self.get_joint_mappings()[name]] = i
-        
-        # Make sure we have at least the main joints
-        required_joints = ['base', 'shoulder', 'elbow', 'hand']
-        if not all(joint in indices for joint in required_joints):
-            missing = [j for j in required_joints if j not in indices]
-            self.get_logger().warn(f"Missing required joints: {missing}")
-            return
-        
-        # Create target joint positions
-        target_positions = [
-            positions[indices['base']],
-            positions[indices['shoulder']],
-            positions[indices['elbow']],
-            positions[indices['wrist']] if 'wrist' in indices else 0.0,
-            positions[indices['hand']] if 'hand' in indices else 3.14  # Default closed gripper if not specified
-        ]
-        
-        # Store for velocity estimation
-        self.target_joints = target_positions.copy()
-        
-        # Apply collision avoidance and send command
-        self.send_safe_joint_command(target_positions, "Joint control")
+        try:
+            # Update last movement time
+            current_time = time.time()
+            self.last_movement_time = current_time
+            
+            # Track recent command times to help detect animations
+            if not hasattr(self, 'recent_command_times'):
+                self.recent_command_times = []
+            
+            self.recent_command_times.append(current_time)
+            if len(self.recent_command_times) > 5:  # Keep last 5 command times
+                self.recent_command_times.pop(0)
+            
+            # Extract joint positions (in radians)
+            names = msg.name
+            positions = msg.position
+            
+            # Find indices for our joints (RoArm naming convention)
+            indices = {}
+            for i, name in enumerate(names):
+                if name in self.get_joint_mappings().keys():
+                    indices[self.get_joint_mappings()[name]] = i
+            
+            # Make sure we have at least the main joints
+            required_joints = ['base', 'shoulder', 'elbow', 'hand']
+            if not all(joint in indices for joint in required_joints):
+                missing = [j for j in required_joints if j not in indices]
+                self.get_logger().warn(f"Missing required joints: {missing}")
+                return
+            
+            # Create target joint positions
+            target_positions = [
+                positions[indices['base']],
+                positions[indices['shoulder']],
+                positions[indices['elbow']],
+                positions[indices['wrist']] if 'wrist' in indices else 0.0,
+                positions[indices['hand']] if 'hand' in indices else 3.14  # Default closed gripper if not specified
+            ]
+            
+            # Store for velocity estimation
+            self.target_joints = target_positions.copy()
+            
+            # Log the incoming command
+            self.get_logger().info(f"Received joint_states_target: {[round(p, 2) for p in target_positions]}")
+            
+            # Check if we're in escape mode during animation
+            if self.escape_mode_active and self.is_animating():
+                self.get_logger().info("Animation continuing during escape mode - shortening escape duration")
+                # Shorten the escape duration to allow animation to continue
+                remaining_time = self.escape_mode_start_time + self.escape_mode_duration - current_time
+                if remaining_time > 1.0:  # If more than 1 second left
+                    self.escape_mode_duration = current_time - self.escape_mode_start_time + 1.0  # Shorten to 1 more second
+            
+            # Apply collision avoidance and send command
+            self.send_safe_joint_command(target_positions, "Joint control")
+            
+            # Explicitly publish to joint_states to ensure our topic is active
+            self.publish_actual_joint_states(self.current_joints)
+            
+        except Exception as e:
+            self.get_logger().error(f"Error in joint_states_callback: {e}")
+            # Add stack trace for better debugging
+            import traceback
+            self.get_logger().error(traceback.format_exc())
     
     def send_safe_joint_command(self, positions, description=""):
         """Send a joint command with safety checks applied"""
@@ -828,6 +990,7 @@ class RoArmHardwareInterface(Node):
                 'base': safe_positions[0],
                 'shoulder': safe_positions[1],
                 'elbow': safe_positions[2],
+                'roll': -1.5,
                 'hand': safe_positions[4],  # Gripper
                 'spd': 0,  # Max speed
                 'acc': 10  # Gentle acceleration
@@ -837,6 +1000,15 @@ class RoArmHardwareInterface(Node):
             if len(safe_positions) > 3:
                 joint_cmd['wrist'] = safe_positions[3]
             
+            # Update current joints first with the safe positions
+            self.current_joints = list(safe_positions)
+            
+            # Publish the actual safe positions for visualization and monitoring
+            self.publish_actual_joint_states(safe_positions)
+            
+            # Add more info for debugging
+            self.get_logger().debug(f"Sending command to hardware: {description}")
+            
             # Send command as JSON
             cmd_str = json.dumps(joint_cmd)
             return self.send_command(cmd_str, description)
@@ -844,7 +1016,49 @@ class RoArmHardwareInterface(Node):
         except Exception as e:
             self.get_logger().error(f"Error sending safe joint commands: {e}")
             return False
-    
+
+    def publish_actual_joint_states(self, positions):
+        """Publish the actual joint positions after collision avoidance."""
+        try:
+            # Create a joint state message with the actual positions
+            msg = JointState()
+            msg.header.stamp = self.get_clock().now().to_msg()
+            
+            # Use the appropriate joint names based on configuration
+            if hasattr(self, 'use_hardware_joint_names') and self.use_hardware_joint_names:
+                # Hardware interface expected joint names
+                msg.name = ['base', 'shoulder', 'elbow', 'wrist', 'hand']
+            else:
+                # URDF-based joint names
+                msg.name = ['base_to_L1', 'L1_to_L2', 'L2_to_L3', 'L3_to_L4', 'hand']
+            
+            # Set the actual positions - ensure we have a Python list, not just an array reference
+            msg.position = list(positions)
+            
+            # Add debug logging
+            self.get_logger().debug(f"Publishing to /joint_states: {[round(p, 2) for p in positions]}")
+            
+            # Publish the message
+            self.joint_states_publisher.publish(msg)
+            
+            # Test if message was published (this adds a bit of overhead but helps debugging)
+            # Remove this once confirmed working
+            test_msg = self.joint_states_publisher.get_subscription_count()
+            if test_msg == 0:
+                self.get_logger().warn("No subscribers to /joint_states - message might not be received")
+            
+        except Exception as e:
+            self.get_logger().error(f"Error publishing actual joint states: {e}")
+            # Add stack trace for better debugging
+            import traceback
+            self.get_logger().error(traceback.format_exc())
+
+    def test_joint_states_publisher(self):
+        """Test function to verify the joint_states publisher is working."""
+        if hasattr(self, 'current_joints') and len(self.current_joints) > 0:
+            self.get_logger().info("Publishing test message to /joint_states")
+            self.publish_actual_joint_states(self.current_joints)
+
     def apply_safety_limits(self, positions):
         """Apply safety limits to joint positions based on collision status"""
         # Get a copy of the target positions
@@ -991,19 +1205,21 @@ class RoArmHardwareInterface(Node):
         
         # Check if we've been idle for a while
         idle_time = current_time - self.last_movement_time
-        if idle_time > self.max_idle_time:
-            # Return to home position if we've been idle too long
-            if not self._at_position(self.home_position):
-                self.get_logger().info(f"Been idle for {idle_time:.1f}s, returning to home position")
-                self.move_to_safe_position(self.home_position)
-                return
+        
+        # Return to rest position if we've been idle for the timeout period
+        # and we're not already in the process of returning to rest
+        if idle_time > self.idle_timeout and not self.is_returning_to_rest:
+            self.get_logger().info(f"Been idle for {idle_time:.1f}s, returning to rest position")
+            self.go_to_rest_position("Idle timeout rest position")
+            return
         
         # Skip the rest if we're already in an avoidance maneuver
         if self.idle_avoidance_active or self.emergency_stop_active:
             return
             
-        # Only run the full check occasionally to avoid unnecessary movements
-        if current_time - self.last_proactive_check < 1.0:
+        # Make idle collision checks more responsive - check more frequently
+        # Reduced from 1.0 to 0.5 seconds for faster response
+        if current_time - self.last_proactive_check < 0.5:
             return
             
         self.last_proactive_check = current_time
@@ -1018,8 +1234,12 @@ class RoArmHardwareInterface(Node):
             for direction in ['front', 'left', 'right']:
                 status = self.collision_status[direction]
                 
+                # Lower the threshold for idle response - more sensitive when idle
+                # Original was self.proactive_threshold
+                idle_threshold = self.proactive_threshold * 1.2  # 20% more sensitive when idle
+                
                 # Check if this direction has a collision and is within threshold
-                if status['active'] and status['distance'] < self.proactive_threshold:
+                if status['active'] or status['distance'] < idle_threshold:
                     
                     # Calculate criticality score based on distance and consecutive count
                     # Lower distance or higher consecutive count means higher priority
@@ -1027,9 +1247,11 @@ class RoArmHardwareInterface(Node):
                     
                     if status['severity'] == 'danger':
                         criticality_score += 10  # Add high priority for danger situations
+                    elif status['severity'] == 'warning':
+                        criticality_score += 5   # Add medium priority for warnings
                     
                     # Convert distance to a comparable score (closer = higher score)
-                    distance_factor = 1.0 - (status['distance'] / self.proactive_threshold)
+                    distance_factor = 1.0 - (status['distance'] / idle_threshold)
                     criticality_score += distance_factor * 5
                     
                     # If this is more critical than previous, select it
@@ -1048,6 +1270,10 @@ class RoArmHardwareInterface(Node):
                     self.collision_status[most_critical_direction]['distance'],
                     self.collision_status[most_critical_direction]['consecutive_count']
                 )
+                # Also log the severity for better debugging
+                self.get_logger().info(f"Proactive avoidance triggered by {most_critical_direction} " +
+                    f"({self.collision_status[most_critical_direction]['severity']}) at " +
+                    f"{self.collision_status[most_critical_direction]['distance']:.2f}cm")
     
     def _begin_proactive_avoidance(self, direction, distance, consecutive_count=0):
         """Start a proactive avoidance movement when idle and object detected"""
@@ -1078,9 +1304,16 @@ class RoArmHardwareInterface(Node):
             avoidance_scale = 1.0 - (distance - self.emergency_stop_distance) / (self.proactive_threshold - self.emergency_stop_distance)
             avoidance_scale = max(0.1, min(1.0, avoidance_scale))  # Clamp to 0.1-1.0
             
-            # Scale up based on consecutive detections to make more decisive moves
-            persistence_factor = min(3.0, 1.0 + (consecutive_count / 5.0))
-            avoidance_scale *= persistence_factor
+            # Enhance response for warnings - respond more seriously to warnings
+            if consecutive_count > 0:
+                # Scale up based on consecutive detections to make more decisive moves
+                persistence_factor = min(3.0, 1.0 + (consecutive_count / 5.0))
+                avoidance_scale *= persistence_factor
+            
+            # Handle very close objects with extra urgency
+            if distance < self.hard_limit_distance * 1.5:  # If object is quite close
+                avoidance_scale = min(1.5, avoidance_scale * 1.3)  # Increase avoidance intensity by 30%
+                self.get_logger().warn(f"Enhanced avoidance for close object at {distance:.2f}cm")
             
             # Add playfulness - small random variations
             playful_factor = random.uniform(0.7, 1.0) if random.random() < self.avoidance_playfulness else 1.0
@@ -1106,8 +1339,8 @@ class RoArmHardwareInterface(Node):
             if direction == 'front':
                 # Front obstacles - pull back and maybe rotate slightly
                 # More aggressive retreat for persistent collisions
-                shoulder_adjustment = 0.15 * avoidance_scale * playful_factor * (1 + consecutive_count * 0.1)
-                elbow_adjustment = 0.3 * avoidance_scale * playful_factor * (1 + consecutive_count * 0.1)
+                shoulder_adjustment = 0.2 * avoidance_scale * playful_factor * (1 + consecutive_count * 0.1)
+                elbow_adjustment = 0.4 * avoidance_scale * playful_factor * (1 + consecutive_count * 0.1)
                 
                 # Pull back more aggressively for persistent collisions
                 new_position[1] += shoulder_adjustment  # Increase shoulder angle (pull back)
@@ -1117,45 +1350,45 @@ class RoArmHardwareInterface(Node):
                 if consecutive_count > self.consecutive_collision_threshold:
                     # Try rotating away more decisively to break the cycle
                     rotation_dir = 1 if random.random() > 0.5 else -1  # Random direction
-                    new_position[0] += rotation_dir * 0.3 * avoidance_scale
+                    new_position[0] += rotation_dir * 0.4 * avoidance_scale
                     
                     # Pull back even more dramatically
-                    new_position[1] += 0.2 * avoidance_scale
+                    new_position[1] += 0.3 * avoidance_scale
                     
                     self.get_logger().warn("Persistent front collision: executing dramatic evasion")
                 else:
                     # Add a slight random rotation for more natural movement
-                    new_position[0] += random.uniform(-0.2, 0.2) * self.avoidance_playfulness
+                    new_position[0] += random.uniform(-0.25, 0.25) * self.avoidance_playfulness
                 
             elif direction == 'left':
                 # Left obstacles - rotate right decisively
-                rotation = self.side_avoidance_magnitude * avoidance_scale * playful_factor
+                rotation = self.side_avoidance_magnitude * 1.2 * avoidance_scale * playful_factor
                 
                 # Increase rotation magnitude for persistent collisions
                 if consecutive_count > self.consecutive_collision_threshold:
-                    rotation *= 1.5
+                    rotation *= 1.8
                     self.get_logger().warn("Persistent left collision: executing dramatic rotation")
                 
                 new_position[0] += rotation  # Rotate clockwise (to the right)
                 
                 # Pull back slightly too for more clearance
-                if consecutive_count > 0 or random.random() < 0.5:
-                    new_position[1] += 0.1 * avoidance_scale
+                if consecutive_count > 0 or random.random() < 0.7:  # More likely to pull back
+                    new_position[1] += 0.15 * avoidance_scale
                     
             elif direction == 'right':
                 # Right obstacles - rotate left decisively
-                rotation = self.side_avoidance_magnitude * avoidance_scale * playful_factor
+                rotation = self.side_avoidance_magnitude * 1.2 * avoidance_scale * playful_factor
                 
                 # Increase rotation magnitude for persistent collisions
                 if consecutive_count > self.consecutive_collision_threshold:
-                    rotation *= 1.5
+                    rotation *= 1.8
                     self.get_logger().warn("Persistent right collision: executing dramatic rotation")
                 
                 new_position[0] -= rotation  # Rotate counter-clockwise (to the left)
                 
                 # Pull back slightly too for more clearance
-                if consecutive_count > 0 or random.random() < 0.5:
-                    new_position[1] += 0.1 * avoidance_scale
+                if consecutive_count > 0 or random.random() < 0.7:  # More likely to pull back
+                    new_position[1] += 0.15 * avoidance_scale
             
             # Move to the new position
             self.move_to_safe_position(new_position)
@@ -1226,6 +1459,126 @@ class RoArmHardwareInterface(Node):
             self.get_logger().error(f"Error in move_to_safe_position: {e}")
             self.idle_avoidance_active = False
             return False
+    
+    def _generate_rest_position(self):
+        """Generate a rest position with some random variation"""
+        # Start with the base rest position
+        rest_position = self.base_rest_position.copy()
+        
+        # Add random variation to each joint
+        for i in range(len(rest_position)):
+            # Apply smaller variation to the hand/gripper (last position)
+            variation_scale = 0.2 if i == 4 else 1.0
+            variation = random.uniform(-self.rest_variation_range, self.rest_variation_range) * variation_scale
+            rest_position[i] += variation
+            
+        self.last_rest_position = rest_position
+        return rest_position
+    
+    def go_to_rest_position(self, description="Rest position"):
+        """Move to a rest position with random variation"""
+        if not self.enable_rest_position or not self.is_connected():
+            return False
+            
+        try:
+            self.is_returning_to_rest = True
+            
+            # Generate a rest position with variation
+            rest_position = self._generate_rest_position()
+            
+            self.get_logger().info(f"Moving to rest position: {[round(p, 2) for p in rest_position]}")
+            
+            # Move to the rest position
+            success = self.move_to_safe_position(
+                rest_position, 
+                description, 
+                override_checks=True  # Override collision checks for rest position
+            )
+            
+            # Reset the returning flag after motion is complete
+            self.is_returning_to_rest = False
+            
+            return success
+        except Exception as e:
+            self.get_logger().error(f"Error moving to rest position: {e}")
+            self.is_returning_to_rest = False
+            return False
+    
+    def rest_position_callback(self):
+        """Move the arm to the rest position after startup"""
+        # Skip if already triggered (our custom one-shot implementation)
+        if self.rest_position_timer_triggered:
+            return
+
+        # Mark as triggered so it only runs once
+        self.rest_position_timer_triggered = True
+        
+        # Cancel the timer so it doesn't consume resources
+        self.rest_position_timer.cancel()
+            
+        if not self.is_connected():
+            self.get_logger().error("Cannot perform initial rest positioning: not connected")
+            return
+            
+        if self.rest_position_done:
+            return  # Prevent duplicate execution
+            
+        try:
+            self.get_logger().info("Moving to initial rest position")
+            
+            # Use the go_to_rest_position method for consistency
+            success = self.go_to_rest_position("Initial rest position")
+            
+            if success:
+                self.get_logger().info("Successfully moved to initial rest position")
+            else:
+                self.get_logger().warn("Failed to move to initial rest position")
+                
+            # Mark as done regardless of outcome to prevent retry
+            self.rest_position_done = True
+            
+        except Exception as e:
+            self.get_logger().error(f"Error during initial rest positioning: {e}")
+            self.rest_position_done = True  # Mark as done to prevent retry
+
+    def is_animating(self):
+        """Determine if the robot is currently executing an animation.
+        This helps us decide whether to override with avoidance movements."""
+        # Check if we've had any joint command in the last second that might be part of an animation
+        time_since_last_command = time.time() - self.last_movement_time
+        
+        # If we've moved very recently, consider it an animation in progress
+        if time_since_last_command < 0.5:
+            return True
+            
+        # Also check if we're in the middle of a dramatic movement (high velocity)
+        max_velocity = max([abs(v) for v in self.joint_velocities]) if hasattr(self, 'joint_velocities') and self.joint_velocities else 0
+        if max_velocity > 0.5:  # Significant movement in progress
+            return True
+            
+        # Check if recent movements form a pattern consistent with animation
+        # This helps detect ongoing animations even if current velocity is low
+        if hasattr(self, 'recent_command_times') and len(self.recent_command_times) >= 3:
+            # Check for regular timing pattern in recent commands (animation typically has regular timing)
+            intervals = [self.recent_command_times[i+1] - self.recent_command_times[i] 
+                        for i in range(len(self.recent_command_times)-1)]
+            if intervals and max(intervals) - min(intervals) < 0.2:  # Regular timing pattern
+                return True
+        
+        return False
+
+    def publish_current_joint_states(self):
+        """Publish the current joint states periodically to ensure topic is active."""
+        try:
+            if hasattr(self, 'current_joints') and len(self.current_joints) > 0:
+                self.get_logger().debug("Publishing current joint states to /joint_states")
+                self.publish_actual_joint_states(self.current_joints)
+                
+                # Log less frequently to avoid console spam
+                if int(time.time()) % 10 == 0:  # Log every 10 seconds
+                    self.get_logger().info(f"Publishing to /joint_states: {[round(p, 2) for p in self.current_joints]}")
+        except Exception as e:
+            self.get_logger().error(f"Error in direct publish timer: {e}")
 
 def main(args=None):
     rclpy.init(args=args)
