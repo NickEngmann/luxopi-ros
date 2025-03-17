@@ -43,7 +43,6 @@ class RoArmHardwareInterface(Node):
         self.declare_parameter('enable_rest_position', True)  # Enable/disable the rest position behavior
         self.declare_parameter('base_rest_position', [0.0, -2.0, 2.0, 1.0, 3.14])  # Base rest position
         self.declare_parameter('rest_variation_range', 0.15)  # Range for position variation        
-        # Make sure to define use_hardware_joint_names parameter
         self.declare_parameter('use_hardware_joint_names', False)
         
         # Get parameters
@@ -71,16 +70,11 @@ class RoArmHardwareInterface(Node):
         self.base_rest_position = self.get_parameter('base_rest_position').value
         self.rest_variation_range = self.get_parameter('rest_variation_range').value
         
-        # Make sure to get the parameter value
         self.use_hardware_joint_names = self.get_parameter('use_hardware_joint_names').value
-        
-        # Add parameter for emergency stop distance (used in _execute_avoidance_movement but not defined)
-        self.emergency_stop_distance = self.hard_limit_distance * 0.7  # Default to 70% of hard limit
         
         # Connection control
         self.connection_active = False
         self.connection_lock = threading.Lock()
-        self.stop_thread = False
         
         # Add timer health tracking variables
         self.safety_timer_active = False
@@ -91,8 +85,6 @@ class RoArmHardwareInterface(Node):
         self.safety_timer_lock = threading.Lock()
         
         # Rest position tracking
-        self.rest_position_timer_triggered = False
-        self.rest_position_done = False
         self.last_rest_position = None  # Track the last used rest position
         
         # Tracking for adjustment actions
@@ -103,6 +95,7 @@ class RoArmHardwareInterface(Node):
         }
         self.adjustment_cooldown = 2.0  # Time to wait before making the same adjustment again
         self.adjustment_position_threshold = 0.1  # Difference threshold to consider a new position
+        
         # Collision tracking
         self.collision_status = {
             'front': {'active': False, 'distance': float('inf'), 'severity': 'safe', 'consecutive_count': 0},
@@ -166,7 +159,6 @@ class RoArmHardwareInterface(Node):
                 10)
                 
             # Add a direct publishing timer to ensure we're sending messages regularly
-            # This guarantees joint state publishing even if no target commands are received
             self.direct_pub_timer = self.create_timer(0.1, self.publish_current_joint_states)
             
             # Create subscriptions to collision topics
@@ -226,7 +218,6 @@ class RoArmHardwareInterface(Node):
                 self.right_severity_callback, 
                 10)
             
-            # Create a timer for safety monitoring and motion adjustment using our new wrapper
             # Initialize timer tracking variables first
             self.safety_timer_creation_time = self.get_clock().now().nanoseconds / 1e9
             self.safety_timer_active = True
@@ -258,39 +249,6 @@ class RoArmHardwareInterface(Node):
                 self.last_watchdog_check_time = current_time
                 return  # Skip the first execution to establish baseline
                 
-            elapsed_time = current_time - self.last_watchdog_check_time
-            
-            # If it's been too long since the last safety check (more than 2s when it should run every 0.1s)
-            # if elapsed_time > 2 and self.enable_collision_avoidance:
-            #     with self.safety_timer_lock:
-            #         timer_elapsed = current_time - self.safety_timer_creation_time
-            #         call_count = self.safety_timer_call_count
-            #         is_active = self.safety_timer_active
-            #         last_exception = self.safety_timer_last_exception
-                    
-            #     self.get_logger().warn(f"WATCHDOG: Safety timer appears inactive for {elapsed_time:.2f}s, status: active={is_active}, " +
-            #                           f"calls={call_count}, age={timer_elapsed:.1f}s, exception={last_exception}")
-                
-            #     # Cancel the existing timer if it exists but isn't working
-            #     try:
-            #         if hasattr(self, 'safety_timer'):
-            #             self.get_logger().info("Attempting to cancel old safety timer")
-            #             self.safety_timer.cancel()
-            #     except Exception as e:
-            #         self.get_logger().error(f"Error cancelling safety timer: {e}")
-                
-            #     # Create a new timer with a unique identifier
-            #     self.recreate_safety_timer()
-                
-            #     # Force an immediate safety check
-            #     try:
-            #         self.safety_monitor_callback()
-            #     except Exception as e:
-            #         self.get_logger().error(f"Error in forced safety check: {e}")
-            #         self.safety_timer_last_exception = str(e)
-            # else:
-            #     self.get_logger().debug(f"WATCHDOG: Safety timer health check passed ({elapsed_time:.2f}s)")
-            
             # Update the watchdog timestamp after the check
             self.last_watchdog_check_time = current_time
             
@@ -1345,7 +1303,7 @@ class RoArmHardwareInterface(Node):
                 len(self._last_published_positions) == len(positions) and
                 all(abs(a - b) < 0.001 for a, b in zip(positions, self._last_published_positions))):
                 # Skip logging the same position again
-                hello_world = True
+                pass
             else:
                 # Add debug logging
                 self.get_logger().debug(f"Publishing to /joint_states: {[round(p, 2) for p in positions]}")
@@ -1361,13 +1319,7 @@ class RoArmHardwareInterface(Node):
             # Add stack trace for better debugging
             import traceback
             self.get_logger().error(traceback.format_exc())
-
-    def test_joint_states_publisher(self):
-        """Test function to verify the joint_states publisher is working."""
-        if hasattr(self, 'current_joints') and len(self.current_joints) > 0:
-            self.get_logger().info("Publishing test message to /joint_states")
-            self.publish_actual_joint_states(self.current_joints)
-
+    
     def apply_safety_limits(self, positions):
         """Apply safety limits to joint positions based on collision status"""
         # Get a copy of the target positions
