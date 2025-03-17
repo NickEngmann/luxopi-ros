@@ -328,7 +328,7 @@ class CollisionNode(Node):
                         collision_msg = Bool()
                         collision_msg.data = False
                         self.left_collision_pub.publish(collision_msg)
-                        self.get_logger().info(f"Left collision debug --- Distance: {left_distance:.1f} cm, Severity: {severity}")
+                        self.get_logger().debug(f"Left collision debug --- Distance: {left_distance:.1f} cm, Severity: {severity}")
                         
                     # Save current reading for next comparison
                     self.prev_left_distance = left_distance
@@ -376,7 +376,7 @@ class CollisionNode(Node):
                         collision_msg = Bool()
                         collision_msg.data = False
                         self.right_collision_pub.publish(collision_msg)
-                        self.get_logger().info(f"Right collision debug --- Distance: {right_distance:.1f} cm, Severity: {severity}")
+                        self.get_logger().debug(f"Right collision debug --- Distance: {right_distance:.1f} cm, Severity: {severity}")
                         
                     # Save current reading for next comparison
                     self.prev_right_distance = right_distance
