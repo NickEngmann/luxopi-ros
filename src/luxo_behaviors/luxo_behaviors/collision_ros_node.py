@@ -24,6 +24,12 @@ class CollisionNode(Node):
         self.recovery_active = False
         self.gesture_thread_running = True
         
+        # NEW: Add variables to track last successful data reception
+        self.last_successful_proximity_time = time.time()
+        self.last_successful_left_distance_time = time.time()
+        self.last_successful_right_distance_time = time.time()
+        self.no_data_timeout = 1.5  # 3 seconds timeout threshold
+        
         # Parameter to enable/disable gesture detection
         self.declare_parameter('enable_gestures', False)
         self.enable_gestures = self.get_parameter('enable_gestures').value
@@ -92,11 +98,67 @@ class CollisionNode(Node):
         # Create recovery timer that checks every 5 seconds if recovery is needed
         self.recovery_timer = self.create_timer(5.0, self.check_and_recover)
         
+        # Create a more frequent timer to check for no-data conditions (check every 2 seconds)
+        self.no_data_timer = self.create_timer(0.5, self.data_watchdog)
+        
         self.get_logger().info('Collision node initialized')
         self.get_logger().info(f'Proximity threshold set to: {self.proximity_threshold}')
         self.get_logger().info(f'Side distance threshold set to: {self.side_distance_threshold} cm')
         self.get_logger().info(f'Danger threshold set to: {self.danger_threshold} cm')
         self.get_logger().info(f'Warning threshold set to: {self.warning_threshold} cm')
+        self.get_logger().info(f'No data timeout set to: {self.no_data_timeout} seconds')
+
+    def data_watchdog(self):
+        """Check if we haven't received data from sensors for too long"""
+        current_time = time.time()
+        
+        # Skip if recovery is already in progress
+        if self.recovery_active:
+            return
+            
+        try:
+            # Check time since last proximity data
+            prox_time_since = current_time - self.last_successful_proximity_time
+            left_time_since = current_time - self.last_successful_left_distance_time
+            right_time_since = current_time - self.last_successful_right_distance_time
+            
+            # Log the time since last successful readings for debugging
+            self.get_logger().debug(f"Time since last data - Proximity: {prox_time_since:.1f}s, Left: {left_time_since:.1f}s, Right: {right_time_since:.1f}s")
+            
+            # If any sensor hasn't reported for longer than no_data_timeout
+            if (prox_time_since > self.no_data_timeout or
+                left_time_since > self.no_data_timeout or
+                right_time_since > self.no_data_timeout):
+                
+                self.get_logger().debug(f"No data received from at least one sensor for over {self.no_data_timeout} seconds!")
+                self.get_logger().debug(f"Time since last data - Proximity: {prox_time_since:.1f}s, Left: {left_time_since:.1f}s, Right: {right_time_since:.1f}s")
+                
+                # Trigger recovery
+                self.recovery_active = True
+                self.error_count += 1  # Increment error count to trigger recovery
+                success = self.initialize_sensors()
+                
+                if success:
+                    self.get_logger().info("Sensor recovery due to no data condition was successful")
+                    # Reset the timestamps to current time
+                    self.last_successful_proximity_time = current_time
+                    self.last_successful_left_distance_time = current_time
+                    self.last_successful_right_distance_time = current_time
+                    
+                    # Restart the gesture thread if needed
+                    if self.enable_gestures and (not hasattr(self, 'gesture_thread') or not self.gesture_thread.is_alive()):
+                        self.get_logger().info("Restarting gesture thread")
+                        self.gesture_thread_running = True
+                        self.gesture_thread = threading.Thread(target=self.gesture_detection, daemon=True)
+                        self.gesture_thread.start()
+                else:
+                    self.get_logger().error("No-data sensor recovery failed, will retry")
+                
+                self.recovery_active = False
+                
+        except Exception as e:
+            self.get_logger().error(f"No-data check error: {e}")
+            self.recovery_active = False
 
     def initialize_sensors(self):
         """Initialize or reinitialize all sensors"""
@@ -218,6 +280,8 @@ class CollisionNode(Node):
             # Read proximity
             proximity = self.apds.proximity
             
+            self.last_successful_proximity_time = time.time()
+            
             # Publish raw proximity value
             proximity_msg = Int16()
             proximity_msg.data = proximity
@@ -309,6 +373,8 @@ class CollisionNode(Node):
                 try:
                     left_distance = self.vl53_left.distance
                     
+                    self.last_successful_left_distance_time = time.time()
+                    
                     # Ignore readings below 1cm (treat as invalid)
                     if left_distance < 1.0:
                         self.get_logger().debug(f"Ignoring invalid left distance reading: {left_distance:.1f} cm")
@@ -356,6 +422,8 @@ class CollisionNode(Node):
             if right_ready:
                 try:
                     right_distance = self.vl53_right.distance
+                    
+                    self.last_successful_right_distance_time = time.time()
                     
                     # Ignore readings below 1cm (treat as invalid)
                     if right_distance < 1.0:
