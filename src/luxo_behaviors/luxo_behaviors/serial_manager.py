@@ -38,6 +38,10 @@ class SerialManager:
         
         # Callback for data received
         self.data_callback = None
+
+        # Track last successful read time to detect connection issues
+        self.last_successful_read = 0
+        self.connection_timeout = 5.0  # seconds without successful read before reconnection attempt
     
     def set_data_callback(self, callback):
         """Set callback function that will be called when data is received."""
@@ -139,6 +143,8 @@ class SerialManager:
     
     def read_serial(self):
         """Read serial data in a separate thread."""
+        self.node.get_logger().info("Serial read thread started")
+        
         while not self.stop_thread:
             if self.is_connected():
                 try:
@@ -146,28 +152,62 @@ class SerialManager:
                     time.sleep(self.read_throttle)
                     
                     if self.ser.in_waiting > 0:
-                        data = self.ser.readline().decode('utf-8').strip()
-                        if data:
-                            # Try to parse as JSON for better logging
-                            try:
-                                json_data = json.loads(data)
-                                self.node.get_logger().debug(f"Received: {json.dumps(json_data)}")
+                        data = self.ser.readline()
+                        
+                        # Try to decode as UTF-8 with error handling
+                        try:
+                            line = data.decode('utf-8', errors='replace').strip()
+                            
+                            # Only process and log non-empty lines
+                            if line:
+                                self._process_response(line)
                                 
-                                # Call the callback if set
-                                if self.data_callback:
-                                    self.data_callback(json_data)
-                            except json.JSONDecodeError:
-                                # Not JSON, just log as text
-                                self.node.get_logger().debug(f"Received: {data}")
-                                
-                                # Call the callback with the raw string if set
-                                if self.data_callback:
-                                    self.data_callback(data)
+                            # Update last successful read time
+                            self.last_successful_read = time.time()
+                        except UnicodeDecodeError as e:
+                            # Handle decode errors more gracefully
+                            self.node.get_logger().debug(f"Received non-UTF8 data: {data.hex()}")
+                    
+                    # Check for connection timeout - no successful reads for a while
+                    if time.time() - self.last_successful_read > self.connection_timeout:
+                        self.node.get_logger().warn(f"No data received for {self.connection_timeout}s, checking connection...")
+                        self._check_connection()
+                        
                 except Exception as e:
                     self.node.get_logger().error(f"Error reading from serial: {e}")
-            else:
-                # Exit thread if connection is lost
-                break
+                    time.sleep(1.0)  # Sleep longer on error
+                
+        self.node.get_logger().info("Serial read thread stopped")
+    
+    def _check_connection(self):
+        """Check if connection is still active and attempt to reconnect if needed."""
+        try:
+            # Try to write a simple ping command
+            with self.connection_lock:
+                if self.ser:
+                    self.ser.write(b'{"T":0}\r\n')
+                    self.last_successful_read = time.time()  # Reset timeout
+                else:
+                    self._attempt_reconnect()
+        except Exception as e:
+            self.node.get_logger().error(f"Connection check failed: {e}")
+            self._attempt_reconnect()
+    
+    def _attempt_reconnect(self):
+        """Attempt to reconnect to the serial port."""
+        self.node.get_logger().warn("Attempting to reconnect to serial port")
+        self.close()  # Close existing connection
+        time.sleep(1.0)  # Wait a bit before reconnecting
+        self.connect()  # Attempt to reconnect
+    
+    def _process_response(self, response):
+        """Process a response from the hardware."""
+        # For debug purposes, log some responses
+        if len(response) > 5:  # Only log meaningful responses
+            self.node.get_logger().debug(f"Received: {response}")
+            
+        # Here you could add more processing of responses if needed
+        # For example, parsing status updates or error messages
     
     def close(self):
         """Close the serial connection and clean up resources."""
