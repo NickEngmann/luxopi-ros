@@ -245,7 +245,6 @@ class RoArmHardwareInterface(Node):
         else:
             self.get_logger().error("Failed to initialize hardware interface")
     
-    # Collision callbacks
     def front_collision_callback(self, msg):
         with self.collision_lock:
             was_active = self.collision_status['front']['active']
@@ -259,16 +258,18 @@ class RoArmHardwareInterface(Node):
             elif msg.data and was_active:
                 # Increment consecutive detection counter
                 self.collision_status['front']['consecutive_count'] += 1
-                if self.collision_status['front']['consecutive_count'] % self.consecutive_collision_threshold == 0: or return to idle
+                if self.collision_status['front']['consecutive_count'] % self.consecutive_collision_threshold == 0:
                     self.get_logger().warn(f"Persistent front collision! Count: {self.collision_status['front']['consecutive_count']}")
                     # Force more frequent checks for persistent collisions
                     if self.enable_proactive_avoidance and not self.is_animating():
-                        self.last_proactive_check = 0.0  # Force immediate checker 10 consecutive warnings
-                >= 10:
-                # Check if we need to trigger escape mode ({self.collision_status['front']['consecutive_count']}), returning to idle state")
-                if self.collision_status['front']['consecutive_count'] > self.escape_threshold:                self.return_to_idle_state("Persistent collision idle return")
-                    if not self.escape_mode_active:a:
-                        self._activate_escape_mode('front').info("Front collision warning cleared")
+                        self.last_proactive_check = 0.0  # Force immediate check
+                        
+                # Check if we need to trigger escape mode
+                if self.collision_status['front']['consecutive_count'] > self.escape_threshold:
+                    self.get_logger().warn(f"Persistent collision detected ({self.collision_status['front']['consecutive_count']}), returning to idle state")
+                    self.return_to_idle_state("Persistent collision idle return")
+                    if not self.escape_mode_active:
+                        self._activate_escape_mode('front')
             elif was_active and not msg.data:
                 self.get_logger().info("Front collision warning cleared")
                 self.collision_status['front']['consecutive_count'] = 0
@@ -944,7 +945,7 @@ class RoArmHardwareInterface(Node):
             self.target_joints = target_positions.copy()
             
             # Log the incoming command
-            self.get_logger().info(f"Received joint_states_target: {[round(p, 2) for p in target_positions]}")
+            self.get_logger().debug(f"Received joint_states_target: {[round(p, 2) for p in target_positions]}")
             
             # Check if we're in escape mode during animation
             if self.escape_mode_active and self.is_animating():
@@ -1045,7 +1046,7 @@ class RoArmHardwareInterface(Node):
             # Remove this once confirmed working
             test_msg = self.joint_states_publisher.get_subscription_count()
             if test_msg == 0:
-                self.get_logger().warn("No subscribers to /joint_states - message might not be received")
+                self.get_logger().debug("No subscribers to /joint_states - message might not be received")
             
         except Exception as e:
             self.get_logger().error(f"Error publishing actual joint states: {e}")
