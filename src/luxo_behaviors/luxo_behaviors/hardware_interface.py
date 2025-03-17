@@ -45,11 +45,9 @@ class RoArmHardwareInterface(Node):
         self.declare_parameter('escape_mode_duration', 10.0)  # How long to avoid an area after escaping (seconds)
         
         # Add parameter for rest position
-        self.declare_parameter('enable_rest_position', False)  # Enable/disable the rest position behavior
-        self.declare_parameter('initial_rest_delay', 15.0)    # Seconds to wait before first moving to rest
-        self.declare_parameter('base_rest_position', [0.0, -2.0, 2.0, 0.0, 3.14])  # Base rest position
+        self.declare_parameter('enable_rest_position', True)  # Enable/disable the rest position behavior
+        self.declare_parameter('base_rest_position', [0.0, -2.0, 2.0, 1.0, 3.14])  # Base rest position
         self.declare_parameter('rest_variation_range', 0.15)  # Range for position variation
-        self.declare_parameter('idle_timeout', 30.0)  # Seconds before returning to rest due to idle
         
         # Make sure to define use_hardware_joint_names parameter
         self.declare_parameter('use_hardware_joint_names', False)
@@ -79,7 +77,6 @@ class RoArmHardwareInterface(Node):
         
         # Get parameters for rest position (renamed from initial_folding parameters)
         self.enable_rest_position = self.get_parameter('enable_rest_position').value
-        self.initial_rest_delay = self.get_parameter('initial_rest_delay').value
         self.base_rest_position = self.get_parameter('base_rest_position').value
         self.rest_variation_range = self.get_parameter('rest_variation_range').value
         self.idle_timeout = self.get_parameter('idle_timeout').value
@@ -226,12 +223,6 @@ class RoArmHardwareInterface(Node):
             
             # Add a timer for proactive avoidance when idle
             self.idle_timer = self.create_timer(self.idle_check_interval, self.idle_safety_check)
-            
-            # Add a timer for rest position (renamed from initial_fold_timer)
-            if self.enable_rest_position:
-                self.get_logger().info(f"Will move to rest position in {self.initial_rest_delay} seconds")
-                self.rest_position_timer = self.create_timer(self.initial_rest_delay, self.rest_position_callback)
-            
             self.get_logger().info("RoArm hardware interface initialized")
             
             if self.enable_collision_avoidance:
