@@ -24,11 +24,15 @@ class CollisionNode(Node):
         self.recovery_active = False
         self.gesture_thread_running = True
         
+        # Parameter to enable/disable gesture detection
+        self.declare_parameter('enable_gestures', False)
+        self.enable_gestures = self.get_parameter('enable_gestures').value
+        
         # Initialize sensors
         self.initialize_sensors()
         
         # Set the proximity threshold for collision detection
-        self.declare_parameter('proximity_threshold', 5)
+        self.declare_parameter('proximity_threshold', 15)
         self.proximity_threshold = self.get_parameter('proximity_threshold').value
         
         # Set the distance threshold for side collision detection (in cm)
@@ -50,8 +54,17 @@ class CollisionNode(Node):
         
         # Publishers for APDS9960
         self.collision_pub = self.create_publisher(Bool, '/head_collision_warning', 10)
-        self.gesture_pub = self.create_publisher(String, '/gestures', 10)
         self.proximity_pub = self.create_publisher(Int16, '/proximity', 10)
+        
+        # Create gesture publisher only if gestures are enabled
+        if self.enable_gestures:
+            self.gesture_pub = self.create_publisher(String, '/gestures', 10)
+            # Create a queue for thread communication
+            self.gesture_queue = queue.Queue()
+            # Log gesture status
+            self.get_logger().info('Gesture detection enabled')
+        else:
+            self.get_logger().info('Gesture detection disabled')
         
         # Publishers for VL53L4CD
         self.left_collision_pub = self.create_publisher(Bool, '/left_collision_warning', 10)
@@ -65,12 +78,10 @@ class CollisionNode(Node):
         self.left_severity_pub = self.create_publisher(String, '/left_collision_severity', 10)
         self.right_severity_pub = self.create_publisher(String, '/right_collision_severity', 10)
         
-        # Create a queue for thread communication
-        self.gesture_queue = queue.Queue()
-        
-        # Start gesture detection in its own thread
-        self.gesture_thread = threading.Thread(target=self.gesture_detection, daemon=True)
-        self.gesture_thread.start()
+        # Start gesture detection in its own thread only if gestures are enabled
+        if self.enable_gestures:
+            self.gesture_thread = threading.Thread(target=self.gesture_detection, daemon=True)
+            self.gesture_thread.start()
         
         # Create timer for proximity readings
         self.timer = self.create_timer(0.2, self.proximity_callback)
@@ -94,7 +105,10 @@ class CollisionNode(Node):
             self.apds = APDS9960(self.i2c)
             self.apds.enable_proximity = True
             self.apds.proximity_gain = 1
-            self.apds.enable_gesture = True
+            
+            # Only enable gesture detection if gestures are enabled
+            if self.enable_gestures:
+                self.apds.enable_gesture = True
             
             # Initialize VL53L4CD sensors
             self.vl53_right = adafruit_vl53l4cd.VL53L4CD(self.i2c, 0x59)  # Left sensor with custom address
@@ -128,8 +142,8 @@ class CollisionNode(Node):
                 
                 if success:
                     self.get_logger().info("Sensor recovery successful")
-                    # Restart the gesture thread if it failed
-                    if not self.gesture_thread.is_alive():
+                    # Restart the gesture thread if it failed and gestures are enabled
+                    if self.enable_gestures and not self.gesture_thread.is_alive():
                         self.get_logger().info("Restarting gesture thread")
                         self.gesture_thread_running = True
                         self.gesture_thread = threading.Thread(target=self.gesture_detection, daemon=True)
@@ -237,15 +251,16 @@ class CollisionNode(Node):
             # Save current proximity for next comparison
             self.prev_proximity = proximity
             
-            # Check if there are any gestures in the queue
-            while not self.gesture_queue.empty():
-                gesture = self.gesture_queue.get_nowait()
-                self.get_logger().info(f"Gesture detected: {gesture}")
-                
-                # Publish gesture
-                gesture_msg = String()
-                gesture_msg.data = gesture
-                self.gesture_pub.publish(gesture_msg)
+            # Check if there are any gestures in the queue - only if gestures are enabled
+            if self.enable_gestures:
+                while not self.gesture_queue.empty():
+                    gesture = self.gesture_queue.get_nowait()
+                    self.get_logger().info(f"Gesture detected: {gesture}")
+                    
+                    # Publish gesture
+                    gesture_msg = String()
+                    gesture_msg.data = gesture
+                    self.gesture_pub.publish(gesture_msg)
                 
         except Exception as e:
             self.error_count += 1
@@ -406,7 +421,8 @@ class CollisionNode(Node):
 
     def destroy_node(self):
         self.gesture_thread_running = False
-        if self.gesture_thread.is_alive():
+        # Only join the gesture thread if gestures were enabled
+        if self.enable_gestures and hasattr(self, 'gesture_thread') and self.gesture_thread.is_alive():
             self.gesture_thread.join(timeout=1.0)
         super().destroy_node()
 

@@ -631,7 +631,7 @@ class RoArmHardwareInterface(Node):
             elif direction == 'left':
                 # Smaller right rotation
                 rotation_angle = 0.4
-                new_position[0] += rotation_angle
+                new_position[0] -= rotation_angle
                 new_position[1] += 0.1
                 
                 self.get_logger().warn(f"Executing animation-safe right rotation escape")
@@ -639,7 +639,7 @@ class RoArmHardwareInterface(Node):
             elif direction == 'right':
                 # Smaller left rotation
                 rotation_angle = 0.4
-                new_position[0] -= rotation_angle
+                new_position[0] += rotation_angle
                 new_position[1] += 0.1
                 
                 self.get_logger().warn(f"Executing animation-safe left rotation escape")
@@ -696,7 +696,7 @@ class RoArmHardwareInterface(Node):
                 # For left collisions, make a dramatic right turn
                 rotation_angle = min(0.8 + (self.retreat_level * 0.15), 1.5)  # Increasing rotation
                 
-                new_position[0] += rotation_angle  # Strong clockwise rotation (right)
+                new_position[0] -= rotation_angle  # Strong clockwise rotation (right)
                 new_position[1] += 0.2  # Some shoulder pullback for added clearance
                 
                 self.get_logger().warn(f"Executing DRAMATIC right rotation escape - level {self.retreat_level}")
@@ -705,7 +705,7 @@ class RoArmHardwareInterface(Node):
                 # For right collisions, make a dramatic left turn
                 rotation_angle = min(0.8 + (self.retreat_level * 0.15), 1.5)  # Increasing rotation
                 
-                new_position[0] -= rotation_angle  # Strong counter-clockwise rotation (left)
+                new_position[0] += rotation_angle  # Strong counter-clockwise rotation (left)
                 new_position[1] += 0.2  # Some shoulder pullback for added clearance
                 
                 self.get_logger().warn(f"Executing DRAMATIC left rotation escape - level {self.retreat_level}")
@@ -1020,7 +1020,7 @@ class RoArmHardwareInterface(Node):
             self.adjustment_history['right']['adjustment_made']
         )
         
-        # Handle right collision - rotate LEFT (negative adjustment)
+        # Handle right collision - rotate RIGHT (positive adjustment)
         if right_factor > 0.1 and not right_cooldown_active:
             # Calculate multiplier for repeat collisions to make adjustment stronger over time
             right_multiplier = 1.0
@@ -1028,11 +1028,11 @@ class RoArmHardwareInterface(Node):
                 # This grows with consecutive detections - more persistent = stronger response
                 right_multiplier = min(3.0, 1.0 + right_status['consecutive_count'] * 0.1)
             
-            # Calculate rotation amount - negative for right collisions (rotate left)
-            right_adjustment = -right_factor * 0.4 * right_multiplier
+            # Calculate rotation amount - positive for right collisions (rotate right)
+            right_adjustment = right_factor * 0.4 * right_multiplier
             base_adjustment += right_adjustment
             
-            right_adjustment_msg = f"right(rotate left: {right_adjustment:.2f})"
+            right_adjustment_msg = f"right(rotate right: {right_adjustment:.2f})"
             self.get_logger().info(f"Right collision adjusting base: {right_adjustment:.2f} (factor: {right_factor:.2f}, count: {right_status['consecutive_count']})")
             
             # Mark that we've made an adjustment for right collision
@@ -1065,11 +1065,11 @@ class RoArmHardwareInterface(Node):
                 # This grows with consecutive detections - more persistent = stronger response
                 left_multiplier = min(3.0, 1.0 + left_status['consecutive_count'] * 0.1)
             
-            # Calculate rotation amount - positive for left collisions (rotate right)
-            left_adjustment = left_factor * 0.4 * left_multiplier
+            # Calculate rotation amount - negative for left collisions (rotate left)
+            left_adjustment = -left_factor * 0.4 * left_multiplier
             base_adjustment += left_adjustment
             
-            left_adjustment_msg = f"left(rotate right: {left_adjustment:.2f})"
+            left_adjustment_msg = f"left(rotate left: {left_adjustment:.2f})"
             self.get_logger().info(f"Left collision adjusting base: {left_adjustment:.2f} (factor: {left_factor:.2f}, count: {left_status['consecutive_count']})")
             
             # Mark that we've made an adjustment for left collision
@@ -1403,22 +1403,6 @@ class RoArmHardwareInterface(Node):
             severity = self.collision_status['left']['severity']
             distance = self.collision_status['left']['distance']
             
-            # Limits on counter-clockwise rotation (negative direction)
-            if (severity == 'danger' or distance <= self.hard_limit_distance) and safe_positions[0] < self.current_joints[0]:
-                # Hard limit - prevent further rotation left
-                safe_positions[0] = self.current_joints[0]
-            elif (severity == 'warning' or distance <= self.soft_limit_distance) and safe_positions[0] < self.current_joints[0]:
-                # Soft limit - partial restriction
-                limit_factor = min(1.0, (distance - self.hard_limit_distance) / 
-                                  (self.soft_limit_distance - self.hard_limit_distance))
-                delta = self.current_joints[0] - safe_positions[0]
-                safe_positions[0] = self.current_joints[0] - (delta * limit_factor)
-        
-        # Check for right collisions (primarily affects base rotation)
-        if self.collision_status['right']['active']:
-            severity = self.collision_status['right']['severity']
-            distance = self.collision_status['right']['distance']
-            
             # Limits on clockwise rotation (positive direction)
             if (severity == 'danger' or distance <= self.hard_limit_distance) and safe_positions[0] > self.current_joints[0]:
                 # Hard limit - prevent further rotation right
@@ -1426,9 +1410,25 @@ class RoArmHardwareInterface(Node):
             elif (severity == 'warning' or distance <= self.soft_limit_distance) and safe_positions[0] > self.current_joints[0]:
                 # Soft limit - partial restriction
                 limit_factor = min(1.0, (distance - self.hard_limit_distance) / 
-                                  (self.soft_limit_distance - self.hard_limit_distance))
+                                (self.soft_limit_distance - self.hard_limit_distance))
                 delta = safe_positions[0] - self.current_joints[0]
                 safe_positions[0] = self.current_joints[0] + (delta * limit_factor)
+
+        # Check for right collisions (primarily affects base rotation)
+        if self.collision_status['right']['active']:
+            severity = self.collision_status['right']['severity']
+            distance = self.collision_status['right']['distance']
+            
+            # Limits on counter-clockwise rotation (negative direction)
+            if (severity == 'danger' or distance <= self.hard_limit_distance) and safe_positions[0] < self.current_joints[0]:
+                # Hard limit - prevent further rotation left
+                safe_positions[0] = self.current_joints[0]
+            elif (severity == 'warning' or distance <= self.soft_limit_distance) and safe_positions[0] < self.current_joints[0]:
+                # Soft limit - partial restriction
+                limit_factor = min(1.0, (distance - self.hard_limit_distance) / 
+                                (self.soft_limit_distance - self.hard_limit_distance))
+                delta = self.current_joints[0] - safe_positions[0]
+                safe_positions[0] = self.current_joints[0] - (delta * limit_factor)
         
         # Add additional check for escape mode
         if self.escape_mode_active:
