@@ -1,5 +1,8 @@
 todo.list
-[] Fix Emergency Stop functionality
-[] Remove Idle Movement functionality
-[] Change response to collisions
-[] cleanup code
+[-] Fix Emergency Stop functionality
+[-] Remove Idle Movement functionality
+[-] cleanup code
+[] cleanup code even more
+[] integrate the camera to spawn behaviors as well as idle behavior
+[-] Change response to collisions
+[] We have two at_position functions now. we can delete one of them

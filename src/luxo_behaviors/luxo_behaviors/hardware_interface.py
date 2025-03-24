@@ -137,6 +137,14 @@ class RoArmHardwareInterface(Node):
         # Connect to the serial port
         self.connection_active = self.serial_manager.connect()
         
+        # Add target override tracking
+        self.target_override_active = False  # Flag to indicate override is active
+        self.target_override_time = 0.0  # When the override was activated
+        self.target_override_joints = None  # The safe position we've moved to
+        self.target_override_reason = ""  # Why the override exists
+        self.target_override_timeout = 10.0  # Time before reconsidering original target
+        self.last_original_target_change_time = 0.0  # Last time original target changed
+        
         if self.connection_active:
             # Initialize the arm if torque is enabled
             if self.enable_torque_on_start:
@@ -147,7 +155,7 @@ class RoArmHardwareInterface(Node):
             # Changed subscription to joint_states_target
             self.subscription = self.create_subscription(
                 JointState,
-                'joint_states_target',  # Changed from 'joint_states' to 'joint_states_target'
+                'joint_states_target',
                 self.joint_states_callback,
                 10)
             
@@ -674,6 +682,13 @@ class RoArmHardwareInterface(Node):
             # Move to the new position with high priority
             self.move_to_safe_position(new_position, "Emergency escape", True)
             
+            # Set this as our target override position
+            self.target_override_active = True
+            self.target_override_time = time.time()
+            self.target_override_joints = new_position.copy()
+            self.target_override_reason = f"Emergency escape from {direction}"
+            self.get_logger().info(f"Created target override: {self.target_override_reason}")
+            
         except Exception as e:
             self.get_logger().error(f"Error in escape maneuver: {e}")
             self.escape_mode_active = False
@@ -767,6 +782,13 @@ class RoArmHardwareInterface(Node):
             
             # Send command with high priority
             self.send_safe_joint_command(new_position, f"Collision avoidance (count: {consecutive_count})")
+            
+            # Set this as our target override position
+            self.target_override_active = True
+            self.target_override_time = time.time()
+            self.target_override_joints = new_position.copy()
+            self.target_override_reason = f"Collision avoidance for {direction} at {distance:.1f}cm"
+            self.get_logger().info(f"Created target override: {self.target_override_reason}")
             
             # If emergency and avoidance doesn't work after multiple attempts,
             # schedule a return to rest position
@@ -1105,7 +1127,7 @@ class RoArmHardwareInterface(Node):
         
         # Check if we're already close to the adjusted position
         # to avoid sending redundant commands that don't change position
-        if self._at_position(adjusted_targets, 0.1):
+        if self._at_position_check(adjusted_targets, 0.1):
             self.get_logger().info("Already at adjusted position - skipping adjustment")
             
             # If we've been at this position for a while and still have collisions,
@@ -1134,6 +1156,20 @@ class RoArmHardwareInterface(Node):
         
         # Send the adjusted target positions to the arm
         self.send_safe_joint_command(adjusted_targets, "Collision avoidance adjustment")
+        
+        # Set this as our target override position
+        self.target_override_active = True
+        self.target_override_time = time.time()
+        self.target_override_joints = adjusted_targets.copy()
+        
+        # Create a descriptive reason for the override
+        reasons = []
+        if front_adjustment_msg: reasons.append(front_adjustment_msg)
+        if left_adjustment_msg: reasons.append(left_adjustment_msg)
+        if right_adjustment_msg: reasons.append(right_adjustment_msg)
+        self.target_override_reason = f"Path adjustment: {', '.join(reasons)}"
+        self.get_logger().info(f"Created target override: {self.target_override_reason}")
+        
         self.get_logger().debug(f"ADJUSTMENT SENT: {[round(p, 2) for p in adjusted_targets]}")
         # Update last movement time when we make an adjustment
         self.last_movement_time = time.time()
@@ -1203,6 +1239,19 @@ class RoArmHardwareInterface(Node):
                 positions[indices['hand']] if 'hand' in indices else 3.14  # Default closed gripper if not specified
             ]
             
+            # Check if this is a new target that's different from our original target
+            new_target = False
+            if not self._at_position(target_positions, self.target_joints, 0.05):
+                new_target = True
+                self.target_joints = target_positions.copy()
+                self.last_original_target_change_time = current_time
+                
+                # Clear target override if the desired target has changed
+                if self.target_override_active:
+                    self.get_logger().info(f"New target received - clearing safety override")
+                    self.target_override_active = False
+                    self.target_override_joints = None
+            
             # Store for velocity estimation
             self.target_joints = target_positions.copy()
             
@@ -1217,8 +1266,11 @@ class RoArmHardwareInterface(Node):
                 if remaining_time > 1.0:  # If more than 1 second left
                     self.escape_mode_duration = current_time - self.escape_mode_start_time + 1.0  # Shorten to 1 more second
             
+            # Check if we should use the override target or original target
+            positions_to_use = self._get_effective_target_position(target_positions)
+            
             # Apply collision avoidance and send command
-            self.send_safe_joint_command(target_positions, "Joint control")
+            self.send_safe_joint_command(positions_to_use, "Joint control")
             
             # Explicitly publish to joint_states to ensure our topic is active
             self.publish_actual_joint_states(self.current_joints)
@@ -1229,6 +1281,57 @@ class RoArmHardwareInterface(Node):
             import traceback
             self.get_logger().error(traceback.format_exc())
     
+    def _get_effective_target_position(self, original_target):
+        """Determine which target position to use based on overrides and safety"""
+        current_time = time.time()
+        
+        if not self.target_override_active or self.target_override_joints is None:
+            return original_target
+        
+        # Check if original target has changed significantly
+        if self._at_position(original_target, self.target_joints, 0.05) == False:
+            self.get_logger().info("Original target changed - clearing override")
+            self.target_override_active = False
+            return original_target
+            
+        # Check if collision has been clear for a while
+        any_collision_active = any(self.collision_status[direction]['active'] for direction in self.collision_status)
+        override_duration = current_time - self.target_override_time
+        
+        if not any_collision_active and override_duration > self.target_override_timeout:
+            self.get_logger().info(f"Collisions clear for {override_duration:.1f}s - gradually returning to original target")
+            
+            # Gradually blend between override and original target
+            blend_factor = min(1.0, (override_duration - self.target_override_timeout) / 2.0)
+            blended_target = [
+                self.target_override_joints[i] * (1.0 - blend_factor) + original_target[i] * blend_factor
+                for i in range(len(original_target))
+            ]
+            
+            # If we're very close to original target, clear the override completely
+            if blend_factor > 0.9:
+                self.get_logger().info("Override expired - returning to original target")
+                self.target_override_active = False
+                return original_target
+                
+            return blended_target
+            
+        # If override is still active and needed, use it
+        return self.target_override_joints
+
+    def _at_position(self, position1, position2=None, tolerance=0.05):
+        """Check if two positions are the same within tolerance"""
+        if position2 is None:
+            position2 = self.current_joints
+            
+        if len(position1) != len(position2):
+            return False
+            
+        for i, (pos1, pos2) in enumerate(zip(position1, position2)):
+            if abs(pos1 - pos2) > tolerance:
+                return False
+        return True
+
     def send_safe_joint_command(self, positions, description=""):
         """Send a joint command with safety checks applied"""
         if not self.is_connected():
@@ -1439,7 +1542,7 @@ class RoArmHardwareInterface(Node):
                 
         return False
     
-    def _at_position(self, position, tolerance=0.05):
+    def _at_position_check(self, position, tolerance=0.05):
         """Check if the arm is already at a specific position within tolerance"""
         if len(position) != len(self.current_joints):
             return False
