@@ -20,6 +20,10 @@ class EnhancedAnimationCommand(Node):
         self.declare_parameter('use_hardware_joint_names', False)
         self.use_hardware_joint_names = self.get_parameter('use_hardware_joint_names').get_parameter_value().bool_value
         
+        # Parameter to control which topic to publish to (hardware vs simulation)
+        self.declare_parameter('publish_target_topic', False)
+        self.publish_target = self.get_parameter('publish_target_topic').get_parameter_value().bool_value
+        
         # Create subscription for animation commands
         self.command_subscription = self.create_subscription(
             String,
@@ -27,12 +31,14 @@ class EnhancedAnimationCommand(Node):
             self.command_callback,
             10)
         
-        # Create publisher for joint states (now publishing to target topic)
+        # Create publisher for joint states (topic depends on hardware vs simulation)
+        joint_topic = '/joint_states_target' if self.publish_target else '/joint_states'
         self.joint_publisher = self.create_publisher(
             JointState, 
-            '/joint_states_target',  # Changed from '/joint_states' to '/joint_states_target'
+            joint_topic,
             10)
         
+        self.get_logger().info(f'Publishing joint states to: {joint_topic}')
         # Current joint positions
         self.current_positions = [0.0, 0.0, 0.0, 0.0, 3.14]  # Added gripper value
         

@@ -189,3 +189,14 @@ Third terminal: To send animation commands
 
 To monitor collision status:
 `ros2 topic echo /collision_status`
+
+```bash
+colcon build
+ros2 launch luxo_behaviors luxo_system.launch.py use_hardware:=false verbose:=true use_joint_state_publisher:=false (you can also include run_demo:=true)
+```
+
+Sometimes I ran into problems where the there is jitter in the overall animations, and it seems to be happening because there are other publishers that haven't been properly closed
+```bash
+pkill -f animation_command
+pkill -f robot_state_publisher
+```

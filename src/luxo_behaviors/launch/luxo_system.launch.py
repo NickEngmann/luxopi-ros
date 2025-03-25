@@ -1,24 +1,54 @@
 #!/usr/bin/env python3
 from launch import LaunchDescription
-from launch.actions import IncludeLaunchDescription, DeclareLaunchArgument
-from launch.conditions import IfCondition
+from launch.actions import IncludeLaunchDescription, DeclareLaunchArgument, LogInfo, ExecuteProcess
+from launch.conditions import IfCondition, UnlessCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
+from launch.substitutions import LaunchConfiguration, PathJoinSubstitution, PythonExpression, Command
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
-import os
 
 def generate_launch_description():
-    # Launch arguments
-    use_camera = LaunchConfiguration('use_camera', default='true')
+    # Launch arguments with better defaults for simulation
+    use_hardware = LaunchConfiguration('use_hardware', default='false')
+    
+    # Set default values based on hardware or simulation mode
+    use_camera = LaunchConfiguration('use_camera')
+    sense_collision = LaunchConfiguration('sense_collision')
+    enable_depth_collision = LaunchConfiguration('enable_depth_collision')
+    test_mode = LaunchConfiguration('test_mode', default='animation')
+    
+    # Other standard arguments
     run_demo = LaunchConfiguration('run_demo', default='false')
     use_gui = LaunchConfiguration('use_gui', default='false')
+    safety_distance = LaunchConfiguration('safety_distance', default='0.3')
+    verbose_output = LaunchConfiguration('verbose', default='false')
     
-    # Declare launch arguments
+    # Main hardware/simulation mode selector
+    declare_use_hardware = DeclareLaunchArgument(
+        'use_hardware',
+        default_value='false',
+        description='Whether to launch with physical hardware or in simulation'
+    )
+    
+    # Camera argument with conditional default
     declare_use_camera = DeclareLaunchArgument(
         'use_camera',
-        default_value='true',
-        description='Whether to launch the depth camera'
+        default_value=PythonExpression(["'false' if '", use_hardware, "' == 'false' else 'true'"]),
+        description='Whether to launch the depth camera (default: true in hardware, false in simulation)'
+    )
+    
+    # Proximity sensor argument with conditional default
+    declare_sense_collision = DeclareLaunchArgument(
+        'sense_collision',
+        default_value=PythonExpression(["'false' if '", use_hardware, "' == 'false' else 'true'"]),
+        description='Enable APDS9960 proximity sensor (default: true in hardware, false in simulation)'
+    )
+    
+    # Depth collision argument with conditional default
+    declare_enable_depth_collision = DeclareLaunchArgument(
+        'enable_depth_collision',
+        default_value=PythonExpression(["'false'"]),
+        description='Enable depth-based collision detection (default: false)'
     )
     
     declare_run_demo = DeclareLaunchArgument(
@@ -29,17 +59,137 @@ def generate_launch_description():
     
     declare_use_gui = DeclareLaunchArgument(
         name='use_gui',
-        default_value='false',  # Set default to false to disable the GUI publisher
+        default_value='false',
         description='Flag to enable joint_state_publisher_gui'
     )
-
+    
+    # Fix for joint_state_publisher issue - set a default value that doesn't 
+    # require the joint_state_publisher package if not available
     use_joint_state_publisher_arg = DeclareLaunchArgument(
         'use_joint_state_publisher',
-        default_value='true',
+        default_value='false',  # Changed from 'true' to 'false' to avoid dependency error
         description='Use the joint_state_publisher'
     )
     
-    # Include RoArm launch file
+    declare_test_mode = DeclareLaunchArgument(
+        'test_mode',
+        default_value='animation',
+        description='Test mode: "position" for position_test or "animation" for animation_command'
+    )
+    
+    declare_safety_distance = DeclareLaunchArgument(
+        'safety_distance',
+        default_value='0.3',
+        description='Safety distance in meters'
+    )
+    
+    declare_verbose = DeclareLaunchArgument(
+        'verbose',
+        default_value='false',
+        description='Enable verbose output and additional debugging information'
+    )
+    
+    # ==========================================================================
+    # LOGGING ACTIONS
+    # ==========================================================================
+    
+    # Package dependency info and warning
+    dependency_info = LogInfo(
+        msg=["\n⚠️ DEPENDENCY INFORMATION:\n",
+             "- This launch file may require the following ROS packages:\n",
+             "  • roarm\n",
+             "  • depthai_ros_driver\n",
+             "- If you see package not found errors, install missing packages with:\n",
+             "  sudo apt install ros-humble-<package-name>\n",
+             "- Or modify the launch parameters to avoid using missing packages\n"]
+    )
+    
+    # Initial startup banner
+    startup_banner = LogInfo(msg=["="*80, 
+                                  "\n\n🚀 STARTING LUXOPI ROS SYSTEM\n",
+                                  "="*80])
+    
+    # Mode selection info
+    mode_info = LogInfo(msg=["\n📋 SYSTEM CONFIGURATION:\n",
+                            "- Mode: ", PythonExpression(["'🔧 HARDWARE' if '", use_hardware, "' == 'true' else '🖥️  SIMULATION'"]), "\n",
+                            "- Test mode: ", test_mode, "\n",
+                            "- Camera enabled: ", use_camera, "\n",
+                            "- Collision detection: ", enable_depth_collision, "\n",
+                            "- Using proximity sensor: ", sense_collision, "\n",
+                            "- Demo mode: ", run_demo, "\n"])
+    
+    # Hardware-specific info
+    hardware_info = LogInfo(
+        msg=["\n🔧 HARDWARE MODE DETAILS:\n",
+             "- Serial port: /dev/ttyAMA0 (baud: 115200)\n",
+             "- Test mode: ", test_mode, " (position=basic movements, animation=complex behaviors)\n",
+             "- Proximity sensing: ", PythonExpression(["'enabled' if '", sense_collision, "' == 'true' else 'disabled'"]), "\n",
+             "- Hardware joint states enabled\n"],
+        condition=IfCondition(use_hardware)
+    )
+    
+    # Simulation-specific info
+    simulation_info = LogInfo(
+        msg=["\n🖥️ SIMULATION MODE DETAILS:\n",
+             "- Using RoArm simulation backend\n",
+             "- GUI enabled: ", use_gui, "\n",
+             "- Test mode: animation (using standard animation_command node)\n",
+             "- Running with standard joint names\n"],
+        condition=UnlessCondition(use_hardware)
+    )
+    
+    # Quick reference for common launch commands
+    quick_reference = LogInfo(
+        msg=["\n📝 QUICK REFERENCE:\n",
+             "- Hardware mode: ros2 launch luxo_behaviors luxo_system.launch.py use_hardware:=true\n",
+             "- Basic simulation: ros2 launch luxo_behaviors luxo_system.launch.py\n",
+             "- Simulation with GUI: ros2 launch luxo_behaviors luxo_system.launch.py use_gui:=true\n",
+             "- Hardware with collision: ros2 launch luxo_behaviors luxo_system.launch.py use_hardware:=true enable_depth_collision:=true\n"],
+        condition=IfCondition(verbose_output)
+    )
+    
+    # Camera info
+    camera_info = LogInfo(
+        msg=["\n📷 CAMERA SUBSYSTEM:\n",
+             "- Using DepthAI OAK camera\n",
+             "- Depth collision detection: ", PythonExpression(["'enabled' if '", enable_depth_collision, "' == 'true' else 'disabled'"]), "\n",
+             "- Safety distance: ", safety_distance, " meters\n"],
+        condition=IfCondition(use_camera)
+    )
+    
+    # Demo mode info
+    demo_info = LogInfo(
+        msg=["\n🎬 DEMO MODE ACTIVE:\n",
+             "- Running pre-programmed demo sequence\n",
+             "- Other manual controls may be overridden\n"],
+        condition=IfCondition(run_demo)
+    )
+    
+    # Troubleshooting tips
+    troubleshooting_info = LogInfo(
+        msg=["\n🔍 TROUBLESHOOTING TIPS:\n",
+             "- If hardware not responding, check serial connection and permissions\n",
+             "- For camera issues, verify USB connection and permissions\n",
+             "- Package not found error? Install the package or disable the feature\n",
+             "- View topics with: ros2 topic list\n",
+             "- Check node status with: ros2 node list\n",
+             "- Monitor joint states: ros2 topic echo /joint_states\n",
+             "- View TF tree: ros2 run tf2_tools view_frames\n"],
+        condition=IfCondition(verbose_output)
+    )
+    
+    # Show active nodes at end of startup
+    show_nodes_cmd = ExecuteProcess(
+        cmd=["bash", "-c", "echo '📊 ACTIVE NODES:' && sleep 2 && ros2 node list"],
+        output='screen',
+        condition=IfCondition(verbose_output)
+    )
+    
+    # ==========================================================================
+    # LAUNCH FILES
+    # ==========================================================================
+    
+    # Include RoArm launch file (simulation only)
     roarm_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource([
             PathJoinSubstitution([
@@ -49,11 +199,17 @@ def generate_launch_description():
         ]),
         launch_arguments={
             'gui': LaunchConfiguration('use_gui'),
-            'use_joint_state_publisher': LaunchConfiguration('use_joint_state_publisher')
-        }.items()
+            'use_joint_state_publisher': 'false'  # Fixed value to avoid dependency issues
+        }.items(),
+        condition=UnlessCondition(use_hardware)
     )
     
-    # Include DepthAI camera launch file
+    # Include DepthAI camera launch file (with error handling)
+    try_camera_launch = LogInfo(
+        msg=["Attempting to start camera... (skip with use_camera:=false if not available)"],
+        condition=IfCondition(use_camera)
+    )
+    
     depthai_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource([
             PathJoinSubstitution([
@@ -64,12 +220,89 @@ def generate_launch_description():
         condition=IfCondition(use_camera)
     )
     
-    # Animation command interface node
-    animation_command_node = Node(
+    # ==========================================================================
+    # NODE DEFINITIONS
+    # ==========================================================================
+    
+    # Hardware interface node (hardware only)
+    hardware_interface_node = Node(
+        package='luxo_behaviors',
+        executable='hardware_interface',
+        name='hardware_interface',
+        output='screen',
+        parameters=[
+            {'serial_port': '/dev/ttyAMA0'},
+            {'baud_rate': 115200},
+            {'enable_torque': True},
+            {'read_throttle': 0.1},
+            {'ros__parameters': {'log_level': 'error'}}
+        ],
+        condition=IfCondition(use_hardware)
+    )
+    
+    # APDS9960 proximity and gesture sensor node (hardware only)
+    apds9960_node = Node(
+        package='luxo_behaviors',
+        executable='collision_ros_node',
+        name='apds9960_node',
+        output='screen',
+        parameters=[
+            {'proximity_threshold': 5}
+        ],
+        condition=IfCondition(PythonExpression(["'", use_hardware, "' == 'true' and '", sense_collision, "' == 'true'"]))
+    )
+    
+    # Position test node - basic movement patterns (hardware only)
+    position_test_node = Node(
+        package='luxo_behaviors',
+        executable='position_test',
+        name='position_test',
+        output='screen',
+        condition=IfCondition(PythonExpression(["'", use_hardware, "' == 'true' and '", test_mode, "' == 'position'"]))
+    )
+    
+    # Animation command node (hardware version)
+    hardware_animation_node = Node(
         package='luxo_behaviors',
         executable='animation_command',
         name='animation_command',
-        output='screen'
+        output='screen',
+        parameters=[
+            {'publish_joint_states': True},
+            {'use_hardware_joint_names': True},
+            {'publish_target_topic': True}  # Hardware should use target topic
+        ],
+        condition=IfCondition(PythonExpression(["'", use_hardware, "' == 'true' and '", test_mode, "' == 'animation'"]))
+    )
+    
+    # Animation command node (simulation version)
+    simulation_animation_node = Node(
+        package='luxo_behaviors',
+        executable='animation_command',
+        name='animation_command',
+        output='screen',
+        parameters=[
+            {'publish_target_topic': False}  # Simulation should use joint_states topic directly
+        ],
+        condition=UnlessCondition(use_hardware)
+    )
+    
+    # Collision detection node
+    collision_detection_node = Node(
+        package='luxo_behaviors',
+        executable='collision_detection',
+        name='collision_detection',
+        output='screen',
+        parameters=[
+            {'safety_distance': safety_distance},
+            {'robot_base_frame': 'oak'},
+            {'point_cloud_topic': '/oak/points'},
+            {'joint_states_topic': '/joint_states'},
+            {'override_animation': True},
+            {'qos_reliability': 0},  # 0=BEST_EFFORT, 1=RELIABLE
+            {'qos_durability': 0},   # 0=VOLATILE, 1=TRANSIENT_LOCAL
+        ],
+        condition=IfCondition(enable_depth_collision)
     )
     
     # Camera interaction node (requires camera)
@@ -90,15 +323,60 @@ def generate_launch_description():
         condition=IfCondition(run_demo)
     )
     
+    # System completion message
+    completion_message = LogInfo(
+        msg=["\n✅ SYSTEM LAUNCH COMPLETE\n",
+             "- Mode: ", PythonExpression(["'Hardware' if '", use_hardware, "' == 'true' else 'Simulation'"]), "\n",
+             "- For help, run with 'verbose:=true'\n",
+             "- Common commands: \n",
+             "  • View topics: ros2 topic list\n",
+             "  • View nodes: ros2 node list\n",
+             "  • Stop system: Ctrl+C\n"]
+    )
+    
     # Create and return launch description
     return LaunchDescription([
+        # Launch arguments
+        declare_use_hardware,
         declare_use_camera,
         declare_run_demo,
         declare_use_gui,
         use_joint_state_publisher_arg,
+        declare_test_mode,
+        declare_enable_depth_collision,
+        declare_safety_distance,
+        declare_sense_collision,
+        declare_verbose,
+        
+        # Dependency information
+        dependency_info,
+        
+        # Launch info and banners
+        startup_banner,
+        mode_info,
+        hardware_info,
+        simulation_info,
+        quick_reference,
+        try_camera_launch,
+        camera_info,
+        demo_info,
+        troubleshooting_info,
+        
+        # Launch files
         roarm_launch,
         depthai_launch,
-        animation_command_node,
+        
+        # Nodes
+        hardware_interface_node,
+        position_test_node,
+        hardware_animation_node,
+        simulation_animation_node,
+        collision_detection_node,
+        apds9960_node,
         camera_node,
-        demo_node
+        demo_node,
+        
+        # Final info
+        completion_message,
+        show_nodes_cmd
     ])
