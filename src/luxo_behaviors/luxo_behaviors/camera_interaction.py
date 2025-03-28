@@ -11,6 +11,7 @@ import time
 from std_msgs.msg import String, Float32
 from sensor_msgs.msg import Image
 from cv_bridge import CvBridge
+from collections import deque
 
 def frame_norm(frame, bbox):
     normVals = np.full(len(bbox), frame.shape[0])
@@ -19,7 +20,6 @@ def frame_norm(frame, bbox):
 
 emotions = ['neutral', 'happy', 'sad', 'surprise', 'anger']
 
-# Rename the class to match the file name for consistency
 class CameraInteraction(Node):
     def __init__(self):
         super().__init__('camera_interaction')
@@ -50,6 +50,10 @@ class CameraInteraction(Node):
         self.declare_parameter('react_to_emotions', True)
         self.react_to_emotions = self.get_parameter('react_to_emotions').get_parameter_value().bool_value
         
+        # Add parameter for emotion buffer duration
+        self.declare_parameter('emotion_buffer_duration', 3.0)
+        self.emotion_buffer_duration = self.get_parameter('emotion_buffer_duration').get_parameter_value().double_value
+        
         # Track last emotion and animation time for cooldown
         self.last_emotion = "neutral"
         self.last_animation_time = time.time()
@@ -63,6 +67,10 @@ class CameraInteraction(Node):
             'anger': 'shake',
             'neutral': 'curious'
         }
+        
+        # Emotion buffer system
+        self.emotion_buffer = deque(maxlen=90)
+        self.emotion_buffer_start_time = time.time()
         
         # Start camera detection system
         self.get_logger().info('Starting camera emotion detection...')
@@ -281,70 +289,151 @@ class CameraInteraction(Node):
                     self.image_publisher.publish(ros_image)
                 except Exception as e:
                     self.get_logger().error(f"Error publishing camera image: {e}")
+            
+            # If no people detected, skip processing
+            if not detections:
+                return
+                
+            # Find the closest person if stereo camera is available
+            closest_person_idx = 0
+            if self.stereo and len(detections) > 1:
+                min_distance = float('inf')
+                for i, detection in enumerate(detections):
+                    person_distance = detection.spatialCoordinates.z / 1000.0  # mm to m
+                    if person_distance < min_distance:
+                        min_distance = person_distance
+                        closest_person_idx = i
+                        
+                if self.verbose:
+                    self.get_logger().info(f"Multiple people detected, focusing on closest person at index {closest_person_idx}")
+            
+            # Process only the closest person (or the first one if no distance data)
+            detection = detections[closest_person_idx]
+            rec = recognitions[closest_person_idx]
 
-            # Process each detected face
-            for i, detection in enumerate(detections):
-                bbox = frame_norm(frame, (detection.xmin, detection.ymin, detection.xmax, detection.ymax))
-                rec = recognitions[i]
-
-                emotion_results = np.array(rec.getFirstLayerFp16())
-                emotion_name = emotions[np.argmax(emotion_results)]
+            bbox = frame_norm(frame, (detection.xmin, detection.ymin, detection.xmax, detection.ymax))
+            emotion_results = np.array(rec.getFirstLayerFp16())
+            emotion_name = emotions[np.argmax(emotion_results)]
+            
+            # Always publish current emotion for monitoring/debugging
+            emotion_msg = String()
+            emotion_msg.data = emotion_name
+            self.emotion_publisher.publish(emotion_msg)
+            
+            # Get person distance if stereo camera is available
+            person_distance = None
+            if self.stereo:
+                distance_msg = Float32()
+                # Convert from millimeters to meters
+                person_distance = detection.spatialCoordinates.z / 1000.0
+                distance_msg.data = person_distance
+                self.distance_publisher.publish(distance_msg)
                 
-                # Create and publish emotion message
-                emotion_msg = String()
-                emotion_msg.data = emotion_name
-                self.emotion_publisher.publish(emotion_msg)
-                
-                # Publish distance if stereo camera is available
-                person_distance = None
-                if self.stereo:
-                    distance_msg = Float32()
-                    # Convert from millimeters to meters
-                    person_distance = detection.spatialCoordinates.z / 1000.0
-                    distance_msg.data = person_distance
-                    self.distance_publisher.publish(distance_msg)
-                    
-                    if self.verbose:
-                        self.get_logger().info(f"Detected person with emotion: {emotion_name} at {person_distance:.2f}m")
-                else:
-                    if self.verbose:
-                        self.get_logger().info(f"Detected person with emotion: {emotion_name}")
-                
-                # Trigger animations based on emotions if enabled
-                if self.react_to_emotions:
-                    self.handle_emotion_reaction(emotion_name, person_distance)
+                if self.verbose:
+                    self.get_logger().info(f"Tracked person with emotion: {emotion_name} at {person_distance:.2f}m")
+            else:
+                if self.verbose:
+                    self.get_logger().info(f"Tracked person with emotion: {emotion_name}")
+            
+            # Add to emotion buffer
+            self.emotion_buffer.append((emotion_name, person_distance, time.time()))
+            
+            # Trigger animations based on buffered emotions if enabled
+            if self.react_to_emotions:
+                self.process_emotion_buffer()
     
-    def handle_emotion_reaction(self, emotion, distance=None):
-        """Handle emotional reactions by triggering appropriate animations"""
+    def process_emotion_buffer(self):
+        """Process the emotion buffer and trigger an animation if conditions are met"""
         current_time = time.time()
         
-        # Check if emotion has changed or if enough time has passed
-        if (emotion != self.last_emotion or 
-                (current_time - self.last_animation_time) > self.emotion_cooldown):
+        # Check if we've collected enough data and if the buffer duration has elapsed
+        if (len(self.emotion_buffer) > 0 and 
+                (current_time - self.emotion_buffer_start_time) >= self.emotion_buffer_duration):
             
-            # Update last emotion and time
-            self.last_emotion = emotion
-            self.last_animation_time = current_time
+            # Get the current elapsed time since last animation
+            time_since_last_animation = current_time - self.last_animation_time
             
-            # Get corresponding animation
-            if emotion in self.emotion_to_animation:
-                animation = self.emotion_to_animation[emotion]
+            # Only proceed if we're not in cooldown
+            if time_since_last_animation > self.emotion_cooldown:
+                # Count occurrences of each emotion in the buffer
+                emotion_counts = {}
+                avg_distance = 0
+                distance_count = 0
                 
-                # Add speed modifier based on distance if available
-                speed_modifier = ""
-                if distance is not None:
-                    # Closer distance = faster reaction (within reason)
-                    if 0.5 <= distance <= 3.0:
-                        # Map 0.5m->1.5 (faster) and 3.0m->0.7 (slower)
-                        speed = 1.5 - ((distance - 0.5) * 0.32)
-                        speed_modifier = f" {speed:.1f}"
+                for emotion, distance, _ in self.emotion_buffer:
+                    emotion_counts[emotion] = emotion_counts.get(emotion, 0) + 1
+                    if distance is not None:
+                        avg_distance += distance
+                        distance_count += 1
+                
+                # Find the most common emotion
+                if emotion_counts:
+                    # Sort emotions by count (highest first)
+                    sorted_emotions = sorted(emotion_counts.items(), key=lambda x: x[1], reverse=True)
+                    dominant_emotion = sorted_emotions[0][0]
                     
-                # Publish the animation command
-                cmd = String()
-                cmd.data = f"{animation}{speed_modifier}"
-                self.animation_publisher.publish(cmd)
+                    # Calculate percentage of dominant emotion
+                    dominant_percentage = (emotion_counts[dominant_emotion] / len(self.emotion_buffer)) * 100
+                    
+                    # Only trigger if:
+                    # 1. The dominant emotion is present in at least 75% of the buffer
+                    # 2. The dominant emotion is different from the last played animation
+                    if dominant_percentage >= 80:
+                        # If it's the same as the last emotion, look for the next most common emotion
+                        # that meets a minimum threshold (at least 25% of observations)
+                        if dominant_emotion == self.last_emotion and len(sorted_emotions) > 1:
+                            for emotion, count in sorted_emotions[1:]:
+                                secondary_percentage = (count / len(self.emotion_buffer)) * 100
+                                self.emotion_buffer.clear()
+                                self.emotion_buffer_start_time = current_time
+                                self.get_logger().info(f"Skipping repeated {dominant_emotion} ({dominant_percentage:.1f}%), using {emotion} ({secondary_percentage:.1f}%) instead")
+                                return
+                            else:
+                                # If no suitable secondary emotion, skip animation
+                                self.get_logger().info(f"Skipping animation - same emotion as last time ({dominant_emotion}) and no suitable alternative")
+                                # Reset buffer and start time
+                                self.emotion_buffer.clear()
+                                self.emotion_buffer_start_time = current_time
+                                return
+                        
+                        # Calculate average distance if available
+                        if distance_count > 0:
+                            avg_distance = avg_distance / distance_count
+                        else:
+                            avg_distance = None
+                        
+                        # Trigger the animation
+                        self.trigger_animation(dominant_emotion, avg_distance)
+            
+            # Reset the buffer and start time
+            self.emotion_buffer.clear()
+            self.emotion_buffer_start_time = current_time
+    
+    def trigger_animation(self, emotion, distance=None):
+        """Trigger an animation based on detected emotion"""
+        # Update state
+        self.last_emotion = emotion
+        self.last_animation_time = time.time()
+        
+        # Get corresponding animation
+        if emotion in self.emotion_to_animation:
+            animation = self.emotion_to_animation[emotion]
+            
+            # Add speed modifier based on distance if available
+            speed_modifier = ""
+            if distance is not None:
+                # Closer distance = faster reaction (within reason)
+                if 0.5 <= distance <= 3.0:
+                    # Map 0.5m->1.5 (faster) and 3.0m->0.7 (slower)
+                    speed = 1.5 - ((distance - 0.5) * 0.32)
+                    speed_modifier = f" {speed:.1f}"
                 
-                self.get_logger().info(f"Published emotion-triggered animation: {cmd.data}")
+            # Publish the animation command
+            cmd = String()
+            cmd.data = f"{animation}{speed_modifier}"
+            self.animation_publisher.publish(cmd)
+            
+            self.get_logger().info(f"Published emotion-triggered animation: {cmd.data} (based on {self.emotion_buffer_duration}s analysis)")
     
     def destroy_node(self):
         """Clean up resources when the node is shut down"""

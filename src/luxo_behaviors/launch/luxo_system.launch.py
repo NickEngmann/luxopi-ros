@@ -215,7 +215,35 @@ def generate_launch_description():
                 'launch/camera.launch.py'
             ])
         ]),
+        launch_arguments={
+            # Add fixed TF between camera and robot base to ensure proper visualization
+            'tf_prefix': 'oak',  # Explicitly name the camera frame
+            'parent_frame': 'base_link'  # Connect camera to robot base frame
+        }.items(),
         condition=IfCondition(use_camera)
+    )
+    
+    # Make sure robot_state_publisher has priority and runs even with camera enabled
+    robot_state_publisher_node = Node(
+        package='robot_state_publisher',
+        executable='robot_state_publisher',
+        name='robot_state_publisher',
+        output='screen',
+        parameters=[{
+            'robot_description': Command([
+                'cat ',
+                PathJoinSubstitution([
+                    FindPackageShare('roarm'),
+                    'urdf/roarm.urdf'
+                ])
+            ]),
+            'publish_frequency': 30.0,
+            # Ensure this is the root frame
+            'frame_prefix': '',
+            'use_sim_time': False
+        }],
+        # Always run this node regardless of other settings
+        condition=UnlessCondition(use_hardware)
     )
     
     # ==========================================================================
@@ -352,7 +380,6 @@ def generate_launch_description():
         declare_sense_collision,
         declare_verbose,
         
-        
         # Launch info and banners
         startup_banner,
         mode_info,
@@ -367,6 +394,9 @@ def generate_launch_description():
         # Launch files
         roarm_launch,
         depthai_launch,
+        
+        # Add robot_state_publisher with high priority (add before other nodes)
+        robot_state_publisher_node,
         
         # Nodes
         hardware_interface_node,
