@@ -4,10 +4,10 @@ import rclpy
 from rclpy.node import Node
 from .MultiMsgSync import TwoStageHostSeqSync
 import blobconverter
-import cv2
 import depthai as dai
 import numpy as np
 import time
+import sys
 from std_msgs.msg import String, Float32
 from sensor_msgs.msg import Image
 from cv_bridge import CvBridge
@@ -51,13 +51,16 @@ class CameraInteraction(Node):
         self.react_to_emotions = self.get_parameter('react_to_emotions').get_parameter_value().bool_value
         
         # Add parameter for emotion buffer duration
-        self.declare_parameter('emotion_buffer_duration', 3.0)
+        self.declare_parameter('emotion_buffer_duration', 2.0)
         self.emotion_buffer_duration = self.get_parameter('emotion_buffer_duration').get_parameter_value().double_value
         
         # Track last emotion and animation time for cooldown
         self.last_emotion = "neutral"
         self.last_animation_time = time.time()
-        self.emotion_cooldown = 5.0  # Wait 5 seconds between animations
+        self.emotion_cooldown = 4.0  # seconds between animations
+        
+        # Add a history of recent emotions to avoid repetition
+        self.recent_emotions = deque(maxlen=3)  # Keep track of last 5 emotions that triggered animations
         
         # Map emotions to animations
         self.emotion_to_animation = {
@@ -69,7 +72,7 @@ class CameraInteraction(Node):
         }
         
         # Emotion buffer system
-        self.emotion_buffer = deque(maxlen=90)
+        self.emotion_buffer = deque(maxlen=60)
         self.emotion_buffer_start_time = time.time()
         
         # Start camera detection system
@@ -98,8 +101,10 @@ class CameraInteraction(Node):
             
         except Exception as e:
             self.get_logger().error(f'Failed to initialize camera: {e}')
-            # Keep node running but disable camera processing
-            self.device = None
+            self.get_logger().fatal('Camera is required for this application. Exiting...')
+            # Clean up and exit
+            self.destroy_node()
+            sys.exit(1)
     
     def create_pipeline(self):
         pipeline = dai.Pipeline()
@@ -366,6 +371,14 @@ class CameraInteraction(Node):
                         avg_distance += distance
                         distance_count += 1
                 
+                # Check if we have at least 4 emotion samples to make a reliable classification
+                if len(self.emotion_buffer) < 4:
+                    self.get_logger().info(f"Not enough emotion samples ({len(self.emotion_buffer)}), need at least 4")
+                    # Reset buffer and start time
+                    self.emotion_buffer.clear()
+                    self.emotion_buffer_start_time = current_time
+                    return
+                    
                 # Find the most common emotion
                 if emotion_counts:
                     # Sort emotions by count (highest first)
@@ -375,45 +388,59 @@ class CameraInteraction(Node):
                     # Calculate percentage of dominant emotion
                     dominant_percentage = (emotion_counts[dominant_emotion] / len(self.emotion_buffer)) * 100
                     
-                    # Only trigger if:
-                    # 1. The dominant emotion is present in at least 75% of the buffer
-                    # 2. The dominant emotion is different from the last played animation
-                    if dominant_percentage >= 80:
-                        # If it's the same as the last emotion, look for the next most common emotion
-                        # that meets a minimum threshold (at least 25% of observations)
-                        if dominant_emotion == self.last_emotion and len(sorted_emotions) > 1:
-                            for emotion, count in sorted_emotions[1:]:
-                                secondary_percentage = (count / len(self.emotion_buffer)) * 100
-                                self.emotion_buffer.clear()
-                                self.emotion_buffer_start_time = current_time
-                                self.get_logger().info(f"Skipping repeated {dominant_emotion} ({dominant_percentage:.1f}%), using {emotion} ({secondary_percentage:.1f}%) instead")
-                                return
-                            else:
-                                # If no suitable secondary emotion, skip animation
-                                self.get_logger().info(f"Skipping animation - same emotion as last time ({dominant_emotion}) and no suitable alternative")
-                                # Reset buffer and start time
-                                self.emotion_buffer.clear()
-                                self.emotion_buffer_start_time = current_time
-                                return
-                        
-                        # Calculate average distance if available
-                        if distance_count > 0:
-                            avg_distance = avg_distance / distance_count
-                        else:
-                            avg_distance = None
+                    # Check if this emotion is too repetitive
+                    if self._is_too_repetitive(dominant_emotion):
+                        self.get_logger().info(f"Skipping repetitive emotion: {dominant_emotion}")
+                        # Reset buffer and start time
+                        self.emotion_buffer.clear()
+                        self.emotion_buffer_start_time = current_time
+                        return
+                    
+                    # Calculate average distance if available
+                    if distance_count > 0:
+                        avg_distance = avg_distance / distance_count
+                    else:
+                        avg_distance = None
+                    
+                    # Only trigger if dominant enough
+                    if dominant_percentage >= 70:
+                        self.get_logger().info(f"Emotion counts: {emotion_counts}, Dominant emotion: {dominant_emotion} ({dominant_percentage:.2f}%)")
                         
                         # Trigger the animation
                         self.trigger_animation(dominant_emotion, avg_distance)
+                    else:
+                        self.get_logger().info(f"No dominant emotion found, highest: {dominant_emotion} ({dominant_percentage:.2f}%)")
             
             # Reset the buffer and start time
             self.emotion_buffer.clear()
             self.emotion_buffer_start_time = current_time
-    
+
+    def _is_too_repetitive(self, emotion):
+        """Check if an emotion is being detected too repetitively"""
+        # If it's the same as the last triggered emotion, avoid repeating
+        if emotion == self.last_emotion:
+            return True
+            
+        # If this emotion appears too frequently in our recent history, avoid it
+        if len(self.recent_emotions) >= 3:  # Only check when we have some history
+            emotion_counts = {}
+            for e in self.recent_emotions:
+                emotion_counts[e] = emotion_counts.get(e, 0) + 1
+                
+            # If this emotion appears in more than half of our recent history, it's too repetitive
+            if emotion in emotion_counts and emotion_counts[emotion] >= len(self.recent_emotions) // 2:
+                return True
+        
+        return False
+
     def trigger_animation(self, emotion, distance=None):
         """Trigger an animation based on detected emotion"""
         # Update state
         self.last_emotion = emotion
         self.last_animation_time = time.time()
+        
+        # Add to recent emotions history
+        self.recent_emotions.append(emotion)
         
         # Get corresponding animation
         if emotion in self.emotion_to_animation:
