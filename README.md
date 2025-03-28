@@ -200,3 +200,17 @@ Sometimes I ran into problems where the there is jitter in the overall animation
 pkill -f animation_command
 pkill -f robot_state_publisher
 ```
+
+## Dynamic Adaption External Control
+
+```bash
+# enable at startup
+ros2 run luxo_behaviors hardware_interface --ros-args -p enable_dynamic_adaptation:=true
+# Toggle at runtime:
+ros2 service call /toggle_dynamic_adaptation std_srvs/srv/SetBool "{data: true}"  # Enable
+ros2 service call /toggle_dynamic_adaptation std_srvs/srv/SetBool "{data: false}"  # Disable
+
+# Adjust torque limits:
+ros2 run luxo_behaviors hardware_interface --ros-args -p enable_dynamic_adaptation:=true \
+  -p dynamic_adaptation_base_limit:=80 -p dynamic_adaptation_shoulder_limit:=120
+```

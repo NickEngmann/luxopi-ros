@@ -35,6 +35,7 @@ setup(
             'collision_detection = luxo_behaviors.collision_detection:main',
             'position_test = luxo_behaviors.position_test:main',
             'direct_test = luxo_behaviors.direct_test:main',
+            'dynamic_adaptation_toggle = luxo_behaviors.dynamic_adaptation_toggle:main',
         ],
     },
 )

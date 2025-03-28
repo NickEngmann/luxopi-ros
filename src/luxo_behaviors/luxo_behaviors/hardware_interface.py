@@ -45,6 +45,16 @@ class RoArmHardwareInterface(Node):
         self.declare_parameter('rest_variation_range', 0.15)  # Range for position variation        
         self.declare_parameter('use_hardware_joint_names', False)
         
+        # Add parameters for dynamic adaptation/external force control
+        self.declare_parameter('enable_dynamic_adaptation', False)  # Default to disabled
+        self.declare_parameter('dynamic_adaptation_base_limit', 60)  # Default torque limits
+        self.declare_parameter('dynamic_adaptation_shoulder_limit', 110)
+        self.declare_parameter('dynamic_adaptation_elbow_limit', 50)
+        self.declare_parameter('dynamic_adaptation_wrist_limit', 50)
+        self.declare_parameter('dynamic_adaptation_roll_limit', 50)
+        self.declare_parameter('dynamic_adaptation_hand_limit', 50)
+        self.declare_parameter('dynamic_adaptation_resume_delay', 2.0)  # Seconds to wait before re-enabling
+        
         # Get parameters
         self.serial_port = self.get_parameter('serial_port').value
         self.baud_rate = self.get_parameter('baud_rate').value
@@ -71,6 +81,16 @@ class RoArmHardwareInterface(Node):
         self.rest_variation_range = self.get_parameter('rest_variation_range').value
         
         self.use_hardware_joint_names = self.get_parameter('use_hardware_joint_names').value
+        
+        # Get dynamic adaptation parameters
+        self.enable_dynamic_adaptation = self.get_parameter('enable_dynamic_adaptation').value
+        self.dynamic_adaptation_base_limit = self.get_parameter('dynamic_adaptation_base_limit').value
+        self.dynamic_adaptation_shoulder_limit = self.get_parameter('dynamic_adaptation_shoulder_limit').value
+        self.dynamic_adaptation_elbow_limit = self.get_parameter('dynamic_adaptation_elbow_limit').value
+        self.dynamic_adaptation_wrist_limit = self.get_parameter('dynamic_adaptation_wrist_limit').value
+        self.dynamic_adaptation_roll_limit = self.get_parameter('dynamic_adaptation_roll_limit').value
+        self.dynamic_adaptation_hand_limit = self.get_parameter('dynamic_adaptation_hand_limit').value
+        self.dynamic_adaptation_resume_delay = self.get_parameter('dynamic_adaptation_resume_delay').value
         
         # Connection control
         self.connection_active = False
@@ -145,12 +165,22 @@ class RoArmHardwareInterface(Node):
         self.target_override_timeout = 10.0  # Time before reconsidering original target
         self.last_original_target_change_time = 0.0  # Last time original target changed
         
+        # Add tracking variables for dynamic adaptation
+        self.dynamic_adaptation_active = False
+        self.dynamic_adaptation_last_disable_time = 0.0
+        self.dynamic_adaptation_pending_resume = False
+        self.dynamic_adaptation_lock = threading.Lock()
+        
         if self.connection_active:
             # Initialize the arm if torque is enabled
             if self.enable_torque_on_start:
                 self.serial_manager.enable_torque()
                 time.sleep(0.5)
                 self.serial_manager.initialize_arm()
+                
+                # Enable dynamic adaptation if configured
+                if self.enable_dynamic_adaptation:
+                    self.enable_dynamic_adaptation_mode()
             
             # Changed subscription to joint_states_target
             self.subscription = self.create_subscription(
@@ -244,6 +274,9 @@ class RoArmHardwareInterface(Node):
                 self.get_logger().info("Collision avoidance enabled")
             else:
                 self.get_logger().warn("Collision avoidance disabled - robot will not react to obstacles")
+            
+            if self.enable_dynamic_adaptation:
+                self.get_logger().info("Dynamic adaptation/external force control enabled")
         else:
             self.get_logger().error("Failed to initialize hardware interface")
             
@@ -864,6 +897,18 @@ class RoArmHardwareInterface(Node):
         # Update the last check time at the beginning to track timer operation
         self.last_safety_check_time = self.get_clock().now().nanoseconds / 1e9
         
+        # Check if dynamic adaptation needs to be restored
+        if self.enable_dynamic_adaptation and not self.dynamic_adaptation_active:
+            current_time = time.time()
+            
+            with self.dynamic_adaptation_lock:
+                # Check if we should re-enable dynamic adaptation
+                if (self.dynamic_adaptation_pending_resume and 
+                    current_time - self.dynamic_adaptation_last_disable_time >= self.dynamic_adaptation_resume_delay):
+                    self.get_logger().info("Re-enabling dynamic adaptation after movement")
+                    self.enable_dynamic_adaptation_mode()
+                    self.dynamic_adaptation_pending_resume = False
+        
         if not self.enable_collision_avoidance:
             self.get_logger().debug(f"Collision avoidance disabled - skipping safety check")
             return
@@ -1205,6 +1250,13 @@ class RoArmHardwareInterface(Node):
             current_time = time.time()
             self.last_movement_time = current_time
             
+            # If dynamic adaptation is active, temporarily disable it for controlled movement
+            dynamic_adaptation_was_active = False
+            if self.enable_dynamic_adaptation and self.dynamic_adaptation_active:
+                self.get_logger().debug("Temporarily disabling dynamic adaptation for controlled movement")
+                dynamic_adaptation_was_active = True
+                self.disable_dynamic_adaptation_mode()
+            
             # Track recent command times to help detect animations
             if not hasattr(self, 'recent_command_times'):
                 self.recent_command_times = []
@@ -1271,6 +1323,10 @@ class RoArmHardwareInterface(Node):
             
             # Apply collision avoidance and send command
             self.send_safe_joint_command(positions_to_use, "Joint control")
+            
+            # Schedule re-enabling of dynamic adaptation after a delay if it was active
+            if dynamic_adaptation_was_active and self.enable_dynamic_adaptation:
+                self.schedule_dynamic_adaptation_resume()
             
             # Explicitly publish to joint_states to ensure our topic is active
             self.publish_actual_joint_states(self.current_joints)
@@ -1514,6 +1570,10 @@ class RoArmHardwareInterface(Node):
         """Clean up when node is destroyed."""
         self.get_logger().info("Shutting down hardware interface")
         
+        # Disable dynamic adaptation mode if active
+        if self.dynamic_adaptation_active:
+            self.disable_dynamic_adaptation_mode()
+        
         # Disable torque before closing
         if self.is_connected():
             self.disable_torque()
@@ -1675,6 +1735,85 @@ class RoArmHardwareInterface(Node):
                 self.publish_actual_joint_states(self.current_joints)
         except Exception as e:
             self.get_logger().error(f"Error in direct publish timer: {e}")
+
+    # Add methods to control dynamic adaptation
+    def enable_dynamic_adaptation_mode(self):
+        """Enable the dynamic external force adaptation mode"""
+        try:
+            with self.dynamic_adaptation_lock:
+                if self.dynamic_adaptation_active:
+                    self.get_logger().info("Dynamic adaptation already active")
+                    return True
+                
+                # Format command according to API: {"T":112,"mode":1,"b":60,"s":110,"e":50,"t":50,"r":50,"h":50}
+                cmd = {
+                    'T': 112,
+                    'mode': 1,
+                    'b': self.dynamic_adaptation_base_limit,
+                    's': self.dynamic_adaptation_shoulder_limit,
+                    'e': self.dynamic_adaptation_elbow_limit,
+                    't': self.dynamic_adaptation_wrist_limit,
+                    'r': self.dynamic_adaptation_roll_limit,
+                    'h': self.dynamic_adaptation_hand_limit
+                }
+                
+                cmd_str = json.dumps(cmd)
+                success = self.send_command(cmd_str, "Enable dynamic adaptation")
+                
+                if success:
+                    self.dynamic_adaptation_active = True
+                    self.get_logger().info("Dynamic adaptation mode enabled")
+                else:
+                    self.get_logger().error("Failed to enable dynamic adaptation mode")
+                
+                return success
+        except Exception as e:
+            self.get_logger().error(f"Error enabling dynamic adaptation mode: {e}")
+            return False
+    
+    def disable_dynamic_adaptation_mode(self):
+        """Disable the dynamic external force adaptation mode"""
+        try:
+            with self.dynamic_adaptation_lock:
+                if not self.dynamic_adaptation_active:
+                    return True  # Already disabled
+                
+                # Format command according to API: {"T":112,"mode":0,"b":1000,"s":1000,"e":1000,"t":1000,"r":1000,"h":1000}
+                cmd = {
+                    'T': 112,
+                    'mode': 0,
+                    'b': 1000,
+                    's': 1000,
+                    'e': 1000,
+                    't': 1000,
+                    'r': 1000,
+                    'h': 1000
+                }
+                
+                cmd_str = json.dumps(cmd)
+                success = self.send_command(cmd_str, "Disable dynamic adaptation")
+                
+                if success:
+                    self.dynamic_adaptation_active = False
+                    self.dynamic_adaptation_last_disable_time = time.time()
+                    self.get_logger().info("Dynamic adaptation mode disabled")
+                else:
+                    self.get_logger().error("Failed to disable dynamic adaptation mode")
+                
+                return success
+        except Exception as e:
+            self.get_logger().error(f"Error disabling dynamic adaptation mode: {e}")
+            return False
+    
+    def schedule_dynamic_adaptation_resume(self):
+        """Schedule re-enabling of dynamic adaptation mode after a delay"""
+        if not self.enable_dynamic_adaptation:
+            return  # Feature not enabled
+            
+        with self.dynamic_adaptation_lock:
+            if not self.dynamic_adaptation_pending_resume:
+                self.dynamic_adaptation_pending_resume = True
+                self.get_logger().info(f"Scheduled dynamic adaptation resume in {self.dynamic_adaptation_resume_delay}s")
 
 def main(args=None):
     rclpy.init(args=args)
