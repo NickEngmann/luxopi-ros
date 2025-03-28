@@ -37,6 +37,13 @@ def generate_launch_description():
         description='Whether to launch the depth camera (default: true in hardware, false in simulation)'
     )
     
+    # Emotion detection argument with conditional default (tied to camera availability)
+    declare_enable_emotion_detection = DeclareLaunchArgument(
+        'enable_emotion_detection',
+        default_value=PythonExpression(["'false' if '", use_camera, "' == 'false' else 'true'"]),
+        description='Enable emotion detection with camera (default: true when camera is enabled)'
+    )
+    
     # Proximity sensor argument with conditional default
     declare_sense_collision = DeclareLaunchArgument(
         'sense_collision',
@@ -93,17 +100,6 @@ def generate_launch_description():
     # LOGGING ACTIONS
     # ==========================================================================
     
-    # Package dependency info and warning
-    dependency_info = LogInfo(
-        msg=["\n⚠️ DEPENDENCY INFORMATION:\n",
-             "- This launch file may require the following ROS packages:\n",
-             "  • roarm\n",
-             "  • depthai_ros_driver\n",
-             "- If you see package not found errors, install missing packages with:\n",
-             "  sudo apt install ros-humble-<package-name>\n",
-             "- Or modify the launch parameters to avoid using missing packages\n"]
-    )
-    
     # Initial startup banner
     startup_banner = LogInfo(msg=["="*80, 
                                   "\n\n🚀 STARTING LUXOPI ROS SYSTEM\n",
@@ -114,6 +110,7 @@ def generate_launch_description():
                             "- Mode: ", PythonExpression(["'🔧 HARDWARE' if '", use_hardware, "' == 'true' else '🖥️  SIMULATION'"]), "\n",
                             "- Test mode: ", test_mode, "\n",
                             "- Camera enabled: ", use_camera, "\n",
+                            "- Emotion detection: ", LaunchConfiguration('enable_emotion_detection'), "\n",
                             "- Collision detection: ", enable_depth_collision, "\n",
                             "- Using proximity sensor: ", sense_collision, "\n",
                             "- Demo mode: ", run_demo, "\n"])
@@ -152,6 +149,7 @@ def generate_launch_description():
     camera_info = LogInfo(
         msg=["\n📷 CAMERA SUBSYSTEM:\n",
              "- Using DepthAI OAK camera\n",
+             "- Emotion detection: ", PythonExpression(["'enabled' if '", LaunchConfiguration('enable_emotion_detection'), "' == 'true' else 'disabled'"]), "\n",
              "- Depth collision detection: ", PythonExpression(["'enabled' if '", enable_depth_collision, "' == 'true' else 'disabled'"]), "\n",
              "- Safety distance: ", safety_distance, " meters\n"],
         condition=IfCondition(use_camera)
@@ -305,12 +303,17 @@ def generate_launch_description():
         condition=IfCondition(enable_depth_collision)
     )
     
-    # Camera interaction node (requires camera)
-    camera_node = Node(
+    # Camera interaction node (requires camera) - now with emotion detection capability
+    camera_interaction_node = Node(
         package='luxo_behaviors',
         executable='camera_interaction',
         name='camera_interaction',
         output='screen',
+        parameters=[
+            {'publish_camera_feed': False},
+            {'verbose': LaunchConfiguration('verbose')},
+            {'react_to_emotions': LaunchConfiguration('enable_emotion_detection')}
+        ],
         condition=IfCondition(use_camera)
     )
     
@@ -339,6 +342,7 @@ def generate_launch_description():
         # Launch arguments
         declare_use_hardware,
         declare_use_camera,
+        declare_enable_emotion_detection,
         declare_run_demo,
         declare_use_gui,
         use_joint_state_publisher_arg,
@@ -348,8 +352,6 @@ def generate_launch_description():
         declare_sense_collision,
         declare_verbose,
         
-        # Dependency information
-        dependency_info,
         
         # Launch info and banners
         startup_banner,
@@ -373,7 +375,7 @@ def generate_launch_description():
         simulation_animation_node,
         collision_detection_node,
         apds9960_node,
-        camera_node,
+        camera_interaction_node,
         demo_node,
         
         # Final info
