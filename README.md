@@ -200,3 +200,37 @@ Sometimes I ran into problems where the there is jitter in the overall animation
 pkill -f animation_command
 pkill -f robot_state_publisher
 ```
+
+## Run the Simulator with Camera Integration
+
+```bash
+ros2 launch luxo_behaviors luxo_system.launch.py use_hardware:=false use_camera:=true enable_emotion_detection:=true verbose:=true use_joint_state_publisher:=false run_demo:=false
+```
+This command:
+
+1. Sets use_hardware:=false to run in simulation mode
+2. Explicitly enables the camera with use_camera:=true (normally disabled in simulation)
+3. Enables emotion detection with enable_emotion_detection:=true
+4. Keeps verbose:=true for detailed logging
+5. Sets use_joint_state_publisher:=false to avoid dependency issues
+6. Sets run_demo:=false to prevent the demo sequence from running
+
+**Note:** When running with both camera and robot visualization, make sure to select the correct fixed frame in RViz. You should select "base_link" as the fixed frame to properly visualize the robot model. You can change this in RViz by:
+1. In the "Global Options" section, set "Fixed Frame" to "base_link"
+2. Add a "RobotModel" display if it's not already present
+3. Add a "TF" display to see the relationship between the robot and camera frames
+
+If you still don't see the robot model, try running the following command to debug the TF tree:
+```bash
+ros2 run tf2_tools view_frames
+```
+This will generate a PDF showing the relationship between all coordinate frames.
+
+## Developing with WSL2
+
+```bash
+## connect to the main luxonis bootloader
+usbipd attach --wsl Ubuntu-22.04 --hardware-id "03e7:f63c" --auto-attach
+## connect tot he actual luxonis camera
+$ usbipd attach --wsl Ubuntu-22.04 --hardware-id "03e7:f63b" --auto-attach
+```

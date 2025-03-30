@@ -37,6 +37,13 @@ def generate_launch_description():
         description='Whether to launch the depth camera (default: true in hardware, false in simulation)'
     )
     
+    # Emotion detection argument with conditional default (tied to camera availability)
+    declare_enable_emotion_detection = DeclareLaunchArgument(
+        'enable_emotion_detection',
+        default_value=PythonExpression(["'false' if '", use_camera, "' == 'false' else 'true'"]),
+        description='Enable emotion detection with camera (default: true when camera is enabled)'
+    )
+    
     # Proximity sensor argument with conditional default
     declare_sense_collision = DeclareLaunchArgument(
         'sense_collision',
@@ -89,20 +96,16 @@ def generate_launch_description():
         description='Enable verbose output and additional debugging information'
     )
     
+    # Add a launch argument for camera rotation
+    declare_camera_rotation = DeclareLaunchArgument(
+        'camera_rotation',
+        default_value='false',
+        description='Rotate camera image 180 degrees (set to true if camera is mounted upside down)'
+    )
+    
     # ==========================================================================
     # LOGGING ACTIONS
     # ==========================================================================
-    
-    # Package dependency info and warning
-    dependency_info = LogInfo(
-        msg=["\n⚠️ DEPENDENCY INFORMATION:\n",
-             "- This launch file may require the following ROS packages:\n",
-             "  • roarm\n",
-             "  • depthai_ros_driver\n",
-             "- If you see package not found errors, install missing packages with:\n",
-             "  sudo apt install ros-humble-<package-name>\n",
-             "- Or modify the launch parameters to avoid using missing packages\n"]
-    )
     
     # Initial startup banner
     startup_banner = LogInfo(msg=["="*80, 
@@ -114,6 +117,7 @@ def generate_launch_description():
                             "- Mode: ", PythonExpression(["'🔧 HARDWARE' if '", use_hardware, "' == 'true' else '🖥️  SIMULATION'"]), "\n",
                             "- Test mode: ", test_mode, "\n",
                             "- Camera enabled: ", use_camera, "\n",
+                            "- Emotion detection: ", LaunchConfiguration('enable_emotion_detection'), "\n",
                             "- Collision detection: ", enable_depth_collision, "\n",
                             "- Using proximity sensor: ", sense_collision, "\n",
                             "- Demo mode: ", run_demo, "\n"])
@@ -152,6 +156,7 @@ def generate_launch_description():
     camera_info = LogInfo(
         msg=["\n📷 CAMERA SUBSYSTEM:\n",
              "- Using DepthAI OAK camera\n",
+             "- Emotion detection: ", PythonExpression(["'enabled' if '", LaunchConfiguration('enable_emotion_detection'), "' == 'true' else 'disabled'"]), "\n",
              "- Depth collision detection: ", PythonExpression(["'enabled' if '", enable_depth_collision, "' == 'true' else 'disabled'"]), "\n",
              "- Safety distance: ", safety_distance, " meters\n"],
         condition=IfCondition(use_camera)
@@ -204,20 +209,28 @@ def generate_launch_description():
         condition=UnlessCondition(use_hardware)
     )
     
-    # Include DepthAI camera launch file (with error handling)
-    try_camera_launch = LogInfo(
-        msg=["Attempting to start camera... (skip with use_camera:=false if not available)"],
-        condition=IfCondition(use_camera)
-    )
     
-    depthai_launch = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource([
-            PathJoinSubstitution([
-                FindPackageShare('depthai_ros_driver'),
-                'launch/camera.launch.py'
-            ])
-        ]),
-        condition=IfCondition(use_camera)
+    # Make sure robot_state_publisher has priority and runs even with camera enabled
+    robot_state_publisher_node = Node(
+        package='robot_state_publisher',
+        executable='robot_state_publisher',
+        name='robot_state_publisher',
+        output='screen',
+        parameters=[{
+            'robot_description': Command([
+                'cat ',
+                PathJoinSubstitution([
+                    FindPackageShare('roarm'),
+                    'urdf/roarm.urdf'
+                ])
+            ]),
+            'publish_frequency': 30.0,
+            # Ensure this is the root frame
+            'frame_prefix': '',
+            'use_sim_time': False
+        }],
+        # Always run this node regardless of other settings
+        condition=UnlessCondition(use_hardware)
     )
     
     # ==========================================================================
@@ -295,7 +308,7 @@ def generate_launch_description():
         output='screen',
         parameters=[
             {'safety_distance': safety_distance},
-            {'robot_base_frame': 'oak'},
+            {'robot_base_frame': 'base_link'},
             {'point_cloud_topic': '/oak/points'},
             {'joint_states_topic': '/joint_states'},
             {'override_animation': True},
@@ -305,12 +318,18 @@ def generate_launch_description():
         condition=IfCondition(enable_depth_collision)
     )
     
-    # Camera interaction node (requires camera)
-    camera_node = Node(
+    # Camera interaction node (requires camera) - now with emotion detection capability
+    camera_interaction_node = Node(
         package='luxo_behaviors',
         executable='camera_interaction',
         name='camera_interaction',
         output='screen',
+        parameters=[
+            {'publish_camera_feed': False},
+            {'verbose': LaunchConfiguration('verbose')},
+            {'react_to_emotions': LaunchConfiguration('enable_emotion_detection')},
+            {'camera_rotation': LaunchConfiguration('camera_rotation')}
+        ],
         condition=IfCondition(use_camera)
     )
     
@@ -339,6 +358,7 @@ def generate_launch_description():
         # Launch arguments
         declare_use_hardware,
         declare_use_camera,
+        declare_enable_emotion_detection,
         declare_run_demo,
         declare_use_gui,
         use_joint_state_publisher_arg,
@@ -347,9 +367,7 @@ def generate_launch_description():
         declare_safety_distance,
         declare_sense_collision,
         declare_verbose,
-        
-        # Dependency information
-        dependency_info,
+        declare_camera_rotation,  # Add the camera rotation argument
         
         # Launch info and banners
         startup_banner,
@@ -357,14 +375,15 @@ def generate_launch_description():
         hardware_info,
         simulation_info,
         quick_reference,
-        try_camera_launch,
         camera_info,
         demo_info,
         troubleshooting_info,
         
         # Launch files
         roarm_launch,
-        depthai_launch,
+        
+        # Add robot_state_publisher with high priority (add before other nodes)
+        robot_state_publisher_node,
         
         # Nodes
         hardware_interface_node,
@@ -373,7 +392,7 @@ def generate_launch_description():
         simulation_animation_node,
         collision_detection_node,
         apds9960_node,
-        camera_node,
+        camera_interaction_node,
         demo_node,
         
         # Final info
