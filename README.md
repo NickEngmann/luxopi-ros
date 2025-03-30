@@ -201,19 +201,24 @@ pkill -f animation_command
 pkill -f robot_state_publisher
 ```
 
-## Dynamic Adaption External Control
+## Dynamic Adaptation External Control
 
+Dynamic Adaptation allows the robot arm to respond to external forces by reducing servo torque limits.
+This makes the arm more compliant and able to be physically moved/positioned by hand.
+
+### Enable dynamic adaptation (stays active for 10 seconds):
+
+### Publish directly to the topic:
 ```bash
-# enable at startup
-ros2 run luxo_behaviors hardware_interface --ros-args -p enable_dynamic_adaptation:=true
-# Toggle at runtime:
-ros2 service call /toggle_dynamic_adaptation std_srvs/srv/SetBool "{data: true}"  # Enable
-ros2 service call /toggle_dynamic_adaptation std_srvs/srv/SetBool "{data: false}"  # Disable
+ros2 topic pub --once /dynamic_adaptation_toggle std_msgs/msg/Bool "data: true"   # Enable
+ros2 topic pub --once /dynamic_adaptation_toggle std_msgs/msg/Bool "data: false"  # Disable
+```
 
-# Adjust torque limits:
-ros2 run luxo_behaviors hardware_interface --ros-args -p enable_dynamic_adaptation:=true \
-  -p dynamic_adaptation_base_limit:=80 -p dynamic_adaptation_shoulder_limit:=120
-=======
+### Starting hardware with dynamic adaptation already enabled:
+```bash
+ros2 launch luxo_behaviors luxo_system.launch.py use_hardware:=true enable_dynamic_adaptation:=true
+```
+
 ## Run the Simulator with Camera Integration
 
 ```bash
