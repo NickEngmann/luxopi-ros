@@ -209,26 +209,6 @@ def generate_launch_description():
         condition=UnlessCondition(use_hardware)
     )
     
-    # Include DepthAI camera launch file (with error handling)
-    try_camera_launch = LogInfo(
-        msg=["Attempting to start camera... (skip with use_camera:=false if not available)"],
-        condition=IfCondition(use_camera)
-    )
-    
-    depthai_launch = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource([
-            PathJoinSubstitution([
-                FindPackageShare('depthai_ros_driver'),
-                'launch/camera.launch.py'
-            ])
-        ]),
-        launch_arguments={
-            # Add fixed TF between camera and robot base to ensure proper visualization
-            'tf_prefix': 'oak',  # Explicitly name the camera frame
-            'parent_frame': 'base_link'  # Connect camera to robot base frame
-        }.items(),
-        condition=IfCondition(use_camera)
-    )
     
     # Make sure robot_state_publisher has priority and runs even with camera enabled
     robot_state_publisher_node = Node(
@@ -395,14 +375,12 @@ def generate_launch_description():
         hardware_info,
         simulation_info,
         quick_reference,
-        try_camera_launch,
         camera_info,
         demo_info,
         troubleshooting_info,
         
         # Launch files
         roarm_launch,
-        depthai_launch,
         
         # Add robot_state_publisher with high priority (add before other nodes)
         robot_state_publisher_node,
