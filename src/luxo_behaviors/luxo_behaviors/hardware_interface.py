@@ -46,7 +46,7 @@ class RoArmHardwareInterface(Node):
         self.declare_parameter('use_hardware_joint_names', False)
         
         # Add parameters for dynamic adaptation/external force control
-        self.declare_parameter('enable_dynamic_adaptation', True)  # Default to disabled
+        self.declare_parameter('enable_dynamic_adaptation', False)  # Default to disabled
         self.declare_parameter('dynamic_adaptation_base_limit', 60)  # Default torque limits
         self.declare_parameter('dynamic_adaptation_shoulder_limit', 110)
         self.declare_parameter('dynamic_adaptation_elbow_limit', 50)
@@ -178,7 +178,6 @@ class RoArmHardwareInterface(Node):
                 self.serial_manager.enable_torque()
                 time.sleep(0.5)
                 self.serial_manager.initialize_arm()
-                
                 # Enable dynamic adaptation if configured
                 if self.enable_dynamic_adaptation:
                     self.enable_dynamic_adaptation_mode()
@@ -1754,20 +1753,16 @@ class RoArmHardwareInterface(Node):
                     self.get_logger().info("Dynamic adaptation already active")
                     return True
                 
-                # Format command according to API: {"T":112,"mode":1,"b":60,"s":110,"e":50,"t":50,"r":50,"h":50}
-                cmd = {
-                    'T': 112,
-                    'mode': 1,
-                    'b': self.dynamic_adaptation_base_limit,
-                    's': self.dynamic_adaptation_shoulder_limit,
-                    'e': self.dynamic_adaptation_elbow_limit,
-                    't': self.dynamic_adaptation_wrist_limit,
-                    'r': self.dynamic_adaptation_roll_limit,
-                    'h': self.dynamic_adaptation_hand_limit
-                }
-                
-                cmd_str = json.dumps(cmd)
-                success = self.send_command(cmd_str, "Enable dynamic adaptation")
+                # Use SerialManager's built-in method with our configured limits
+                success = self.serial_manager.set_dynamic_adaptation(
+                    mode=1,
+                    base=self.dynamic_adaptation_base_limit,
+                    shoulder=self.dynamic_adaptation_shoulder_limit,
+                    elbow=self.dynamic_adaptation_elbow_limit,
+                    wrist=self.dynamic_adaptation_wrist_limit,
+                    roll=self.dynamic_adaptation_roll_limit,
+                    hand=self.dynamic_adaptation_hand_limit
+                )
                 
                 if success:
                     self.dynamic_adaptation_active = True
@@ -1787,20 +1782,8 @@ class RoArmHardwareInterface(Node):
                 if not self.dynamic_adaptation_active:
                     return True  # Already disabled
                 
-                # Format command according to API: {"T":112,"mode":0,"b":1000,"s":1000,"e":1000,"t":1000,"r":1000,"h":1000}
-                cmd = {
-                    'T': 112,
-                    'mode': 0,
-                    'b': 1000,
-                    's': 1000,
-                    'e': 1000,
-                    't': 1000,
-                    'r': 1000,
-                    'h': 1000
-                }
-                
-                cmd_str = json.dumps(cmd)
-                success = self.send_command(cmd_str, "Disable dynamic adaptation")
+                # Use SerialManager's built-in method to disable
+                success = self.serial_manager.set_dynamic_adaptation(mode=0)
                 
                 if success:
                     self.dynamic_adaptation_active = False
