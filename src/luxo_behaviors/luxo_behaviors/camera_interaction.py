@@ -130,9 +130,9 @@ class CameraInteraction(Node):
             if self.verbose:
                 self.get_logger().info("Camera image orientation: ROTATE_180_DEG")
         else:
-            cam.setImageOrientation(dai.CameraImageOrientation.NORMAL)
+            cam.setImageOrientation(dai.CameraImageOrientation.AUTO)
             if self.verbose:
-                self.get_logger().info("Camera image orientation: Standard")
+                self.get_logger().info("Camera image orientation: AUTO")
 
         cam_xout = pipeline.create(dai.node.XLinkOut)
         cam_xout.setStreamName("color")

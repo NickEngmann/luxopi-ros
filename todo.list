@@ -6,5 +6,3 @@ todo.list
 [-] Change response to collisions
 [-] integrate the camera to spawn behaviors as well as idle behavior
 [] We have two at_position functions now. we can delete one of them
-
-
