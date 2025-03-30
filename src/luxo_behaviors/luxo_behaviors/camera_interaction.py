@@ -50,6 +50,13 @@ class CameraInteraction(Node):
         self.declare_parameter('react_to_emotions', True)
         self.react_to_emotions = self.get_parameter('react_to_emotions').get_parameter_value().bool_value
         
+        # Add parameter for camera rotation (0 = normal, 180 = flipped)
+        self.declare_parameter('camera_rotation', False)
+        self.camera_rotation = self.get_parameter('camera_rotation').get_parameter_value().bool_value
+        if self.verbose:
+            rotation_msg = "180 degrees" if self.camera_rotation else "normal (0 degrees)"
+            self.get_logger().info(f'Camera rotation set to: {rotation_msg}')
+        
         # Add parameter for emotion buffer duration
         self.declare_parameter('emotion_buffer_duration', 2.0)
         self.emotion_buffer_duration = self.get_parameter('emotion_buffer_duration').get_parameter_value().double_value
@@ -64,11 +71,11 @@ class CameraInteraction(Node):
         
         # Map emotions to animations
         self.emotion_to_animation = {
-            'happy': 'excited',
-            'sad': 'sad',
-            'surprise': 'startled',
-            'anger': 'shake',
-            'neutral': 'curious'
+            'happy': ['excited', 'playful', 'dance'],
+            'sad': ['sad', 'droop'],
+            'surprise': ['startled', 'curious'],
+            'anger': ['shake', 'think', 'startled'],
+            'neutral': ['idle', 'curious', 'stretch', 'nod']
         }
         
         # Emotion buffer system
@@ -116,7 +123,16 @@ class CameraInteraction(Node):
         cam.setResolution(dai.ColorCameraProperties.SensorResolution.THE_1080_P)
         cam.setInterleaved(False)
         cam.setBoardSocket(dai.CameraBoardSocket.RGB)
-        cam.setImageOrientation(dai.CameraImageOrientation.ROTATE_180_DEG)
+        
+        # Set camera orientation based on parameter
+        if self.camera_rotation:
+            cam.setImageOrientation(dai.CameraImageOrientation.ROTATE_180_DEG)
+            if self.verbose:
+                self.get_logger().info("Camera image orientation: ROTATE_180_DEG")
+        else:
+            cam.setImageOrientation(dai.CameraImageOrientation.NORMAL)
+            if self.verbose:
+                self.get_logger().info("Camera image orientation: Standard")
 
         cam_xout = pipeline.create(dai.node.XLinkOut)
         cam_xout.setStreamName("color")
@@ -442,9 +458,11 @@ class CameraInteraction(Node):
         # Add to recent emotions history
         self.recent_emotions.append(emotion)
         
-        # Get corresponding animation
+        # Get corresponding animation options
         if emotion in self.emotion_to_animation:
-            animation = self.emotion_to_animation[emotion]
+            animation_options = self.emotion_to_animation[emotion]
+            # Randomly select one animation from the available options
+            animation = np.random.choice(animation_options)
             
             # Add speed modifier based on distance if available
             speed_modifier = ""
@@ -460,7 +478,7 @@ class CameraInteraction(Node):
             cmd.data = f"{animation}{speed_modifier}"
             self.animation_publisher.publish(cmd)
             
-            self.get_logger().info(f"Published emotion-triggered animation: {cmd.data} (based on {self.emotion_buffer_duration}s analysis)")
+            self.get_logger().info(f"Published emotion-triggered animation: {cmd.data} (based on {emotion}) from options: {animation_options}")
     
     def destroy_node(self):
         """Clean up resources when the node is shut down"""

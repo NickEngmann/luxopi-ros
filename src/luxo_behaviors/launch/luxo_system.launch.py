@@ -96,6 +96,13 @@ def generate_launch_description():
         description='Enable verbose output and additional debugging information'
     )
     
+    # Add a launch argument for camera rotation
+    declare_camera_rotation = DeclareLaunchArgument(
+        'camera_rotation',
+        default_value='false',
+        description='Rotate camera image 180 degrees (set to true if camera is mounted upside down)'
+    )
+    
     # ==========================================================================
     # LOGGING ACTIONS
     # ==========================================================================
@@ -321,7 +328,7 @@ def generate_launch_description():
         output='screen',
         parameters=[
             {'safety_distance': safety_distance},
-            {'robot_base_frame': 'oak'},
+            {'robot_base_frame': 'base_link'},
             {'point_cloud_topic': '/oak/points'},
             {'joint_states_topic': '/joint_states'},
             {'override_animation': True},
@@ -340,7 +347,8 @@ def generate_launch_description():
         parameters=[
             {'publish_camera_feed': False},
             {'verbose': LaunchConfiguration('verbose')},
-            {'react_to_emotions': LaunchConfiguration('enable_emotion_detection')}
+            {'react_to_emotions': LaunchConfiguration('enable_emotion_detection')},
+            {'camera_rotation': LaunchConfiguration('camera_rotation')}
         ],
         condition=IfCondition(use_camera)
     )
@@ -379,6 +387,7 @@ def generate_launch_description():
         declare_safety_distance,
         declare_sense_collision,
         declare_verbose,
+        declare_camera_rotation,  # Add the camera rotation argument
         
         # Launch info and banners
         startup_banner,
