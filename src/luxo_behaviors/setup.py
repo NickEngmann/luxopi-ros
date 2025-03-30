@@ -27,14 +27,11 @@ setup(
     entry_points={
         'console_scripts': [
             'collision_ros_node = luxo_behaviors.collision_ros_node:main',
-            'arm_controller = luxo_behaviors.arm_controller:main',
             'animation_command = luxo_behaviors.animation_command:main',
             'camera_interaction = luxo_behaviors.camera_interaction:main',
             'demo_mode = luxo_behaviors.demo_mode:main',
             'hardware_interface = luxo_behaviors.hardware_interface:main',
             'collision_detection = luxo_behaviors.collision_detection:main',
-            'position_test = luxo_behaviors.position_test:main',
-            'direct_test = luxo_behaviors.direct_test:main',
             'dynamic_adaptation_toggle = luxo_behaviors.dynamic_adaptation_toggle:main',
         ],
     },

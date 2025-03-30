@@ -17,7 +17,7 @@ class CollisionDetectionNode(Node):
         # Parameters with more aggressive defaults for close detection
         self.declare_parameter('safety_distance', 0.5)     # ~20 inches
         self.declare_parameter('near_threshold', 0.25)     # ~10 inches
-        self.declare_parameter('robot_base_frame', 'oak')
+        self.declare_parameter('robot_base_frame', 'base_link')
         self.declare_parameter('point_cloud_topic', '/oak/points')
         self.declare_parameter('joint_states_topic', '/joint_states')
         self.declare_parameter('override_animation', True)

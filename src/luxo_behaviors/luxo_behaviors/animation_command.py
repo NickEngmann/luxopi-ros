@@ -6,7 +6,6 @@ from std_msgs.msg import String
 from sensor_msgs.msg import JointState
 import time
 import random
-import math
 
 class EnhancedAnimationCommand(Node):
     def __init__(self):
@@ -89,22 +88,17 @@ class EnhancedAnimationCommand(Node):
         
         # Map of animation names to methods
         animations = {
-            'curious': self.curious_look,
             'excited': self.excited_hop,
-            'sad': self.sad_droop,
-            'idle': self.idle_state,
-            'sweep': self.light_sweep,
             'playful': self.playful_bounce,
-            'startled': self.startled_jump,
-            'grab': self.grab_release,
-            'think': self.thinking_animation,       
-            'wave': self.waving_animation,          
-            'dance': self.dancing_animation,        
+            'dance': self.dancing_animation, 
+            'sad': self.sad_droop,
+            'think': self.thinking_animation, 
+            'idle': self.idle_state,
+            'curious': self.curious_look,
             'stretch': self.stretching_animation,   
             'nod': self.nodding_animation,          
-            'shake': self.head_shake_animation,     
-            'write': self.writing_animation,        
-            'random': self.random_animation,        # Plays a random animation
+            'shake': self.head_shake_animation,
+            'startled': self.startled_jump,          
             'stop': self.stop_animation
         }
         
@@ -562,83 +556,6 @@ class EnhancedAnimationCommand(Node):
         self.start_animation(keyframes, durations)
         self.get_logger().info('Executing enhanced emotional sad droop animation')
 
-    def light_sweep(self):
-        """Make the arm sweep like searching with Disney principles."""
-        # Current base position
-        base_pos = self.current_positions[0]
-        
-        # Get current gripper position or use default closed position
-        gripper_pos = self.current_positions[4] if len(self.current_positions) > 4 else 3.14
-        
-        # Neutral position parameters
-        shoulder_neutral = 0.35
-        elbow_neutral = 0.85
-        wrist_up = 0.5
-        wrist_down = -0.2
-        
-        # Keyframe positions with Disney animation principles
-        keyframes = [
-            # Anticipation - alert starting position
-            [base_pos, shoulder_neutral, elbow_neutral, wrist_up, gripper_pos * 0.9],  # Slightly open
-            
-            # Quick turn to left - snappy timing
-            [base_pos-0.9, shoulder_neutral, elbow_neutral, wrist_up * 0.7, gripper_pos * 0.85],
-            
-            # Exaggerated peek left - overlapping action in wrist
-            [base_pos-1.2, shoulder_neutral+0.1, elbow_neutral+0.1, wrist_down, gripper_pos * 0.8],
-            
-            # Follow through - slight bounce back
-            [base_pos-1.1, shoulder_neutral-0.05, elbow_neutral-0.05, wrist_down * 0.5, gripper_pos * 0.85],
-            
-            # Secondary action - quick look up while still on left
-            [base_pos-1.0, shoulder_neutral-0.1, elbow_neutral-0.2, wrist_up * 1.4, gripper_pos * 0.8],
-            
-            # Arcing movement to mid-left
-            [base_pos-0.6, shoulder_neutral, elbow_neutral, wrist_up * 0.9, gripper_pos * 0.85],
-            
-            # Quick glance down on mid-left (staging)
-            [base_pos-0.5, shoulder_neutral+0.15, elbow_neutral+0.15, wrist_down, gripper_pos * 0.9],
-            
-            # Fast transition to center (snappy timing)
-            [base_pos, shoulder_neutral-0.05, elbow_neutral-0.05, wrist_up, gripper_pos * 0.85],
-            
-            # Anticipation for right movement
-            [base_pos+0.2, shoulder_neutral+0.05, elbow_neutral+0.05, wrist_up * 0.8, gripper_pos * 0.8],
-            
-            # Quick swing to mid-right (exaggeration)
-            [base_pos+0.6, shoulder_neutral, elbow_neutral, wrist_up * 0.7, gripper_pos * 0.75],
-            
-            # Peer down mid-right with emphasis
-            [base_pos+0.5, shoulder_neutral+0.15, elbow_neutral+0.15, wrist_down * 1.2, gripper_pos * 0.8],
-            
-            # Secondary action - double-take up
-            [base_pos+0.6, shoulder_neutral-0.1, elbow_neutral-0.2, wrist_up * 1.5, gripper_pos * 0.7],
-            
-            # Exaggerated swing to far right (arcs)
-            [base_pos+1.2, shoulder_neutral, elbow_neutral, wrist_up * 0.9, gripper_pos * 0.75],
-            
-            # Final check down right (solid drawing)
-            [base_pos+1.1, shoulder_neutral+0.2, elbow_neutral+0.2, wrist_down, gripper_pos * 0.8],
-            
-            # "Found something!" reaction (appeal)
-            [base_pos+0.9, shoulder_neutral-0.1, elbow_neutral-0.2, wrist_up * 1.6, gripper_pos * 0.5],  # Open wide
-            
-            # Secondary motion - excitement wiggle
-            [base_pos+0.8, shoulder_neutral-0.15, elbow_neutral-0.25, wrist_up * 1.7, gripper_pos * 0.45],
-            
-            # Return to center with follow-through
-            [base_pos+0.3, shoulder_neutral, elbow_neutral, wrist_up * 1.3, gripper_pos * 0.6],
-            
-            # Final position showing excitement
-            [base_pos, shoulder_neutral-0.05, elbow_neutral-0.1, wrist_up * 1.1, gripper_pos * 0.7]
-        ]
-        
-        # Varied durations for more lifelike searching
-        durations = [0.4, 0.3, 0.5, 0.2, 0.3, 0.4, 0.5, 0.3, 0.2, 0.3, 0.5, 0.25, 0.4, 0.5, 0.2, 0.15, 0.4, 0.5]
-        
-        # Start the animation
-        self.start_animation(keyframes, durations)
-        self.get_logger().info('Executing enhanced light sweep animation')
 
     def playful_bounce(self):
         """Make the arm perform a playful, energetic bounce with Disney principles."""
@@ -844,87 +761,6 @@ class EnhancedAnimationCommand(Node):
         self.start_animation(keyframes, durations)
         self.get_logger().info('Executing enhanced dynamic startled jump animation')
 
-    def grab_release(self):
-        """Make the arm grab and release with the gripper using Disney principles."""
-        # Starting position
-        base_pos = self.current_positions[0]
-        shoulder_pos = self.current_positions[1]
-        elbow_pos = self.current_positions[2]
-        wrist_pos = self.current_positions[3]
-        
-        # Keyframe positions with Disney principles
-        keyframes = [
-            # Anticipation - prepare to grab
-            [base_pos-0.1, shoulder_pos-0.1, elbow_pos-0.1, wrist_pos+0.1, 1.57],  # Open gripper
-            
-            # Secondary action - slight hesitation
-            [base_pos-0.05, shoulder_pos-0.05, elbow_pos-0.05, wrist_pos+0.05, 1.57],
-            
-            # Move down with slight arc (arcs principle)
-            [base_pos, shoulder_pos+0.15, elbow_pos+0.15, wrist_pos-0.15, 1.57],
-            
-            # Slight adjustment (overlapping action)
-            [base_pos, shoulder_pos+0.2, elbow_pos+0.2, wrist_pos-0.2, 1.57],
-            
-            # Close gripper with anticipation
-            [base_pos, shoulder_pos+0.22, elbow_pos+0.22, wrist_pos-0.22, 2.8],  # Not fully closed yet
-            
-            # Complete closing (exaggeration)
-            [base_pos, shoulder_pos+0.2, elbow_pos+0.2, wrist_pos-0.2, 3.14],
-            
-            # Slight upward movement (follow through)
-            [base_pos, shoulder_pos+0.15, elbow_pos+0.15, wrist_pos-0.15, 3.14],
-            
-            # Move back up with slight arc
-            [base_pos, shoulder_pos+0.05, elbow_pos+0.05, wrist_pos-0.05, 3.14],
-            
-            # Complete upward movement
-            [base_pos, shoulder_pos, elbow_pos, wrist_pos, 3.14],
-            
-            # Move to different position with arcs
-            [base_pos+0.2, shoulder_pos, elbow_pos+0.05, wrist_pos+0.1, 3.14],
-            
-            # Continue to new position
-            [base_pos+0.3, shoulder_pos, elbow_pos, wrist_pos+0.2, 3.14],
-            
-            # Start moving down
-            [base_pos+0.3, shoulder_pos+0.1, elbow_pos+0.1, wrist_pos+0.1, 3.14],
-            
-            # Complete moving down
-            [base_pos+0.3, shoulder_pos+0.2, elbow_pos+0.2, wrist_pos, 3.14],
-            
-            # Prepare to release (anticipation)
-            [base_pos+0.3, shoulder_pos+0.2, elbow_pos+0.2, wrist_pos-0.05, 3.0],
-            
-            # Release gripper
-            [base_pos+0.3, shoulder_pos+0.2, elbow_pos+0.2, wrist_pos, 1.57],
-            
-            # Small bounce after release (follow through)
-            [base_pos+0.3, shoulder_pos+0.18, elbow_pos+0.18, wrist_pos+0.05, 1.57],
-            
-            # Move back up with arc
-            [base_pos+0.3, shoulder_pos+0.1, elbow_pos+0.1, wrist_pos+0.1, 1.57],
-            
-            # Complete moving up
-            [base_pos+0.3, shoulder_pos, elbow_pos, wrist_pos+0.2, 1.57],
-            
-            # Start returning to original position
-            [base_pos+0.15, shoulder_pos, elbow_pos, wrist_pos+0.1, 1.57],
-            
-            # Complete return with slight overshoot
-            [base_pos-0.05, shoulder_pos, elbow_pos, wrist_pos, 1.57],
-            
-            # Settle to original position
-            [base_pos, shoulder_pos, elbow_pos, wrist_pos, 1.57]
-        ]
-        
-        # Varied durations for natural grabbing motion with snappy moments
-        durations = [0.3, 0.2, 0.4, 0.2, 0.2, 0.3, 0.15, 0.3, 0.5, 0.4, 0.3, 0.3, 0.4, 0.2, 0.2, 0.15, 0.3, 0.5, 0.4, 0.2, 0.3]
-        
-        # Start the animation
-        self.start_animation(keyframes, durations)
-        self.get_logger().info('Executing enhanced grab and release animation')
-
     def thinking_animation(self):
         """Make the arm appear to be thinking like a person pondering a question."""
         # Get current positions
@@ -1013,61 +849,6 @@ class EnhancedAnimationCommand(Node):
         # Start the animation
         self.start_animation(keyframes, durations)
         self.get_logger().info('Executing enhanced thinking animation')
-
-    def waving_animation(self):
-        """Make the arm wave hello/goodbye with Disney principles."""
-        # Get current positions
-        base_pos = self.current_positions[0]
-        gripper_pos = self.current_positions[4] if len(self.current_positions) > 4 else 3.14
-        
-        # Keyframe positions with Disney principles
-        keyframes = [
-            # Anticipation - prepare to wave
-            [base_pos, 0.3, 0.7, 0.2, gripper_pos * 0.7],  # Open gripper a bit
-            
-            # Raise arm (staging)
-            [base_pos, 0.15, 0.5, 0.8, gripper_pos * 0.6],
-            
-            # Secondary action - slight adjustment
-            [base_pos, 0.12, 0.45, 0.9, gripper_pos * 0.55],
-            
-            # Wave right (arc motion)
-            [base_pos+0.2, 0.1, 0.4, 1.0, gripper_pos * 0.5],
-            
-            # Wave left with exaggeration
-            [base_pos-0.25, 0.1, 0.4, 1.0, gripper_pos * 0.5],
-            
-            # Wave right (follow through)
-            [base_pos+0.23, 0.12, 0.42, 0.95, gripper_pos * 0.5],
-            
-            # Wave left (overlapping action)
-            [base_pos-0.22, 0.12, 0.42, 0.95, gripper_pos * 0.5],
-            
-            # Wave right (decreasing energy)
-            [base_pos+0.18, 0.14, 0.44, 0.9, gripper_pos * 0.55],
-            
-            # Wave left (decreasing energy)
-            [base_pos-0.15, 0.14, 0.44, 0.9, gripper_pos * 0.55],
-            
-            # Final small wave right
-            [base_pos+0.1, 0.16, 0.46, 0.85, gripper_pos * 0.6],
-            
-            # Start lowering arm (slow out)
-            [base_pos, 0.2, 0.5, 0.7, gripper_pos * 0.7],
-            
-            # Continue lowering with follow through
-            [base_pos, 0.25, 0.6, 0.5, gripper_pos * 0.8],
-            
-            # Final position (appeal)
-            [base_pos, 0.3, 0.7, 0.3, gripper_pos * 0.9]
-        ]
-        
-        # Varied durations for waving - quick at first, then slower
-        durations = [0.4, 0.5, 0.3, 0.25, 0.25, 0.25, 0.25, 0.3, 0.3, 0.3, 0.5, 0.6, 0.4]
-        
-        # Start the animation
-        self.start_animation(keyframes, durations)
-        self.get_logger().info('Executing waving animation')
 
     def dancing_animation(self):
         """Make the arm perform a rhythmic dance with Disney principles."""
@@ -1336,106 +1117,6 @@ class EnhancedAnimationCommand(Node):
         # Start the animation
         self.start_animation(keyframes, durations)
         self.get_logger().info('Executing head shake animation')
-
-    def writing_animation(self):
-        """Make the arm appear to write something with Disney principles."""
-        # Get current positions
-        base_pos = self.current_positions[0]
-        gripper_pos = self.current_positions[4] if len(self.current_positions) > 4 else 3.14
-        
-        # Set up neutral positions for writing
-        shoulder_neutral = 0.5  # Lower arm position for writing
-        elbow_neutral = 1.0
-        wrist_neutral = 0.0
-        
-        # Keyframe positions with Disney principles
-        keyframes = [
-            # Initial pose - prepare to write (staging)
-            [base_pos, 0.3, 0.7, 0.3, gripper_pos * 0.75],  # Slightly open gripper as if holding a pen
-            
-            # Move down to writing surface (anticipation)
-            [base_pos, shoulder_neutral+0.05, elbow_neutral+0.05, wrist_neutral, gripper_pos * 0.75],
-            
-            # Position to start writing (solid drawing)
-            [base_pos-0.2, shoulder_neutral, elbow_neutral, wrist_neutral, gripper_pos * 0.75],
-            
-            # First stroke right (arcs, appeal)
-            [base_pos+0.2, shoulder_neutral, elbow_neutral, wrist_neutral-0.05, gripper_pos * 0.75],
-            
-            # Lift slightly for next letter (secondary action)
-            [base_pos+0.2, shoulder_neutral-0.05, elbow_neutral-0.05, wrist_neutral+0.1, gripper_pos * 0.75],
-            
-            # Move back left (overlapping action)
-            [base_pos, shoulder_neutral, elbow_neutral, wrist_neutral, gripper_pos * 0.75],
-            
-            # Second stroke - curved motion (arcs)
-            [base_pos+0.1, shoulder_neutral+0.05, elbow_neutral+0.05, wrist_neutral-0.1, gripper_pos * 0.75],
-            
-            # Continue curved motion
-            [base_pos+0.15, shoulder_neutral+0.07, elbow_neutral+0.07, wrist_neutral-0.15, gripper_pos * 0.75],
-            
-            # Complete curved motion
-            [base_pos+0.05, shoulder_neutral+0.08, elbow_neutral+0.08, wrist_neutral-0.2, gripper_pos * 0.75],
-            
-            # Move to next letter position (follow through)
-            [base_pos-0.1, shoulder_neutral-0.05, elbow_neutral-0.05, wrist_neutral+0.1, gripper_pos * 0.75],
-            
-            # Down stroke (exaggeration)
-            [base_pos-0.1, shoulder_neutral+0.1, elbow_neutral+0.1, wrist_neutral-0.2, gripper_pos * 0.75],
-            
-            # Cross stroke (timing)
-            [base_pos+0.1, shoulder_neutral+0.08, elbow_neutral+0.08, wrist_neutral-0.15, gripper_pos * 0.75],
-            
-            # Final dot motion (appeal)
-            [base_pos+0.15, shoulder_neutral+0.05, elbow_neutral+0.05, wrist_neutral-0.1, gripper_pos * 0.75],
-            
-            # Tap for dot (squash)
-            [base_pos+0.15, shoulder_neutral+0.12, elbow_neutral+0.12, wrist_neutral-0.25, gripper_pos * 0.75],
-            
-            # Lift up after writing (stretch)
-            [base_pos+0.1, shoulder_neutral-0.1, elbow_neutral-0.1, wrist_neutral+0.3, gripper_pos * 0.75],
-            
-            # Look at work - tilt (secondary action)
-            [base_pos, 0.25, 0.6, 0.4, gripper_pos * 0.75],
-            
-            # Return to neutral with satisfaction
-            [base_pos, 0.3, 0.7, 0.3, gripper_pos * 0.8]
-        ]
-        
-        # Varied durations for writing with appropriate pauses
-        durations = [0.5, 0.6, 0.4, 0.7, 0.3, 0.5, 0.4, 0.3, 0.4, 0.3, 0.5, 0.4, 0.3, 0.2, 0.5, 0.8, 0.6]
-        
-        # Start the animation
-        self.start_animation(keyframes, durations)
-        self.get_logger().info('Executing writing animation')
-
-    def random_animation(self):
-        """Play a random animation from the available set."""
-        # List of all animations except 'random' and 'stop'
-        animations = [
-            self.curious_look,
-            self.excited_hop,
-            self.sad_droop,
-            self.idle_state,
-            self.light_sweep,
-            self.playful_bounce,
-            self.startled_jump,
-            self.grab_release,
-            self.thinking_animation,
-            self.waving_animation,
-            self.dancing_animation,
-            self.stretching_animation,
-            self.nodding_animation,
-            self.head_shake_animation,
-            self.writing_animation
-        ]
-        
-        # Pick a random animation
-        chosen_animation = random.choice(animations)
-        
-        # Execute it
-        self.get_logger().info(f'Executing random animation: {chosen_animation.__name__}')
-        chosen_animation()
 
 
 def main(args=None):
