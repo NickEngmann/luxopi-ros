@@ -32,7 +32,6 @@ setup(
             'demo_mode = luxo_behaviors.demo_mode:main',
             'hardware_interface = luxo_behaviors.hardware_interface:main',
             'collision_detection = luxo_behaviors.collision_detection:main',
-            'dynamic_adaptation_toggle = luxo_behaviors.dynamic_adaptation_toggle:main',
         ],
     },
 )
