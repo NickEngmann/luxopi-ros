@@ -23,6 +23,9 @@ def generate_launch_description():
     safety_distance = LaunchConfiguration('safety_distance', default='0.3')
     verbose_output = LaunchConfiguration('verbose', default='false')
     
+    # Add dynamic adaptation parameters
+    enable_dynamic_adaptation = LaunchConfiguration('enable_dynamic_adaptation', default='false')
+    
     # Main hardware/simulation mode selector
     declare_use_hardware = DeclareLaunchArgument(
         'use_hardware',
@@ -103,6 +106,13 @@ def generate_launch_description():
         description='Rotate camera image 180 degrees (set to true if camera is mounted upside down)'
     )
     
+    # Dynamic adaptation argument
+    declare_enable_dynamic_adaptation = DeclareLaunchArgument(
+        'enable_dynamic_adaptation',
+        default_value='false',
+        description='Enable dynamic adaptation mode (external force control)'
+    )
+    
     # ==========================================================================
     # LOGGING ACTIONS
     # ==========================================================================
@@ -169,7 +179,7 @@ def generate_launch_description():
              "- Other manual controls may be overridden\n"],
         condition=IfCondition(run_demo)
     )
-    
+
     # Troubleshooting tips
     troubleshooting_info = LogInfo(
         msg=["\n🔍 TROUBLESHOOTING TIPS:\n",
@@ -248,6 +258,14 @@ def generate_launch_description():
             {'baud_rate': 115200},
             {'enable_torque': True},
             {'read_throttle': 0.1},
+            {'enable_dynamic_adaptation': enable_dynamic_adaptation},
+            {'dynamic_adaptation_base_limit': 60},
+            {'dynamic_adaptation_shoulder_limit': 125},
+            {'dynamic_adaptation_elbow_limit': 125}, 
+            {'dynamic_adaptation_wrist_limit': 125},
+            {'dynamic_adaptation_roll_limit': 125},
+            {'dynamic_adaptation_hand_limit': 125},
+            {'dynamic_adaptation_resume_delay': 5.0},
             {'ros__parameters': {'log_level': 'error'}}
         ],
         condition=IfCondition(use_hardware)
@@ -368,7 +386,7 @@ def generate_launch_description():
         declare_sense_collision,
         declare_verbose,
         declare_camera_rotation,  # Add the camera rotation argument
-        
+       declare_enable_dynamic_adaptation,
         # Launch info and banners
         startup_banner,
         mode_info,

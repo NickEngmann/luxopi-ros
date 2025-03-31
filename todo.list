@@ -6,3 +6,5 @@ todo.list
 [-] Change response to collisions
 [-] integrate the camera to spawn behaviors as well as idle behavior
 [] We have two at_position functions now. we can delete one of them
+[] DEMA - dynamic adaptation stops the entire arm from working. Look into this
+[] Test Camera + DEFA
