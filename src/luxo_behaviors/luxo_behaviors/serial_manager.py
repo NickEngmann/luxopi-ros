@@ -8,6 +8,7 @@ import json
 import time
 import os
 import subprocess
+import atexit
 
 class SerialManager:
     """
@@ -42,6 +43,23 @@ class SerialManager:
         # Track last successful read time to detect connection issues
         self.last_successful_read = 0
         self.connection_timeout = 5.0  # seconds without successful read before reconnection attempt
+        self.reconnect_attempts = 0
+        self.max_reconnect_attempts = 5  # Maximum number of reconnect attempts before more drastic measures
+        self.heartbeat_interval = 2.0  # Send a heartbeat every 2 seconds if no other traffic
+        self.last_heartbeat_time = 0
+        
+        # Add new variables to track repeated warning floods and connection stability
+        self.last_warning_time = 0
+        self.warning_count = 0
+        self.warning_threshold = 3  # Number of warnings in short succession before taking action
+        self.warning_interval = 5.0  # Time window to count warnings
+        self.connection_stable_since = 0
+        self.restart_attempted = False
+        self.last_check_time = 0  # To prevent too frequent connection checks
+        self.check_throttle = 1.0  # Minimum time between connection checks
+        
+        # Register clean shutdown handler
+        atexit.register(self.ensure_closed)
     
     def set_data_callback(self, callback):
         """Set callback function that will be called when data is received."""
@@ -78,6 +96,77 @@ class SerialManager:
             self.node.get_logger().error(f"Error checking/fixing permissions: {e}")
             return False
     
+    def reset_serial_port(self):
+        """Reset the serial port using system commands for a more thorough cleanup"""
+        try:
+            self.node.get_logger().warn(f"Attempting to reset serial port {self.serial_port}")
+            
+            # First ensure our own connection is closed
+            self._ensure_connection_closed()
+            
+            # Try using stty to reset the port
+            try:
+                cmd = ['stty', '-F', self.serial_port, 'sane']
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=3)
+                if result.returncode == 0:
+                    self.node.get_logger().info("Serial port reset using stty")
+                else:
+                    self.node.get_logger().warn(f"stty reset failed: {result.stderr}")
+            except Exception as e:
+                self.node.get_logger().warn(f"stty reset attempt failed: {e}")
+                
+            # On more severe issues, try a more aggressive reset
+            if self.reconnect_attempts >= self.max_reconnect_attempts:
+                self.node.get_logger().warn("Multiple reconnection failures, trying more aggressive reset")
+                try:
+                    # Flush port buffers and reset
+                    result = subprocess.run(['sudo', 'systemctl', 'restart', 'systemd-udevd.service'], 
+                                          capture_output=True, text=True, timeout=5)
+                    self.node.get_logger().info("Attempted udev service restart")
+                    time.sleep(2.0)  # Give the system time to reset the device
+                except Exception as e:
+                    self.node.get_logger().error(f"Advanced reset failed: {e}")
+            
+            return True
+        except Exception as e:
+            self.node.get_logger().error(f"Error while resetting serial port: {e}")
+            return False
+    
+    def _ensure_connection_closed(self):
+        """Ensure the serial connection is properly closed"""
+        try:
+            if hasattr(self, 'ser') and self.ser:
+                if self.ser.is_open:
+                    try:
+                        # Try to flush buffers before closing
+                        self.ser.flush()
+                        self.ser.reset_input_buffer()
+                        self.ser.reset_output_buffer()
+                    except Exception as e:
+                        self.node.get_logger().debug(f"Error flushing buffers: {e}")
+                    
+                    try:
+                        self.ser.close()
+                    except Exception as e:
+                        self.node.get_logger().debug(f"Error closing serial port: {e}")
+                        
+                self.ser = None
+                
+            with self.connection_lock:
+                self.connection_active = False
+                
+            return True
+        except Exception as e:
+            self.node.get_logger().error(f"Error ensuring connection closed: {e}")
+            return False
+    
+    def ensure_closed(self):
+        """Guaranteed cleanup method registered with atexit"""
+        self.close()
+        # Add an extra forceful close to ensure it's really closed
+        self._ensure_connection_closed()
+        self.reset_serial_port()
+    
     def connect(self):
         """Establish connection to the serial port"""
         # Check permissions first
@@ -85,19 +174,45 @@ class SerialManager:
             self.node.get_logger().warn("Continuing without fixing permissions, may fail")
         
         try:
-            self.ser = serial.Serial(self.serial_port, baudrate=self.baud_rate, dsrdtr=None, timeout=1)
+            # Reset the port if we've had previous connection issues
+            if self.reconnect_attempts > 0:
+                self.reset_serial_port()
+            
+            # Force close any existing connection
+            self._ensure_connection_closed()
+            
+            # Wait a moment before trying to open again
+            time.sleep(0.5)
+            
+            # Open with exclusive access if possible
+            self.ser = serial.Serial(self.serial_port, baudrate=self.baud_rate, 
+                                     dsrdtr=None, timeout=1, exclusive=True)
             self.ser.setRTS(False)
             self.ser.setDTR(False)
+            
+            # Additional configuration to ensure clean start
+            self.ser.reset_input_buffer()
+            self.ser.reset_output_buffer()
+            
             self.node.get_logger().info(f"Serial port {self.serial_port} connected successfully at {self.baud_rate} baud")
             
             # Update connection status
             with self.connection_lock:
                 self.connection_active = True
             
+            # Reset counters
+            self.reconnect_attempts = 0
+            self.last_successful_read = time.time()
+            self.last_heartbeat_time = time.time()
+            
             # Start a thread to read responses from the arm
+            self.stop_thread = False
             self.read_thread = threading.Thread(target=self.read_serial)
             self.read_thread.daemon = True
             self.read_thread.start()
+            
+            # Send a ping to verify connection is working
+            self.send_command(json.dumps({'T': 0}), "Connection test ping")
             
             return True
             
@@ -105,6 +220,7 @@ class SerialManager:
             self.node.get_logger().error(f"Failed to open serial port: {e}")
             with self.connection_lock:
                 self.connection_active = False
+            self.reconnect_attempts += 1
             return False
     
     def is_connected(self):
@@ -131,6 +247,9 @@ class SerialManager:
             self.ser.write(cmd_str.encode())
             self.ser.flush()
             
+            # Update heartbeat time since we've sent data
+            self.last_heartbeat_time = time.time()
+            
             # Allow time to process
             time.sleep(0.1)
             
@@ -144,12 +263,18 @@ class SerialManager:
     def read_serial(self):
         """Read serial data in a separate thread."""
         self.node.get_logger().info("Serial read thread started")
+        self.connection_stable_since = time.time()
         
         while not self.stop_thread:
             if self.is_connected():
                 try:
                     # Apply throttling to reduce CPU usage
                     time.sleep(self.read_throttle)
+                    
+                    # Check if we should send a heartbeat to keep the connection alive
+                    current_time = time.time()
+                    if current_time - self.last_heartbeat_time >= self.heartbeat_interval:
+                        self._send_heartbeat()
                     
                     if self.ser.in_waiting > 0:
                         data = self.ser.readline()
@@ -164,29 +289,258 @@ class SerialManager:
                                 
                             # Update last successful read time
                             self.last_successful_read = time.time()
+                            # Reset warning count on successful read
+                            self.warning_count = 0
+                            self.connection_stable_since = time.time()
                         except UnicodeDecodeError as e:
                             # Handle decode errors more gracefully
                             self.node.get_logger().debug(f"Received non-UTF8 data: {data.hex()}")
                     
                     # Check for connection timeout - no successful reads for a while
-                    if time.time() - self.last_successful_read > self.connection_timeout:
-                        self.node.get_logger().warn(f"No data received for {self.connection_timeout}s, checking connection...")
-                        self._check_connection()
+                    if current_time - self.last_successful_read > self.connection_timeout:
+                        # Throttle connection checks to avoid flooding
+                        if current_time - self.last_check_time >= self.check_throttle:
+                            self.last_check_time = current_time
+                            self._handle_no_data_received(current_time)
                         
                 except Exception as e:
                     self.node.get_logger().error(f"Error reading from serial: {e}")
                     time.sleep(1.0)  # Sleep longer on error
+                    self._check_connection()
+            else:
+                # If not connected, try to reconnect
+                time.sleep(1.0)
+                if not self.stop_thread:
+                    self._attempt_reconnect()
                 
         self.node.get_logger().info("Serial read thread stopped")
+
+    def _handle_no_data_received(self, current_time):
+        """Handle cases where no data has been received for a while"""
+        # Track warning frequency to detect flooding
+        if current_time - self.last_warning_time <= self.warning_interval:
+            self.warning_count += 1
+        else:
+            # Reset count if warnings are spread out
+            self.warning_count = 1
+        
+        self.last_warning_time = current_time
+        
+        # Log the appropriate message based on warning count
+        if self.warning_count >= self.warning_threshold:
+            self.node.get_logger().error(
+                f"Persistent connection issue detected ({self.warning_count} warnings). "
+                f"Taking stronger recovery action."
+            )
+            # Take more drastic measures when connection is persistently broken
+            self._handle_persistent_failure()
+        else:
+            # Standard warning and connection check for occasional issues
+            self.node.get_logger().warn(f"No data received for {self.connection_timeout}s, checking connection...")
+            self._check_connection()
+
+    def _handle_persistent_failure(self):
+        """Take more aggressive action when connection persistently fails"""
+        try:
+            # Try a sequence of increasingly aggressive actions
+            if not self.restart_attempted:
+                self.node.get_logger().warn("Attempting aggressive recovery of serial connection")
+                
+                # 1. Force close everything
+                self.close()
+                
+                # 2. More aggressive port reset
+                self._aggressive_port_reset()
+                
+                # 3. Wait a bit longer before reconnecting
+                time.sleep(3.0)
+                
+                # 4. Try to connect with different settings
+                self._attempt_alternative_connection()
+                
+                self.restart_attempted = True
+                self.warning_count = 0
+            else:
+                # If we've already tried an aggressive restart and still having issues
+                self.node.get_logger().error(
+                    "Connection remains unstable despite recovery attempts. "
+                    "Attempting system-level USB reset..."
+                )
+                self._system_level_reset()
+                time.sleep(5.0)  # Longer wait after system-level action
+                self.connect()
+                self.restart_attempted = False
+                self.warning_count = 0
+        except Exception as e:
+            self.node.get_logger().error(f"Error during persistent failure recovery: {e}")
+
+    def _aggressive_port_reset(self):
+        """More aggressive port reset when standard methods fail"""
+        try:
+            self.node.get_logger().warn(f"Aggressively resetting port {self.serial_port}")
+            
+            # Force close any existing connection
+            self._ensure_connection_closed()
+            
+            # Try more aggressive system commands to reset the port
+            try:
+                # Attempt to unbind and rebind the USB device (if it's a USB serial port)
+                if self.serial_port.startswith("/dev/tty"):
+                    # Try to find the USB path for this device
+                    device_name = os.path.basename(self.serial_port)
+                    
+                    # Reset usb device if applicable
+                    cmd1 = f"for USB in /sys/bus/usb/devices/*/tty/{device_name}; do echo 0 > \"${{USB%/tty/{device_name}}}/authorized\"; echo 1 > \"${{USB%/tty/{device_name}}}/authorized\"; done"
+                    
+                    try:
+                        subprocess.run(cmd1, shell=True, timeout=5)
+                        self.node.get_logger().info("Attempted USB device reset via sysfs")
+                    except Exception as e:
+                        self.node.get_logger().debug(f"USB reset attempt failed: {e}")
+            except Exception as e:
+                self.node.get_logger().debug(f"Advanced USB reset failed: {e}")
+                
+            # Try multiple stty commands with different settings
+            for cmd in [
+                ['stty', '-F', self.serial_port, 'sane'],
+                ['stty', '-F', self.serial_port, '115200', 'raw', '-echo'],
+                ['stty', '-F', self.serial_port, 'crtscts', '-ixon', '-ixoff']
+            ]:
+                try:
+                    subprocess.run(cmd, capture_output=True, timeout=2)
+                except Exception:
+                    pass
+                    
+            self.node.get_logger().info("Completed aggressive port reset sequence")
+            return True
+        except Exception as e:
+            self.node.get_logger().error(f"Error in aggressive port reset: {e}")
+            return False
+    
+    def _attempt_alternative_connection(self):
+        """Try connecting with alternative settings"""
+        try:
+            self.node.get_logger().info("Attempting alternative connection settings")
+            
+            # Try to open with different settings
+            try:
+                # Try opening with very basic settings
+                self.ser = serial.Serial(
+                    self.serial_port, 
+                    baudrate=self.baud_rate,
+                    timeout=2.0,  # Longer timeout
+                    exclusive=True,
+                    xonxoff=False,
+                    rtscts=False,
+                    dsrdtr=False,
+                    inter_byte_timeout=0.1
+                )
+                
+                # If this succeeds, update connection status
+                with self.connection_lock:
+                    self.connection_active = True
+                    
+                self.node.get_logger().info("Alternative connection successful")
+                
+                # Reset counters
+                self.reconnect_attempts = 0
+                self.last_successful_read = time.time()
+                self.last_heartbeat_time = time.time()
+                
+                return True
+            except Exception as e:
+                self.node.get_logger().error(f"Alternative connection failed: {e}")
+                return False
+                
+        except Exception as e:
+            self.node.get_logger().error(f"Error attempting alternative connection: {e}")
+            return False
+    
+    def _system_level_reset(self):
+        """Most aggressive recovery - try system-level USB and serial subsystem reset"""
+        try:
+            self.node.get_logger().warn("Attempting system-level reset of serial/USB subsystems")
+            
+            # Close everything first
+            self._ensure_connection_closed()
+            
+            # Try system-level resets
+            try:
+                # Create a script to run with sudo privileges
+                script_path = "/tmp/serial_reset.sh"
+                with open(script_path, "w") as f:
+                    f.write("""#!/bin/bash
+# Reset USB controller if applicable
+echo "Resetting USB controllers..."
+for i in /sys/bus/pci/drivers/[uoex]hci_hcd/*/usb*/authorized; do
+  if [ -f "$i" ]; then
+    echo 0 > "$i"
+    echo 1 > "$i"
+  fi
+done
+
+# Reset serial device specifically
+echo "Restarting serial services..."
+systemctl restart serial-getty@*.service || true
+udevadm trigger --action=change || true
+
+# Give devices time to settle
+sleep 2
+echo "System-level reset complete"
+exit 0
+""")
+                
+                # Make it executable
+                os.chmod(script_path, 0o755)
+                
+                # Run the script with sudo
+                subprocess.run(["sudo", script_path], timeout=10)
+                self.node.get_logger().info("Completed system-level reset")
+                
+                # Wait for devices to settle
+                time.sleep(3.0)
+                
+            except Exception as e:
+                self.node.get_logger().error(f"System-level reset failed: {e}")
+            
+            return True
+        except Exception as e:
+            self.node.get_logger().error(f"Error in system-level reset: {e}")
+            return False
+    
+    def _send_heartbeat(self):
+        """Send a heartbeat message to keep the connection alive"""
+        try:
+            if self.is_connected():
+                # Send a simple ping command as heartbeat
+                heartbeat_cmd = json.dumps({'T': 0})
+                self.ser.write(heartbeat_cmd.encode() + b'\r\n')
+                self.ser.flush()
+                self.last_heartbeat_time = time.time()
+                self.node.get_logger().debug("Heartbeat sent")
+        except Exception as e:
+            self.node.get_logger().debug(f"Failed to send heartbeat: {e}")
     
     def _check_connection(self):
         """Check if connection is still active and attempt to reconnect if needed."""
         try:
+            # Protect against too frequent checks
+            current_time = time.time()
+            if current_time - self.last_check_time < self.check_throttle:
+                return
+                
+            self.last_check_time = current_time
+            
             # Try to write a simple ping command
             with self.connection_lock:
-                if self.ser:
-                    self.ser.write(b'{"T":0}\r\n')
-                    self.last_successful_read = time.time()  # Reset timeout
+                if self.ser and self.ser.is_open:
+                    try:
+                        self.ser.write(b'{"T":0}\r\n')
+                        self.ser.flush()
+                        self.last_heartbeat_time = time.time()
+                    except Exception:
+                        # If write fails, attempt reconnection
+                        self._attempt_reconnect()
                 else:
                     self._attempt_reconnect()
         except Exception as e:
@@ -195,10 +549,36 @@ class SerialManager:
     
     def _attempt_reconnect(self):
         """Attempt to reconnect to the serial port."""
-        self.node.get_logger().warn("Attempting to reconnect to serial port")
-        self.close()  # Close existing connection
-        time.sleep(1.0)  # Wait a bit before reconnecting
-        self.connect()  # Attempt to reconnect
+        self.reconnect_attempts += 1
+        
+        reconnect_msg = f"Attempting to reconnect to serial port (attempt {self.reconnect_attempts})"
+        if self.reconnect_attempts >= self.max_reconnect_attempts:
+            reconnect_msg += " - Will try advanced reset"
+        
+        self.node.get_logger().warn(reconnect_msg)
+        
+        # Close existing connection properly
+        self._ensure_connection_closed()
+        
+        # Wait longer between reconnects as attempts increase
+        backoff_time = min(1.0 * self.reconnect_attempts, 5.0)
+        time.sleep(backoff_time)
+        
+        # Try to connect again
+        success = self.connect()
+        
+        if success:
+            self.node.get_logger().info("Successfully reconnected to serial port")
+            self.reconnect_attempts = 0
+            self.warning_count = 0
+            self.restart_attempted = False
+            self.connection_stable_since = time.time()
+        else:
+            self.node.get_logger().error("Failed to reconnect to serial port")
+            
+            # If we've tried multiple times without success, try more aggressive measures
+            if self.reconnect_attempts >= self.max_reconnect_attempts and not self.restart_attempted:
+                self._handle_persistent_failure()
     
     def _process_response(self, response):
         """Process a response from the hardware."""
@@ -208,6 +588,10 @@ class SerialManager:
             
         # Here you could add more processing of responses if needed
         # For example, parsing status updates or error messages
+        
+        # If we have a callback registered, pass the data along
+        if self.data_callback:
+            self.data_callback(response)
     
     def close(self):
         """Close the serial connection and clean up resources."""
@@ -217,12 +601,9 @@ class SerialManager:
         if self.read_thread:
             self.read_thread.join(timeout=1.0)
             
-        if hasattr(self, 'ser') and self.ser and self.ser.is_open:
-            self.ser.close()
-            
-        with self.connection_lock:
-            self.connection_active = False
-            
+        # Ensure connection is properly closed
+        self._ensure_connection_closed()
+        
         self.node.get_logger().info("Serial connection closed")
 
     def enable_torque(self):
@@ -500,7 +881,7 @@ class SerialManager:
             self.node.get_logger().error("Failed to set delay")
         return success
     
-    def set_dynamic_adaptation(self, mode=1, base=60, shoulder=110, elbow=50, wrist=50, roll=50, hand=50):
+    def set_dynamic_adaptation(self, mode=1, base=60, shoulder=800, elbow=800, wrist=800, roll=800, hand=800):
         """
         Configure dynamic external force adaptation.
         
@@ -508,27 +889,42 @@ class SerialManager:
             mode (int): 0=stop adaptation, 1=start adaptation
             base, shoulder, elbow, wrist, roll, hand: Torque limits for each joint
         """
-        if mode == 0:
-            # Reset all torque limits to 1000 (effectively disabling adaptation)
-            b, s, e, t, r, h = 1000, 1000, 1000, 1000, 1000, 1000
-        else:
-            # Use the provided torque limits
-            b, s, e, t, r, h = base, shoulder, elbow, wrist, roll, hand
+        try:
+            if mode == 0:
+                # Reset all torque limits to 1000 (effectively disabling adaptation)
+                b, s, e, t, r, h = 1000, 1000, 1000, 1000, 1000, 1000
+                self.node.get_logger().info("Disabling dynamic adaptation (all limits set to 1000)")
+            else:
+                # Use the provided torque limits
+                b, s, e, t, r, h = base, shoulder, elbow, wrist, roll, hand
+                self.node.get_logger().info(f"Setting dynamic adaptation limits - base:{b} shoulder:{s} elbow:{e} wrist:{t} roll:{r} hand:{h}")
+                
+            cmd = {
+                'T': 112,
+                'mode': mode,
+                'b': b,
+                's': s,
+                'e': e,
+                't': t,
+                'r': r,
+                'h': h
+            }
             
-        cmd = {
-            'T': 112,
-            'mode': mode,
-            'b': b,
-            's': s,
-            'e': e,
-            't': t,
-            'r': r,
-            'h': h
-        }
-        success = self.send_command(json.dumps(cmd), f"Dynamic adaptation mode: {mode}")
-        if not success:
-            self.node.get_logger().error("Failed to set dynamic adaptation")
-        return success
+            # Send the command and wait for response
+            cmd_str = json.dumps(cmd)
+            self.node.get_logger().info(f"Sending dynamic adaptation command: {cmd_str}")
+            success = self.send_command(cmd_str, f"Dynamic adaptation mode: {mode}")
+            
+            # Allow extra time for this command to take effect
+            time.sleep(0.5)
+            
+            if not success:
+                self.node.get_logger().error("Failed to set dynamic adaptation")
+                
+            return success
+        except Exception as e:
+            self.node.get_logger().error(f"Error in set_dynamic_adaptation: {e}")
+            return False
     
     def control_light(self, brightness=255):
         """
@@ -662,34 +1058,7 @@ class SerialManager:
         if not success:
             self.node.get_logger().error("Failed to apply constant control")
         return success
-    
-    def scan_files(self):
-        """Scan files in flash memory."""
-        cmd = {'T': 200}
-        success = self.send_command(json.dumps(cmd), "Scanning files in flash")
-        if not success:
-            self.node.get_logger().error("Failed to scan files")
-        return success
-    
-    def set_servo_id(self, raw_id, new_id):
-        """
-        Change a servo's ID.
-        
-        Args:
-            raw_id (int): Current servo ID
-            new_id (int): New servo ID to set
-        """
-        cmd = {
-            'T': 501,
-            'raw': raw_id,
-            'new': new_id
-        }
-        success = self.send_command(json.dumps(cmd), f"Change servo ID: {raw_id} -> {new_id}")
-        if success:
-            self.node.get_logger().info(f"Servo ID changed from {raw_id} to {new_id}")
-        else:
-            self.node.get_logger().error(f"Failed to change servo ID")
-        return success
+
     
     def set_middle_position(self, servo_id):
         """
