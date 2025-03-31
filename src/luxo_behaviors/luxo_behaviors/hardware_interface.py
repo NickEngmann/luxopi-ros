@@ -48,12 +48,12 @@ class RoArmHardwareInterface(Node):
         # Add parameters for dynamic adaptation/external force control
         self.declare_parameter('enable_dynamic_adaptation', False)  # Default to disabled
         self.declare_parameter('dynamic_adaptation_base_limit', 60)  # Default torque limits
-        self.declare_parameter('dynamic_adaptation_shoulder_limit', 110)
-        self.declare_parameter('dynamic_adaptation_elbow_limit', 50)
-        self.declare_parameter('dynamic_adaptation_wrist_limit', 50)
-        self.declare_parameter('dynamic_adaptation_roll_limit', 50)
-        self.declare_parameter('dynamic_adaptation_hand_limit', 50)
-        self.declare_parameter('dynamic_adaptation_resume_delay', 2.0)  # Seconds to wait before re-enabling
+        self.declare_parameter('dynamic_adaptation_shoulder_limit', 800)
+        self.declare_parameter('dynamic_adaptation_elbow_limit', 800)
+        self.declare_parameter('dynamic_adaptation_wrist_limit', 800)
+        self.declare_parameter('dynamic_adaptation_roll_limit', 800)
+        self.declare_parameter('dynamic_adaptation_hand_limit', 800)
+        self.declare_parameter('dynamic_adaptation_resume_delay', 5.0)  # Seconds to wait before re-enabling
         
         # Get parameters
         self.serial_port = self.get_parameter('serial_port').value
@@ -171,6 +171,7 @@ class RoArmHardwareInterface(Node):
         self.dynamic_adaptation_pending_resume = False
         self.dynamic_adaptation_lock = threading.Lock()
         self.dynamic_adaptation_timeout = 10.0  # Keep enabled for 10 seconds
+        self.initial_adaptation_setup = True  # Flag to track initial setup vs toggle
         
         if self.connection_active:
             # Initialize the arm if torque is enabled
@@ -178,9 +179,11 @@ class RoArmHardwareInterface(Node):
                 self.serial_manager.enable_torque()
                 time.sleep(0.5)
                 self.serial_manager.initialize_arm()
+                time.sleep(0.5)
                 # Enable dynamic adaptation if configured
                 if self.enable_dynamic_adaptation:
-                    self.enable_dynamic_adaptation_mode()
+                    self.get_logger().info("Dynamic adaptation enabled via launch parameter")
+                    self.enable_dynamic_adaptation_mode(is_initial_setup=True)
             
             # Changed subscription to joint_states_target
             self.subscription = self.create_subscription(
@@ -1258,12 +1261,6 @@ class RoArmHardwareInterface(Node):
             current_time = time.time()
             self.last_movement_time = current_time
             
-            # If dynamic adaptation is active, temporarily disable it for controlled movement
-            dynamic_adaptation_was_active = False
-            if self.enable_dynamic_adaptation and self.dynamic_adaptation_active:
-                self.get_logger().debug("Temporarily disabling dynamic adaptation for controlled movement")
-                dynamic_adaptation_was_active = True
-                self.disable_dynamic_adaptation_mode()
             
             # Track recent command times to help detect animations
             if not hasattr(self, 'recent_command_times'):
@@ -1332,9 +1329,6 @@ class RoArmHardwareInterface(Node):
             # Apply collision avoidance and send command
             self.send_safe_joint_command(positions_to_use, "Joint control")
             
-            # Schedule re-enabling of dynamic adaptation after a delay if it was active
-            if dynamic_adaptation_was_active and self.enable_dynamic_adaptation:
-                self.schedule_dynamic_adaptation_resume()
             
             # Explicitly publish to joint_states to ensure our topic is active
             self.publish_actual_joint_states(self.current_joints)
@@ -1745,7 +1739,7 @@ class RoArmHardwareInterface(Node):
             self.get_logger().error(f"Error in direct publish timer: {e}")
 
     # Add methods to control dynamic adaptation
-    def enable_dynamic_adaptation_mode(self):
+    def enable_dynamic_adaptation_mode(self, is_initial_setup=False):
         """Enable the dynamic external force adaptation mode"""
         try:
             with self.dynamic_adaptation_lock:
@@ -1766,15 +1760,28 @@ class RoArmHardwareInterface(Node):
                 
                 if success:
                     self.dynamic_adaptation_active = True
-                    self.get_logger().info("Dynamic adaptation mode enabled")
-                else:
-                    self.get_logger().error("Failed to enable dynamic adaptation mode")
+                    
+                    # Save information about when adaptation was enabled
+                    self.dynamic_adaptation_enable_time = time.time()
+                    
+                    if is_initial_setup:
+                        # For initial setup from launch parameter, we don't want a timeout
+                        self.get_logger().info("Dynamic adaptation mode enabled (initial setup)")
+                    else:
+                        # For manually toggled adaptation, we'll use a timeout
+                        self.get_logger().info("Dynamic adaptation mode enabled with timeout")
+                        # Create a timer to check for timeout
+                        if hasattr(self, 'dynamic_adaptation_timer'):
+                            self.dynamic_adaptation_timer.cancel()
+                        self.dynamic_adaptation_timer = self.create_timer(
+                            1.0,  # Check every second
+                            self.check_dynamic_adaptation_timeout
+                        )
                 
                 return success
         except Exception as e:
             self.get_logger().error(f"Error enabling dynamic adaptation mode: {e}")
             return False
-    
     def disable_dynamic_adaptation_mode(self):
         """Disable the dynamic external force adaptation mode"""
         try:
@@ -1796,7 +1803,6 @@ class RoArmHardwareInterface(Node):
         except Exception as e:
             self.get_logger().error(f"Error disabling dynamic adaptation mode: {e}")
             return False
-    
     def schedule_dynamic_adaptation_resume(self):
         """Schedule re-enabling of dynamic adaptation mode after a delay"""
         if not self.enable_dynamic_adaptation:
@@ -1810,29 +1816,72 @@ class RoArmHardwareInterface(Node):
     def dynamic_adaptation_toggle_callback(self, msg):
         """Handle incoming toggle commands for dynamic adaptation"""
         try:
+            # Add extra check to prevent rapid toggles
+            current_time = time.time()
+            if hasattr(self, 'last_adaptation_toggle_time') and current_time - self.last_adaptation_toggle_time < 2.0:
+                self.get_logger().warn("Ignoring rapid dynamic adaptation toggle - wait at least 2 seconds between toggles")
+                return
+                
+            self.last_adaptation_toggle_time = current_time
+            
             if msg.data:  # Enable dynamic adaptation
                 if not self.dynamic_adaptation_active:
-                    self.get_logger().info("Enabling dynamic adaptation mode")
-                    success = self.enable_dynamic_adaptation_mode()
+                    self.get_logger().info("Enabling dynamic adaptation mode via toggle")
+                    # Disable any ongoing target overrides that might conflict
+                    self.target_override_active = False
+                    
+                    # Make sure all existing motions are complete
+                    time.sleep(0.5)
+                    
+                    # Now enable dynamic adaptation (not initial setup)
+                    success = self.enable_dynamic_adaptation_mode(is_initial_setup=False)
                     if success:
                         # Store the current time to track when to disable
                         self.dynamic_adaptation_enable_time = time.time()
-                        # Create a regular timer that checks if timeout has been reached
-                        self.dynamic_adaptation_timer = self.create_timer(
-                            1.0,  # Check every second
-                            self.check_dynamic_adaptation_timeout
-                        )
-                        self.get_logger().info(f"Dynamic adaptation will stay active for {self.dynamic_adaptation_timeout} seconds")
+                        self.get_logger().info(f"Dynamic adaptation will remain active for {self.dynamic_adaptation_timeout} seconds")
+                    else:
+                        self.get_logger().error("Failed to enable dynamic adaptation")
             else:  # Disable dynamic adaptation
                 if self.dynamic_adaptation_active:
                     self.get_logger().info("Disabling dynamic adaptation mode")
                     self.disable_dynamic_adaptation_mode()
-                    # Cancel the timeout timer if it exists
+                    
+                    # Cancel any timers
                     if hasattr(self, 'dynamic_adaptation_timer'):
                         self.dynamic_adaptation_timer.cancel()
                         delattr(self, 'dynamic_adaptation_timer')
+                    if hasattr(self, 'initial_adaptation_check_timer'):
+                        self.initial_adaptation_check_timer.cancel()
+                        delattr(self, 'initial_adaptation_check_timer')
+                        
+                    # Re-initialize the arm to ensure clean state
+                    time.sleep(0.5)  # Wait for disable to complete
+                    self.serial_manager.initialize_arm()
         except Exception as e:
             self.get_logger().error(f"Error in dynamic adaptation toggle callback: {e}")
+            # Try to restore state if error occurs
+            try:
+                self.disable_dynamic_adaptation_mode()
+            except:
+                pass
+
+    # Add a new helper method to check adaptation state
+    def check_adaptation_state(self):
+        """Check the current state of dynamic adaptation and fix if needed"""
+        try:
+            if not self.dynamic_adaptation_active:
+                return  # Nothing to check
+                
+            # Request position feedback which will show if adaptation is working
+            self.serial_manager.request_position_feedback()
+            
+            # The serial_manager should get the response, but we won't process it here
+            # This is just to ensure communication is working
+            
+            return True
+        except Exception as e:
+            self.get_logger().error(f"Error checking adaptation state: {e}")
+            return False
 
     def check_dynamic_adaptation_timeout(self):
         """Periodically check if the dynamic adaptation timeout has been reached"""
