@@ -881,7 +881,7 @@ exit 0
             self.node.get_logger().error("Failed to set delay")
         return success
     
-    def set_dynamic_adaptation(self, mode=1, base=60, shoulder=800, elbow=800, wrist=800, roll=800, hand=800):
+    def set_dynamic_adaptation(self, mode=1, base=60, shoulder=125, elbow=125, wrist=125, roll=125, hand=125):
         """
         Configure dynamic external force adaptation.
         

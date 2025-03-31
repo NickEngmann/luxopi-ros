@@ -48,11 +48,11 @@ class RoArmHardwareInterface(Node):
         # Add parameters for dynamic adaptation/external force control
         self.declare_parameter('enable_dynamic_adaptation', False)  # Default to disabled
         self.declare_parameter('dynamic_adaptation_base_limit', 60)  # Default torque limits
-        self.declare_parameter('dynamic_adaptation_shoulder_limit', 800)
-        self.declare_parameter('dynamic_adaptation_elbow_limit', 800)
-        self.declare_parameter('dynamic_adaptation_wrist_limit', 800)
-        self.declare_parameter('dynamic_adaptation_roll_limit', 800)
-        self.declare_parameter('dynamic_adaptation_hand_limit', 800)
+        self.declare_parameter('dynamic_adaptation_shoulder_limit', 125)
+        self.declare_parameter('dynamic_adaptation_elbow_limit', 125)
+        self.declare_parameter('dynamic_adaptation_wrist_limit', 125)
+        self.declare_parameter('dynamic_adaptation_roll_limit', 125)
+        self.declare_parameter('dynamic_adaptation_hand_limit', 125)
         self.declare_parameter('dynamic_adaptation_resume_delay', 5.0)  # Seconds to wait before re-enabling
         
         # Get parameters
