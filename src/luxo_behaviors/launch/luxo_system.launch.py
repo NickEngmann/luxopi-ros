@@ -17,14 +17,14 @@ def generate_launch_description():
     enable_depth_collision = LaunchConfiguration('enable_depth_collision')
     test_mode = LaunchConfiguration('test_mode', default='animation')
     
-    # Other standard arguments
-    run_demo = LaunchConfiguration('run_demo', default='false')
+    # Other standard arguments with simplified defaults
+    run_demo = LaunchConfiguration('run_demo', default='false')  # Always default to false
     use_gui = LaunchConfiguration('use_gui', default='false')
     safety_distance = LaunchConfiguration('safety_distance', default='0.3')
     verbose_output = LaunchConfiguration('verbose', default='false')
     
-    # Add dynamic adaptation parameters
-    enable_dynamic_adaptation = LaunchConfiguration('enable_dynamic_adaptation', default='false')
+    # Add dynamic adaptation parameters - now defaults based on hardware
+    enable_dynamic_adaptation = LaunchConfiguration('enable_dynamic_adaptation')
     
     # Main hardware/simulation mode selector
     declare_use_hardware = DeclareLaunchArgument(
@@ -40,11 +40,11 @@ def generate_launch_description():
         description='Whether to launch the depth camera (default: true in hardware, false in simulation)'
     )
     
-    # Emotion detection argument with conditional default (tied to camera availability)
+    # Emotion detection argument - now defaults to true when camera is enabled
     declare_enable_emotion_detection = DeclareLaunchArgument(
         'enable_emotion_detection',
-        default_value=PythonExpression(["'false' if '", use_camera, "' == 'false' else 'true'"]),
-        description='Enable emotion detection with camera (default: true when camera is enabled)'
+        default_value=PythonExpression(["'", use_camera, "'"]),  # Directly match use_camera value
+        description='Enable emotion detection with camera (default: same as use_camera)'
     )
     
     # Proximity sensor argument with conditional default
@@ -63,7 +63,7 @@ def generate_launch_description():
     
     declare_run_demo = DeclareLaunchArgument(
         'run_demo',
-        default_value='false',
+        default_value='false',  # Always default to false
         description='Whether to run the demo sequence'
     )
     
@@ -77,7 +77,7 @@ def generate_launch_description():
     # require the joint_state_publisher package if not available
     use_joint_state_publisher_arg = DeclareLaunchArgument(
         'use_joint_state_publisher',
-        default_value='false',  # Changed from 'true' to 'false' to avoid dependency error
+        default_value='false',  # Always default to false
         description='Use the joint_state_publisher'
     )
     
@@ -106,11 +106,11 @@ def generate_launch_description():
         description='Rotate camera image 180 degrees (set to true if camera is mounted upside down)'
     )
     
-    # Dynamic adaptation argument
+    # Dynamic adaptation argument - now defaults to true when hardware is enabled
     declare_enable_dynamic_adaptation = DeclareLaunchArgument(
         'enable_dynamic_adaptation',
-        default_value='false',
-        description='Enable dynamic adaptation mode (external force control)'
+        default_value=PythonExpression(["'", use_hardware, "'"]),  # Directly match use_hardware value
+        description='Enable dynamic adaptation mode (default: same as use_hardware)'
     )
     
     # ==========================================================================
@@ -135,7 +135,7 @@ def generate_launch_description():
     # Hardware-specific info
     hardware_info = LogInfo(
         msg=["\n🔧 HARDWARE MODE DETAILS:\n",
-             "- Serial port: /dev/ttyAMA0 (baud: 115200)\n",
+             "- Serial port: /dev/serial0 (baud: 115200)\n",
              "- Test mode: ", test_mode, " (position=basic movements, animation=complex behaviors)\n",
              "- Proximity sensing: ", PythonExpression(["'enabled' if '", sense_collision, "' == 'true' else 'disabled'"]), "\n",
              "- Hardware joint states enabled\n"],
@@ -254,17 +254,17 @@ def generate_launch_description():
         name='hardware_interface',
         output='screen',
         parameters=[
-            {'serial_port': '/dev/ttyAMA0'},
+            {'serial_port': '/dev/serial0'},
             {'baud_rate': 115200},
             {'enable_torque': True},
             {'read_throttle': 0.1},
             {'enable_dynamic_adaptation': enable_dynamic_adaptation},
-            {'dynamic_adaptation_base_limit': 60},
-            {'dynamic_adaptation_shoulder_limit': 125},
-            {'dynamic_adaptation_elbow_limit': 125}, 
-            {'dynamic_adaptation_wrist_limit': 125},
-            {'dynamic_adaptation_roll_limit': 125},
-            {'dynamic_adaptation_hand_limit': 125},
+            {'dynamic_adaptation_base_limit': 200},
+            {'dynamic_adaptation_shoulder_limit': 1000},
+            {'dynamic_adaptation_elbow_limit': 200}, 
+            {'dynamic_adaptation_wrist_limit': 1000},
+            {'dynamic_adaptation_roll_limit': 1000},
+            {'dynamic_adaptation_hand_limit': 1000},
             {'dynamic_adaptation_resume_delay': 5.0},
             {'ros__parameters': {'log_level': 'error'}}
         ],

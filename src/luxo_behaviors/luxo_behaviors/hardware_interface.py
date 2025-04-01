@@ -17,7 +17,7 @@ class RoArmHardwareInterface(Node):
         super().__init__('roarm_hardware_interface')
         
         # Declare parameters
-        self.declare_parameter('serial_port', '/dev/ttyAMA0')
+        self.declare_parameter('serial_port', '/dev/serial0')
         self.declare_parameter('baud_rate', 115200)
         self.declare_parameter('enable_torque', True)
         self.declare_parameter('read_throttle', 0.1)
@@ -47,12 +47,12 @@ class RoArmHardwareInterface(Node):
         
         # Add parameters for dynamic adaptation/external force control
         self.declare_parameter('enable_dynamic_adaptation', False)  # Default to disabled
-        self.declare_parameter('dynamic_adaptation_base_limit', 60)  # Default torque limits
-        self.declare_parameter('dynamic_adaptation_shoulder_limit', 125)
-        self.declare_parameter('dynamic_adaptation_elbow_limit', 125)
-        self.declare_parameter('dynamic_adaptation_wrist_limit', 125)
-        self.declare_parameter('dynamic_adaptation_roll_limit', 125)
-        self.declare_parameter('dynamic_adaptation_hand_limit', 125)
+        self.declare_parameter('dynamic_adaptation_base_limit', 50)  # Default torque limits
+        self.declare_parameter('dynamic_adaptation_shoulder_limit', 850)
+        self.declare_parameter('dynamic_adaptation_elbow_limit', 150)
+        self.declare_parameter('dynamic_adaptation_wrist_limit', 150)
+        self.declare_parameter('dynamic_adaptation_roll_limit', 150)
+        self.declare_parameter('dynamic_adaptation_hand_limit', 350)
         self.declare_parameter('dynamic_adaptation_resume_delay', 5.0)  # Seconds to wait before re-enabling
         
         # Get parameters
@@ -174,16 +174,10 @@ class RoArmHardwareInterface(Node):
         self.initial_adaptation_setup = True  # Flag to track initial setup vs toggle
         
         if self.connection_active:
-            # Initialize the arm if torque is enabled
-            if self.enable_torque_on_start:
-                self.serial_manager.enable_torque()
-                time.sleep(0.5)
-                self.serial_manager.initialize_arm()
-                time.sleep(0.5)
-                # Enable dynamic adaptation if configured
-                if self.enable_dynamic_adaptation:
-                    self.get_logger().info("Dynamic adaptation enabled via launch parameter")
-                    self.enable_dynamic_adaptation_mode(is_initial_setup=True)
+            # Enable dynamic adaptation if configured
+            if self.enable_dynamic_adaptation:
+                self.get_logger().info("Dynamic adaptation enabled via launch parameter")
+                self.enable_dynamic_adaptation_mode(is_initial_setup=True)
             
             # Changed subscription to joint_states_target
             self.subscription = self.create_subscription(
@@ -200,7 +194,7 @@ class RoArmHardwareInterface(Node):
                 10)
                 
             # Add a direct publishing timer to ensure we're sending messages regularly
-            self.direct_pub_timer = self.create_timer(0.1, self.publish_current_joint_states)
+            self.direct_pub_timer = self.create_timer(0.2, self.publish_current_joint_states)
             
             # Create subscriptions to collision topics
             self.front_collision_sub = self.create_subscription(
