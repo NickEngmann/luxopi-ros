@@ -214,12 +214,17 @@ def generate_launch_description():
         ]),
         launch_arguments={
             'gui': LaunchConfiguration('use_gui'),
-            'use_joint_state_publisher': 'true'  # Fixed value to avoid dependency issues
+            'use_joint_state_publisher': 'true'
         }.items(),
         condition=UnlessCondition(use_hardware)
     )
     
-    
+    jsp_killer = ExecuteProcess(
+        cmd=["bash", "-c", "sleep 5 && pkill -f \"/opt/ros/humble/lib/joint_state_publisher/joint_state_publisher\" || true"],
+        output='screen',
+        condition=IfCondition(PythonExpression(["'", use_hardware, "' == 'false' and '", use_gui, "' == 'true'"]))
+    )
+
     # Make sure robot_state_publisher has priority and runs even with camera enabled
     robot_state_publisher_node = Node(
         package='robot_state_publisher',
@@ -313,12 +318,12 @@ def generate_launch_description():
         name='animation_command',
         output='screen',
         parameters=[
-            {'publish_joint_states': False},  # Add this line to disable joint states publishing
-            {'publish_target_topic': False}   # Simulation should use joint_states topic directly
+            {'publish_joint_states': False},  # Changed to false for simulation
+            {'publish_target_topic': True}    # Simulation should use a separate topic
         ],
         condition=UnlessCondition(use_hardware)
     )
-    
+
     # Collision detection node
     collision_detection_node = Node(
         package='luxo_behaviors',
@@ -387,7 +392,7 @@ def generate_launch_description():
         declare_sense_collision,
         declare_verbose,
         declare_camera_rotation,  # Add the camera rotation argument
-       declare_enable_dynamic_adaptation,
+        declare_enable_dynamic_adaptation,
         # Launch info and banners
         startup_banner,
         mode_info,
@@ -397,6 +402,7 @@ def generate_launch_description():
         camera_info,
         demo_info,
         troubleshooting_info,
+        jsp_killer,
         
         # Launch files
         roarm_launch,

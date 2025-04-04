@@ -194,7 +194,7 @@ class RoArmHardwareInterface(Node):
                 10)
                 
             # Add a direct publishing timer to ensure we're sending messages regularly
-            self.direct_pub_timer = self.create_timer(0.2, self.publish_current_joint_states)
+            self.direct_pub_timer = self.create_timer(0.2, self.publish_actual_joint_states)
             
             # Create subscriptions to collision topics
             self.front_collision_sub = self.create_subscription(
@@ -1434,6 +1434,9 @@ class RoArmHardwareInterface(Node):
     def publish_actual_joint_states(self, positions):
         """Publish the actual joint positions after collision avoidance."""
         try:
+            if not getattr(self, 'current_joints', []):
+                self.get_logger().warn("Cannot publish joint states: current_joints not initialized or empty")
+                return                
             # Add state tracking to avoid repeated identical messages
             if not hasattr(self, '_last_published_positions'):
                 self._last_published_positions = None    
@@ -1722,15 +1725,6 @@ class RoArmHardwareInterface(Node):
                 return True
         
         return False
-
-    def publish_current_joint_states(self):
-        """Publish the current joint states periodically to ensure topic is active."""
-        try:
-            if hasattr(self, 'current_joints') and len(self.current_joints) > 0:
-                # Always publish the joint states (important for ROS control)
-                self.publish_actual_joint_states(self.current_joints)
-        except Exception as e:
-            self.get_logger().error(f"Error in direct publish timer: {e}")
 
     # Add methods to control dynamic adaptation
     def enable_dynamic_adaptation_mode(self, is_initial_setup=False):
