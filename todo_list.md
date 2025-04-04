@@ -21,10 +21,6 @@
 
 ## Documentation
 - [ ] Document all available ROS parameters with descriptions and default values
-- [ ] Create architecture diagram showing component interactions
-- [ ] Add troubleshooting section for common failure modes
-- [ ] Add setup guide specifically for Raspberry Pi configurations
-- [ ] Document all animation behaviors with examples
 
 ## Performance & Stability
 - [ ] Profile and optimize the safety monitoring timer to prevent crashes
