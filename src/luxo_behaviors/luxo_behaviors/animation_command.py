@@ -23,6 +23,15 @@ class EnhancedAnimationCommand(Node):
         self.declare_parameter('publish_target_topic', False)
         self.publish_target = self.get_parameter('publish_target_topic').get_parameter_value().bool_value
         
+        # Add joint limits configuration
+        self.joint_limits = {
+            'L1_to_L2': {'min': -1.57, 'max': 0.75},  # Limit L1_to_L2 to max +0.75
+            # Add other joint limits here if needed
+        }
+        
+        self.declare_parameter('enforce_joint_limits', True)
+        self.enforce_joint_limits = self.get_parameter('enforce_joint_limits').value
+        
         # Create subscription for animation commands
         self.command_subscription = self.create_subscription(
             String,
@@ -118,7 +127,33 @@ class EnhancedAnimationCommand(Node):
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.name = self.joint_names
         msg.position = self.current_positions
+        
+        # Apply joint limits before publishing
+        if self.enforce_joint_limits:
+            msg.position = self.apply_joint_limits(msg.name, msg.position)
+        
         self.joint_publisher.publish(msg)
+    
+    def apply_joint_limits(self, joint_names, joint_positions):
+        """Apply joint limits to the given positions and return the corrected values."""
+        limited_positions = list(joint_positions)  # Create a copy to modify
+        
+        for i, name in enumerate(joint_names):
+            if name in self.joint_limits:
+                limits = self.joint_limits[name]
+                original_value = joint_positions[i]
+                
+                # Apply min limit
+                if original_value < limits['min']:
+                    limited_positions[i] = limits['min']
+                    self.get_logger().debug(f"Limited {name} from {original_value:.3f} to min {limits['min']:.3f}")
+                
+                # Apply max limit
+                elif original_value > limits['max']:
+                    limited_positions[i] = limits['max']
+                    self.get_logger().warn(f"Limited {name} from {original_value:.3f} to max {limits['max']:.3f}")
+                    
+        return limited_positions
     
     def add_noise_to_position(self, positions):
         """Add subtle random noise to make animations less mechanical."""
@@ -353,13 +388,13 @@ class EnhancedAnimationCommand(Node):
             [base_pos+0.2, 0.2, 0.6, 0.8, gripper_pos * 0.5],
             
             # Dramatic squash on impact - exaggerate landing
-            [base_pos+0.1, 1.1, 1.7, 0.0, gripper_pos * 0.6],
+            [base_pos+0.1, 0.75, 1.7, 0.0, gripper_pos * 0.6],
             
             # Compression at landing - absorb energy
-            [base_pos, 1.2, 1.8, -0.2, gripper_pos * 0.65],
+            [base_pos, 0.75, 1.8, -0.2, gripper_pos * 0.65],
             
             # Secondary bounce preparation - small anticipation
-            [base_pos-0.1, 0.8, 1.5, 0.1, gripper_pos * 0.7],
+            [base_pos-0.1, 0.75, 1.5, 0.1, gripper_pos * 0.7],
             
             # Secondary smaller bounce - reduced height
             [base_pos-0.05, 0.2, 0.6, 0.8, gripper_pos * 0.75],
@@ -370,7 +405,7 @@ class EnhancedAnimationCommand(Node):
             # Second landing - less dramatic
             [base_pos+0.15, 0.6, 1.2, 0.3, gripper_pos * 0.8],
             
-            # Final tiny bounce preparation
+            # Mini-fold for final bounce
             [base_pos, 0.5, 1.0, 0.4, gripper_pos * 0.85],
             
             # Final tiny hop
@@ -418,18 +453,18 @@ class EnhancedAnimationCommand(Node):
     def idle_state(self):
         """Make the arm return to its idle state with slight variation, then look around briefly."""
         # Starting from current position
-        start_pos = self.current_positions.copy()
+        base_pos = self.current_positions[0]
+        shoulder_pos = self.current_positions[1]
+        elbow_pos = self.current_positions[2]
+        wrist_pos = self.current_positions[3]
         gripper_pos = self.current_positions[4] if len(self.current_positions) > 4 else 3.14
-    
-        # Calculate relative positions from current state
-        base_center = start_pos[0]
         
-        # Target idle state position with variation
-        target_base = 0.0 + random.uniform(-0.1, 0.1)
-        target_shoulder = -2.0 + random.uniform(-0.15, 0.15)
-        target_elbow = 2.0 + random.uniform(-0.1, 0.1)
-        target_wrist = 1.0 + random.uniform(-0.2, 0.2)
-        target_gripper = 3.14 + random.uniform(-0.1, 0.1)
+        # Add subtle variations to idle state target
+        target_base = base_pos + random.uniform(-0.1, 0.1)
+        target_shoulder = shoulder_pos + random.uniform(-0.15, 0.15)
+        target_elbow = elbow_pos + random.uniform(-0.1, 0.1)
+        target_wrist = wrist_pos + random.uniform(-0.2, 0.2)
+        target_gripper = gripper_pos + random.uniform(-0.1, 0.1)
         
         # Random amounts to look left and right (different values)
         look_right_amount = random.uniform(0.2, 0.4)
@@ -437,7 +472,7 @@ class EnhancedAnimationCommand(Node):
         
         # Keyframe positions - first go to idle position, then look around
         keyframes = [
-            # First transition to the idle position
+            # First transition to the idle position with variation
             [target_base, target_shoulder, target_elbow, target_wrist, target_gripper],
             
             # Brief pause in idle position
@@ -461,7 +496,7 @@ class EnhancedAnimationCommand(Node):
     
         # Start the animation
         self.start_animation(keyframes, durations)
-        self.get_logger().info('Executing idle animation: first returning to idle, then looking around')
+        self.get_logger().info('Executing idle animation: using current position as base with slight variations')
 
     def sad_droop(self):
         """Make the arm droop down sadly with Disney principles."""
