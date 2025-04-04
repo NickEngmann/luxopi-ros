@@ -214,7 +214,7 @@ def generate_launch_description():
         ]),
         launch_arguments={
             'gui': LaunchConfiguration('use_gui'),
-            'use_joint_state_publisher': 'false'  # Fixed value to avoid dependency issues
+            'use_joint_state_publisher': 'true'  # Fixed value to avoid dependency issues
         }.items(),
         condition=UnlessCondition(use_hardware)
     )
@@ -313,7 +313,8 @@ def generate_launch_description():
         name='animation_command',
         output='screen',
         parameters=[
-            {'publish_target_topic': False}  # Simulation should use joint_states topic directly
+            {'publish_joint_states': False},  # Add this line to disable joint states publishing
+            {'publish_target_topic': False}   # Simulation should use joint_states topic directly
         ],
         condition=UnlessCondition(use_hardware)
     )
