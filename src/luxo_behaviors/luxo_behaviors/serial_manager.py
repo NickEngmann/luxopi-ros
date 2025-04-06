@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
 
-import rclpy
-from rclpy.node import Node
 import serial
 import threading
 import json
@@ -9,6 +7,7 @@ import time
 import os
 import subprocess
 import atexit
+from std_msgs.msg import String
 
 class SerialManager(threading.Thread):
     """
@@ -23,7 +22,7 @@ class SerialManager(threading.Thread):
             node: The ROS node that owns this manager (for logging)
             serial_port: Path to the serial device
             baud_rate: Serial communication baud rate
-            read_throttle: Delay between serial read attempts to reduce CPU usage
+            read_throttle: Delay between serial read attempts to reduce CPU usage (set to 0 for max responsiveness)
         """
         # Initialize thread
         threading.Thread.__init__(self, daemon=True)
@@ -31,7 +30,7 @@ class SerialManager(threading.Thread):
         self.node = node
         self.serial_port = serial_port
         self.baud_rate = baud_rate
-        self.read_throttle = read_throttle
+        self.read_throttle = read_throttle  # Setting this to 0 for responsiveness
         
         # Connection control
         self.running = False
@@ -45,6 +44,13 @@ class SerialManager(threading.Thread):
         # Simplified tracking variables
         self.last_heartbeat_time = 0
         self.heartbeat_interval = 2.0  # Send a heartbeat every 2 seconds if no other traffic
+        
+        # Create publisher for arm position feedback
+        self.position_publisher = self.node.create_publisher(
+            String,
+            'roarm/position',
+            10
+        )
         
         # Register clean shutdown handler
         atexit.register(self.ensure_closed)
@@ -184,38 +190,27 @@ class SerialManager(threading.Thread):
         while self.running:
             if self.is_connected():
                 try:
-                    # Apply throttling to reduce CPU usage
-                    time.sleep(self.read_throttle)
-                    
                     # Check if we should send a heartbeat to keep the connection alive
                     current_time = time.time()
                     if current_time - self.last_heartbeat_time >= self.heartbeat_interval:
                         self._send_heartbeat()
                     
+                    # Read directly from the serial port without delay
                     if self.ser.in_waiting > 0:
-                        # Read raw data first instead of immediately trying to decode
                         raw_data = self.ser.readline()
                         
                         if raw_data:
-                            # First try to log the raw data for debugging
-                            try:
-                                hex_data = ' '.join([f"{b:02x}" for b in raw_data])
-                                self.node.get_logger().debug(f"Raw data received (hex): {hex_data}")
-                            except Exception:
-                                pass
-                                
-                            # Try to decode as UTF-8 with error handling
                             try:
                                 line = raw_data.decode('utf-8', errors='replace').strip()
-                                
-                                # Only process and log non-empty lines
                                 if line:
+                                    # Process immediately without additional logging/filtering
                                     self._process_response(line)
-                                    
                             except UnicodeDecodeError:
-                                # If regular decode fails, try to process the binary data
                                 self._process_binary_response(raw_data)
-                    
+                    # Only sleep a tiny amount if no data to prevent tight loop
+                    elif self.read_throttle > 0:
+                        time.sleep(self.read_throttle)
+                        
                 except Exception as e:
                     self.node.get_logger().error(f"Error reading from serial: {e}")
                     time.sleep(1.0)  # Sleep longer on error
@@ -260,9 +255,32 @@ class SerialManager(threading.Thread):
     
     def _process_response(self, response):
         """Process a response from the hardware."""
-        # For debug purposes, log some responses
-        if len(response) > 5:  # Only log meaningful responses
-            self.node.get_logger().debug(f"Received: {response}")
+        # Check if this is a position feedback response (T:105 or T:1051)
+        try:
+            data = json.loads(response)
+            if isinstance(data, dict) and 'T' in data:
+                # Check for continuous position feedback (T:1051)
+                if data['T'] == 1051 and 'b' in data and 's' in data and 'e' in data:
+                    # Publish position data to ROS topic immediately without throttling
+                    msg = String()
+                    msg.data = response
+                    self.position_publisher.publish(msg)
+                    
+                    # Only log occasionally to prevent log flooding
+                    if not hasattr(self, '_last_1051_log_time') or time.time() - self._last_1051_log_time > 10.0:
+                        self.node.get_logger().debug(f"Position feedback (T:1051)")
+                        self._last_1051_log_time = time.time()
+                    
+                    # If we have a position feedback callback registered, call it with this data
+                    if hasattr(self, '_position_feedback_callback') and self._position_feedback_callback:
+                        self._position_feedback_callback(data)
+                        # Clear the callback after it's been used once
+                        self._position_feedback_callback = None
+                        self.node.get_logger().info("Used continuous position feedback for initialization")
+                    
+        except (json.JSONDecodeError, ValueError, TypeError) as e:
+            # Not JSON or not the expected format, ignore for position processing
+            pass
             
         # If we have a callback registered, pass the data along
         if self.data_callback:
@@ -669,13 +687,6 @@ class SerialManager(threading.Thread):
             self.node.get_logger().error("Failed to switch off")
         return success
     
-    def request_position_feedback(self):
-        """Request current arm position feedback from servos."""
-        cmd = {'T': 105}
-        success = self.send_command(json.dumps(cmd), "Request position feedback")
-        if not success:
-            self.node.get_logger().error("Failed to request position feedback")
-        return success
     
     def control_joint_angle_degrees(self, joint_id, angle, speed=10, accel=10):
         """
