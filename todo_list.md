@@ -7,9 +7,8 @@
 - [ ] Fix animation system to handle interruptions from collision avoidance more gracefully
 
 ## Code Quality Improvements 
-- [ ] Add type hints to all Python functions for better code clarity
-- [ ] Standardize logging format across all modules
 - [ ] Reduce code duplication in collision callbacks (left/right/front have nearly identical logic)
+- [ ] Add type hints to all Python functions for better code clarity
 - [ ] Improve comment quality, especially for complex collision avoidance logic
 - [ ] Add unit tests for critical components
 - [ ] Create integration tests for full system behavior

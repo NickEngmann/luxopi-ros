@@ -306,7 +306,8 @@ def generate_launch_description():
         parameters=[
             {'publish_joint_states': True},
             {'use_hardware_joint_names': True},
-            {'publish_target_topic': True}  # Hardware should use target topic
+            {'publish_target_topic': True},  # Hardware should use target topic
+            {'enforce_joint_limits': True}   # Enable joint limits enforcement
         ],
         condition=IfCondition(PythonExpression(["'", use_hardware, "' == 'true' and '", test_mode, "' == 'animation'"]))
     )
@@ -319,7 +320,8 @@ def generate_launch_description():
         output='screen',
         parameters=[
             {'publish_joint_states': False},  # Changed to false for simulation
-            {'publish_target_topic': True}    # Simulation should use a separate topic
+            {'publish_target_topic': True},   # Simulation should use a separate topic
+            {'enforce_joint_limits': True}    # Enable joint limits enforcement
         ],
         condition=UnlessCondition(use_hardware)
     )
