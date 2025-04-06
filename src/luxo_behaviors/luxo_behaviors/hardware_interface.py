@@ -178,6 +178,9 @@ class RoArmHardwareInterface(Node):
             if self.enable_dynamic_adaptation:
                 self.get_logger().info("Dynamic adaptation enabled via launch parameter")
                 self.enable_dynamic_adaptation_mode(is_initial_setup=True)
+            else:
+                self.get_logger().info("Dynamic adaptation disabled via launch parameter")  
+                self.disable_dynamic_adaptation_mode()
             
             # Changed subscription to joint_states_target
             self.subscription = self.create_subscription(
@@ -194,7 +197,7 @@ class RoArmHardwareInterface(Node):
                 10)
                 
             # Add a direct publishing timer to ensure we're sending messages regularly
-            self.direct_pub_timer = self.create_timer(0.2, self.publish_actual_joint_states)
+            self.direct_pub_timer = self.create_timer(0.2, self.publish_current_joint_states)
             
             # Create subscriptions to collision topics
             self.front_collision_sub = self.create_subscription(
@@ -1431,6 +1434,15 @@ class RoArmHardwareInterface(Node):
             self.get_logger().error(f"Error sending safe joint commands: {e}")
             return False
 
+    def publish_current_joint_states(self):
+         """Publish the current joint states periodically to ensure topic is active."""
+         try:
+             if hasattr(self, 'current_joints') and len(self.current_joints) > 0:
+                 # Always publish the joint states (important for ROS control)
+                 self.publish_actual_joint_states(self.current_joints)
+         except Exception as e:
+             self.get_logger().error(f"Error in direct publish timer: {e}")
+
     def publish_actual_joint_states(self, positions):
         """Publish the actual joint positions after collision avoidance."""
         try:
@@ -1770,6 +1782,7 @@ class RoArmHardwareInterface(Node):
         except Exception as e:
             self.get_logger().error(f"Error enabling dynamic adaptation mode: {e}")
             return False
+
     def disable_dynamic_adaptation_mode(self):
         """Disable the dynamic external force adaptation mode"""
         try:
