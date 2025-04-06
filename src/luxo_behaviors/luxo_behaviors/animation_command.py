@@ -12,8 +12,8 @@ class EnhancedAnimationCommand(Node):
         super().__init__('animation_command')
         
         # Parameter to control if this node should publish joint states
-        self.declare_parameter('publish_joint_states', True)
-        self.should_publish = self.get_parameter('publish_joint_states').get_parameter_value().bool_value
+        self.declare_parameter('publish_joint_states_target', True)
+        self.should_publish = self.get_parameter('publish_joint_states_target').get_parameter_value().bool_value
         
         # Parameter to control which joint names to use (for hardware compatibility)
         self.declare_parameter('use_hardware_joint_names', False)
@@ -47,6 +47,7 @@ class EnhancedAnimationCommand(Node):
             10)
         
         self.get_logger().info(f'Publishing joint states to: {joint_topic}')
+
         # Current joint positions
         self.current_positions = [0.0, 0.0, 0.0, 0.0, 3.14]  # Added gripper value
         

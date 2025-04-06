@@ -267,9 +267,9 @@ def generate_launch_description():
             {'dynamic_adaptation_base_limit': 200},
             {'dynamic_adaptation_shoulder_limit': 1000},
             {'dynamic_adaptation_elbow_limit': 200}, 
-            {'dynamic_adaptation_wrist_limit': 1000},
-            {'dynamic_adaptation_roll_limit': 1000},
-            {'dynamic_adaptation_hand_limit': 1000},
+            {'dynamic_adaptation_wrist_limit': 800},
+            {'dynamic_adaptation_roll_limit': 800},
+            {'dynamic_adaptation_hand_limit': 150},
             {'dynamic_adaptation_resume_delay': 5.0},
             {'ros__parameters': {'log_level': 'error'}}
         ],
@@ -304,7 +304,7 @@ def generate_launch_description():
         name='animation_command',
         output='screen',
         parameters=[
-            {'publish_joint_states': True},
+            {'publish_joint_states_target': True},
             {'use_hardware_joint_names': True},
             {'publish_target_topic': True},  # Hardware should use target topic
             {'enforce_joint_limits': True}   # Enable joint limits enforcement
@@ -319,7 +319,7 @@ def generate_launch_description():
         name='animation_command',
         output='screen',
         parameters=[
-            {'publish_joint_states': False},  # Changed to false for simulation
+            {'publish_joint_states_target': False},  # Changed to false for simulation
             {'publish_target_topic': True},   # Simulation should use a separate topic
             {'enforce_joint_limits': True}    # Enable joint limits enforcement
         ],
