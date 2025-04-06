@@ -135,7 +135,7 @@ def generate_launch_description():
     # Hardware-specific info
     hardware_info = LogInfo(
         msg=["\n🔧 HARDWARE MODE DETAILS:\n",
-             "- Serial port: /dev/serial0 (baud: 115200)\n",
+             "- Serial port: /dev/ttyAMA0 (baud: 115200)\n",
              "- Test mode: ", test_mode, " (position=basic movements, animation=complex behaviors)\n",
              "- Proximity sensing: ", PythonExpression(["'enabled' if '", sense_collision, "' == 'true' else 'disabled'"]), "\n",
              "- Hardware joint states enabled\n"],
@@ -259,7 +259,7 @@ def generate_launch_description():
         name='hardware_interface',
         output='screen',
         parameters=[
-            {'serial_port': '/dev/serial0'},
+            {'serial_port': '/dev/ttyAMA0'},
             {'baud_rate': 115200},
             {'enable_torque': True},
             {'read_throttle': 0.1},
@@ -307,7 +307,8 @@ def generate_launch_description():
             {'publish_joint_states_target': True},
             {'use_hardware_joint_names': True},
             {'publish_target_topic': True},  # Hardware should use target topic
-            {'enforce_joint_limits': True}   # Enable joint limits enforcement
+            {'enforce_joint_limits': True},   # Enable joint limits enforcement
+            # {'use_hardware_position_feedback': True}  # Enable hardware position feedback in hardware mode
         ],
         condition=IfCondition(PythonExpression(["'", use_hardware, "' == 'true' and '", test_mode, "' == 'animation'"]))
     )
@@ -321,7 +322,8 @@ def generate_launch_description():
         parameters=[
             {'publish_joint_states_target': False},  # Changed to false for simulation
             {'publish_target_topic': True},   # Simulation should use a separate topic
-            {'enforce_joint_limits': True}    # Enable joint limits enforcement
+            {'enforce_joint_limits': True},    # Enable joint limits enforcement
+            # {'use_hardware_position_feedback': False}  # Disable hardware position feedback in simulation
         ],
         condition=UnlessCondition(use_hardware)
     )

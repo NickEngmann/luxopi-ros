@@ -8,7 +8,6 @@ import json
 import threading
 import math
 import time
-import numpy as np
 import random
 from luxo_behaviors.serial_manager import SerialManager
 
@@ -17,7 +16,7 @@ class RoArmHardwareInterface(Node):
         super().__init__('roarm_hardware_interface')
         
         # Declare parameters
-        self.declare_parameter('serial_port', '/dev/serial0')
+        self.declare_parameter('serial_port', '/dev/ttyAMA0')
         self.declare_parameter('baud_rate', 115200)
         self.declare_parameter('enable_torque', True)
         self.declare_parameter('read_throttle', 0.1)
@@ -47,13 +46,17 @@ class RoArmHardwareInterface(Node):
         
         # Add parameters for dynamic adaptation/external force control
         self.declare_parameter('enable_dynamic_adaptation', False)  # Default to disabled
-        self.declare_parameter('dynamic_adaptation_base_limit', 50)  # Default torque limits
+        self.declare_parameter('dynamic_adaptation_base_limit', 550)  # Default torque limits
         self.declare_parameter('dynamic_adaptation_shoulder_limit', 850)
-        self.declare_parameter('dynamic_adaptation_elbow_limit', 150)
-        self.declare_parameter('dynamic_adaptation_wrist_limit', 150)
-        self.declare_parameter('dynamic_adaptation_roll_limit', 150)
-        self.declare_parameter('dynamic_adaptation_hand_limit', 350)
+        self.declare_parameter('dynamic_adaptation_elbow_limit', 550)
+        self.declare_parameter('dynamic_adaptation_wrist_limit', 550)
+        self.declare_parameter('dynamic_adaptation_roll_limit', 550)
+        self.declare_parameter('dynamic_adaptation_hand_limit', 550)
         self.declare_parameter('dynamic_adaptation_resume_delay', 5.0)  # Seconds to wait before re-enabling
+        
+        # Add parameter for initialization method
+        self.declare_parameter('use_hardware_position_on_init', True)  # Whether to read actual position from hardware
+        self.declare_parameter('init_position_timeout', 10.0)  # Timeout for getting initial position
         
         # Get parameters
         self.serial_port = self.get_parameter('serial_port').value
@@ -91,6 +94,10 @@ class RoArmHardwareInterface(Node):
         self.dynamic_adaptation_roll_limit = self.get_parameter('dynamic_adaptation_roll_limit').value
         self.dynamic_adaptation_hand_limit = self.get_parameter('dynamic_adaptation_hand_limit').value
         self.dynamic_adaptation_resume_delay = self.get_parameter('dynamic_adaptation_resume_delay').value
+        
+        # Get initialization parameters
+        self.use_hardware_position_on_init = self.get_parameter('use_hardware_position_on_init').value
+        self.init_position_timeout = self.get_parameter('init_position_timeout').value
         
         # Connection control
         self.connection_active = False
@@ -140,11 +147,6 @@ class RoArmHardwareInterface(Node):
         self.retreat_level = 0  # Tracks how far we've retreated
         self.escape_attempts = 0  # Count escape attempts
         
-        # Joint state tracking
-        self.current_joints = [0.0, 0.0, 0.0, 0.0, 3.14]  # base, shoulder, elbow, wrist, hand
-        self.target_joints = [0.0, 0.0, 0.0, 0.0, 3.14]
-        self.joint_velocities = [0.0, 0.0, 0.0, 0.0, 0.0]
-        self.last_command_time = self.get_clock().now()
         
         # Initialize the SerialManager
         self.serial_manager = SerialManager(
@@ -156,6 +158,16 @@ class RoArmHardwareInterface(Node):
         
         # Connect to the serial port
         self.connection_active = self.serial_manager.connect()
+
+        # Joint state tracking with fallback default values
+        # These will be initialized from hardware before publishing begins
+        self.current_joints = [0.0, 0.0, 0.0, 0.0, 3.14]  # base, shoulder, elbow, wrist, hand
+        self.target_joints = [0.0, 0.0, 0.0, 0.0, 3.14]
+        self.joint_velocities = [0.0, 0.0, 0.0, 0.0, 0.0]
+        self.last_command_time = self.get_clock().now()
+        
+        # Flag to track whether we have valid joint positions from hardware
+        self.position_initialized = False
         
         # Add target override tracking
         self.target_override_active = False  # Flag to indicate override is active
@@ -174,6 +186,11 @@ class RoArmHardwareInterface(Node):
         self.initial_adaptation_setup = True  # Flag to track initial setup vs toggle
         
         if self.connection_active:
+            if self.enable_torque_on_start:
+                self.get_logger().info("Torque enabled on startup")
+                self.enable_torque()
+            else:
+                self.get_logger().info("Torque disabled on startup")
             # Enable dynamic adaptation if configured
             if self.enable_dynamic_adaptation:
                 self.get_logger().info("Dynamic adaptation enabled via launch parameter")
@@ -1294,9 +1311,7 @@ class RoArmHardwareInterface(Node):
             ]
             
             # Check if this is a new target that's different from our original target
-            new_target = False
             if not self._at_position(target_positions, self.target_joints, 0.05):
-                new_target = True
                 self.target_joints = target_positions.copy()
                 self.last_original_target_change_time = current_time
                 

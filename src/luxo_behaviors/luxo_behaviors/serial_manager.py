@@ -261,14 +261,23 @@ class SerialManager(threading.Thread):
             if isinstance(data, dict) and 'T' in data:
                 # Check for continuous position feedback (T:1051)
                 if data['T'] == 1051 and 'b' in data and 's' in data and 'e' in data:
-                    # Publish position data to ROS topic immediately without throttling
+                    # Convert position data to a list format
+                    position_list = [
+                        data.get('b', 0.0),  # base
+                        data.get('s', 0.0),  # shoulder
+                        data.get('e', 0.0),  # elbow
+                        data.get('t', 0.0),  # wrist (t in the message)
+                        data.get('g', 3.14)  # gripper/hand (default to 3.14 if not present)
+                    ]
+                    
+                    # Publish position data to ROS topic as a list format
                     msg = String()
-                    msg.data = response
+                    msg.data = json.dumps(position_list)
                     self.position_publisher.publish(msg)
                     
                     # Only log occasionally to prevent log flooding
                     if not hasattr(self, '_last_1051_log_time') or time.time() - self._last_1051_log_time > 10.0:
-                        self.node.get_logger().debug(f"Position feedback (T:1051)")
+                        self.node.get_logger().debug(f"Position feedback published: {position_list}")
                         self._last_1051_log_time = time.time()
                     
                     # If we have a position feedback callback registered, call it with this data
