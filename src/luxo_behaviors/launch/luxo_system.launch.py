@@ -265,10 +265,10 @@ def generate_launch_description():
             {'read_throttle': 0.1},
             {'enable_dynamic_adaptation': enable_dynamic_adaptation},
             {'dynamic_adaptation_base_limit': 200},
-            {'dynamic_adaptation_shoulder_limit': 1000},
+            {'dynamic_adaptation_shoulder_limit': 300},
             {'dynamic_adaptation_elbow_limit': 200}, 
-            {'dynamic_adaptation_wrist_limit': 800},
-            {'dynamic_adaptation_roll_limit': 800},
+            {'dynamic_adaptation_wrist_limit': 300},
+            {'dynamic_adaptation_roll_limit': 300},
             {'dynamic_adaptation_hand_limit': 150},
             {'dynamic_adaptation_resume_delay': 5.0},
             {'ros__parameters': {'log_level': 'error'}}
@@ -308,7 +308,7 @@ def generate_launch_description():
             {'use_hardware_joint_names': True},
             {'publish_target_topic': True},  # Hardware should use target topic
             {'enforce_joint_limits': True},   # Enable joint limits enforcement
-            # {'use_hardware_position_feedback': True}  # Enable hardware position feedback in hardware mode
+            {'use_hardware_position_feedback': True}  # Enable hardware position feedback in hardware mode
         ],
         condition=IfCondition(PythonExpression(["'", use_hardware, "' == 'true' and '", test_mode, "' == 'animation'"]))
     )
@@ -323,7 +323,6 @@ def generate_launch_description():
             {'publish_joint_states_target': False},  # Changed to false for simulation
             {'publish_target_topic': True},   # Simulation should use a separate topic
             {'enforce_joint_limits': True},    # Enable joint limits enforcement
-            # {'use_hardware_position_feedback': False}  # Disable hardware position feedback in simulation
         ],
         condition=UnlessCondition(use_hardware)
     )

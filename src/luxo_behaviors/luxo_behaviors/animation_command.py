@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String
 from sensor_msgs.msg import JointState
 import time
 import random
+import json
 
 class EnhancedAnimationCommand(Node):
     def __init__(self):
@@ -32,6 +32,22 @@ class EnhancedAnimationCommand(Node):
         self.declare_parameter('enforce_joint_limits', True)
         self.enforce_joint_limits = self.get_parameter('enforce_joint_limits').value
         
+        # Add parameter to control if we should use hardware position feedback
+        self.declare_parameter('use_hardware_position_feedback', False)
+        self.use_hardware_position_feedback = self.get_parameter('use_hardware_position_feedback').get_parameter_value().bool_value
+        
+        # Hardware position feedback
+        self.hardware_position_received = False
+        
+        # Create subscription for hardware position feedback
+        if self.use_hardware_position_feedback:
+            self.position_subscription = self.create_subscription(
+                String, 
+                'roarm/position',
+                self.position_feedback_callback,
+                10)
+            self.get_logger().info('Subscribed to roarm/position for hardware feedback')
+        
         # Create subscription for animation commands
         self.command_subscription = self.create_subscription(
             String,
@@ -48,8 +64,11 @@ class EnhancedAnimationCommand(Node):
         
         self.get_logger().info(f'Publishing joint states to: {joint_topic}')
 
-        # Current joint positions
+        # Current joint positions (will be updated from hardware if available)
         self.current_positions = [0.0, 0.0, 0.0, 0.0, 3.14]  # Added gripper value
+        
+        # Target positions to publish (separate from current hardware positions)
+        self.target_positions = self.current_positions.copy()
         
         # Define joint names based on the configuration
         if self.use_hardware_joint_names:
@@ -61,7 +80,7 @@ class EnhancedAnimationCommand(Node):
             self.joint_names = ['base_to_L1', 'L1_to_L2', 'L2_to_L3', 'L3_to_L4', 'hand']
         
         # Timer for regular publishing
-        self.timer = self.create_timer(0.05, self.publish_joint_states)
+        self.timer = self.create_timer(0.25, self.publish_joint_states_target)
         
         # Animation state
         self.is_animating = False
@@ -76,7 +95,114 @@ class EnhancedAnimationCommand(Node):
         # Random noise amplitude
         self.noise_amplitude = 0.05  # Small noise for subtle variability
         
+        # Maximum attempts to get hardware position before timing out
+        self.max_position_attempts = 10
+        self.position_request_interval = 0.5  # seconds
+        
         self.get_logger().info('Enhanced animation command interface initialized')
+        
+        # Initialize hardware position if enabled
+        if self.use_hardware_position_feedback:
+            self.request_hardware_position()
+
+    def position_feedback_callback(self, msg):
+        """Handle position feedback from the hardware."""
+        try:
+            # Parse the list from the message
+            position_list = json.loads(msg.data)
+            
+            # Check if this is a valid position list with at least 5 elements
+            if isinstance(position_list, list) and len(position_list) >= 5:
+                # Add occasional debug logging to understand what's happening
+                should_log = not hasattr(self, '_last_debug_time') or \
+                            time.time() - self._last_debug_time > 5.0
+                
+                if should_log:
+                    self._last_debug_time = time.time()
+                    
+                # First time receiving position or no current positions yet
+                if self.current_positions is None:
+                    # First reading, use as is
+                    self.current_positions = position_list.copy()
+                    if should_log:
+                        self.get_logger().info(f"Initial position reading: {position_list}")
+                else:
+                    # Calculate differences between new position and current saved positions
+                    diff_report = []
+                    has_significant_change = False
+                    tolerance = 0.03  # radians
+                    
+                    # Create filtered position list starting with raw values
+                    filtered_position_list = position_list.copy()
+                    
+                    for i in range(min(len(position_list), len(self.current_positions))):
+                        # Calculate difference between current raw reading and current saved position
+                        diff = abs(float(position_list[i]) - float(self.current_positions[i]))
+                        
+                        if should_log:
+                            diff_report.append(f"{i}: {diff:.4f}")
+                        
+                        # Check if difference exceeds tolerance
+                        if diff >= tolerance:
+                            has_significant_change = True
+                        else:
+                            # Only for positions within tolerance, keep current value
+                            filtered_position_list[i] = self.current_positions[i]
+                    
+                    if should_log:
+                        self.get_logger().debug(f"Position differences: {', '.join(diff_report)}")
+                        self.get_logger().debug(f"Raw: {position_list}")
+                        self.get_logger().debug(f"Filtered: {filtered_position_list}")
+                        self.get_logger().debug(f"Current positions: {self.current_positions}")
+                        self.get_logger().debug(f"Has significant change: {has_significant_change}")
+                    
+                    # Update current positions with filtered values
+                    self.current_positions = filtered_position_list
+                # Only update target positions when not animating to avoid disrupting animations
+                if not self.is_animating:
+                    self.target_positions = self.current_positions.copy()
+                
+                # Mark that we've received hardware position
+                self.hardware_position_received = True
+                
+                # Log occasionally to prevent flooding
+                if not hasattr(self, '_last_position_log_time') or \
+                    time.time() - self._last_position_log_time > 5.0:
+                        self.get_logger().debug(f"Hardware position updated: " +
+                                            f"base={self.current_positions[0]:.2f}, " +
+                                            f"shoulder={self.current_positions[1]:.2f}, " +
+                                            f"elbow={self.current_positions[2]:.2f}, " +
+                                            f"wrist={self.current_positions[3]:.2f}, " +
+                                            f"hand={self.current_positions[4]:.2f}")
+                        self._last_position_log_time = time.time()
+        
+        except (json.JSONDecodeError, ValueError) as e:
+            self.get_logger().error(f"Error parsing position feedback: {e}")
+        except Exception as e:
+            self.get_logger().error(f"Error in position feedback callback: {e}")
+    
+    def request_hardware_position(self):
+        """Request and wait for hardware position before proceeding."""
+        if not self.use_hardware_position_feedback:
+            return True  # Not using hardware feedback
+            
+        self.get_logger().info("Waiting for initial hardware position...")
+        
+        attempts = 0
+        self.hardware_position_received = False
+        
+        # Wait for position feedback with timeout
+        while attempts < self.max_position_attempts and not self.hardware_position_received:
+            time.sleep(self.position_request_interval)
+            attempts += 1
+            self.get_logger().debug(f"Waiting for position feedback ({attempts}/{self.max_position_attempts})")
+            
+        if self.hardware_position_received:
+            self.get_logger().info("Hardware position received, ready for animations")
+            return True
+        else:
+            self.get_logger().warn("Failed to get hardware position after timeout, using default positions")
+            return False
     
     def command_callback(self, msg):
         """Handle animation command messages."""
@@ -96,6 +222,11 @@ class EnhancedAnimationCommand(Node):
         
         self.speed_multiplier = speed
         
+        # If using hardware, ensure we have the latest position before starting animation
+        if self.use_hardware_position_feedback and not self.hardware_position_received:
+            self.get_logger().info("Getting hardware position before starting animation...")
+            self.request_hardware_position()
+
         # Map of animation names to methods
         animations = {
             'excited': self.excited_hop,
@@ -119,21 +250,44 @@ class EnhancedAnimationCommand(Node):
             self.get_logger().warn(f'Unknown animation command: {base_command}')
             self.get_logger().info(f'Available commands: {", ".join(animations.keys())}')
     
-    def publish_joint_states(self):
-        """Publish current joint states."""
+    def publish_joint_states_target(self):
+        """Publish target joint states."""
         if not self.should_publish:
             return
         
         msg = JointState()
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.name = self.joint_names
-        msg.position = self.current_positions
         
-        # Apply joint limits before publishing
-        if self.enforce_joint_limits:
-            msg.position = self.apply_joint_limits(msg.name, msg.position)
-        
-        self.joint_publisher.publish(msg)
+        # Ensure all position values are valid floats
+        try:
+            # Make a copy and ensure all elements are floats
+            validated_positions = [float(pos) for pos in self.target_positions]
+            
+            # Apply joint limits before publishing
+            if self.enforce_joint_limits:
+                validated_positions = self.apply_joint_limits(msg.name, validated_positions)
+            
+            # Assign the validated positions to the message
+            msg.position = validated_positions
+            
+            self.joint_publisher.publish(msg)
+        except (ValueError, TypeError) as e:
+            self.get_logger().error(f"Invalid position value in target_positions: {self.target_positions}")
+            self.get_logger().error(f"Error details: {e}")
+            
+            # Attempt to recover by using the last known good positions or zeros
+            if hasattr(self, 'last_valid_positions') and self.last_valid_positions:
+                self.get_logger().warn("Using last valid positions as fallback")
+                msg.position = self.last_valid_positions
+                self.joint_publisher.publish(msg)
+            else:
+                self.get_logger().warn("No valid positions available, using zeros")
+                msg.position = [0.0] * len(msg.name)
+                self.joint_publisher.publish(msg)
+        else:
+            # If successful, store these as the last valid positions
+            self.last_valid_positions = validated_positions.copy()
     
     def apply_joint_limits(self, joint_names, joint_positions):
         """Apply joint limits to the given positions and return the corrected values."""
@@ -173,7 +327,7 @@ class EnhancedAnimationCommand(Node):
     
     def move_to_position(self, positions, duration=1.0, easing=True):
         """Move to a specific position over a duration with optional easing."""
-        start_positions = self.current_positions.copy()
+        start_positions = self.target_positions.copy()  # Start from current target positions
         start_time = time.time()
         
         # Apply speed multiplier to duration
@@ -191,16 +345,46 @@ class EnhancedAnimationCommand(Node):
                 eased_progress = progress
             
             # Linear interpolation for each joint
-            for i in range(len(self.current_positions)):
-                self.current_positions[i] = start_positions[i] + eased_progress * (positions[i] - start_positions[i])
+            for i in range(len(self.target_positions)):
+                self.target_positions[i] = start_positions[i] + eased_progress * (positions[i] - start_positions[i])
             
             time.sleep(0.01)  # Small delay to prevent CPU overload
         
         # Add subtle noise to final position to make it less robotic
-        self.current_positions = self.add_noise_to_position(positions)
-    
+        self.target_positions = self.add_noise_to_position(positions)
+        
+        # Return success status
+        return True
+
     def start_animation(self, keyframes, durations):
         """Start an animation with keyframes and durations."""
+        # If we have hardware feedback, make sure we start from current position
+        if self.use_hardware_position_feedback and self.hardware_position_received:
+            # Adjust the first keyframe to be relative to the current position
+            # This helps animations blend from whatever position the arm is actually in
+            if len(keyframes) > 0:
+                self.get_logger().debug("Adjusting animation to start from current hardware position")
+                
+                # Create a modified first keyframe that's a blend between 
+                # the intended first keyframe and the current position
+                first_keyframe = keyframes[0].copy()
+                
+                # Use current hardware position but keep the intended relative movements
+                # This preserves the "character" of the animation while respecting actual position
+                for i in range(min(len(first_keyframe), len(self.current_positions))):
+                    # Get the difference between original starting point and the intended position
+                    intended_offset = first_keyframe[i] - self.target_positions[i]
+                    # Scale down the offset to create a smoother transition
+                    scaled_offset = intended_offset * 0.5
+                    # Apply this scaled offset to the current position
+                    first_keyframe[i] = self.current_positions[i] + scaled_offset
+                
+                # Replace the first keyframe with our adjusted version
+                keyframes[0] = first_keyframe
+                
+                # Also update target positions to match current positions before starting animation
+                self.target_positions = self.current_positions.copy()
+        
         # Add subtle variations to keyframes for more natural movement
         varied_keyframes = []
         for keyframe in keyframes:
@@ -265,7 +449,7 @@ class EnhancedAnimationCommand(Node):
                 self.get_logger().info(f"Increasing move duration to {duration:.2f}s for smoother recovery")
         
         # Try to move to the position
-        success = self.move_to_position(next_position, duration, easing=use_easing)
+        self.move_to_position(next_position, duration, easing=use_easing)
         
         # Remember this target position for next comparison
         self.previous_position = next_position
