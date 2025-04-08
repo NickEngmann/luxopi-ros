@@ -6,10 +6,9 @@ from sensor_msgs.msg import JointState
 from std_msgs.msg import Bool, String, Float32
 import json
 import threading
-import math
 import time
-import random
 from luxo_behaviors.serial_manager import SerialManager
+from luxo_behaviors.collision_avoidance import CollisionAvoidance
 
 class RoArmHardwareInterface(Node):
     def __init__(self):
@@ -64,19 +63,6 @@ class RoArmHardwareInterface(Node):
         self.enable_torque_on_start = self.get_parameter('enable_torque').value
         self.read_throttle = self.get_parameter('read_throttle').value
         self.enable_collision_avoidance = self.get_parameter('enable_collision_avoidance').value
-        self.soft_limit_distance = self.get_parameter('soft_limit_distance').value
-        self.hard_limit_distance = self.get_parameter('hard_limit_distance').value
-        self.max_deceleration = self.get_parameter('max_deceleration').value
-        self.collision_recovery_timeout = self.get_parameter('collision_recovery_timeout').value
-        
-        self.proactive_threshold = self.get_parameter('proactive_threshold').value
-        self.avoidance_playfulness = self.get_parameter('avoidance_playfulness').value
-        self.side_avoidance_magnitude = self.get_parameter('side_avoidance_magnitude').value
-        self.consecutive_collision_threshold = self.get_parameter('consecutive_collision_threshold').value
-        self.escape_threshold = self.get_parameter('escape_threshold').value
-        self.max_retreat_angle = self.get_parameter('max_retreat_angle').value
-        self.escape_mode_duration = self.get_parameter('escape_mode_duration').value
-        self.max_escape_attempts = self.get_parameter('max_escape_attempts').value
         
         # Get parameters for rest position
         self.enable_rest_position = self.get_parameter('enable_rest_position').value
@@ -111,43 +97,6 @@ class RoArmHardwareInterface(Node):
         self.safety_timer_last_exception = None
         self.safety_timer_lock = threading.Lock()
         
-        # Rest position tracking
-        self.last_rest_position = None  # Track the last used rest position
-        
-        # Tracking for adjustment actions
-        self.adjustment_history = {
-            'front': {'last_time': 0.0, 'last_position': None, 'adjustment_made': False},
-            'left': {'last_time': 0.0, 'last_position': None, 'adjustment_made': False},
-            'right': {'last_time': 0.0, 'last_position': None, 'adjustment_made': False}
-        }
-        self.adjustment_cooldown = 2.0  # Time to wait before making the same adjustment again
-        self.adjustment_position_threshold = 0.1  # Difference threshold to consider a new position
-        
-        # Collision tracking
-        self.collision_status = {
-            'front': {'active': False, 'distance': float('inf'), 'severity': 'safe', 'consecutive_count': 0},
-            'left': {'active': False, 'distance': float('inf'), 'severity': 'safe', 'consecutive_count': 0},
-            'right': {'active': False, 'distance': float('inf'), 'severity': 'safe', 'consecutive_count': 0}
-        }
-        self.collision_lock = threading.Lock()
-        self.last_collision_time = 0.0
-        self.last_avoidance_direction = None  # Track which direction last triggered avoidance
-        
-        # Idle state tracking
-        self.last_movement_time = time.time()
-        self.last_proactive_check = 0.0
-        self.home_position = [0.45, -1.0, 2.45, 0.13, 1.0]  # Default safe home (not used for rest)
-        self.is_returning_to_rest = False  # Flag to track when we're returning to rest
-        
-        # Escape mode variables
-        self.escape_mode_active = False
-        self.escape_mode_start_time = 0.0
-        self.unsafe_zones = []  # List of positions to avoid
-        self.last_escape_direction = None  # Track last escape direction
-        self.retreat_level = 0  # Tracks how far we've retreated
-        self.escape_attempts = 0  # Count escape attempts
-        
-        
         # Initialize the SerialManager
         self.serial_manager = SerialManager(
             self, 
@@ -169,14 +118,6 @@ class RoArmHardwareInterface(Node):
         # Flag to track whether we have valid joint positions from hardware
         self.position_initialized = False
         
-        # Add target override tracking
-        self.target_override_active = False  # Flag to indicate override is active
-        self.target_override_time = 0.0  # When the override was activated
-        self.target_override_joints = None  # The safe position we've moved to
-        self.target_override_reason = ""  # Why the override exists
-        self.target_override_timeout = 10.0  # Time before reconsidering original target
-        self.last_original_target_change_time = 0.0  # Last time original target changed
-        
         # Add tracking variables for dynamic adaptation
         self.dynamic_adaptation_active = False
         self.dynamic_adaptation_last_disable_time = 0.0
@@ -184,6 +125,13 @@ class RoArmHardwareInterface(Node):
         self.dynamic_adaptation_lock = threading.Lock()
         self.dynamic_adaptation_timeout = 10.0  # Keep enabled for 10 seconds
         self.initial_adaptation_setup = True  # Flag to track initial setup vs toggle
+        
+        # Initialize the collision avoidance system
+        self.collision_avoidance = CollisionAvoidance(
+            self,  # Pass this node to the collision system
+            self.send_safe_joint_command,  # Callback to send joint commands
+            self.publish_actual_joint_states  # Callback to publish joint states
+        )
         
         if self.connection_active:
             if self.enable_torque_on_start:
@@ -371,204 +319,33 @@ class RoArmHardwareInterface(Node):
             import traceback
             self.get_logger().error(f"Stack trace: {traceback.format_exc()}")
 
-    # Enhanced right_collision_callback with improved state management
+    # Collision detection callbacks - delegate to collision_avoidance system
     def right_collision_callback(self, msg):
-        self._handle_collision('right', msg.data)
+        self.collision_avoidance.handle_collision('right', msg.data)
 
-    # Enhanced left_collision_callback with similar improved logic
     def left_collision_callback(self, msg):
-        self._handle_collision('left', msg.data)
+        self.collision_avoidance.handle_collision('left', msg.data)
 
-    # Enhanced front_collision_callback with similar improved logic
     def front_collision_callback(self, msg):
-        self._handle_collision('front', msg.data)
-        
-    def _handle_collision(self, direction, is_active):
-        """Unified collision handling for all directions to reduce code duplication and improve speed"""
-        try:
-            with self.collision_lock:
-                was_active = self.collision_status[direction]['active']
-                current_time = time.time()
-                
-                # Fast path: No change in status - return quickly to reduce processing overhead
-                if was_active == is_active and not (is_active and self.collision_status[direction]['consecutive_count'] > 3):
-                    # Only skip if not a persistent collision requiring attention
-                    return
-                
-                # If newly active, start fresh
-                if not was_active and is_active:
-                    self.get_logger().info(f"{direction.capitalize()} collision warning activated")
-                    self.collision_status[direction]['active'] = True
-                    self.collision_status[direction]['consecutive_count'] = 1
-                    
-                    # Fast reaction for immediate danger
-                    if self.collision_status[direction]['severity'] == 'danger':
-                        # Release lock before calling perform_collision_avoidance to prevent deadlock
-                        self.collision_lock.release()
-                        try:
-                            # Immediate action for danger - don't wait for safety timer
-                            self.perform_collision_avoidance(direction, self.collision_status[direction]['distance'], emergency=True)
-                        finally:
-                            # Re-acquire lock for remaining processing
-                            self.collision_lock.acquire()
-                    return
-                    
-                # If collision was cleared - log and reset
-                if was_active and not is_active:
-                    self.get_logger().info(f"{direction.capitalize()} collision warning cleared")
-                    self.collision_status[direction]['active'] = False
-                    self.collision_status[direction]['consecutive_count'] = 0
-                    # Reset adjustment tracking to allow new adjustments
-                    self.adjustment_history[direction]['adjustment_made'] = False
-                    return
-                    
-                # Update the active state
-                self.collision_status[direction]['active'] = is_active
-                
-                if is_active:  # If collision is still active
-                    # Check if an adjustment was recently made before increasing count
-                    adjustment_made = self.adjustment_history[direction]['adjustment_made']
-                    time_since_adjustment = current_time - self.adjustment_history[direction]['last_time']
-                    
-                    # Only increment counter if:
-                    # 1. No adjustment has been made yet, or
-                    # 2. It's been more than the cooldown period since last adjustment
-                    if not adjustment_made or time_since_adjustment > self.adjustment_cooldown:
-                        # If this is a new collision or continuing collision, increment the counter
-                        self.collision_status[direction]['consecutive_count'] += 1
-                        
-                        # Log every few counts to avoid excessive logging
-                        if self.collision_status[direction]['consecutive_count'] % 5 == 0:
-                            self.get_logger().warn(f"Persistent {direction} collision! Count: {self.collision_status[direction]['consecutive_count']}")
-                        
-                        # Check if we need to trigger escape mode
-                        if self.collision_status[direction]['consecutive_count'] > self.escape_threshold:
-                            self.get_logger().warn(f"Persistent collision detected ({self.collision_status[direction]['consecutive_count']}), attempting to escape")
-                            if not self.escape_mode_active:
-                                # Release lock before calling _activate_escape_mode to prevent deadlock
-                                self.collision_lock.release()
-                                try:
-                                    self._activate_escape_mode(direction)
-                                finally:
-                                    # Re-acquire lock for remaining processing
-                                    self.collision_lock.acquire()
-                            elif self.escape_attempts >= self.max_escape_attempts:
-                                self.get_logger().warn("Multiple escape attempts failed, returning to rest position")
-                                # Release lock before calling go_to_rest_position to prevent deadlock
-                                self.collision_lock.release()
-                                try:
-                                    self.go_to_rest_position("Escape failure rest position")
-                                finally:
-                                    # Re-acquire lock for remaining processing
-                                    self.collision_lock.acquire()
-                                self.escape_mode_active = False
-                                self.escape_attempts = 0
-                    else:
-                        # If we're on cooldown and still detecting the collision,
-                        # log at a lower level to avoid flooding
-                        if self.collision_status[direction]['consecutive_count'] > 3 and time_since_adjustment > (self.adjustment_cooldown / 2.0):
-                            self.get_logger().debug(f"{direction.capitalize()} collision still active after adjustment, waiting {self.adjustment_cooldown - time_since_adjustment:.1f}s before responding again")
-                            
-                        # If adjustment was made and we're in cooldown period, prevent the count from growing too large
-                        if self.collision_status[direction]['consecutive_count'] > 5:
-                            # Capping at 5 prevents rapid escalation to escape mode
-                            self.collision_status[direction]['consecutive_count'] = 5
-                else:  # If collision is cleared but was previously active
-                    if was_active:
-                        self.get_logger().info(f"{direction.capitalize()} collision warning cleared")
-                    self.collision_status[direction]['consecutive_count'] = 0
-                    # Reset adjustment tracking
-                    self.adjustment_history[direction]['adjustment_made'] = False
-                    
-        except Exception as e:
-            self.get_logger().error(f"Error in {direction}_collision_callback: {e}")
-            # Ensure we don't leave the lock acquired if an exception occurs
-            if self.collision_lock._is_owned():
-                self.collision_lock.release()
-
-    # Optimized distance callbacks for faster reaction
+        self.collision_avoidance.handle_collision('front', msg.data)
+    
     def front_proximity_callback(self, msg):
-        self._update_distance('front', msg.data, is_proximity=True)
+        self.collision_avoidance.update_distance('front', msg.data, is_proximity=True)
 
     def left_distance_callback(self, msg):
-        self._update_distance('left', msg.data)
+        self.collision_avoidance.update_distance('left', msg.data)
     
     def right_distance_callback(self, msg):
-        self._update_distance('right', msg.data)
+        self.collision_avoidance.update_distance('right', msg.data)
     
-    def _update_distance(self, direction, value, is_proximity=False):
-        """Unified distance update with fast reaction for dangerous values"""
-        with self.collision_lock:
-            # Special handling for proximity sensor
-            if is_proximity:
-                # Convert proximity to approximate distance in cm (higher value = closer object)
-                proximity = max(1, min(255, value))
-                distance = max(1.0, 30.0 * (1.0 - proximity / 255.0))
-            else:
-                distance = value
-                
-            # Store the distance
-            old_distance = self.collision_status[direction]['distance']
-            self.collision_status[direction]['distance'] = distance
-            
-            # Fast reaction path: If distance is critically low and we haven't reacted recently
-            current_time = time.time()
-            
-            # Enhanced trigger conditions: react when distance DECREASES below threshold
-            # This ensures we react when approaching, not when moving away
-            distance_getting_smaller = old_distance == float('inf') or distance < old_distance
-            if (distance <= self.hard_limit_distance and 
-                distance_getting_smaller and
-                (current_time - self.last_collision_time) > 0.25 and  # Prevent rapid reactions
-                not self.adjustment_history[direction]['adjustment_made']):
-                
-                self.last_collision_time = current_time
-                self.collision_status[direction]['active'] = True
-                
-                # Release lock before potentially long operation
-                self.collision_lock.release()
-                try:
-                    # Immediate emergency avoidance without waiting for timer
-                    self.get_logger().warn(f"EMERGENCY: {direction} distance {distance:.2f}cm below hard limit")
-                    # Force reaction by setting active and triggering emergency avoidance
-                    self.perform_collision_avoidance(direction, distance, emergency=True)
-                finally:
-                    # Re-acquire lock after operation
-                    self.collision_lock.acquire()
-    
-    # Optimized severity callbacks
     def front_severity_callback(self, msg):
-        self._update_severity('front', msg.data)
+        self.collision_avoidance.update_severity('front', msg.data)
     
     def left_severity_callback(self, msg):
-        self._update_severity('left', msg.data)
+        self.collision_avoidance.update_severity('left', msg.data)
     
     def right_severity_callback(self, msg):
-        self._update_severity('right', msg.data)
-        
-    def _update_severity(self, direction, severity):
-        """Unified severity update with immediate reaction for danger"""
-        with self.collision_lock:
-            old_severity = self.collision_status[direction]['severity']
-            self.collision_status[direction]['severity'] = severity
-            
-            # Fast reaction path: If severity changed to danger, react immediately
-            if severity == 'danger' and old_severity != 'danger':
-                current_time = time.time()
-                if (current_time - self.last_collision_time) > 0.25:  # Prevent too rapid reactions
-                    # Update for tracking
-                    self.last_collision_time = current_time
-                    self.collision_status[direction]['active'] = True
-                    
-                    # Release lock before potentially long operation
-                    self.collision_lock.release()
-                    try:
-                        self.get_logger().warn(f"EMERGENCY: {direction} severity changed to 'danger'")
-                        # Immediate emergency avoidance without waiting for timer
-                        self.perform_collision_avoidance(direction, self.collision_status[direction]['distance'], emergency=True)
-                    finally:
-                        # Re-acquire lock after operation
-                        self.collision_lock.acquire()
+        self.collision_avoidance.update_severity('right', msg.data)
 
     def safety_monitor_callback(self):
         """Periodic callback to monitor safety and adjust motion if needed"""
@@ -587,100 +364,11 @@ class RoArmHardwareInterface(Node):
                     self.enable_dynamic_adaptation_mode()
                     self.dynamic_adaptation_pending_resume = False
         
-        if not self.enable_collision_avoidance:
-            self.get_logger().debug(f"Collision avoidance disabled - skipping safety check")
-            return
-            
+        # Delegate collision avoidance monitoring to the collision_avoidance system
         try:
-            # Get current time for this check cycle
-            current_time = time.time()
-            
-            # Fast path: Check if there are any active collisions or we're in escape mode
-            with self.collision_lock:
-                any_collision_active = any(status['active'] for status in self.collision_status.values())
-                any_persistent_collision = any(status['consecutive_count'] > 5 for status in self.collision_status.values())
-                escape_mode_active = self.escape_mode_active
-                
-                # If nothing needs attention, return early to reduce overhead
-                if not any_collision_active and not any_persistent_collision and not escape_mode_active:
-                    return
-                
-                # Get current collision status (do this early so we have latest data)
-                front_status = self.collision_status['front'].copy()
-                left_status = self.collision_status['left'].copy()
-                right_status = self.collision_status['right'].copy()
-            
-            # Add logging for persistent collisions - this helps track what's happening
-            if any_persistent_collision:
-                self.get_logger().warn(f"Persistent collision detected - counts: Front={front_status['consecutive_count']}, Left={left_status['consecutive_count']}, Right={right_status['consecutive_count']}")
-                
-                # Force avoidance action for persistent collisions regardless of throttling
-                # This is important - even if we recently did an avoidance, we need to try again
-                if front_status['consecutive_count'] > 5 and front_status['severity'] == 'danger':
-                    self.get_logger().warn(f"Forcing avoidance for persistent front collision")
-                    self.perform_collision_avoidance('front', front_status['distance'], emergency=True)
-                elif left_status['consecutive_count'] > 5 and left_status['severity'] == 'danger':
-                    self.get_logger().warn(f"Forcing avoidance for persistent left collision")
-                    self.perform_collision_avoidance('left', left_status['distance'], emergency=True)
-                elif right_status['consecutive_count'] > 5 and right_status['severity'] == 'danger':
-                    self.get_logger().warn(f"Forcing avoidance for persistent right collision")
-                    self.perform_collision_avoidance('right', right_status['distance'], emergency=True)
-
-            # Check if escape mode is active and should be updated or deactivated
-            if escape_mode_active:
-                # Check if escape mode has been active too long
-                if current_time - self.escape_mode_start_time > self.escape_mode_duration:
-                    self.escape_mode_active = False
-                    self.get_logger().info("Escape mode deactivated - normal operation resuming")
-                    
-                    # Force publish current position to ensure animation can continue
-                    self.publish_actual_joint_states(self.current_joints)
-                else:
-                    # Check if we're still seeing the same collision that triggered escape mode
-                    with self.collision_lock:
-                        # Make this check less aggressive during animations
-                        if self.is_animating():
-                            # During animation, we're less reactive to avoid interruptions
-                            persistent_collision = False
-                        else:
-                            persistent_collision = (
-                                (self.last_escape_direction == 'front' and 
-                                 self.collision_status['front']['active'] and 
-                                 self.collision_status['front']['consecutive_count'] > self.consecutive_collision_threshold) or
-                                (self.last_escape_direction == 'left' and 
-                                 self.collision_status['left']['active'] and 
-                                 self.collision_status['left']['consecutive_count'] > self.consecutive_collision_threshold) or
-                                (self.last_escape_direction == 'right' and 
-                                 self.collision_status['right']['active'] and 
-                                 self.collision_status['right']['consecutive_count'] > self.consecutive_collision_threshold)
-                            )
-                            
-                        if persistent_collision:
-                            # Still in collision - try another escape move
-                            self.escape_attempts += 1
-                            
-                            if self.escape_attempts >= self.max_escape_attempts:
-                                # Too many failed attempts, return to rest
-                                self.get_logger().warn(f"Escape attempts exceeded ({self.escape_attempts}/{self.max_escape_attempts}), returning to rest")
-                                self.go_to_rest_position("Escape failure rest position")
-                                self.escape_mode_active = False
-                                self.escape_attempts = 0
-                            else:
-                                # Try another escape attempt
-                                if self.is_animating():
-                                    # Use gentler escape for animations
-                                    self._execute_animation_safe_escape(self.last_escape_direction)
-                                else:
-                                    self._execute_escape_maneuver(self.last_escape_direction)
-                
-            # Check if we should trigger regular avoidance for active collisions
-            if front_status['active'] or left_status['active'] or right_status['active']:
-                self.get_logger().info(f"Attempting path adjustment for active collisions: Front={front_status['active']}, Left={left_status['active']}, Right={right_status['active']}")
-                # Calculate a safe adjustment vector based on collision directions
-                self.adjust_path_for_collision(front_status, left_status, right_status)
-        
+            self.collision_avoidance.safety_monitor_callback()
         except Exception as e:
-            self.get_logger().error(f"Error in safety monitor: {e}")
+            self.get_logger().error(f"Error in collision avoidance callback: {e}")
             
             # Record the exception for watchdog tracking
             with self.safety_timer_lock:
@@ -715,6 +403,9 @@ class RoArmHardwareInterface(Node):
         # Update tracking variables
         self.last_command_time = current_time
         self.current_joints = self.target_joints.copy()
+        
+        # Update the collision avoidance system with current velocities
+        self.collision_avoidance.update_joint_velocities(self.joint_velocities)
     
     def is_connected(self):
         """Check if the serial connection is active"""
@@ -736,107 +427,6 @@ class RoArmHardwareInterface(Node):
         """Initialize the arm position using the serial manager."""
         return self.serial_manager.initialize_arm()
 
-    def perform_collision_avoidance(self, direction, distance, emergency=False):
-        """Perform collision avoidance with more significant adjustments for emergency cases"""
-        try:
-            # Calculate current velocities first to understand motion
-            self.estimate_joint_velocities()
-            
-            # Start with current position
-            new_position = self.current_joints.copy()
-            
-            # Get the consecutive count for this direction
-            consecutive_count = self.collision_status[direction]['consecutive_count']
-            
-            # Determine adjustment magnitude based on consecutive count
-            # The more persistent the collision, the stronger the response
-            if consecutive_count > 8:
-                # Very persistent collision - make a dramatic move
-                magnitude = 2.5  # Much stronger than normal emergency
-                self.get_logger().warn(f"DRAMATIC avoidance for persistent {direction} collision (count: {consecutive_count})")
-            elif consecutive_count > 5:
-                # Persistent collision - stronger than emergency
-                magnitude = 2.0
-                self.get_logger().warn(f"Strong avoidance for persistent {direction} collision (count: {consecutive_count})")
-            elif emergency:
-                magnitude = 1.5
-            else:
-                magnitude = 0.8
-            
-            # Add some variation to avoid getting stuck in repeating patterns
-            variation = random.uniform(0.9, 1.1)
-            magnitude *= variation
-            
-            if direction == 'front':
-                # Pull back shoulder and elbow
-                new_position[1] += 0.3 * magnitude  # Shoulder back
-                new_position[2] += 0.4 * magnitude  # Elbow fold
-                
-                # Add a random rotation to help escape
-                # For persistent collisions, make rotation more decisive
-                if consecutive_count > 5:
-                    # Choose a consistent rotation direction rather than random
-                    rotation = 0.5 * magnitude if consecutive_count % 2 == 0 else -0.5 * magnitude
-                else:
-                    rotation = random.uniform(-0.3, 0.3) * magnitude
-                    
-                new_position[0] += rotation
-                
-            elif direction == 'left':
-                # REVERSED: Rotate to the LEFT (negative adjustment)
-                new_position[0] -= 0.4 * magnitude
-                new_position[1] += 0.1 * magnitude  # Slight shoulder back
-                
-            elif direction == 'right':
-                # REVERSED: Rotate to the RIGHT (positive adjustment)
-                new_position[0] += 0.4 * magnitude
-                new_position[1] += 0.1 * magnitude  # Slight shoulder back
-            
-            # Send command with high priority
-            self.send_safe_joint_command(new_position, f"Collision avoidance (count: {consecutive_count})")
-            
-            # Set this as our target override position
-            self.target_override_active = True
-            self.target_override_time = time.time()
-            self.target_override_joints = new_position.copy()
-            self.target_override_reason = f"Collision avoidance for {direction} at {distance:.1f}cm"
-            self.get_logger().info(f"Created target override: {self.target_override_reason}")
-            
-            # If emergency and avoidance doesn't work after multiple attempts,
-            # schedule a return to rest position
-            if emergency and consecutive_count > self.escape_threshold:
-                self.get_logger().warn(f"Multiple path adjustments failed, will return to rest position")
-                self.go_to_rest_position("Emergency rest return")
-                
-                # Reset collision counts after going to rest
-                with self.collision_lock:
-                    for direction in self.collision_status:
-                        self.collision_status[direction]['consecutive_count'] = 0
-            
-            self.get_logger().warn(f"Collision avoidance COMPLETED for {direction} at {distance:.1f}cm")
-            
-            # Verify safety timer is still working after collision avoidance
-            # This is crucial as collision avoidance seems to be where the timer dies
-            current_time = self.get_clock().now().nanoseconds / 1e9
-            
-            with self.safety_timer_lock:
-                timer_elapsed = current_time - self.safety_timer_creation_time
-                timer_active = self.safety_timer_active
-            
-            # If timer is more than 0.5s old, verify it's still working by checking last call time
-            if timer_elapsed > 0.5 and abs(current_time - self.last_safety_check_time) > 0.3:
-                self.get_logger().warn("Safety timer may have become inactive during collision avoidance - recreating")
-                self.recreate_safety_timer()
-                
-        except Exception as e:
-            self.get_logger().error(f"Error in collision avoidance: {e}")
-            
-            # This is a critical function, so check if timer needs recreation after error
-            self.get_logger().warn("Checking safety timer after collision avoidance error")
-            current_time = self.get_clock().now().nanoseconds / 1e9
-            if abs(current_time - self.last_safety_check_time) > 0.3:
-                self.recreate_safety_timer()
-
     def joint_states_callback(self, msg):
         """Handle joint states and send to hardware with collision avoidance."""
         if not self.is_connected():
@@ -845,10 +435,8 @@ class RoArmHardwareInterface(Node):
         try:
             # Update last movement time
             current_time = time.time()
-            self.last_movement_time = current_time
             
-            
-            # Track recent command times to help detect animations
+            # Track recent command times to help collision avoidance detect animations
             if not hasattr(self, 'recent_command_times'):
                 self.recent_command_times = []
             
@@ -882,37 +470,20 @@ class RoArmHardwareInterface(Node):
                 positions[indices['hand']] if 'hand' in indices else 0.0
             ]
             
-            # Check if this is a new target that's different from our original target
-            if not self._at_position(target_positions, self.target_joints, 0.05):
-                self.target_joints = target_positions.copy()
-                self.last_original_target_change_time = current_time
-                
-                # Clear target override if the desired target has changed
-                if self.target_override_active:
-                    self.get_logger().info(f"New target received - clearing safety override")
-                    self.target_override_active = False
-                    self.target_override_joints = None
-            
             # Store for velocity estimation
             self.target_joints = target_positions.copy()
+            
+            # Update the collision avoidance system with new target
+            self.collision_avoidance.update_target_joints(target_positions)
             
             # Log the incoming command
             self.get_logger().debug(f"Received joint_states_target: {[round(p, 2) for p in target_positions]}")
             
-            # Check if we're in escape mode during animation
-            if self.escape_mode_active and self.is_animating():
-                self.get_logger().info("Animation continuing during escape mode - shortening escape duration")
-                # Shorten the escape duration to allow animation to continue
-                remaining_time = self.escape_mode_start_time + self.escape_mode_duration - current_time
-                if remaining_time > 1.0:  # If more than 1 second left
-                    self.escape_mode_duration = current_time - self.escape_mode_start_time + 1.0  # Shorten to 1 more second
-            
-            # Check if we should use the override target or original target
-            positions_to_use = self._get_effective_target_position(target_positions)
+            # Calculate the safe target position using collision avoidance
+            safe_positions = self.collision_avoidance.get_effective_target_position(target_positions)
             
             # Apply collision avoidance and send command
-            self.send_safe_joint_command(positions_to_use, "Joint control")
-            
+            self.send_safe_joint_command(safe_positions, "Joint control")
             
             # Explicitly publish to joint_states to ensure our topic is active
             self.publish_actual_joint_states(self.current_joints)
@@ -922,57 +493,6 @@ class RoArmHardwareInterface(Node):
             # Add stack trace for better debugging
             import traceback
             self.get_logger().error(traceback.format_exc())
-    
-    def _get_effective_target_position(self, original_target):
-        """Determine which target position to use based on overrides and safety"""
-        current_time = time.time()
-        
-        if not self.target_override_active or self.target_override_joints is None:
-            return original_target
-        
-        # Check if original target has changed significantly
-        if self._at_position(original_target, self.target_joints, 0.05) == False:
-            self.get_logger().info("Original target changed - clearing override")
-            self.target_override_active = False
-            return original_target
-            
-        # Check if collision has been clear for a while
-        any_collision_active = any(self.collision_status[direction]['active'] for direction in self.collision_status)
-        override_duration = current_time - self.target_override_time
-        
-        if not any_collision_active and override_duration > self.target_override_timeout:
-            self.get_logger().info(f"Collisions clear for {override_duration:.1f}s - gradually returning to original target")
-            
-            # Gradually blend between override and original target
-            blend_factor = min(1.0, (override_duration - self.target_override_timeout) / 2.0)
-            blended_target = [
-                self.target_override_joints[i] * (1.0 - blend_factor) + original_target[i] * blend_factor
-                for i in range(len(original_target))
-            ]
-            
-            # If we're very close to original target, clear the override completely
-            if blend_factor > 0.9:
-                self.get_logger().info("Override expired - returning to original target")
-                self.target_override_active = False
-                return original_target
-                
-            return blended_target
-            
-        # If override is still active and needed, use it
-        return self.target_override_joints
-
-    def _at_position(self, position1, position2=None, tolerance=0.05):
-        """Check if two positions are the same within tolerance"""
-        if position2 is None:
-            position2 = self.current_joints
-            
-        if len(position1) != len(position2):
-            return False
-            
-        for i, (pos1, pos2) in enumerate(zip(position1, position2)):
-            if abs(pos1 - pos2) > tolerance:
-                return False
-        return True
 
     def send_safe_joint_command(self, positions, description=""):
         """Send a joint command with safety checks applied"""
@@ -981,8 +501,7 @@ class RoArmHardwareInterface(Node):
             
         # Apply safety limits based on collision status
         if self.enable_collision_avoidance:
-            with self.collision_lock:
-                safe_positions = self.apply_safety_limits(positions)
+            safe_positions = self.collision_avoidance.apply_safety_limits(positions)
         else:
             safe_positions = positions
             
@@ -1007,6 +526,9 @@ class RoArmHardwareInterface(Node):
             # Update current joints first with the safe positions
             self.current_joints = list(safe_positions)
             
+            # Update the collision avoidance system with the current joint state
+            self.collision_avoidance.update_current_joints(self.current_joints)
+            
             # Publish the actual safe positions for visualization and monitoring
             self.publish_actual_joint_states(safe_positions)
             
@@ -1022,13 +544,13 @@ class RoArmHardwareInterface(Node):
             return False
 
     def publish_current_joint_states(self):
-         """Publish the current joint states periodically to ensure topic is active."""
-         try:
-             if hasattr(self, 'current_joints') and len(self.current_joints) > 0:
-                 # Always publish the joint states (important for ROS control)
-                 self.publish_actual_joint_states(self.current_joints)
-         except Exception as e:
-             self.get_logger().error(f"Error in direct publish timer: {e}")
+        """Publish the current joint states periodically to ensure topic is active."""
+        try:
+            if hasattr(self, 'current_joints') and len(self.current_joints) > 0:
+                # Always publish the joint states (important for ROS control)
+                self.publish_actual_joint_states(self.current_joints)
+        except Exception as e:
+            self.get_logger().error(f"Error in direct publish timer: {e}")
 
     def publish_actual_joint_states(self, positions):
         """Publish the actual joint positions after collision avoidance."""
@@ -1077,76 +599,6 @@ class RoArmHardwareInterface(Node):
             import traceback
             self.get_logger().error(traceback.format_exc())
     
-    def apply_safety_limits(self, positions):
-        """Apply safety limits to joint positions based on collision status"""
-        # Get a copy of the target positions
-        safe_positions = positions.copy()
-        
-        # Check for front collisions (primarily affects shoulder, elbow, wrist)
-        if self.collision_status['front']['active']:
-            severity = self.collision_status['front']['severity']
-            distance = self.collision_status['front']['distance']
-            
-            if severity == 'danger' or distance <= self.hard_limit_distance:
-                # Apply hard limits - significant restriction on forward movement
-                safe_positions[1] = max(safe_positions[1], self.current_joints[1])  # Don't decrease shoulder angle
-                safe_positions[2] = max(safe_positions[2], self.current_joints[2])  # Don't decrease elbow angle
-                
-            elif severity == 'warning' or distance <= self.soft_limit_distance:
-                # Apply soft limits - partial restriction
-                # Calculate how much we're allowing change (0.0 = none, 1.0 = full)
-                limit_factor = min(1.0, (distance - self.hard_limit_distance) / 
-                                  (self.soft_limit_distance - self.hard_limit_distance))
-                
-                # Apply graduated limits
-                if safe_positions[1] < self.current_joints[1]:  # If moving shoulder forward
-                    delta = self.current_joints[1] - safe_positions[1]
-                    safe_positions[1] = self.current_joints[1] - (delta * limit_factor)
-                    
-                if safe_positions[2] < self.current_joints[2]:  # If extending elbow
-                    delta = self.current_joints[2] - safe_positions[2]
-                    safe_positions[2] = self.current_joints[2] - (delta * limit_factor)
-        
-        # Check for left collisions (primarily affects base rotation)
-        if self.collision_status['left']['active']:
-            severity = self.collision_status['left']['severity']
-            distance = self.collision_status['left']['distance']
-            
-            # Limits on clockwise rotation (positive direction)
-            if (severity == 'danger' or distance <= self.hard_limit_distance) and safe_positions[0] > self.current_joints[0]:
-                # Hard limit - prevent further rotation right
-                safe_positions[0] = self.current_joints[0]
-            elif (severity == 'warning' or distance <= self.soft_limit_distance) and safe_positions[0] > self.current_joints[0]:
-                # Soft limit - partial restriction
-                limit_factor = min(1.0, (distance - self.hard_limit_distance) / 
-                                (self.soft_limit_distance - self.hard_limit_distance))
-                delta = safe_positions[0] - self.current_joints[0]
-                safe_positions[0] = self.current_joints[0] + (delta * limit_factor)
-
-        # Check for right collisions (primarily affects base rotation)
-        if self.collision_status['right']['active']:
-            severity = self.collision_status['right']['severity']
-            distance = self.collision_status['right']['distance']
-            
-            # Limits on counter-clockwise rotation (negative direction)
-            if (severity == 'danger' or distance <= self.hard_limit_distance) and safe_positions[0] < self.current_joints[0]:
-                # Hard limit - prevent further rotation left
-                safe_positions[0] = self.current_joints[0]
-            elif (severity == 'warning' or distance <= self.soft_limit_distance) and safe_positions[0] < self.current_joints[0]:
-                # Soft limit - partial restriction
-                limit_factor = min(1.0, (distance - self.hard_limit_distance) / 
-                                (self.soft_limit_distance - self.hard_limit_distance))
-                delta = self.current_joints[0] - safe_positions[0]
-                safe_positions[0] = self.current_joints[0] - (delta * limit_factor)
-        
-        # Add additional check for escape mode
-        if self.escape_mode_active:
-            # In escape mode, we relax some limits to allow more dramatic movements
-            # We'll only apply hard limits here, no soft limits
-            pass  # Continue with existing logic, but with modified thresholds
-        
-        return safe_positions
-    
     def get_joint_mappings(self):
         """Return mappings between ROS joint names and RoArm joint names."""
         return {
@@ -1182,149 +634,6 @@ class RoArmHardwareInterface(Node):
             
         super().destroy_node()
     
-    def _different_enough(self, pos1, pos2, threshold=0.2):
-        """Check if two positions are different enough to be considered distinct"""
-        # Calculate Euclidean distance in joint space
-        sum_squared = sum((p1 - p2) ** 2 for p1, p2 in zip(pos1, pos2))
-        return math.sqrt(sum_squared) > threshold
- 
-    def _is_position_in_unsafe_zone(self, position):
-        """Check if a position is in any of the recorded unsafe zones"""
-        for unsafe_pos, radius in self.unsafe_zones:
-            # Calculate Euclidean distance in joint space
-            sum_squared = sum((p1 - p2) ** 2 for p1, p2 in zip(position, unsafe_pos))
-            distance = math.sqrt(sum_squared)
-            
-            if distance < radius:
-                return True
-                
-        return False
-    
-    def _at_position_check(self, position, tolerance=0.05):
-        """Check if the arm is already at a specific position within tolerance"""
-        if len(position) != len(self.current_joints):
-            return False
-            
-        for i, (curr, target) in enumerate(zip(self.current_joints, position)):
-            if abs(curr - target) > tolerance:
-                return False
-        return True
-    
-    def move_to_safe_position(self, position, description="Proactive avoidance movement", override_checks=False):
-        """Move to a position with collision checking"""
-        try:
-            # Check if position is in any recorded unsafe zone (skip if overriding)
-            if not override_checks and self._is_position_in_unsafe_zone(position):
-                self.get_logger().warn("Avoiding known unsafe position - finding alternative")
-                
-                # Try to find a slightly different position
-                for _ in range(5):  # Try a few variations
-                    # Add random perturbations to avoid unsafe zone
-                    perturbed_pos = [p + random.uniform(-0.3, 0.3) for p in position]
-                    
-                    # Check if this position is safe
-                    if not self._is_position_in_unsafe_zone(perturbed_pos):
-                        position = perturbed_pos
-                        self.get_logger().info("Found safer alternative position")
-                        break
-            
-            # Apply safety limits to the target position
-            with self.collision_lock:
-                safe_position = self.apply_safety_limits(position)
-            
-            # Update tracking variables
-            self.target_joints = safe_position.copy()
-            self.last_movement_time = time.time()
-            
-            # Send the command
-            success = self.send_safe_joint_command(safe_position, description)
-            
-            # Short delay to let the movement start
-            time.sleep(0.1)
-            
-            return success
-        except Exception as e:
-            self.get_logger().error(f"Error in move_to_safe_position: {e}")
-            return False
-    
-    def _generate_rest_position(self):
-        """Generate a rest position with some random variation"""
-        # Start with the base rest position
-        rest_position = self.base_rest_position.copy()
-        
-        # Add random variation to each joint
-        for i in range(len(rest_position)):
-            # Apply smaller variation to the hand/gripper (last position)
-            variation_scale = float(0.0) if i == 4 else float(0.0)
-            variation = random.uniform(-self.rest_variation_range, self.rest_variation_range) * variation_scale
-            rest_position[i] += variation
-            
-        self.last_rest_position = rest_position
-        return rest_position
-
-    def go_to_rest_position(self, description="Rest position"):
-        """Move to a rest position with random variation"""
-        if not self.enable_rest_position or not self.is_connected():
-            return False
-            
-        try:
-            self.is_returning_to_rest = True
-            
-            # Generate a rest position with variation
-            rest_position = self._generate_rest_position()
-            
-            self.get_logger().info(f"Moving to rest position: {[round(p, 2) for p in rest_position]}")
-            
-            # Move to the rest position - override unsafe zones in this case
-            success = self.move_to_safe_position(
-                rest_position, 
-                description, 
-                override_checks=True  # Override collision checks for rest position
-            )
-            
-            # Reset collision counters and escape status when we return to rest
-            if success:
-                self.escape_mode_active = False
-                self.escape_attempts = 0
-                with self.collision_lock:
-                    for direction in self.collision_status:
-                        self.collision_status[direction]['consecutive_count'] = 0
-            
-            # Reset the returning flag after motion is complete
-            self.is_returning_to_rest = False
-            
-            return success
-        except Exception as e:
-            self.get_logger().error(f"Error moving to rest position: {e}")
-            self.is_returning_to_rest = False
-            return False
-
-    def is_animating(self):
-        """Determine if the robot is currently executing an animation.
-        This helps us decide whether to override with avoidance movements."""
-        # Check if we've had any joint command in the last second that might be part of an animation
-        time_since_last_command = time.time() - self.last_movement_time
-        
-        # If we've moved very recently, consider it an animation in progress
-        if time_since_last_command < 0.5:
-            return True
-            
-        # Also check if we're in the middle of a dramatic movement (high velocity)
-        max_velocity = max([abs(v) for v in self.joint_velocities]) if hasattr(self, 'joint_velocities') and self.joint_velocities else 0
-        if max_velocity > 0.5:  # Significant movement in progress
-            return True
-            
-        # Check if recent movements form a pattern consistent with animation
-        # This helps detect ongoing animations even if current velocity is low
-        if hasattr(self, 'recent_command_times') and len(self.recent_command_times) >= 3:
-            # Check for regular timing pattern in recent commands (animation typically has regular timing)
-            intervals = [self.recent_command_times[i+1] - self.recent_command_times[i] 
-                        for i in range(len(self.recent_command_times)-1)]
-            if intervals and max(intervals) - min(intervals) < 0.2:  # Regular timing pattern
-                return True
-        
-        return False
-
     # Add methods to control dynamic adaptation
     def enable_dynamic_adaptation_mode(self, is_initial_setup=False):
         """Enable the dynamic external force adaptation mode"""
@@ -1391,6 +700,7 @@ class RoArmHardwareInterface(Node):
         except Exception as e:
             self.get_logger().error(f"Error disabling dynamic adaptation mode: {e}")
             return False
+    
     def schedule_dynamic_adaptation_resume(self):
         """Schedule re-enabling of dynamic adaptation mode after a delay"""
         if not self.enable_dynamic_adaptation:
@@ -1415,8 +725,6 @@ class RoArmHardwareInterface(Node):
             if msg.data:  # Enable dynamic adaptation
                 if not self.dynamic_adaptation_active:
                     self.get_logger().info("Enabling dynamic adaptation mode via toggle")
-                    # Disable any ongoing target overrides that might conflict
-                    self.target_override_active = False
                     
                     # Make sure all existing motions are complete
                     time.sleep(0.5)
@@ -1470,268 +778,6 @@ class RoArmHardwareInterface(Node):
         except Exception as e:
             self.get_logger().error(f"Error checking adaptation state: {e}")
             return False
-
-    def check_dynamic_adaptation_timeout(self):
-        """Periodically check if the dynamic adaptation timeout has been reached"""
-        try:
-            # Skip if dynamic adaptation is not active
-            if not self.dynamic_adaptation_active:
-                # Cancel this timer as it's no longer needed
-                if hasattr(self, 'dynamic_adaptation_timer'):
-                    self.dynamic_adaptation_timer.cancel()
-                    delattr(self, 'dynamic_adaptation_timer')
-                return
-                
-            # Check if the timeout has been reached
-            current_time = time.time()
-            if hasattr(self, 'dynamic_adaptation_enable_time'):
-                elapsed = current_time - self.dynamic_adaptation_enable_time
-                if elapsed >= self.dynamic_adaptation_timeout:
-                    self.get_logger().info(f"Timeout reached ({self.dynamic_adaptation_timeout}s) - disabling dynamic adaptation")
-                    self.disable_dynamic_adaptation_mode()
-                    # Cancel this timer as it's no longer needed
-                    if hasattr(self, 'dynamic_adaptation_timer'):
-                        self.dynamic_adaptation_timer.cancel()
-                        delattr(self, 'dynamic_adaptation_timer')
-        except Exception as e:
-            self.get_logger().error(f"Error in dynamic adaptation timeout check: {e}")
-
-    def adjust_path_for_collision(self, front_status, left_status, right_status):
-        """Adjust the current motion path to avoid obstacles"""
-        # Get current time for cooldown checks
-        current_time = time.time()
-        
-        # Calculate adjustment factors based on distance and severity
-        front_factor = self.calculate_adjustment_factor(front_status)
-        left_factor = self.calculate_adjustment_factor(left_status)
-        right_factor = self.calculate_adjustment_factor(right_status)
-        
-        # If no significant adjustments needed, return early
-        if front_factor < 0.1 and left_factor < 0.1 and right_factor < 0.1:
-            return
-            
-        # Create an adjustment for the current target joints
-        adjusted_targets = self.target_joints.copy()
-        
-        # Handle left and right collisions independently with their own adjustments
-        base_adjustment = 0.0
-        left_adjustment_msg = ""
-        right_adjustment_msg = ""
-        
-        # Check for cooldown period on right adjustments
-        right_cooldown_active = (
-            current_time - self.adjustment_history['right']['last_time'] < self.adjustment_cooldown and
-            self.adjustment_history['right']['adjustment_made']
-        )
-        
-        # REVERSED: Handle right collision - rotate RIGHT (positive adjustment)
-        if right_factor > 0.1 and not right_cooldown_active:
-            # Calculate multiplier for repeat collisions to make adjustment stronger over time
-            right_multiplier = 1.0
-            if right_status['consecutive_count'] > 0:
-                # This grows with consecutive detections - more persistent = stronger response
-                right_multiplier = min(3.0, 1.0 + right_status['consecutive_count'] * 0.1)
-            
-            # Calculate rotation amount - positive for right collisions (rotate right)
-            right_adjustment = right_factor * 0.4 * right_multiplier
-            base_adjustment += right_adjustment
-            
-            right_adjustment_msg = f"right(rotate right: {right_adjustment:.2f})"
-            self.get_logger().info(f"Right collision adjusting base: {right_adjustment:.2f} (factor: {right_factor:.2f}, count: {right_status['consecutive_count']})")
-            
-            # Mark that we've made an adjustment for right collision
-            self.adjustment_history['right']['last_time'] = current_time
-            self.adjustment_history['right']['last_position'] = self.current_joints.copy()
-            self.adjustment_history['right']['adjustment_made'] = True
-            
-            # Force immediate action for right collisions by directly sending a command
-            if right_status['distance'] <= self.hard_limit_distance:
-                temp_position = self.current_joints.copy()
-                temp_position[0] += right_adjustment  # Apply immediate adjustment
-                self.send_safe_joint_command(temp_position, "Immediate right collision response")
-                
-        elif right_factor > 0.1 and right_cooldown_active:
-            self.get_logger().info(f"Skipping right adjustment - on cooldown ({current_time - self.adjustment_history['right']['last_time']:.1f}s)")
-            
-            # If we've been in cooldown for a while and still have collisions, reset
-            if current_time - self.adjustment_history['right']['last_time'] > (self.adjustment_cooldown * 0.75):
-                # Artificially decrease the consecutive count to prevent escalation
-                with self.collision_lock:
-                    # Don't reset completely, but prevent unlimited growth
-                    if self.collision_status['right']['consecutive_count'] > 3:
-                        self.collision_status['right']['consecutive_count'] = 3
-                        self.get_logger().info("Adjusting right collision count to prevent escalation")
-        
-        # Check for cooldown period on left adjustments
-        left_cooldown_active = (
-            current_time - self.adjustment_history['left']['last_time'] < self.adjustment_cooldown and
-            self.adjustment_history['left']['adjustment_made']
-        )
-        
-        # REVERSED: Handle left collision - rotate LEFT (negative adjustment)
-        if left_factor > 0.1 and not left_cooldown_active:
-            # Calculate multiplier for repeat collisions to make adjustment stronger over time
-            left_multiplier = 1.0
-            if left_status['consecutive_count'] > 0:
-                # This grows with consecutive detections - more persistent = stronger response
-                left_multiplier = min(3.0, 1.0 + left_status['consecutive_count'] * 0.1)
-            
-            # Calculate rotation amount - negative for left collisions (rotate left)
-            left_adjustment = -left_factor * 0.4 * left_multiplier
-            base_adjustment += left_adjustment
-            
-            left_adjustment_msg = f"left(rotate left: {left_adjustment:.2f})"
-            self.get_logger().info(f"Left collision adjusting base: {left_adjustment:.2f} (factor: {left_factor:.2f}, count: {left_status['consecutive_count']})")
-            
-            # Mark that we've made an adjustment for left collision
-            self.adjustment_history['left']['last_time'] = current_time
-            self.adjustment_history['left']['last_position'] = self.current_joints.copy()
-            self.adjustment_history['left']['adjustment_made'] = True
-            
-            # Force immediate action for left collisions by directly sending a command
-            if left_status['distance'] <= self.hard_limit_distance:
-                temp_position = self.current_joints.copy()
-                temp_position[0] += left_adjustment  # Apply immediate adjustment
-                self.send_safe_joint_command(temp_position, "Immediate left collision response")
-                
-        elif left_factor > 0.1 and left_cooldown_active:
-            self.get_logger().info(f"Skipping left adjustment - on cooldown ({current_time - self.adjustment_history['left']['last_time']:.1f}s)")
-            
-            # If we've been in cooldown for a while and still have collisions, reset
-            if current_time - self.adjustment_history['left']['last_time'] > (self.adjustment_cooldown * 0.75):
-                # Artificially decrease the consecutive count to prevent escalation
-                with self.collision_lock:
-                    # Don't reset completely, but prevent unlimited growth
-                    if self.collision_status['left']['consecutive_count'] > 3:
-                        self.collision_status['left']['consecutive_count'] = 3
-                        self.get_logger().info("Adjusting left collision count to prevent escalation")
-        
-        # Apply base adjustment
-        if abs(base_adjustment) > 0.01:  # Only adjust if non-zero
-            adjusted_targets[0] += base_adjustment
-            
-        # Check for cooldown period on front adjustments
-        front_cooldown_active = (
-            current_time - self.adjustment_history['front']['last_time'] < self.adjustment_cooldown and
-            self.adjustment_history['front']['adjustment_made']
-        )
-        
-        # Front obstacles primarily affect the arm extension
-        front_adjustment_msg = ""
-        if front_factor > 0.1 and not front_cooldown_active:
-            # Enhanced response for persistent front collisions
-            persistence_multiplier = 1.0
-            if front_status['consecutive_count'] > self.consecutive_collision_threshold:
-                persistence_multiplier = min(3.0, 1.0 + front_status['consecutive_count'] * 0.05)
-                
-            # Enhanced shoulder and elbow adjustments (pull back more strongly)
-            shoulder_adjustment = front_factor * 0.4 * persistence_multiplier
-            elbow_adjustment = front_factor * 0.5 * persistence_multiplier
-            adjusted_targets[1] += shoulder_adjustment
-            adjusted_targets[2] += elbow_adjustment
-            
-            # Adjust wrist to maintain end effector orientation
-            adjusted_targets[3] -= (shoulder_adjustment + elbow_adjustment) * 0.5
-            
-            front_adjustment_msg = f"front(retreat: {shoulder_adjustment:.2f})"
-            
-            # Mark that we've made an adjustment for front collision
-            self.adjustment_history['front']['last_time'] = current_time
-            self.adjustment_history['front']['last_position'] = self.current_joints.copy()
-            self.adjustment_history['front']['adjustment_made'] = True
-        elif front_factor > 0.1 and front_cooldown_active:
-            self.get_logger().info(f"Skipping front adjustment - on cooldown ({current_time - self.adjustment_history['front']['last_time']:.1f}s)")
-            
-            # If we've been in cooldown for a while and still have collisions, reset
-            if current_time - self.adjustment_history['front']['last_time'] > (self.adjustment_cooldown * 0.75):
-                # Artificially decrease the consecutive count to prevent escalation
-                with self.collision_lock:
-                    # Don't reset completely, but prevent unlimited growth
-                    if self.collision_status['front']['consecutive_count'] > 3:
-                        self.collision_status['front']['consecutive_count'] = 3
-                        self.get_logger().info("Adjusting front collision count to prevent escalation")
-        
-        # Better logging that includes all adjustments
-        adjustment_msgs = []
-        if front_adjustment_msg: adjustment_msgs.append(front_adjustment_msg)
-        if left_adjustment_msg: adjustment_msgs.append(left_adjustment_msg)
-        if right_adjustment_msg: adjustment_msgs.append(right_adjustment_msg)
-        
-        # If no adjustments to make (due to cooldowns), return early
-        if not adjustment_msgs:
-            return
-        
-        self.get_logger().debug(f"Dynamic collision avoidance: {', '.join(adjustment_msgs)}")
-        
-        # Check if we're already close to the adjusted position
-        # to avoid sending redundant commands that don't change position
-        if self._at_position_check(adjusted_targets, 0.1):
-            self.get_logger().info("Already at adjusted position - skipping adjustment")
-            
-            # If we've been at this position for a while and still have collisions,
-            # we need a more dramatic response
-            if not hasattr(self, 'last_failed_adjustment_time'):
-                self.last_failed_adjustment_time = current_time
-            
-            # If we've been stuck for more than 2 seconds, try escape mode
-            if current_time - self.last_failed_adjustment_time > 2.0:
-                # Find the most persistent collision
-                if right_status['consecutive_count'] > max(front_status['consecutive_count'], left_status['consecutive_count']):
-                    direction = 'right'
-                elif left_status['consecutive_count'] > front_status['consecutive_count']:
-                    direction = 'left'
-                else:
-                    direction = 'front'
-                    
-                self.get_logger().warn(f"Adjustments ineffective - activating escape mode for {direction}")
-                self._activate_escape_mode(direction)
-                self.last_failed_adjustment_time = current_time
-            
-            return
-            
-        # Reset the failed adjustment timer since we're sending a new command
-        self.last_failed_adjustment_time = current_time
-        
-        # Send the adjusted target positions to the arm
-        self.send_safe_joint_command(adjusted_targets, "Collision avoidance adjustment")
-        
-        # Set this as our target override position
-        self.target_override_active = True
-        self.target_override_time = time.time()
-        self.target_override_joints = adjusted_targets.copy()
-        
-        # Create a descriptive reason for the override
-        reasons = []
-        if front_adjustment_msg: reasons.append(front_adjustment_msg)
-        if left_adjustment_msg: reasons.append(left_adjustment_msg)
-        if right_adjustment_msg: reasons.append(right_adjustment_msg)
-        self.target_override_reason = f"Path adjustment: {', '.join(reasons)}"
-        self.get_logger().info(f"Created target override: {self.target_override_reason}")
-        
-        self.get_logger().debug(f"ADJUSTMENT SENT: {[round(p, 2) for p in adjusted_targets]}")
-        # Update last movement time when we make an adjustment
-        self.last_movement_time = time.time()
-
-    def calculate_adjustment_factor(self, status):
-        """Calculate adjustment factor (0.0-1.0) based on collision status"""
-        # Always return a strong value for danger severity regardless of distance
-        if status['severity'] == 'danger':
-            return 1.0
-        
-        # For other cases, check activity and distance
-        if status['active'] or status['severity'] == 'warning':
-            if status['distance'] <= self.hard_limit_distance:
-                # Hard limit - strong adjustment
-                return 1.0
-            elif status['distance'] <= self.soft_limit_distance:
-                # Soft limit - graduated adjustment
-                # Linear interpolation between 0.0 and 1.0
-                range_fraction = (self.soft_limit_distance - status['distance']) / \
-                                (self.soft_limit_distance - self.hard_limit_distance)
-                # Ensure a minimum adjustment factor for active collisions
-                return max(0.1, min(1.0, range_fraction))
-        
-        return 0.0
 
     def check_dynamic_adaptation_timeout(self):
         """Periodically check if the dynamic adaptation timeout has been reached"""
