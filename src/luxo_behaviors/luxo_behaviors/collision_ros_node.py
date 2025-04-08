@@ -9,6 +9,7 @@ import adafruit_vl53l4cd
 import time
 import threading
 import queue
+from collections import defaultdict
 
 class CollisionNode(Node):
     def __init__(self):
@@ -23,6 +24,11 @@ class CollisionNode(Node):
         self.last_error_time = time.time()
         self.recovery_active = False
         self.gesture_thread_running = True
+        
+        # Error message throttling
+        self.error_throttle_period = 5.0  # Only log same error once every 5 seconds
+        self.last_error_messages = {}  # Track last time each error message was logged
+        self.error_counts = defaultdict(int)  # Count occurrences of each error message
         
         # NEW: Add variables to track last successful data reception
         self.last_successful_proximity_time = time.time()
@@ -108,6 +114,31 @@ class CollisionNode(Node):
         self.get_logger().info(f'Warning threshold set to: {self.warning_threshold} cm')
         self.get_logger().info(f'No data timeout set to: {self.no_data_timeout} seconds')
 
+    def log_throttled_error(self, error_key, error_message):
+        """Log error messages with throttling to prevent spam"""
+        current_time = time.time()
+        
+        # Increment the error count for this type of error
+        self.error_counts[error_key] += 1
+        
+        # Check if we should log this error now
+        if error_key not in self.last_error_messages or \
+           (current_time - self.last_error_messages[error_key]) > self.error_throttle_period:
+            
+            # If we've accumulated multiple errors, show the count
+            if self.error_counts[error_key] > 1:
+                self.get_logger().error(f"{error_message} (occurred {self.error_counts[error_key]} times)")
+            else:
+                self.get_logger().error(f"{error_message}")
+                
+            # Reset counter and update timestamp
+            self.error_counts[error_key] = 0
+            self.last_error_messages[error_key] = current_time
+            
+        # Always increment the general error count for recovery mechanism
+        self.error_count += 1
+        self.last_error_time = current_time
+
     def data_watchdog(self):
         """Check if we haven't received data from sensors for too long"""
         current_time = time.time()
@@ -152,12 +183,12 @@ class CollisionNode(Node):
                         self.gesture_thread = threading.Thread(target=self.gesture_detection, daemon=True)
                         self.gesture_thread.start()
                 else:
-                    self.get_logger().error("No-data sensor recovery failed, will retry")
+                    self.log_throttled_error("no_data_recovery", "No-data sensor recovery failed, will retry")
                 
                 self.recovery_active = False
                 
         except Exception as e:
-            self.get_logger().error(f"No-data check error: {e}")
+            self.log_throttled_error("watchdog", f"No-data check error: {e}")
             self.recovery_active = False
 
     def initialize_sensors(self):
@@ -188,7 +219,8 @@ class CollisionNode(Node):
             return True
             
         except Exception as e:
-            self.get_logger().error(f"Failed to initialize sensors: {e}")
+            error_msg = f"Failed to initialize sensors: {e}"
+            self.log_throttled_error("sensor_init", error_msg)
             return False
 
     def check_and_recover(self):
@@ -216,7 +248,7 @@ class CollisionNode(Node):
                 self.recovery_active = False
                 
         except Exception as e:
-            self.get_logger().error(f"Recovery mechanism error: {e}")
+            self.log_throttled_error("recovery", f"Recovery mechanism error: {e}")
             self.recovery_active = False
 
     def determine_severity(self, distance):
@@ -254,9 +286,7 @@ class CollisionNode(Node):
                 
             except Exception as e:
                 consecutive_errors += 1
-                self.error_count += 1
-                self.last_error_time = time.time()
-                self.get_logger().error(f"Gesture thread error: {e}")
+                self.log_throttled_error("gesture", f"Gesture thread error: {e}")
                 
                 # Try to recover if multiple consecutive errors
                 if consecutive_errors >= max_consecutive_errors:
@@ -327,9 +357,7 @@ class CollisionNode(Node):
                     self.gesture_pub.publish(gesture_msg)
                 
         except Exception as e:
-            self.error_count += 1
-            self.last_error_time = time.time()
-            self.get_logger().error(f"Proximity callback error: {e}")
+            self.log_throttled_error("proximity", f"Proximity callback error: {e}")
             
             # Publish safe states when in error
             try:
@@ -355,18 +383,14 @@ class CollisionNode(Node):
                     left_ready = True
                     self.vl53_left.clear_interrupt()
             except Exception as e:
-                self.get_logger().error(f"Left sensor read error: {e}")
-                self.error_count += 1
-                self.last_error_time = time.time()
+                self.log_throttled_error("left_sensor", f"Left sensor read error: {e}")
                 
             try:   
                 if self.vl53_right.data_ready:
                     right_ready = True
                     self.vl53_right.clear_interrupt()
             except Exception as e:
-                self.get_logger().error(f"Right sensor read error: {e}")
-                self.error_count += 1
-                self.last_error_time = time.time()
+                self.log_throttled_error("right_sensor", f"Right sensor read error: {e}")
                 
             # Process left sensor data if ready
             if left_ready:
@@ -414,9 +438,7 @@ class CollisionNode(Node):
                     # Save current reading for next comparison
                     self.prev_left_distance = left_distance
                 except Exception as e:
-                    self.get_logger().error(f"Left distance processing error: {e}")
-                    self.error_count += 1
-                    self.last_error_time = time.time()
+                    self.log_throttled_error("left_distance", f"Left distance processing error: {e}")
                 
             # Process right sensor data if ready
             if right_ready:
@@ -464,14 +486,10 @@ class CollisionNode(Node):
                     # Save current reading for next comparison
                     self.prev_right_distance = right_distance
                 except Exception as e:
-                    self.get_logger().error(f"Right distance processing error: {e}")
-                    self.error_count += 1
-                    self.last_error_time = time.time()
+                    self.log_throttled_error("right_distance", f"Right distance processing error: {e}")
                 
         except Exception as e:
-            self.error_count += 1
-            self.last_error_time = time.time()
-            self.get_logger().error(f"Distance callback error: {e}")
+            self.log_throttled_error("distance", f"Distance callback error: {e}")
             
             # Publish safe states when in error
             try:
