@@ -250,6 +250,14 @@ class RoArmHardwareInterface(Node):
                 self.dynamic_adaptation_toggle_callback,
                 10
             )
+            
+            # Add subscription for light control
+            self.light_control_sub = self.create_subscription(
+                Bool,
+                '/roarm/light',
+                self.light_control_callback,
+                10
+            )
         else:
             self.get_logger().error("Failed to initialize hardware interface")
             
@@ -893,6 +901,27 @@ class RoArmHardwareInterface(Node):
                         delattr(self, 'dynamic_adaptation_timer')
         except Exception as e:
             self.get_logger().error(f"Error in dynamic adaptation timeout check: {e}")
+
+    def light_control_callback(self, msg):
+        """Handle incoming light control commands"""
+        try:
+            if not self.is_connected():
+                self.get_logger().warn("Cannot control light: Serial connection is not active")
+                return
+                
+            # Set brightness value based on the boolean message
+            brightness = 255 if msg.data else 0
+            
+            # Use SerialManager's built-in method to control the light
+            success = self.serial_manager.control_light(brightness)
+            
+            if success:
+                state = "ON" if msg.data else "OFF"
+                self.get_logger().info(f"Light turned {state}")
+            else:
+                self.get_logger().error("Failed to control light")
+        except Exception as e:
+            self.get_logger().error(f"Error in light control callback: {e}")
 
 def main(args=None):
     rclpy.init(args=args)

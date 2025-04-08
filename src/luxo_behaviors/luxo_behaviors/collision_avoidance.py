@@ -88,7 +88,8 @@ class CollisionAvoidance:
         # Additional tracking variables
         self.last_failed_adjustment_time = time.time()
         self.last_proactive_check = 0.0
-        self.home_position = [0.5, -1.5, 3.0, 0.0, 1.0]  # Default safe home (not used for rest)
+        self.close_position = [0.4, -1.5, 3.0, 0.0, 1.0]
+        self.home_position = [0.4, -0.27, 1.03, 1.5, 1.1]  # Default safe home with lights ON
         
         # Animation state tracking
         self.last_movement_time = time.time()

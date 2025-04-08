@@ -1,7 +1,13 @@
 # LuxoPi Project Todo List
 
-1. Fix the Sensors
-2. Revert back to [-0.843689433, -1.520174961, 2.021786678, 1.013961301, 3.146194596]
+1. Change the names of things. Make joint_states_target be roarm/target
+2. Get rid of return_to_home inside animation_command, it does nothing
+3. Continue fine tuning the different animation commands
+4. More permanent solution for the I2C power cable
+5. Cleanup wiring
+6. Reprint head with 5% infill, and transparent. As well as more holes (trying to get rid of half the weight)
+
+
 ## High Priority
 - [ ] Consolidate duplicate functionality - merge the two `at_position` functions into one consistent implementation
 - [ ] Fix dynamic adaptation mode (DEMA) - increase torque limit for better operation
