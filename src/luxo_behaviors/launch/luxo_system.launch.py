@@ -269,7 +269,7 @@ def generate_launch_description():
             {'dynamic_adaptation_elbow_limit': 200}, 
             {'dynamic_adaptation_wrist_limit': 300},
             {'dynamic_adaptation_roll_limit': 300},
-            {'dynamic_adaptation_hand_limit': 150},
+            {'dynamic_adaptation_hand_limit': 0},
             {'dynamic_adaptation_resume_delay': 5.0},
             {'ros__parameters': {'log_level': 'error'}}
         ],

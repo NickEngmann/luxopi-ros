@@ -417,6 +417,10 @@ class EnhancedAnimationCommand(Node):
         """Process the next animation step."""
         if not self.is_animating or self.current_step >= len(self.animation_steps):
             self.is_animating = False
+            # When animation completes, reset to base position
+            if self.current_step > 0:  # Only reset if we actually ran an animation
+                self.get_logger().info('Animation completed, resetting to base position')
+                self.reset_to_base_position()
             return
         
         # Get the next position and duration
@@ -465,7 +469,8 @@ class EnhancedAnimationCommand(Node):
                 self._next_step_callback)
         else:
             self.is_animating = False
-            self.get_logger().info('Animation completed')
+            self.get_logger().info('Animation completed, resetting to base position')
+            self.reset_to_base_position()
     
     def stop_animation(self):
         """Stop the current animation."""
@@ -473,6 +478,82 @@ class EnhancedAnimationCommand(Node):
         if self.animation_timer:
             self.animation_timer.cancel()
         self.get_logger().info('Animation stopped')
+        # Reset to base position when animation is stopped
+        self.reset_to_base_position()
+        
+    def reset_to_base_position(self, duration=2.5):
+        """Reset the arm to a comfortable base position using the folding sequence from sad_droop.
+        
+        This uses steps 9-11 from the sad_droop animation which provide a reliable folding motion
+        while maintaining the current base rotation angle.
+        """
+        self.get_logger().info('Resetting to base position using folding sequence')
+        
+        # Get current position for base rotation preservation
+        base_pos = self.current_positions[0]
+        gripper_pos = 0
+        
+        # Create a mini-animation sequence based on sad_droop steps 9-11
+        keyframes = [
+            # Initial preparation for folding
+            [base_pos, -0.5, 1.0, 0.5, gripper_pos * 1.1],
+            
+            # compression with weight
+            [base_pos, -1.5, 1.8, 0.0, gripper_pos * 1.2],
+            
+            #  maximum compact fold position
+            [base_pos, -2.0, 2.0, 1.0, gripper_pos * 1.3],
+            
+            #  small adjustment (deep sigh)
+            [base_pos, -1.9, 1.9, 1.1, gripper_pos * 1.25],
+            
+            # Final hold in compact position (slightly adjusted for stability)
+            [base_pos, -1.95, 1.95, 1.0, gripper_pos * 1.2]
+        ]
+        
+        # Durations for the reset sequence - slower and more deliberate
+        durations = [
+            0.6,  # Initial preparation
+            0.8,  # Compression
+            0.8,  # Maximum fold
+            0.6,  # Small adjustment
+            0.7   # Final stable position
+        ]
+        
+        # Save animation state to restore after this special sequence
+        was_animating = self.is_animating
+        old_animation_steps = self.animation_steps.copy() if self.animation_steps else []
+        old_durations = self.step_durations.copy() if self.step_durations else []
+        old_current_step = self.current_step
+        
+        # Execute the reset sequence directly
+        # Setting animation state to use our custom sequence
+        self.animation_steps = keyframes
+        self.step_durations = durations
+        self.current_step = 0
+        self.is_animating = True
+        
+        # Process through the reset sequence
+        for i in range(len(keyframes)):
+            if i < len(keyframes):
+                current_pos = keyframes[i]
+                current_duration = durations[i] / self.speed_multiplier
+                
+                # Move to position with easing
+                self.move_to_position(current_pos, current_duration, easing=True)
+                self.get_logger().debug(f'Reset step {i+1}/{len(keyframes)}: {[round(p, 2) for p in current_pos]}')
+        
+        # Mark position as complete
+        self.target_positions = keyframes[-1].copy()
+        self.get_logger().info(f'Reset to folded position: {[round(p, 2) for p in self.target_positions]}')
+        
+        # Restore previous animation state
+        self.is_animating = was_animating
+        self.animation_steps = old_animation_steps
+        self.step_durations = old_durations
+        self.current_step = old_current_step
+        
+        return True
 
     # Enhanced animation methods implementing Disney animation principles
     def curious_look(self):
@@ -687,8 +768,7 @@ class EnhancedAnimationCommand(Node):
         """Make the arm droop down sadly with Disney principles."""
         # Get current position values
         base_pos = self.current_positions[0]
-        gripper_pos = self.current_positions[4] if len(self.current_positions) > 4 else 3.14
-        
+        gripper_pos = 0
         # Keyframe positions with Disney animation principles
         keyframes = [
             # Anticipation - slight upward movement showing initial energy
@@ -739,37 +819,26 @@ class EnhancedAnimationCommand(Node):
             # Continue slow recovery - still low energy
             [base_pos-0.3, -1.0, 1.5, 0.0, gripper_pos * 1.25],
             
-            # Still drooping but less extreme
-            [base_pos-0.2, -0.5, 1.2, -0.5, gripper_pos * 1.2],
-            
-            # Final return to neutral with lingering effect (emotional follow-through)
-            [base_pos-0.1, 0.2, 0.9, -0.5, gripper_pos * 1.15],
-            
-            # Settling into resigned position
-            [base_pos, 0.4, 0.8, -0.3, gripper_pos]
         ]
         
         # Slower, heavier durations for sadness - long pauses and slow movements
         durations = [
             0.4,  # Initial moment
-            0.5,  # Realization
-            0.6,  # Start drooping
-            0.3,  # Hesitation
-            0.7,  # Resistance attempt
-            0.8,  # Giving up 
-            0.9,  # Heavy droop
-            1.0,  # Full slump
-            1.0,  # More compression
-            1.2,  # Maximum sad position
-            0.6,  # Deep sigh
-            0.5,  # Small movement
-            0.7,  # Trembling
-            2.0,  # Long emotional pause
-            1.5,  # Very slow recovery starts
-            1.3,  # Continue recovery
-            1.2,  # Still drooping
-            1.0,  # Final return movement
-            1.0   # Settling
+            0.4,  # Realization
+            0.5,  # Start drooping
+            0.2,  # Hesitation
+            0.6,  # Resistance attempt
+            0.7,  # Giving up 
+            0.8,  # Heavy droop
+            0.9,  # Full slump
+            0.9,  # More compression
+            1.1,  # Maximum sad position
+            0.5,  # Deep sigh
+            0.4,  # Small movement
+            0.6,  # Trembling
+            1.7,  # Long emotional pause
+            1.3,  # Very slow recovery starts
+            1.1,  # Continue recovery
         ]
         
         # Start the animation
@@ -781,7 +850,7 @@ class EnhancedAnimationCommand(Node):
         """Make the arm perform a playful, energetic bounce with Disney principles."""
         # Get current positions
         base_pos = self.current_positions[0]
-        gripper_pos = self.current_positions[4] if len(self.current_positions) > 4 else 3.14
+        gripper_pos = 0
         
         # Keyframe positions with Disney animation principles
         keyframes = [
@@ -892,7 +961,7 @@ class EnhancedAnimationCommand(Node):
         """Make the arm perform a startled jump with Disney principles."""
         # Get current positions
         base_pos = self.current_positions[0]
-        gripper_pos = self.current_positions[4] if len(self.current_positions) > 4 else 3.14
+        gripper_pos = 0
         
         # Keyframe positions with Disney principles
         keyframes = [
@@ -985,7 +1054,7 @@ class EnhancedAnimationCommand(Node):
         """Make the arm appear to be thinking like a person pondering a question."""
         # Get current positions
         base_pos = self.current_positions[0]
-        gripper_pos = self.current_positions[4] if len(self.current_positions) > 4 else 3.14
+        gripper_pos = 0
         
         # Keyframe positions with Disney animation principles
         keyframes = [
@@ -1074,7 +1143,7 @@ class EnhancedAnimationCommand(Node):
         """Make the arm perform a rhythmic dance with Disney principles."""
         # Get current positions
         base_pos = self.current_positions[0]
-        gripper_pos = self.current_positions[4] if len(self.current_positions) > 4 else 3.14
+        gripper_pos = 0
         
         # Keyframe positions with Disney principles
         keyframes = [
@@ -1141,7 +1210,7 @@ class EnhancedAnimationCommand(Node):
         """Make the arm perform a satisfying stretch with Disney principles."""
         # Get current positions
         base_pos = self.current_positions[0]
-        gripper_pos = self.current_positions[4] if len(self.current_positions) > 4 else 3.14
+        gripper_pos = 0
         
         # Keyframe positions with Disney animation principles
         keyframes = [
@@ -1250,7 +1319,7 @@ class EnhancedAnimationCommand(Node):
         """Make the arm nod yes with Disney principles."""
         # Get current positions
         base_pos = self.current_positions[0]
-        gripper_pos = self.current_positions[4] if len(self.current_positions) > 4 else 3.14
+        gripper_pos = 0
         
         # Keyframe positions with Disney principles
         keyframes = [
@@ -1293,7 +1362,7 @@ class EnhancedAnimationCommand(Node):
         """Make the arm shake 'no' with Disney principles."""
         # Get current positions
         base_pos = self.current_positions[0]
-        gripper_pos = self.current_positions[4] if len(self.current_positions) > 4 else 3.14
+        gripper_pos = 0
         
         # Keyframe positions with Disney principles
         keyframes = [
