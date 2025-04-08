@@ -366,6 +366,40 @@ class RoArmHardwareInterface(Node):
         
         # Delegate collision avoidance monitoring to the collision_avoidance system
         try:
+            # Update current joints in collision avoidance before safety check
+            self.collision_avoidance.update_current_joints(self.current_joints)
+            
+            # Check activity time
+            now = time.time()
+            time_since_publish = now - getattr(self, 'last_publish_time', 0)
+            
+            # If we've published recently, update last activity time in collision avoidance,
+            # but only if last_publish was due to a significant change
+            if time_since_publish < 0.5 and getattr(self, 'significant_publish', False):
+                self.collision_avoidance.last_activity_time = now
+                self.get_logger().info("Activity timestamp updated due to recent publish")
+                
+            # If we've received commands recently, also update activity time,
+            # but only apply this based on the significant change flag
+            last_cmd_time = getattr(self, 'last_command_time', 0)
+            if hasattr(last_cmd_time, 'nanoseconds'):  # Check if it's a ROS Time object
+                last_cmd_time = last_cmd_time.nanoseconds / 1e9
+            time_since_command = now - last_cmd_time
+            
+            if time_since_command < 1.0 and getattr(self, 'significant_command', False):
+                self.collision_avoidance.last_activity_time = now
+                self.get_logger().info("Activity timestamp updated due to recent command")
+            
+            # Check if we're returning to home - this check should be prioritized
+            if self.collision_avoidance.returning_to_home:
+                # Ensure the home position override is enforced
+                if self.collision_avoidance.target_override_active and self.collision_avoidance.target_override_joints is not None:
+                    self.send_safe_joint_command(
+                        self.collision_avoidance.target_override_joints,
+                        "Enforcing home position"
+                    )
+            
+            # Run the regular safety monitor callback
             self.collision_avoidance.safety_monitor_callback()
         except Exception as e:
             self.get_logger().error(f"Error in collision avoidance callback: {e}")
@@ -400,7 +434,7 @@ class RoArmHardwareInterface(Node):
             self.joint_velocities = [(self.target_joints[i] - self.current_joints[i]) / dt 
                                      for i in range(len(self.current_joints))]
         
-        # Update tracking variables
+        # Update tracking variables - store as ROS Time for velocity calculations
         self.last_command_time = current_time
         self.current_joints = self.target_joints.copy()
         
@@ -436,6 +470,14 @@ class RoArmHardwareInterface(Node):
             # Update last movement time
             current_time = time.time()
             
+            # Store current time as float to avoid type issues later
+            self.last_command_time = current_time
+            
+            # Skip processing if collision avoidance system is returning to home position
+            if self.collision_avoidance.returning_to_home:
+                self.get_logger().debug("Skipping joint_states_target - currently returning to home position")
+                return
+            
             # Track recent command times to help collision avoidance detect animations
             if not hasattr(self, 'recent_command_times'):
                 self.recent_command_times = []
@@ -443,6 +485,9 @@ class RoArmHardwareInterface(Node):
             self.recent_command_times.append(current_time)
             if len(self.recent_command_times) > 5:  # Keep last 5 command times
                 self.recent_command_times.pop(0)
+            
+            # Explicitly update the collision avoidance system's recent command times
+            self.collision_avoidance.recent_command_times = self.recent_command_times.copy()
             
             # Extract joint positions (in radians)
             names = msg.name
@@ -470,8 +515,27 @@ class RoArmHardwareInterface(Node):
                 positions[indices['hand']] if 'hand' in indices else 0.0
             ]
             
+            # Check if positions have changed significantly
+            significant_change = False
+            if hasattr(self, 'target_joints') and len(self.target_joints) == len(target_positions):
+                for i, (old_pos, new_pos) in enumerate(zip(self.target_joints, target_positions)):
+                    if abs(old_pos - new_pos) > 0.2:
+                        significant_change = True
+                        break
+            else:
+                # First update or array size mismatch, consider it significant
+                significant_change = True
+                
             # Store for velocity estimation
             self.target_joints = target_positions.copy()
+            
+            # Set flag for use in safety_monitor_callback
+            self.significant_command = significant_change
+            
+            # Only update activity time if significant change
+            if significant_change:
+                self.collision_avoidance.last_activity_time = current_time
+                self.get_logger().info(f"Activity timestamp updated due to significant joint position change")
             
             # Update the collision avoidance system with new target
             self.collision_avoidance.update_target_joints(target_positions)
@@ -547,8 +611,31 @@ class RoArmHardwareInterface(Node):
         """Publish the current joint states periodically to ensure topic is active."""
         try:
             if hasattr(self, 'current_joints') and len(self.current_joints) > 0:
+                # Record the publish time
+                self.last_publish_time = time.time()
+                
                 # Always publish the joint states (important for ROS control)
                 self.publish_actual_joint_states(self.current_joints)
+                
+                # Update current joints in collision avoidance
+                self.collision_avoidance.update_current_joints(self.current_joints)
+                
+                # Check if we've reached home position when returning to home
+                if (self.collision_avoidance.returning_to_home and 
+                    self.collision_avoidance.target_override_active and 
+                    self.collision_avoidance.target_override_joints is not None):
+                    
+                    # Check if we're close to home position
+                    if all(abs(a - b) < 0.1 for a, b in zip(
+                        self.current_joints, 
+                        self.collision_avoidance.target_override_joints)):
+                        
+                        self.get_logger().info("Successfully reached home position")
+                        self.collision_avoidance.returning_to_home = False
+                        self.collision_avoidance.persistent_head_collision_active = False
+                        
+                        # Reset the activity timer to prevent immediately triggering idle timeout
+                        self.collision_avoidance.last_activity_time = time.time()
         except Exception as e:
             self.get_logger().error(f"Error in direct publish timer: {e}")
 
@@ -589,6 +676,9 @@ class RoArmHardwareInterface(Node):
             
             # Remember this position for next comparison
             self._last_published_positions = list(positions)
+            
+            # Update the last publish time
+            self.last_publish_time = time.time()
 
             # Publish the message
             self.joint_states_publisher.publish(msg)

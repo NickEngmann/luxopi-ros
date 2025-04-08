@@ -88,11 +88,27 @@ class CollisionAvoidance:
         # Additional tracking variables
         self.last_failed_adjustment_time = time.time()
         self.last_proactive_check = 0.0
-        self.home_position = [0.45, -1.0, 2.45, 0.13, 1.0]  # Default safe home (not used for rest)
+        self.home_position = [0.5, -1.5, 3.0, 0.0, 1.0]  # Default safe home (not used for rest)
         
         # Animation state tracking
         self.last_movement_time = time.time()
         self.recent_command_times = []
+        
+        # Add tracking for persistent front (head) collision
+        self.persistent_head_collision_start = 0.0
+        self.persistent_head_collision_active = False
+        self.persistent_head_collision_last_log = 0.0  # For log throttling
+        
+        # Add tracking for idle time
+        self.last_activity_time = time.time()
+        self.idle_timeout = 8.0  # seconds
+        self.idle_check_active = True  # Flag to enable/disable idle detection
+        self.idle_check_last_log = 0.0  # For log throttling
+        
+        # Add flags for special operations
+        self.returning_to_home = False
+        self.returning_to_home_time = 0.0
+        self.home_position_return_timeout = 10.0  # If we're trying to go home for more than 10 seconds, give up
     
     def update_current_joints(self, joints):
         """Update the current joint positions."""
@@ -100,10 +116,29 @@ class CollisionAvoidance:
     
     def update_target_joints(self, joints):
         """Update the target joint positions."""
+        # Check if position has changed enough to update activity time
+        current_time = time.time()
+        significant_change = False
+        
+        # Check if any joint has changed by more than 0.2 radians
+        if hasattr(self, 'target_joints') and len(self.target_joints) == len(joints):
+            for i, (old_pos, new_pos) in enumerate(zip(self.target_joints, joints)):
+                if abs(old_pos - new_pos) > 0.2:
+                    significant_change = True
+                    break
+        else:
+            # First update or array size mismatch, consider it significant
+            significant_change = True
+        
+        # Update the target joints regardless
         self.target_joints = joints.copy()
         
+        # Only update activity time if significant change or first update
+        if significant_change:
+            self.last_activity_time = current_time
+            self.node.get_logger().debug(f"Activity timestamp updated due to significant joint position change")
+            
         # Check if this is a new target that's different from our original target
-        current_time = time.time()
         if not self._at_position(joints, self.target_joints, 0.05):
             self.last_original_target_change_time = current_time
             
@@ -121,8 +156,35 @@ class CollisionAvoidance:
         """Unified collision handling for all directions."""
         try:
             with self.collision_lock:
+                # If we're returning to home, still track collisions but don't react
+                # This ensures we keep tracking persistent head collisions
                 was_active = self.collision_status[direction]['active']
                 current_time = time.time()
+                
+                # Track persistent head collision even when returning home
+                if direction == 'front':
+                    if is_active and self.collision_status[direction]['severity'] == 'danger':
+                        # Start timing persistent head collision if not already tracking
+                        if not self.persistent_head_collision_active:
+                            self.persistent_head_collision_start = current_time
+                            self.persistent_head_collision_active = True
+                            self.node.get_logger().info("Started tracking persistent head collision")
+                        # Throttle logs for persistent collisions
+                        elif current_time - self.persistent_head_collision_last_log > 2.0:
+                            duration = current_time - self.persistent_head_collision_start
+                            self.node.get_logger().info(f"Persistent head collision ongoing for {duration:.1f}s")
+                            self.persistent_head_collision_last_log = current_time
+                    else:
+                        # Reset persistent head collision tracking
+                        if self.persistent_head_collision_active:
+                            self.node.get_logger().info("Persistent head collision cleared")
+                            self.persistent_head_collision_active = False
+                
+                # If we're already returning to home, just track state but don't react to collisions
+                # This prevents collision reactions from interrupting the return to home
+                if self.returning_to_home:
+                    self.collision_status[direction]['active'] = is_active
+                    return
                 
                 # Fast path: No change in status - return quickly to reduce processing overhead
                 if was_active == is_active and not (is_active and self.collision_status[direction]['consecutive_count'] > 3):
@@ -266,6 +328,21 @@ class CollisionAvoidance:
             old_severity = self.collision_status[direction]['severity']
             self.collision_status[direction]['severity'] = severity
             
+            # Update persistent head collision tracking for front direction
+            if direction == 'front':
+                current_time = time.time()
+                if severity == 'danger':
+                    if not self.persistent_head_collision_active:
+                        self.persistent_head_collision_start = current_time
+                        self.persistent_head_collision_active = True
+                        self.persistent_head_collision_last_log = current_time
+                        self.node.get_logger().info("Started tracking persistent head collision due to danger severity")
+                else:
+                    # Reset persistent head collision tracking if previously active
+                    if self.persistent_head_collision_active:
+                        self.node.get_logger().info("Persistent head collision cleared (severity changed)")
+                        self.persistent_head_collision_active = False
+            
             # Fast reaction path: If severity changed to danger, react immediately
             if severity == 'danger' and old_severity != 'danger':
                 current_time = time.time()
@@ -293,6 +370,57 @@ class CollisionAvoidance:
         try:
             # Get current time for this check cycle
             current_time = time.time()
+            
+            # Check if we're currently trying to go home and handle timeouts
+            if self.returning_to_home:
+                time_since_home_attempt = current_time - self.returning_to_home_time
+                if time_since_home_attempt > self.home_position_return_timeout:
+                    self.node.get_logger().warn(f"Home position return timeout after {time_since_home_attempt:.1f}s - giving up")
+                    self.returning_to_home = False
+                    # Reset other state variables for clean slate
+                    self.persistent_head_collision_active = False
+                    self.target_override_active = False
+                return  # Skip other checks when returning to home
+            
+            # Check persistent head collision duration
+            if self.persistent_head_collision_active:
+                head_collision_duration = current_time - self.persistent_head_collision_start
+                # Log the duration periodically
+                if current_time - self.persistent_head_collision_last_log > 1.0:
+                    self.node.get_logger().info(f"Persistent head collision duration: {head_collision_duration:.1f}s")
+                    self.persistent_head_collision_last_log = current_time
+                
+                if head_collision_duration > 3.0:  # 3 seconds of persistent head collision
+                    self.node.get_logger().warn(f"Persistent head collision for {head_collision_duration:.1f}s - resetting to home position")
+                    # Force go to home by setting flag and calling method
+                    self.returning_to_home = True
+                    self.returning_to_home_time = current_time
+                    self.go_to_home_position("Persistent head collision reset")
+                    return  # Skip remaining checks as we're already taking action
+            
+            # Check idle timeout (only if we're not already handling a collision)
+            if self.idle_check_active and not any(status['active'] for status in self.collision_status.values()):
+                time_since_activity = current_time - self.last_activity_time
+                
+                # Log the idle time periodically to help debugging
+                if time_since_activity > 3.0 and current_time - self.idle_check_last_log > 2.0:
+                    self.node.get_logger().debug(f"Device idle for {time_since_activity:.1f}s (timeout: {self.idle_timeout}s)")
+                    self.idle_check_last_log = current_time
+                
+                # Check if we're already at or very close to home position
+                already_at_home = self._at_position(self.current_joints, self.home_position, 0.15)
+                
+                if time_since_activity > self.idle_timeout and not already_at_home:
+                    self.node.get_logger().debug(f"Device idle for {time_since_activity:.1f}s - returning to home position")
+                    # Force go to home by setting flag and calling method
+                    self.returning_to_home = True
+                    self.returning_to_home_time = current_time
+                    self.go_to_home_position("Idle timeout reset")
+                    return  # Skip remaining checks as we're already taking action
+                elif time_since_activity > self.idle_timeout and already_at_home:
+                    # We're already at home, so just reset the activity timer to prevent continuous triggering
+                    self.node.get_logger().debug("Device idle, but already at home position - resetting activity timer")
+                    self.last_activity_time = current_time
             
             # Fast path: Check if there are any active collisions or we're in escape mode
             with self.collision_lock:
@@ -344,14 +472,14 @@ class CollisionAvoidance:
                         else:
                             persistent_collision = (
                                 (self.last_escape_direction == 'front' and 
-                                 self.collision_status['front']['active'] and 
-                                 self.collision_status['front']['consecutive_count'] > self.consecutive_collision_threshold) or
+                                self.collision_status['front']['active'] and 
+                                self.collision_status['front']['consecutive_count'] > self.consecutive_collision_threshold) or
                                 (self.last_escape_direction == 'left' and 
-                                 self.collision_status['left']['active'] and 
-                                 self.collision_status['left']['consecutive_count'] > self.consecutive_collision_threshold) or
+                                self.collision_status['left']['active'] and 
+                                self.collision_status['left']['consecutive_count'] > self.consecutive_collision_threshold) or
                                 (self.last_escape_direction == 'right' and 
-                                 self.collision_status['right']['active'] and 
-                                 self.collision_status['right']['consecutive_count'] > self.consecutive_collision_threshold)
+                                self.collision_status['right']['active'] and 
+                                self.collision_status['right']['consecutive_count'] > self.consecutive_collision_threshold)
                             )
                             
                         if persistent_collision:
@@ -387,6 +515,11 @@ class CollisionAvoidance:
     
     def perform_collision_avoidance(self, direction, distance, emergency=False):
         """Perform collision avoidance with more significant adjustments for emergency cases."""
+        # Update activity time when performing collision avoidance
+        current_time = time.time()
+        self.last_activity_time = current_time
+        self.node.get_logger().debug(f"Activity timestamp updated due to collision avoidance action")
+        
         try:
             # Start with current position
             new_position = self.current_joints.copy()
@@ -469,9 +602,6 @@ class CollisionAvoidance:
         if position2 is None:
             position2 = self.current_joints
             
-        if len(position1) != len(position2):
-            return False
-            
         for i, (pos1, pos2) in enumerate(zip(position1, position2)):
             if abs(pos1 - pos2) > tolerance:
                 return False
@@ -481,6 +611,28 @@ class CollisionAvoidance:
         """Determine which target position to use based on overrides and safety."""
         current_time = time.time()
         
+        # When returning to home, always return the home position override
+        if self.returning_to_home and self.target_override_active and self.target_override_joints is not None:
+            # Log that we're enforcing home position override (throttled)
+            if not hasattr(self, 'last_home_override_log') or current_time - self.last_home_override_log > 1.0:
+                self.node.get_logger().info("Enforcing home position override")
+                self.last_home_override_log = current_time
+                
+            # Check if we've reached home position (within tolerance)
+            if self._at_position(self.current_joints, self.target_override_joints, 0.1):
+                self.node.get_logger().info("Reached home position - clearing returning_to_home flag")
+                self.returning_to_home = False
+                # Reset persistent head collision after successfully reaching home
+                self.persistent_head_collision_active = False
+                # Reset activity timer to prevent immediately going back to idle
+                self.last_activity_time = current_time
+                # Reset other state variables
+                self.escape_mode_active = False
+                self.escape_attempts = 0
+                
+            return self.target_override_joints
+        
+        # Regular override handling
         if not self.target_override_active or self.target_override_joints is None:
             return original_target
         
@@ -517,6 +669,10 @@ class CollisionAvoidance:
     
     def apply_safety_limits(self, positions):
         """Apply safety limits to joint positions based on collision status."""
+        # If returning to home position, don't apply collision-based safety limits
+        if self.returning_to_home:
+            return positions
+            
         # Get a copy of the target positions
         safe_positions = positions.copy()
         
@@ -587,6 +743,15 @@ class CollisionAvoidance:
     
     def adjust_path_for_collision(self, front_status, left_status, right_status):
         """Adjust the current motion path to avoid obstacles."""
+        # Skip if we're returning to home - don't adjust the home positioning
+        if self.returning_to_home:
+            return
+            
+        # Update activity time when adjusting path
+        current_time = time.time()
+        self.last_activity_time = current_time
+        self.node.get_logger().debug(f"Activity timestamp updated due to collision path adjustment")
+        
         # Get current time for cooldown checks
         current_time = time.time()
         
@@ -754,7 +919,7 @@ class CollisionAvoidance:
         
         # Check if we're already close to the adjusted position
         # to avoid sending redundant commands that don't change position
-        if self._at_position(adjusted_targets, 0.1):
+        if self._at_position(adjusted_targets, self.current_joints, 0.1):
             self.node.get_logger().info("Already at adjusted position - skipping adjustment")
             
             # If we've been at this position for a while and still have collisions,
@@ -872,6 +1037,61 @@ class CollisionAvoidance:
         except Exception as e:
             self.node.get_logger().error(f"Error moving to rest position: {e}")
             self.is_returning_to_rest = False
+            return False
+    
+    def go_to_home_position(self, description="Home position reset"):
+        """Move to home position with slight variation."""
+        try:
+            # Force disable any other modes that might interfere
+            self.escape_mode_active = False
+            self.target_override_active = False  # Clear any previous override
+            
+            # Add slight random variation to home position
+            noise_range = 0.05
+            home_with_variation = [
+                pos + random.uniform(-noise_range, noise_range) 
+                for pos in self.home_position
+            ]
+            
+            self.node.get_logger().info(f"Moving to home position with variation: {[round(p, 2) for p in home_with_variation]}")
+            
+            # Create a high-priority override to enforce this target
+            self.target_override_active = True
+            self.target_override_time = time.time()
+            self.target_override_joints = home_with_variation
+            self.target_override_reason = description
+            self.target_override_timeout = 10.0  # Keep this override active for at least 10 seconds
+            
+            # Reset the last activity time to prevent immediate idle detection after going home
+            self.last_activity_time = time.time()
+            
+            # Move to the home position - override unsafe zones in this case
+            success = self.send_safe_joint_command(
+                home_with_variation, 
+                description, 
+            )
+            
+            # Reset collision counters and escape status
+            if success:
+                # The arm is moving to home, but we'll keep the returning_to_home flag set
+                # until we detect we've reached home or timeout
+                self.escape_attempts = 0
+                # Don't reset persistent_head_collision_active here since we want to 
+                # keep tracking it until we reach home or the collision naturally clears
+                with self.collision_lock:
+                    for direction in self.collision_status:
+                        self.collision_status[direction]['consecutive_count'] = 0
+            else:
+                self.node.get_logger().error("Failed to send home position command")
+                self.returning_to_home = False  # Clear flag if command failed
+            
+            # Reset idle timer
+            self.last_activity_time = time.time()
+            
+            return success
+        except Exception as e:
+            self.node.get_logger().error(f"Error moving to home position: {e}")
+            self.returning_to_home = False  # Clear flag on error
             return False
     
     def move_to_safe_position(self, position, description="Proactive avoidance movement", override_checks=False):
