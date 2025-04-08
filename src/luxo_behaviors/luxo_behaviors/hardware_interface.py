@@ -40,7 +40,7 @@ class RoArmHardwareInterface(Node):
         
         # Add parameter for rest position
         self.declare_parameter('enable_rest_position', True)  # Enable/disable the rest position behavior
-        self.declare_parameter('base_rest_position', [0.0, -2.0, 2.0, 1.0, 3.14])  # Base rest position
+        self.declare_parameter('base_rest_position', [0.0, -2.0, 2.0, 1.0, 0.0])  # Base rest position
         self.declare_parameter('rest_variation_range', 0.15)  # Range for position variation        
         self.declare_parameter('use_hardware_joint_names', False)
         
@@ -51,7 +51,7 @@ class RoArmHardwareInterface(Node):
         self.declare_parameter('dynamic_adaptation_elbow_limit', 550)
         self.declare_parameter('dynamic_adaptation_wrist_limit', 550)
         self.declare_parameter('dynamic_adaptation_roll_limit', 550)
-        self.declare_parameter('dynamic_adaptation_hand_limit', 550)
+        self.declare_parameter('dynamic_adaptation_hand_limit', 0)
         self.declare_parameter('dynamic_adaptation_resume_delay', 5.0)  # Seconds to wait before re-enabling
         
         # Add parameter for initialization method
@@ -136,7 +136,7 @@ class RoArmHardwareInterface(Node):
         # Idle state tracking
         self.last_movement_time = time.time()
         self.last_proactive_check = 0.0
-        self.home_position = [0.0, 0.3, 0.7, 0.4, 3.14]  # Default safe home (not used for rest)
+        self.home_position = [-0.3, -1.0, 2.45, 0.13, 1.0]  # Default safe home (not used for rest)
         self.is_returning_to_rest = False  # Flag to track when we're returning to rest
         
         # Escape mode variables
@@ -161,8 +161,8 @@ class RoArmHardwareInterface(Node):
 
         # Joint state tracking with fallback default values
         # These will be initialized from hardware before publishing begins
-        self.current_joints = [0.0, 0.0, 0.0, 0.0, 3.14]  # base, shoulder, elbow, wrist, hand
-        self.target_joints = [0.0, 0.0, 0.0, 0.0, 3.14]
+        self.current_joints = [0.0, 0.0, 0.0, 0.0, 0.0]  # base, shoulder, elbow, wrist, hand
+        self.target_joints = [0.0, 0.0, 0.0, 0.0, 0.0]
         self.joint_velocities = [0.0, 0.0, 0.0, 0.0, 0.0]
         self.last_command_time = self.get_clock().now()
         
@@ -1307,7 +1307,7 @@ class RoArmHardwareInterface(Node):
                 positions[indices['shoulder']],
                 positions[indices['elbow']],
                 positions[indices['wrist']] if 'wrist' in indices else 0.0,
-                positions[indices['hand']] if 'hand' in indices else 3.14  # Default closed gripper if not specified
+                positions[indices['hand']] if 'hand' in indices else 0.0
             ]
             
             # Check if this is a new target that's different from our original target
@@ -1683,7 +1683,7 @@ class RoArmHardwareInterface(Node):
         # Add random variation to each joint
         for i in range(len(rest_position)):
             # Apply smaller variation to the hand/gripper (last position)
-            variation_scale = 0.2 if i == 4 else 1.0
+            variation_scale = float(0.0) if i == 4 else float(0.0)
             variation = random.uniform(-self.rest_variation_range, self.rest_variation_range) * variation_scale
             rest_position[i] += variation
             

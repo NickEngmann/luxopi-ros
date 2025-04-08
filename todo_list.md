@@ -1,8 +1,7 @@
 # LuxoPi Project Todo List
 
 1. Fix the Sensors
-2. Put the Lamp Head On the Lamp
-
+2. Revert back to [-0.843689433, -1.520174961, 2.021786678, 1.013961301, 3.146194596]
 ## High Priority
 - [ ] Consolidate duplicate functionality - merge the two `at_position` functions into one consistent implementation
 - [ ] Fix dynamic adaptation mode (DEMA) - increase torque limit for better operation
