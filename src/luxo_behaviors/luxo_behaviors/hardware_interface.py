@@ -233,6 +233,18 @@ class RoArmHardwareInterface(Node):
             # Add a health check timer to ensure safety_timer is still running
             self.timer_health_check = self.create_timer(5.0, self.safety_timer_watchdog)
             
+            # Add subscription for light control
+            self.light_control_sub = self.create_subscription(
+                Bool,
+                '/roarm/light',
+                self.light_control_callback,
+                10
+            )
+            
+            # Add timer to turn on the light after 90 seconds
+            self.light_timer = self.create_timer(90.0, self.delayed_light_on)
+            self.get_logger().info("Light will automatically turn on in 90 seconds")
+            
             self.get_logger().info("RoArm hardware interface initialized")
             
             if self.enable_collision_avoidance:
@@ -248,14 +260,6 @@ class RoArmHardwareInterface(Node):
                 Bool,
                 '/dynamic_adaptation_toggle',
                 self.dynamic_adaptation_toggle_callback,
-                10
-            )
-            
-            # Add subscription for light control
-            self.light_control_sub = self.create_subscription(
-                Bool,
-                '/roarm/light',
-                self.light_control_callback,
                 10
             )
         else:
@@ -922,6 +926,24 @@ class RoArmHardwareInterface(Node):
                 self.get_logger().error("Failed to control light")
         except Exception as e:
             self.get_logger().error(f"Error in light control callback: {e}")
+
+    def delayed_light_on(self):
+        """Turn on the light after startup delay"""
+        try:
+            self.get_logger().info("Auto-enabling light after startup delay")
+            # Use SerialManager's built-in method to control the light
+            success = self.serial_manager.control_light(255)  # Full brightness
+            
+            if success:
+                self.get_logger().info("Light turned ON automatically")
+            else:
+                self.get_logger().error("Failed to turn on light automatically")
+                
+            # Cancel the timer so it doesn't fire again
+            self.light_timer.cancel()
+            
+        except Exception as e:
+            self.get_logger().error(f"Error in delayed light control: {e}")
 
 def main(args=None):
     rclpy.init(args=args)

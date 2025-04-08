@@ -1,12 +1,12 @@
 # LuxoPi Project Todo List
 
-1. Change the names of things. Make joint_states_target be roarm/target
-2. Get rid of return_to_home inside animation_command, it does nothing
-3. Continue fine tuning the different animation commands
-4. More permanent solution for the I2C power cable
-5. Cleanup wiring
-6. Reprint head with 5% infill, and transparent. As well as more holes (trying to get rid of half the weight)
-
+[] Make joint_states_target be roarm/target
+[] Get rid of return_to_home inside animation_command, it does nothing
+[] Change shutdown procedures, to be a safe approach to self.close_position
+[] Continue fine tuning the different animation commands
+[] More permanent solution for the I2C power cable
+[] Cleanup wiring
+[] Reprint head with 5% infill, and transparent. As well as more holes (trying to get rid of half the weight)
 
 ## High Priority
 - [ ] Consolidate duplicate functionality - merge the two `at_position` functions into one consistent implementation

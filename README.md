@@ -169,6 +169,59 @@ The `luxo_system.launch.py` accepts the following arguments:
 | `camera_rotation` | `false` | Rotate camera image 180 degrees |
 | `enable_dynamic_adaptation` | `false` | Enable dynamic adaptation mode |
 
+## Autostarting with systemd
+
+You can configure the LuxoPi system to start automatically at boot using systemd.
+
+### Setup Instructions
+
+1. **Copy the systemd service file**:
+
+```bash
+sudo cp luxopi-ros.service /etc/systemd/system/luxopi-ros.service
+```
+
+2. **Make the startup script executable**:
+
+```bash
+chmod +x /home/pi/luxopi-ros/start_luxopi.sh
+```
+
+3. **Enable and start the service**:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable luxopi-ros.service
+sudo systemctl start luxopi-ros.service
+```
+
+### Managing the Service
+
+**Check status**:
+```bash
+sudo systemctl status luxopi-ros.service
+```
+
+**View logs**:
+```bash
+journalctl -u luxopi-ros.service -f
+```
+
+**Stop the service**:
+```bash
+sudo systemctl stop luxopi-ros.service
+```
+
+**Restart the service**:
+```bash
+sudo systemctl restart luxopi-ros.service
+```
+
+**Disable autostart**:
+```bash
+sudo systemctl disable luxopi-ros.service
+```
+
 ## Animation System
 
 The robot arm supports various pre-defined animation sequences that bring the Luxo character to life. These animations are implemented using Disney animation principles for more natural movement.
