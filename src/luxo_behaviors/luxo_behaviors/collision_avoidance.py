@@ -647,7 +647,7 @@ class CollisionAvoidance:
         override_duration = current_time - self.target_override_time
         
         if not any_collision_active and override_duration > self.target_override_timeout:
-            self.node.get_logger().info(f"Collisions clear for {override_duration:.1f}s - gradually returning to original target")
+            self.node.get_logger().warn(f"Collisions clear for {override_duration:.1f}s - gradually returning to original target")
             
             # Gradually blend between override and original target
             blend_factor = min(1.0, (override_duration - self.target_override_timeout) / 2.0)
@@ -658,7 +658,7 @@ class CollisionAvoidance:
             
             # If we're very close to original target, clear the override completely
             if blend_factor > 0.9:
-                self.node.get_logger().info("Override expired - returning to original target")
+                self.node.get_logger().warn("Override expired - returning to original target")
                 self.target_override_active = False
                 return original_target
                 

@@ -444,13 +444,13 @@ class EnhancedAnimationCommand(Node):
             # Calculate difference 
             diff_magnitude = sum([(curr - expected)**2 for curr, expected in zip(curr_pos, expected_pos)])
             if diff_magnitude > 1.0:  # Significant deviation
-                self.get_logger().warn(f"Detected significant position deviation (mag={diff_magnitude:.2f}) - " +
+                self.get_logger().debug(f"Detected significant position deviation (mag={diff_magnitude:.2f}) - " +
                                       f"current: {[round(p, 2) for p in curr_pos]}, " +
                                       f"expected: {[round(p, 2) for p in expected_pos]}")
                 
                 # Adjust timing to be a bit slower after deviation to allow for smoother recovery
                 duration = duration * 1.5
-                self.get_logger().info(f"Increasing move duration to {duration:.2f}s for smoother recovery")
+                self.get_logger().debug(f"Increasing move duration to {duration:.2f}s for smoother recovery")
         
         # Try to move to the position
         self.move_to_position(next_position, duration, easing=use_easing)
@@ -482,17 +482,15 @@ class EnhancedAnimationCommand(Node):
         self.reset_to_base_position()
         
     def reset_to_base_position(self, duration=2.5):
-        """Reset the arm to a comfortable base position using the folding sequence from sad_droop.
+        """Reset the arm to a comfortable base position using a folding sequence.
         
-        This uses steps 9-11 from the sad_droop animation which provide a reliable folding motion
-        while maintaining the current base rotation angle.
         """
         self.get_logger().info('Resetting to base position using folding sequence')
         
         # Get current position for base rotation preservation
         base_pos = self.current_positions[0]
         
-        # Create a mini-animation sequence based on sad_droop steps 9-11
+        # Create a mini-animation sequence
         keyframes = [
             # Initial preparation for folding
             [base_pos, -0.5, 1.0, 0.5, 0.0],
@@ -777,9 +775,6 @@ class EnhancedAnimationCommand(Node):
             # Attempt to look up (showing character resistance)
             [base_pos-0.1, 0.35, 0.75, -0.2, 0.0],
             
-            # Begin folding - giving up (exaggeration and emotional staging)
-            [base_pos-0.2, 0.6, 1.1, -0.7, 0.0],  # Even tighter grip
-            
             # Heavy droop - more dramatic folding
             [base_pos-0.25, 0.9, 1.6, -0.9, 0.0],
             
@@ -814,22 +809,21 @@ class EnhancedAnimationCommand(Node):
         
         # Slower, heavier durations for sadness - long pauses and slow movements
         durations = [
-            0.4,  # Initial moment
-            0.4,  # Realization
-            0.5,  # Start drooping
+            0.4,  # 1 Initial moment
+            0.4,  # 2 Realization
+            0.5,  # 3 Start drooping
             0.2,  # Hesitation
             0.6,  # Resistance attempt
-            0.7,  # Giving up 
             0.8,  # Heavy droop
             0.9,  # Full slump
             0.9,  # More compression
-            1.1,  # Maximum sad position
+            0.7,  # Maximum sad position
             0.5,  # Deep sigh
             0.4,  # Small movement
-            0.6,  # Trembling
-            1.7,  # Long emotional pause
-            1.3,  # Very slow recovery starts
-            1.1,  # Continue recovery
+            0.2,  # Trembling
+            0.8,  # Long emotional pause
+            0.6,  # Very slow recovery starts
+            0.6,  # Continue recovery
         ]
         
         # Start the animation

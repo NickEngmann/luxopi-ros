@@ -377,7 +377,7 @@ class RoArmHardwareInterface(Node):
             # but only if last_publish was due to a significant change
             if time_since_publish < 0.5 and getattr(self, 'significant_publish', False):
                 self.collision_avoidance.last_activity_time = now
-                self.get_logger().info("Activity timestamp updated due to recent publish")
+                self.get_logger().debug("Activity timestamp updated due to recent publish")
                 
             # If we've received commands recently, also update activity time,
             # but only apply this based on the significant change flag
@@ -388,7 +388,7 @@ class RoArmHardwareInterface(Node):
             
             if time_since_command < 1.0 and getattr(self, 'significant_command', False):
                 self.collision_avoidance.last_activity_time = now
-                self.get_logger().info("Activity timestamp updated due to recent command")
+                self.get_logger().debug("Activity timestamp updated due to recent command")
             
             # Check if we're returning to home - this check should be prioritized
             if self.collision_avoidance.returning_to_home:
@@ -535,7 +535,7 @@ class RoArmHardwareInterface(Node):
             # Only update activity time if significant change
             if significant_change:
                 self.collision_avoidance.last_activity_time = current_time
-                self.get_logger().info(f"Activity timestamp updated due to significant joint position change")
+                self.get_logger().debug(f"Activity timestamp updated due to significant joint position change")
             
             # Update the collision avoidance system with new target
             self.collision_avoidance.update_target_joints(target_positions)
