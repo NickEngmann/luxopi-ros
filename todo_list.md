@@ -1,7 +1,10 @@
 # LuxoPi Project Todo List
 
+[] Fix the Home Position Movement
+-  Maybe try moving one joint at a time?
 [] Make joint_states_target be roarm/target
 [] Get rid of return_to_home inside animation_command, it does nothing
+[] I'm under the impression that there is a lot of code that doesn't do much within collision_avoidance. We may want to get rid of it
 [] Change shutdown procedures, to be a safe approach to self.close_position
 [] Continue fine tuning the different animation commands
 [] More permanent solution for the I2C power cable

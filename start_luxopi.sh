@@ -10,6 +10,7 @@ export ROS_DOMAIN_ID=0
 
 # Start the luxopi system
 cd /home/pi/luxopi-ros
+colcon build
 ros2 launch luxo_behaviors luxo_system.launch.py \
   use_hardware:=true \
   use_camera:=true \

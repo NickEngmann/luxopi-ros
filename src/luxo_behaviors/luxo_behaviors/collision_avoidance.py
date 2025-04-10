@@ -89,7 +89,7 @@ class CollisionAvoidance:
         self.last_failed_adjustment_time = time.time()
         self.last_proactive_check = 0.0
         self.close_position = [0.4, -1.5, 3.0, 0.0, 1.0]
-        self.home_position = [0.4, -0.27, 1.03, 1.5, 1.1]  # Default safe home with lights ON
+        self.home_position = [0.35, -0.35, 1.0, 1.4, 1.0]  # Default safe home with lights ON
         
         # Animation state tracking
         self.last_movement_time = time.time()
@@ -549,7 +549,7 @@ class CollisionAvoidance:
             
             if direction == 'front':
                 # Pull back shoulder and elbow
-                new_position[1] += 0.3 * magnitude  # Shoulder back
+                new_position[1] -= 0.6 * magnitude  # Shoulder back
                 new_position[2] += 0.4 * magnitude  # Elbow fold
                 
                 # Add a random rotation to help escape
@@ -558,7 +558,7 @@ class CollisionAvoidance:
                     # Choose a consistent rotation direction rather than random
                     rotation = 0.5 * magnitude if consecutive_count % 2 == 0 else -0.5 * magnitude
                 else:
-                    rotation = random.uniform(-0.3, 0.3) * magnitude
+                    rotation = random.uniform(-0.7, 0.7) * magnitude
                     
                 new_position[0] += rotation
                 
@@ -880,9 +880,9 @@ class CollisionAvoidance:
                 persistence_multiplier = min(3.0, 1.0 + front_status['consecutive_count'] * 0.05)
                 
             # Enhanced shoulder and elbow adjustments (pull back more strongly)
-            shoulder_adjustment = front_factor * 0.4 * persistence_multiplier
+            shoulder_adjustment = front_factor * 0.5 * persistence_multiplier
             elbow_adjustment = front_factor * 0.5 * persistence_multiplier
-            adjusted_targets[1] += shoulder_adjustment
+            adjusted_targets[1] -= shoulder_adjustment
             adjusted_targets[2] += elbow_adjustment
             
             # Adjust wrist to maintain end effector orientation
@@ -1172,7 +1172,7 @@ class CollisionAvoidance:
         
         if direction == 'front':
             # Pull back arm dramatically
-            new_position[1] += 0.5 * escape_magnitude  # Shoulder back
+            new_position[1] -= 0.5 * escape_magnitude  # Shoulder back
             new_position[2] += 0.6 * escape_magnitude  # Elbow fold
             
             # Add rotation to move out of the way
@@ -1210,7 +1210,7 @@ class CollisionAvoidance:
         
         if direction == 'front':
             # Pull back arm slightly
-            new_position[1] += 0.3 * escape_magnitude  # Shoulder back
+            new_position[1] -= 0.4 * escape_magnitude  # Shoulder back
             new_position[2] += 0.3 * escape_magnitude  # Elbow fold
             
             # Small rotation
