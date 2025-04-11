@@ -27,7 +27,6 @@ class CollisionAvoidance:
         self.hard_limit_distance = node.get_parameter('hard_limit_distance').value
         self.max_deceleration = node.get_parameter('max_deceleration').value
         self.collision_recovery_timeout = node.get_parameter('collision_recovery_timeout').value
-        self.proactive_threshold = node.get_parameter('proactive_threshold').value
         self.avoidance_playfulness = node.get_parameter('avoidance_playfulness').value
         self.side_avoidance_magnitude = node.get_parameter('side_avoidance_magnitude').value
         self.consecutive_collision_threshold = node.get_parameter('consecutive_collision_threshold').value
@@ -102,14 +101,14 @@ class CollisionAvoidance:
         
         # Add tracking for idle time
         self.last_activity_time = time.time()
-        self.idle_timeout = 8.0  # seconds
+        self.idle_timeout = 4.0  # seconds
         self.idle_check_active = True  # Flag to enable/disable idle detection
         self.idle_check_last_log = 0.0  # For log throttling
         
         # Add flags for special operations
         self.returning_to_home = False
         self.returning_to_home_time = 0.0
-        self.home_position_return_timeout = 10.0  # If we're trying to go home for more than 10 seconds, give up
+        self.home_position_return_timeout = 4.0  # If we're trying to go home for more than 10 seconds, give up
     
     def update_current_joints(self, joints):
         """Update the current joint positions."""

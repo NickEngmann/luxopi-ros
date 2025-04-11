@@ -28,7 +28,6 @@ class RoArmHardwareInterface(Node):
         self.declare_parameter('collision_recovery_timeout', 3.0)  # seconds
         
         # Additional parameters for proactive avoidance
-        self.declare_parameter('proactive_threshold', 15.0)  # cm
         self.declare_parameter('avoidance_playfulness', 0.3)  # 0.0-1.0 random factor
         self.declare_parameter('side_avoidance_magnitude', 0.5)  # Rotation magnitude for side avoidance
         self.declare_parameter('consecutive_collision_threshold', 3)  # How many repeated collisions trigger stronger response
