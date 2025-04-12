@@ -25,7 +25,7 @@ class EnhancedAnimationCommand(Node):
         
         # Add joint limits configuration
         self.joint_limits = {
-            'L1_to_L2': {'min': -1.57, 'max': 0.75},  # Limit L1_to_L2 to max +0.75
+            'L1_to_L2': {'min': -1.57, 'max': 2.05},  # Limit L1_to_L2 to max +0.75
             # Add other joint limits here if needed
         }
         
@@ -65,7 +65,7 @@ class EnhancedAnimationCommand(Node):
         self.get_logger().info(f'Publishing joint states to: {joint_topic}')
 
         # Current joint positions (will be updated from hardware if available)
-        self.current_positions = [0.0, 0.0, 0.0, 0.0, 3.14]  # Added gripper value
+        self.current_positions = [0.0, 0.0, 0.0, 0.0, 0.0]  # Added gripper value
         
         # Target positions to publish (separate from current hardware positions)
         self.target_positions = self.current_positions.copy()
@@ -240,7 +240,8 @@ class EnhancedAnimationCommand(Node):
             'nod': self.nodding_animation,          
             'shake': self.head_shake_animation,
             'startled': self.startled_jump,          
-            'stop': self.stop_animation
+            'stop': self.stop_animation,
+            'close': self.close_animation
         }
         
         if base_command in animations:
@@ -420,7 +421,6 @@ class EnhancedAnimationCommand(Node):
             # When animation completes, reset to base position
             if self.current_step > 0:  # Only reset if we actually ran an animation
                 self.get_logger().info('Animation completed, resetting to base position')
-                self.reset_to_base_position()
             return
         
         # Get the next position and duration
@@ -470,7 +470,6 @@ class EnhancedAnimationCommand(Node):
         else:
             self.is_animating = False
             self.get_logger().info('Animation completed, resetting to base position')
-            self.reset_to_base_position()
     
     def stop_animation(self):
         """Stop the current animation."""
@@ -478,79 +477,35 @@ class EnhancedAnimationCommand(Node):
         if self.animation_timer:
             self.animation_timer.cancel()
         self.get_logger().info('Animation stopped')
-        # Reset to base position when animation is stopped
-        self.reset_to_base_position()
-        
-    def reset_to_base_position(self, duration=2.5):
-        """Reset the arm to a comfortable base position using a folding sequence.
-        
-        """
-        self.get_logger().info('Resetting to base position using folding sequence')
-        
-        # Get current position for base rotation preservation
+
+    def close_animation(self):
+        """Move the arm to a closed/shutdown position."""
+        # Get current position for a smooth transition
         base_pos = self.current_positions[0]
-        
-        # Create a mini-animation sequence
+        # Define the close position
+        self.close_position = [base_pos, -1.4, 2.0, 1.8, 0.0]
+        # [base_pos,-0.83, 1.9, 1.40,0.0]
+        # Keyframe positions
         keyframes = [
-            # Initial preparation for folding
-            [base_pos, -0.5, 1.0, 0.5, 0.0],
+            # Intermediate position - prepare for folding
+            [base_pos, -0.9, 1.0, 1.5, 0.0],
             
-            # compression with weight
-            [base_pos, -1.5, 1.8, 0.0, 0.0],
+            # Begin folding movement
+            [base_pos, -0.9, 1.5, 1.6, 0.0],
             
-            #  maximum compact fold position
-            [base_pos, -2.0, 2.0, 1.0, 0.0],
+            # Continue folding - getting closer to final position
+            [base_pos, -1.1, 2.0, 1.7, 0.0],
             
-            #  small adjustment (deep sigh)
-            [base_pos, -1.9, 1.9, 1.1, 0.0],
-            
-            # Final hold in compact position (slightly adjusted for stability)
-            [base_pos, -1.95, 1.95, 1.0, 0.0]
+            # Final closed position
+            self.close_position
         ]
         
-        # Durations for the reset sequence - slower and more deliberate
-        durations = [
-            0.6,  # Initial preparation
-            0.8,  # Compression
-            0.8,  # Maximum fold
-            0.6,  # Small adjustment
-            0.7   # Final stable position
-        ]
+        # Durations for smooth transition to closed position
+        durations = [0.9, 1.2, 1.2, 1.2]
         
-        # Save animation state to restore after this special sequence
-        was_animating = self.is_animating
-        old_animation_steps = self.animation_steps.copy() if self.animation_steps else []
-        old_durations = self.step_durations.copy() if self.step_durations else []
-        old_current_step = self.current_step
-        
-        # Execute the reset sequence directly
-        # Setting animation state to use our custom sequence
-        self.animation_steps = keyframes
-        self.step_durations = durations
-        self.current_step = 0
-        self.is_animating = True
-        
-        # Process through the reset sequence
-        for i in range(len(keyframes)):
-            if i < len(keyframes):
-                current_pos = keyframes[i]
-                current_duration = durations[i] / self.speed_multiplier
-                
-                # Move to position with easing
-                self.move_to_position(current_pos, current_duration, easing=True)
-                self.get_logger().debug(f'Reset step {i+1}/{len(keyframes)}: {[round(p, 2) for p in current_pos]}')
-        
-        # Mark position as complete
-        self.target_positions = keyframes[-1].copy()
-        self.get_logger().info(f'Reset to folded position: {[round(p, 2) for p in self.target_positions]}')
-        
-        # Restore previous animation state
-        self.is_animating = was_animating
-        self.animation_steps = old_animation_steps
-        self.step_durations = old_durations
-        self.current_step = old_current_step
-        
-        return True
+        # Start the animation
+        self.start_animation(keyframes, durations)
+        self.get_logger().info('Executing close animation - moving to compact position')
 
     # Enhanced animation methods implementing Disney animation principles
     def curious_look(self):
