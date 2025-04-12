@@ -67,7 +67,7 @@ class CameraInteraction(Node):
         self.emotion_cooldown = 4.0  # seconds between animations
         
         # Add a history of recent emotions to avoid repetition
-        self.recent_emotions = deque(maxlen=3)  # Keep track of last 5 emotions that triggered animations
+        self.recent_emotions = deque(maxlen=1)  # Keep track of last X emotions that triggered animations
         
         # Map emotions to animations
         self.emotion_to_animation = {
@@ -438,7 +438,7 @@ class CameraInteraction(Node):
             return True
             
         # If this emotion appears too frequently in our recent history, avoid it
-        if len(self.recent_emotions) >= 3:  # Only check when we have some history
+        if len(self.recent_emotions) >= 1:  # Only check when we have some history
             emotion_counts = {}
             for e in self.recent_emotions:
                 emotion_counts[e] = emotion_counts.get(e, 0) + 1
