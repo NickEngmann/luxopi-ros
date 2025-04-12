@@ -267,7 +267,7 @@ class SerialManager(threading.Thread):
                         data.get('s', 0.0),  # shoulder
                         data.get('e', 0.0),  # elbow
                         data.get('t', 0.0),  # wrist (t in the message)
-                        data.get('g', 3.14)  # gripper/hand (default to 3.14 if not present)
+                        data.get('g', 0.0)  # gripper/hand (default to 0.0 if not present)
                     ]
                     
                     # Publish position data to ROS topic as a list format
@@ -509,7 +509,7 @@ class SerialManager(threading.Thread):
         Control the gripper/hand.
         
         Args:
-            angle (float): Hand angle in radians (1.57=release, 3.14=grab)
+            angle (float): Hand angle in radians (1.57=release, 0.0=grab)
             speed (int): Movement speed
             accel (int): Acceleration
         """

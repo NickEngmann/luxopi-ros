@@ -582,14 +582,14 @@ class RoArmHardwareInterface(Node):
             
         try:
             # Use T:102 command for joint control in radians
-            # From API: {"T":102,"base":0,"shoulder":0,"elbow":1.57,"hand":3.14,"spd":0,"acc":10}
+            # From API: {"T":102,"base":0,"shoulder":0,"elbow":1.57,"hand":0.0,"spd":0,"acc":10}
             joint_cmd = {
                 'T': 102,
                 'base': safe_positions[0],
                 'shoulder': safe_positions[1],
                 'elbow': safe_positions[2],
                 'roll': -1.5,
-                'hand': safe_positions[4],  # Gripper
+                'hand': 0.0,  # Gripper
                 'spd': 0,  # Max speed
                 'acc': 10  # Gentle acceleration
             }
@@ -801,16 +801,6 @@ class RoArmHardwareInterface(Node):
         except Exception as e:
             self.get_logger().error(f"Error disabling dynamic adaptation mode: {e}")
             return False
-    
-    def schedule_dynamic_adaptation_resume(self):
-        """Schedule re-enabling of dynamic adaptation mode after a delay"""
-        if not self.enable_dynamic_adaptation:
-            return  # Feature not enabled
-            
-        with self.dynamic_adaptation_lock:
-            if not self.dynamic_adaptation_pending_resume:
-                self.dynamic_adaptation_pending_resume = True
-                self.get_logger().info(f"Scheduled dynamic adaptation resume in {self.dynamic_adaptation_resume_delay}s")
 
     def dynamic_adaptation_toggle_callback(self, msg):
         """Handle incoming toggle commands for dynamic adaptation"""
