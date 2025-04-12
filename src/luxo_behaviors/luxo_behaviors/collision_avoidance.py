@@ -1160,6 +1160,8 @@ class CollisionAvoidance:
         First moves to home_position_1, and once it's within tolerance of that position,
         transitions to home_position_2. If already close to home_position_2, skips
         directly to that position.
+
+        Preserves the current base rotation (joint 0) regardless of what's in the home positions.
         """
         try:
             # Force disable any other modes that might interfere
@@ -1167,26 +1169,36 @@ class CollisionAvoidance:
             self.target_override_active = False  # Clear any previous override
             
             current_time = time.time()
+            current_base_position = self.current_joints[0]
+            
+            # Create modified home positions that preserve the current base rotation
+            mod_home_position_1 = self.home_position_1.copy()
+            mod_home_position_1[0] = current_base_position
+            
+            mod_home_position_2 = self.home_position_2.copy()
+            mod_home_position_2[0] = current_base_position
             
             # IMPROVED: Check if we're already at or near home_position_2 - use a more relaxed tolerance
-            hp2_diffs = [abs(curr - target) for curr, target in zip(self.current_joints, self.home_position_2)]
+            # Skip checking joint 0 (base) when determining if we're at home
+            hp2_diffs = [abs(curr - target) if i > 0 else 0.0 
+            for i, (curr, target) in enumerate(zip(self.current_joints, mod_home_position_2))]
             already_at_home2 = max(hp2_diffs) <= 0.2
             
             if already_at_home2:
                 self.home_position_stage = 2
                 self.node.get_logger().info(f"Already at final home position (diffs: {[round(d, 2) for d in hp2_diffs]}) - going directly to stage 2")
             else:
-                # Also check if we're close to home_position_1
-                hp1_diffs = [abs(curr - target) for curr, target in zip(self.current_joints, self.home_position_1)]
+                # Also check if we're close to home_position_1, ignoring base position
+                hp1_diffs = [abs(curr - target) if i > 0 else 0.0 
+                for i, (curr, target) in enumerate(zip(self.current_joints, mod_home_position_1))]
                 already_at_home1 = max(hp1_diffs) <= self.home_position_tolerance
                 
                 if already_at_home1:
                     self.home_position_stage = 2  # Start at stage 1 but we'll quickly transition to stage 2
                     self.node.get_logger().info(f"Already at initial home position (diffs: {[round(d, 2) for d in hp1_diffs]}) - starting at stage 1")
                 else:
-                    # Default to stage 1
                     self.home_position_stage = 1
-                    self.node.get_logger().info(f"Not at any home position, starting homing sequence at stage 1")
+                    self.node.get_logger().info(f"Starting home position sequence at stage 1")
                     
                     # Additional logging for diagnostics
                     self.node.get_logger().info(f"Current position: {[round(p, 2) for p in self.current_joints]}")
@@ -1197,13 +1209,13 @@ class CollisionAvoidance:
             noise_range = 0.05
             if self.home_position_stage == 1:
                 home_with_variation = [
-                    pos + random.uniform(-noise_range, noise_range) 
-                    for pos in self.home_position_1
+                current_base_position if i == 0 else pos + random.uniform(-noise_range, noise_range) 
+                    for i, pos in enumerate(mod_home_position_1)
                 ]
             else:
                 home_with_variation = [
-                    pos + random.uniform(-noise_range, noise_range) 
-                    for pos in self.home_position_2
+                current_base_position if i == 0 else                     pos + random.uniform(-noise_range, noise_range) 
+                    for i, pos in enumerate(mod_home_position_2)
                 ]
             
             self.node.get_logger().info(f"Moving to home position stage {self.home_position_stage} with variation: {[round(p, 2) for p in home_with_variation]}")
@@ -1221,7 +1233,7 @@ class CollisionAvoidance:
             # Move to the home position - override unsafe zones in this case
             success = self.send_safe_joint_command(
                 home_with_variation, 
-                description, 
+                description 
             )
             
             # Reset collision counters and escape status
