@@ -264,7 +264,7 @@ def generate_launch_description():
             {'enable_torque': True},
             {'read_throttle': 0.1},
             {'enable_dynamic_adaptation': enable_dynamic_adaptation},
-            {'dynamic_adaptation_base_limit': 200},
+            {'dynamic_adaptation_base_limit': 0},
             {'dynamic_adaptation_shoulder_limit': 300},
             {'dynamic_adaptation_elbow_limit': 200}, 
             {'dynamic_adaptation_wrist_limit': 300},
