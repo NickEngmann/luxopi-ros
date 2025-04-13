@@ -600,7 +600,7 @@ class SerialManager(threading.Thread):
             self.node.get_logger().error("Failed to set delay")
         return success
     
-    def set_dynamic_adaptation(self, mode=1, base=60, shoulder=125, elbow=125, wrist=125, roll=125, hand=125):
+    def set_dynamic_adaptation(self, mode=1, base=1, shoulder=1, elbow=1, wrist=1, roll=1, hand=1):
         """
         Configure dynamic external force adaptation.
         
@@ -634,12 +634,15 @@ class SerialManager(threading.Thread):
             self.node.get_logger().info(f"Sending dynamic adaptation command: {cmd_str}")
             success = self.send_command(cmd_str, f"Dynamic adaptation mode: {mode}")
             
-            # Allow extra time for this command to take effect
-            time.sleep(0.5)
-            
-            if not success:
-                self.node.get_logger().error("Failed to set dynamic adaptation")
+            # Log the result
+            if success:
+                self.node.get_logger().info(f"Dynamic adaptation command successful (mode: {mode})")
+            else:
+                self.node.get_logger().error(f"Dynamic adaptation command failed (mode: {mode})")
                 
+            # Allow extra time for this command to take effect
+            time.sleep(0.25)
+            
             return success
         except Exception as e:
             self.node.get_logger().error(f"Error in set_dynamic_adaptation: {e}")

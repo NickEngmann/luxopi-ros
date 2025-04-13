@@ -4,6 +4,8 @@ import random
 import time
 import math
 import threading
+from sensor_msgs.msg import JointState
+from std_msgs.msg import String
 
 class CollisionAvoidance:
     """Class to handle collision avoidance logic for the RoArm hardware interface."""
@@ -106,7 +108,7 @@ class CollisionAvoidance:
         
         # Add tracking for idle time
         self.last_activity_time = time.time()
-        self.idle_timeout = 15.0  # seconds
+        self.idle_timeout = 8.0  # seconds
         self.idle_check_active = True  # Flag to enable/disable idle detection
         self.idle_check_last_log = 0.0  # For log throttling
         
@@ -524,6 +526,17 @@ class CollisionAvoidance:
         self.last_activity_time = current_time
         self.node.get_logger().debug(f"Activity timestamp updated due to collision avoidance action")
         
+        # Report collision movement source for DEMA coordination
+        if hasattr(self.node, 'enable_movement_source_integration') and self.node.enable_movement_source_integration:
+            try:
+                movement_source_msg = String()
+                movement_source_msg.data = "collision"
+                if hasattr(self.node, 'movement_source_publisher'):
+                    self.node.movement_source_publisher.publish(movement_source_msg)
+                    self.node.get_logger().debug("Published collision movement source for DEMA")
+            except Exception as e:
+                self.node.get_logger().error(f"Error publishing collision movement source: {e}")
+        
         try:
             # Start with current position
             new_position = self.current_joints.copy()
@@ -712,7 +725,7 @@ class CollisionAvoidance:
                     self.node.get_logger().info(f"Current differences from home_position_2: {[round(d, 4) for d in differences]}")
                 elif self._at_position(self.current_joints, self.home_position_2, self.home_position_tolerance):
                     # We've successfully reached the final home position
-                    self.node.get_logger().info("Successfully reached final home position (stage 2)")
+                    self.node.get_logger().debug("Successfully reached final home position (stage 2)")
                     # Clear returning to home flag once we've fully reached home
                     self.returning_to_home = False
                 
@@ -1163,6 +1176,9 @@ class CollisionAvoidance:
         Preserves the current base rotation (joint 0) regardless of what's in the home positions.
         """
         try:
+            # Publish a "collision" movement source to disable DEMA during home movement
+            self._publish_movement_source("collision")
+            
             # Force disable any other modes that might interfere
             self.escape_mode_active = False
             self.target_override_active = False  # Clear any previous override
@@ -1185,7 +1201,8 @@ class CollisionAvoidance:
             
             if already_at_home2:
                 self.home_position_stage = 2
-                self.node.get_logger().info(f"Already at final home position (diffs: {[round(d, 2) for d in hp2_diffs]}) - going directly to stage 2")
+                self.node.get_logger().debug(f"Already at final home position (diffs: {[round(d, 2) for d in hp2_diffs]})")
+                # return True
             else:
                 # Also check if we're close to home_position_1, ignoring base position
                 hp1_diffs = [abs(curr - target) if i > 0 else 0.0 
@@ -1212,7 +1229,7 @@ class CollisionAvoidance:
                     for i, pos in enumerate(mod_home_position_2)
                 ]
             
-            self.node.get_logger().info(f"Moving to home position stage {self.home_position_stage} with variation: {[round(p, 2) for p in home_with_variation]}")
+            self.node.get_logger().debug(f"Moving to home position stage {self.home_position_stage} with variation: {[round(p, 2) for p in home_with_variation]}")
             
             # Create a high-priority override to enforce this target
             self.target_override_active = True
@@ -1415,3 +1432,39 @@ class CollisionAvoidance:
                 return True
         
         return False
+    
+    def _publish_movement_source(self, source):
+        """Publish movement source information for DEMA coordination."""
+        try:
+            # Check if node has movement source publisher
+            if hasattr(self.node, 'enable_movement_source_integration') and self.node.enable_movement_source_integration:
+                self.node.get_logger().info(f"Publishing movement source: {source} from collision avoidance")
+                
+                # Try with joint_states style encoding for hardware interface
+                if hasattr(self.node, 'joint_states_publisher'):
+                    msg = JointState()
+                    msg.header.stamp = self.node.get_clock().now().to_msg()
+                    msg.name = ['base', 'shoulder', 'elbow', 'wrist', 'hand']
+                    msg.position = self.current_joints.copy()
+                    
+                    # Encode movement source in velocity field
+                    source_code = 0  # Default to idle
+                    if source == "animation":
+                        source_code = 1
+                    elif source == "collision":
+                        source_code = 2
+                    elif source == "user":
+                        source_code = 3
+                    
+                    msg.velocity = [float(source_code)]
+                    self.node.joint_states_publisher.publish(msg)
+                
+                # Also try with the String message approach for compatibility
+                if hasattr(self.node, 'movement_source_publisher'):
+                    str_msg = String()
+                    str_msg.data = source
+                    self.node.movement_source_publisher.publish(str_msg)
+        except Exception as e:
+            self.node.get_logger().error(f"Error publishing movement source: {e}")
+            import traceback
+            self.node.get_logger().error(f"Stack trace: {traceback.format_exc()}")

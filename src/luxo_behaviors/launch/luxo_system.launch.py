@@ -264,13 +264,14 @@ def generate_launch_description():
             {'enable_torque': True},
             {'read_throttle': 0.1},
             {'enable_dynamic_adaptation': enable_dynamic_adaptation},
-            {'dynamic_adaptation_base_limit': 150},
-            {'dynamic_adaptation_shoulder_limit': 300},
-            {'dynamic_adaptation_elbow_limit': 200}, 
-            {'dynamic_adaptation_wrist_limit': 300},
-            {'dynamic_adaptation_roll_limit': 300},
+            {'dynamic_adaptation_base_limit': 1},
+            {'dynamic_adaptation_shoulder_limit': 1},
+            {'dynamic_adaptation_elbow_limit': 1}, 
+            {'dynamic_adaptation_wrist_limit': 1},
+            {'dynamic_adaptation_roll_limit': 1},
             {'dynamic_adaptation_hand_limit': 0},
-            {'dynamic_adaptation_resume_delay': 5.0},
+            {'dynamic_adaptation_resume_delay': 10.0},
+            {'enable_movement_source_integration': True},  # Explicitly enable movement source integration
             {'ros__parameters': {'log_level': 'error'}}
         ],
         condition=IfCondition(use_hardware)
