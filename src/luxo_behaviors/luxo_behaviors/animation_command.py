@@ -480,7 +480,7 @@ class EnhancedAnimationCommand(Node):
 
     def close_animation(self):
         """Move the arm to a closed/shutdown position."""
-        # Get current position for a smooth transition
+                # Get current position for a smooth transition
         base_pos = self.current_positions[0]
         # Define the close position
         self.close_position = [base_pos, -1.4, 2.0, 1.8, 0.0]
@@ -1339,7 +1339,6 @@ class EnhancedAnimationCommand(Node):
         # Start the animation
         self.start_animation(keyframes, durations)
         self.get_logger().info('Executing head shake animation')
-
 
 def main(args=None):
     rclpy.init(args=args)

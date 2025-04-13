@@ -106,14 +106,13 @@ class CollisionAvoidance:
         
         # Add tracking for idle time
         self.last_activity_time = time.time()
-        self.idle_timeout = 4.0  # seconds
+        self.idle_timeout = 15.0  # seconds
         self.idle_check_active = True  # Flag to enable/disable idle detection
         self.idle_check_last_log = 0.0  # For log throttling
         
         # Add flags for special operations
         self.returning_to_home = False
         self.returning_to_home_time = 0.0
-        self.home_position_return_timeout = 20.0  # If we're trying to go home for more than 20 seconds, give up
     
     def update_current_joints(self, joints):
         """Update the current joint positions."""
@@ -379,7 +378,7 @@ class CollisionAvoidance:
             # Check if we're currently trying to go home and handle timeouts
             if self.returning_to_home:
                 time_since_home_attempt = current_time - self.returning_to_home_time
-                if time_since_home_attempt > self.home_position_return_timeout:
+                if time_since_home_attempt > self.idle_timeout:
                     self.node.get_logger().warn(f"Home position return timeout after {time_since_home_attempt:.1f}s - giving up")
                     self.returning_to_home = False
                     # Reset other state variables for clean slate
