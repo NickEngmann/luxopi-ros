@@ -56,7 +56,7 @@ class CollisionAvoidance:
             'left': {'last_time': 0.0, 'last_position': None, 'adjustment_made': False},
             'right': {'last_time': 0.0, 'last_position': None, 'adjustment_made': False}
         }
-        self.adjustment_cooldown = 2.0  # Time to wait before making the same adjustment again
+        self.adjustment_cooldown = 1.0 
         self.adjustment_position_threshold = 0.1  # Difference threshold to consider a new position
         
         # Escape mode variables
@@ -91,7 +91,7 @@ class CollisionAvoidance:
         # Two-stage home position sequence
         self.home_position_1 = [0.5, 0.5, 1.3, 1.4, 0.0]  # Initial home position
         self.home_position_2 = [0.5, -0.85, 1.3, 1.4, 0.0]  # Final home position
-        self.home_position_tolerance = 0.15  # Tolerance to determine if we're at a position
+        self.home_position_tolerance = 0.2  # Tolerance to determine if we're at a position (increased from 0.15 for faster transitions)
         self.home_position_stage = 1  # Track which stage of the home sequence we're in
         self.home_position_stage_change_time = 0.0  # When we switched home position stages
         
@@ -395,7 +395,7 @@ class CollisionAvoidance:
                     self.node.get_logger().info(f"Persistent head collision duration: {head_collision_duration:.1f}s")
                     self.persistent_head_collision_last_log = current_time
                 
-                if head_collision_duration > 3.0:  # 3 seconds of persistent head collision
+                if head_collision_duration > 1.25:
                     self.node.get_logger().warn(f"Persistent head collision for {head_collision_duration:.1f}s - resetting to home position")
                     # Force go to home by setting flag and calling method
                     self.returning_to_home = True
@@ -994,13 +994,13 @@ class CollisionAvoidance:
                 persistence_multiplier = min(3.0, 1.0 + front_status['consecutive_count'] * 0.05)
                 
             # Enhanced shoulder and elbow adjustments (pull back more strongly)
-            shoulder_adjustment = front_factor * 0.5 * persistence_multiplier
-            elbow_adjustment = front_factor * 0.5 * persistence_multiplier
+            shoulder_adjustment = front_factor * 0.4 * persistence_multiplier
+            elbow_adjustment = front_factor * 0.3 * persistence_multiplier
             adjusted_targets[1] -= shoulder_adjustment
-            adjusted_targets[2] += elbow_adjustment
+            adjusted_targets[2] -= elbow_adjustment
             
             # Adjust wrist to maintain end effector orientation
-            adjusted_targets[3] -= (shoulder_adjustment + elbow_adjustment) * 0.5
+            adjusted_targets[3] -= (shoulder_adjustment + elbow_adjustment) * 0
             
             front_adjustment_msg = f"front(retreat: {shoulder_adjustment:.2f})"
             
@@ -1199,11 +1199,6 @@ class CollisionAvoidance:
                 else:
                     self.home_position_stage = 1
                     self.node.get_logger().info(f"Starting home position sequence at stage 1")
-                    
-                    # Additional logging for diagnostics
-                    self.node.get_logger().info(f"Current position: {[round(p, 2) for p in self.current_joints]}")
-                    self.node.get_logger().info(f"Home position 1: {[round(p, 2) for p in self.home_position_1]}")
-                    self.node.get_logger().info(f"Home position 2: {[round(p, 2) for p in self.home_position_2]}")
             
             # Add slight random variation to home position
             noise_range = 0.05
@@ -1336,8 +1331,8 @@ class CollisionAvoidance:
         
         if direction == 'front':
             # Pull back arm dramatically
-            new_position[1] -= 0.5 * escape_magnitude  # Shoulder back
-            new_position[2] += 0.6 * escape_magnitude  # Elbow fold
+            new_position[1] -= 0.6 * escape_magnitude  # Shoulder back
+            new_position[2] += 0.4 * escape_magnitude  # Elbow fold
             
             # Add rotation to move out of the way
             # Use consistent rotation based on attempt # to avoid oscillation
@@ -1374,7 +1369,7 @@ class CollisionAvoidance:
         
         if direction == 'front':
             # Pull back arm slightly
-            new_position[1] -= 0.4 * escape_magnitude  # Shoulder back
+            new_position[1] -= 0.5 * escape_magnitude  # Shoulder back
             new_position[2] += 0.3 * escape_magnitude  # Elbow fold
             
             # Small rotation

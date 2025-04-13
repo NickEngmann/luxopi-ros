@@ -161,7 +161,7 @@ class RoArmHardwareInterface(Node):
                 10)
                 
             # Add a direct publishing timer to ensure we're sending messages regularly
-            self.direct_pub_timer = self.create_timer(0.2, self.publish_current_joint_states)
+            self.direct_pub_timer = self.create_timer(0.1, self.publish_current_joint_states)
             
             # Create subscriptions to collision topics
             self.front_collision_sub = self.create_subscription(
@@ -241,7 +241,7 @@ class RoArmHardwareInterface(Node):
             )
             
             # Add timer to turn on the light after 90 seconds
-            self.light_timer = self.create_timer(90.0, self.delayed_light_on)
+            self.light_timer = self.create_timer(70.0, self.delayed_light_on)
             self.get_logger().info("Light will automatically turn on in 90 seconds")
             
             self.get_logger().info("RoArm hardware interface initialized")
@@ -294,7 +294,7 @@ class RoArmHardwareInterface(Node):
                 
             # Create a new timer with a wrapper function that includes error handling
             self.safety_timer = self.create_timer(
-                0.1,
+                0.05,
                 lambda: self.safety_timer_wrapper(timer_id)
             )
             
