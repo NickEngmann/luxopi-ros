@@ -96,6 +96,7 @@ class CollisionAvoidance:
         self.home_position_tolerance = 0.2  # Tolerance to determine if we're at a position (increased from 0.15 for faster transitions)
         self.home_position_stage = 1  # Track which stage of the home sequence we're in
         self.home_position_stage_change_time = 0.0  # When we switched home position stages
+        self.home_position_stage_timeout = 2  # Time to wait at home_position_1 before moving to home_position_2
         
         # Animation state tracking
         self.last_movement_time = time.time()
@@ -108,13 +109,13 @@ class CollisionAvoidance:
         
         # Add tracking for idle time
         self.last_activity_time = time.time()
-        self.idle_timeout = 8.0  # seconds
+        self.idle_timeout = 4.0  # seconds - used for both idle detection and home position timeout
         self.idle_check_active = True  # Flag to enable/disable idle detection
         self.idle_check_last_log = 0.0  # For log throttling
         
         # Add flags for special operations
         self.returning_to_home = False
-        self.returning_to_home_time = 0.0
+        self.returning_to_home_start_time = 0.0  # When we started returning to home
     
     def update_current_joints(self, joints):
         """Update the current joint positions."""
@@ -379,7 +380,7 @@ class CollisionAvoidance:
             
             # Check if we're currently trying to go home and handle timeouts
             if self.returning_to_home:
-                time_since_home_attempt = current_time - self.returning_to_home_time
+                time_since_home_attempt = current_time - self.returning_to_home_start_time
                 if time_since_home_attempt > self.idle_timeout:
                     self.node.get_logger().warn(f"Home position return timeout after {time_since_home_attempt:.1f}s - giving up")
                     self.returning_to_home = False
@@ -400,7 +401,7 @@ class CollisionAvoidance:
                     self.node.get_logger().warn(f"Persistent head collision for {head_collision_duration:.1f}s - resetting to home position")
                     # Force go to home by setting flag and calling method
                     self.returning_to_home = True
-                    self.returning_to_home_time = current_time
+                    self.returning_to_home_start_time = current_time
                     self.go_to_home_position("Persistent head collision reset")
                     return  # Skip remaining checks as we're already taking action
             
@@ -408,24 +409,35 @@ class CollisionAvoidance:
             if self.idle_check_active and not any(status['active'] for status in self.collision_status.values()):
                 time_since_activity = current_time - self.last_activity_time
                 
+                # Check if we're already at or very close to home positions
+                already_at_home2 = self._at_position(self.current_joints, self.home_position_2, self.home_position_tolerance)
+                already_at_home1 = self._at_position(self.current_joints, self.home_position_1, self.home_position_tolerance * 1.2)
+                
+                # Use different timeout values based on position
+                if already_at_home1 or already_at_home2:
+                    # If already near a home position, use shorter timeout
+                    effective_timeout = self.home_position_stage_timeout
+                    position_status = "near home position"
+                else:
+                    # Regular timeout for positions away from home
+                    effective_timeout = self.idle_timeout
+                    position_status = "away from home position"
+                
                 # Log the idle time periodically to help debugging
-                if time_since_activity > 3.0 and current_time - self.idle_check_last_log > 2.0:
-                    self.node.get_logger().debug(f"Device idle for {time_since_activity:.1f}s (timeout: {self.idle_timeout}s)")
+                if time_since_activity > 1.5 and current_time - self.idle_check_last_log > 2.0:
+                    self.node.get_logger().debug(f"Device idle for {time_since_activity:.1f}s (timeout: {effective_timeout}s, {position_status})")
                     self.idle_check_last_log = current_time
                 
-                # Check if we're already at or very close to home position
-                already_at_home = self._at_position(self.current_joints, self.home_position_2, self.home_position_tolerance)
-                
-                if time_since_activity > self.idle_timeout and not already_at_home:
-                    self.node.get_logger().debug(f"Device idle for {time_since_activity:.1f}s - returning to home position")
+                if time_since_activity > effective_timeout and not already_at_home2:
+                    self.node.get_logger().info(f"Device idle for {time_since_activity:.1f}s ({position_status}) - returning to home position")
                     # Force go to home by setting flag and calling method
                     self.returning_to_home = True
-                    self.returning_to_home_time = current_time
+                    self.returning_to_home_start_time = current_time
                     self.go_to_home_position("Idle timeout reset")
                     return  # Skip remaining checks as we're already taking action
-                elif time_since_activity > self.idle_timeout and already_at_home:
+                elif time_since_activity > effective_timeout and already_at_home2:
                     # We're already at home, so just reset the activity timer to prevent continuous triggering
-                    self.node.get_logger().debug("Device idle, but already at home position - resetting activity timer")
+                    self.node.get_logger().debug("Device idle, but already at final home position - resetting activity timer")
                     self.last_activity_time = current_time
             
             # Fast path: Check if there are any active collisions or we're in escape mode
@@ -733,28 +745,47 @@ class CollisionAvoidance:
             elif self.home_position_stage == 1:
                 # Check if we've reached home_position_1 (within tolerance)
                 if self._at_position(self.current_joints, self.home_position_1, self.home_position_tolerance):
-                    self.node.get_logger().info(f"Reached home_position_1 with tolerance {self.home_position_tolerance} - transitioning to home_position_2")
+                    # Check if we've been at position 1 long enough before moving to position 2
+                    current_time = time.time()
                     
-                    # Switch to stage 2
-                    self.home_position_stage = 2
-                    self.home_position_stage_change_time = current_time
+                    # Initialize the stage change time if it's not set yet
+                    if self.home_position_stage_change_time == 0.0:
+                        self.home_position_stage_change_time = current_time
+                        self.node.get_logger().info(f"Started timing home position stage 1 - will wait {self.home_position_stage_timeout}s")
                     
-                    # Add slight random variation to home_position_2
-                    noise_range = 0.05
-                    home_with_variation = [
-                        pos + random.uniform(-noise_range, noise_range) 
-                        for pos in self.home_position_2
-                    ]
+                    time_at_position_1 = current_time - self.home_position_stage_change_time
                     
-                    # Update the target override with home_position_2
-                    self.target_override_joints = home_with_variation
-                    self.target_override_time = current_time
-                    self.target_override_reason = "Home position sequence stage 2"
-                    
-                    # Send command to move to home_position_2
-                    self.send_safe_joint_command(home_with_variation, "Home position stage 2")
-                    
-                    # Don't return yet - continue with normal processing
+                    # Check if we've waited long enough at position 1
+                    if time_at_position_1 >= self.home_position_stage_timeout:
+                        self.node.get_logger().info(f"Reached home_position_1 and waited {time_at_position_1:.1f}s - transitioning to home_position_2")
+                        
+                        # Switch to stage 2
+                        self.home_position_stage = 2
+                        self.home_position_stage_change_time = current_time
+                        
+                        # Add slight random variation to home_position_2
+                        noise_range = 0.05
+                        home_with_variation = [
+                            pos + random.uniform(-noise_range, noise_range) 
+                            for pos in self.home_position_2
+                        ]
+                        
+                        # Update the target override with home_position_2
+                        self.target_override_joints = home_with_variation
+                        self.target_override_time = current_time
+                        self.target_override_reason = "Home position sequence stage 2"
+                        
+                        # Send command to move to home_position_2
+                        self.send_safe_joint_command(home_with_variation, "Home position stage 2")
+                    elif current_time - self.idle_check_last_log > 1.0:
+                        # Periodically log the waiting progress
+                        self.node.get_logger().debug(f"At home_position_1, waiting {self.home_position_stage_timeout - time_at_position_1:.1f}s before transitioning to stage 2")
+                        self.idle_check_last_log = current_time
+                else:
+                    # Reset stage change time if we're not at position 1
+                    if self.home_position_stage_change_time != 0.0:
+                        self.node.get_logger().debug("Lost home_position_1 - resetting stage timer")
+                        self.home_position_stage_change_time = 0.0
             
             # Always return the override position when in home movement sequence
             return self.target_override_joints

@@ -129,20 +129,20 @@ class RoArmHardwareInterface(Node):
         self.last_movement_source = "unknown"  # Track movement source for DEMA control
         self.initial_adaptation_setup = True  # Flag to track initial setup vs toggle
         
-        # Initialize the collision avoidance system
-        self.collision_avoidance = CollisionAvoidance(
-            self,  # Pass this node to the collision system
-            self.send_safe_joint_command,  # Callback to send joint commands
-            self.publish_actual_joint_states  # Callback to publish joint states
-        )
         
         if self.connection_active:
+            # Initialize the collision avoidance system
+            self.collision_avoidance = CollisionAvoidance(
+                self,  # Pass this node to the collision system
+                self.send_safe_joint_command,  # Callback to send joint commands
+                self.publish_actual_joint_states  # Callback to publish joint states
+            )
             if self.enable_torque_on_start:
                 self.get_logger().info("Torque enabled on startup")
                 self.enable_torque()
             else:
                 self.get_logger().info("Torque disabled on startup")
-                
+            time.sleep(0.5)   
             # Configure dynamic adaptation for startup
             # Always start with dynamic adaptation disabled regardless of parameter
             self.disable_dynamic_adaptation_mode()
@@ -664,6 +664,13 @@ class RoArmHardwareInterface(Node):
                 # Set a flag to re-enable after movement completes
                 self.dynamic_adaptation_pending_resume = True
                 self.dynamic_adaptation_last_disable_time = time.time()
+                
+                # Schedule a timer to check for re-enabling DEMA after 1 second
+                if not hasattr(self, 'dema_reenable_timer') or not self.dema_reenable_timer.is_alive():
+                    self.dema_reenable_timer = threading.Timer(3.0, self.check_dema_reenable)
+                    self.dema_reenable_timer.daemon = True
+                    self.dema_reenable_timer.start()
+                    self.get_logger().info("Scheduled DEMA re-enable check in 3.0 second")
             
             # Use T:102 command for joint control in radians
             # From API: {"T":102,"base":0,"shoulder":0,"elbow":1.57,"hand":0.0,"spd":0,"acc":10}
@@ -703,6 +710,61 @@ class RoArmHardwareInterface(Node):
         except Exception as e:
             self.get_logger().error(f"Error sending safe joint commands: {e}")
             return False
+
+    def check_dema_reenable(self):
+        """Check if DEMA can be re-enabled after settling into a position"""
+        try:
+            current_time = time.time()
+            time_since_disable = current_time - self.dynamic_adaptation_last_disable_time
+            
+            self.get_logger().info(f"Checking if robot has settled to re-enable DEMA (disabled for {time_since_disable:.1f}s)")
+            
+            # Only proceed if DEMA is currently disabled but should be enabled
+            if not self.dynamic_adaptation_active and self.dynamic_adaptation_pending_resume:
+                # Check if we've been in position for at least 1 second
+                # We'll use two approaches to determine if we're settled:
+                # 1. Check time since last command
+                # 2. Check if we're close to our target position
+                
+                # Calculate time since last command
+                last_cmd_time = getattr(self, 'last_command_time', 0)
+                if hasattr(last_cmd_time, 'nanoseconds'):  # Check if it's a ROS Time object
+                    last_cmd_time = last_cmd_time.nanoseconds / 1e9
+                time_since_command = current_time - last_cmd_time
+                
+                # Check if target and current positions are close (settled)
+                is_settled = True
+                if hasattr(self, 'target_joints') and hasattr(self, 'current_joints'):
+                    for i in range(min(len(self.target_joints), len(self.current_joints))):
+                        if abs(self.target_joints[i] - self.current_joints[i]) > 0.05:
+                            is_settled = False
+                            break
+                
+                # Re-enable DEMA if we've settled for at least 1 second
+                if time_since_command >= 1.0 and is_settled:
+                    self.get_logger().info("Robot appears to have settled into position - re-enabling DEMA")
+                    success = self.enable_dynamic_adaptation_mode()
+                    if success:
+                        self.dynamic_adaptation_pending_resume = False
+                        self.get_logger().info("Successfully re-enabled DEMA after settling")
+                    else:
+                        self.get_logger().error("Failed to re-enable DEMA, scheduling another check")
+                        # Schedule another check after 0.5 seconds
+                        if not hasattr(self, 'dema_reenable_timer') or not self.dema_reenable_timer.is_alive():
+                            self.dema_reenable_timer = threading.Timer(0.5, self.check_dema_reenable)
+                            self.dema_reenable_timer.daemon = True
+                            self.dema_reenable_timer.start()
+                else:
+                    self.get_logger().info(f"Robot not settled yet (time since command: {time_since_command:.1f}s, is_settled: {is_settled})")
+                    # Schedule another check after 0.5 seconds
+                    if not hasattr(self, 'dema_reenable_timer') or not self.dema_reenable_timer.is_alive():
+                        self.dema_reenable_timer = threading.Timer(0.5, self.check_dema_reenable)
+                        self.dema_reenable_timer.daemon = True
+                        self.dema_reenable_timer.start()
+        except Exception as e:
+            self.get_logger().error(f"Error in DEMA re-enable check: {e}")
+            import traceback
+            self.get_logger().error(traceback.format_exc())
 
     def publish_current_joint_states(self):
         """Publish the current joint states periodically to ensure topic is active."""
