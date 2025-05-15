@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Source ROS2 setup files
-source /opt/ros/humble/setup.bash
+source /opt/ros/jazzy/setup.bash
 source /home/pi/luxopi-ros/install/setup.bash
 
 # Export any additional environment variables needed by ROS2
