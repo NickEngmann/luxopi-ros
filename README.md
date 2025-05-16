@@ -63,14 +63,14 @@ cd luxopi-ros
 ```bash
 sudo apt update
 sudo apt install ros-jazzy-joint-state-publisher ros-jazzy-robot-state-publisher ros-jazzy-rviz2 ros-jazzy-xacro
-pip3 install pyserial
+pip3 install pyserial --break-system-packages
 ```
 
 ### For Camera Features (optional)
 ```bash
 # Install DepthAI library and dependencies
-pip3 install depthai opencv-python
-pip3 install blobconverter numpy
+pip3 install depthai opencv-python --break-system-packages
+pip3 install blobconverter numpy --break-system-packages
 ```
 
 ### Build the workspace
