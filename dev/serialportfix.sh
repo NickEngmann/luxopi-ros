@@ -2,7 +2,7 @@
 
 # Serial Port Configuration Script for Raspberry Pi
 # This script will:
-# 1. Create a udev rule for persistent permissions on /dev/ttyAMA0
+# 1. Create a udev rule for persistent permissions on /dev/ttyAMA10
 # 2. Add current user to the dialout group
 # 3. Disable serial console in cmdline.txt if enabled
 
@@ -16,12 +16,12 @@ check_root() {
 
 # Function to create udev rule
 create_udev_rule() {
-    echo "Creating udev rule for /dev/ttyAMA0..."
+    echo "Creating udev rule for /dev/ttyAMA10..."
     
     # Create the udev rule file
     cat > /etc/udev/rules.d/99-serial.rules << EOF
 # Set persistent permissions for Raspberry Pi serial port
-KERNEL=="ttyAMA0", SUBSYSTEM=="tty", GROUP="dialout", MODE="0666"
+KERNEL=="ttyAMA10", SUBSYSTEM=="tty", GROUP="dialout", MODE="0666"
 EOF
     
     echo "Udev rule created successfully."
@@ -62,7 +62,7 @@ check_serial_console() {
     fi
     
     # Check if serial console is enabled
-    if grep -q "console=serial0" "$CMDLINE_PATH" || grep -q "console=ttyAMA0" "$CMDLINE_PATH"; then
+    if grep -q "console=serial0" "$CMDLINE_PATH" || grep -q "console=ttyAMA10" "$CMDLINE_PATH"; then
         echo "Serial console appears to be enabled in $CMDLINE_PATH"
         echo "Current cmdline.txt content:"
         cat "$CMDLINE_PATH"
@@ -72,7 +72,7 @@ check_serial_console() {
         echo "Backup created at ${CMDLINE_PATH}.backup"
         
         # Remove serial console references
-        NEW_CONTENT=$(cat "$CMDLINE_PATH" | sed 's/console=serial0,[0-9]\+ //g' | sed 's/console=ttyAMA0,[0-9]\+ //g')
+        NEW_CONTENT=$(cat "$CMDLINE_PATH" | sed 's/console=serial0,[0-9]\+ //g' | sed 's/console=ttyAMA10,[0-9]\+ //g')
         
         echo "Writing new cmdline.txt without serial console reference:"
         echo "$NEW_CONTENT"

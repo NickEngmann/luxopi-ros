@@ -229,10 +229,13 @@ sudo apt-get install -y i2c-tools libgpiod-dev python3-libgpiod python3-lgpio
 pip3 install --upgrade adafruit-blinka --break-system-packages
 git clone https://github.com/NickEngmann/Adafruit_CircuitPython_APDS9960.git
 cd Adafruit_CircuitPython_APDS9960
-sudo pip3 install -e . --break-system-packages
-sudo pip3 install adafruit-circuitpython-vcnl4200 --break-system-packages
-sudo pip3 install adafruit-circuitpython-vl53l4cd --break-system-packages
+pip3 install -e . --break-system-packages
+pip3 install adafruit-circuitpython-vcnl4200 --break-system-packages
+pip3 install adafruit-circuitpython-vl53l4cd --break-system-packages
 pip3 install RPi.GPIO --break-system-packages
+
+# Install DepthAI lsusb | grep 03e7Camera Code
+sudo wget -qO- https://docs.luxonis.com/install_depthai.sh | bash
 
 # Don't enable the firewall automatically - let the user do it
 echo "Firewall configured but not enabled. To enable, run: sudo ufw enable"

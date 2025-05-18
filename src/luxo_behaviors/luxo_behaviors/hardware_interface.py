@@ -15,7 +15,7 @@ class RoArmHardwareInterface(Node):
         super().__init__('roarm_hardware_interface')
         
         # Declare parameters
-        self.declare_parameter('serial_port', '/dev/ttyAMA0')
+        self.declare_parameter('serial_port', '/dev/ttyAMA10')
         self.declare_parameter('baud_rate', 115200)
         self.declare_parameter('enable_torque', True)
         self.declare_parameter('read_throttle', 0.1)
