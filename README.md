@@ -39,6 +39,14 @@ The RoArm-LuxoPi system combines hardware control, animation capabilities, and i
   - `depthai` (for camera features)
   - `numpy`
   - `cv_bridge` (for camera integration)
+  - `customtkinter` (GUI components)
+  - `requests` (HTTP communication)
+
+## Python Dependencies
+The project requires several Python packages, which can be installed with:
+```bash
+pip install -r requirements.txt
+```
 
 ## Package Structure
 - `roarm`: Core robot arm definitions and visualization (URDF, launch files)
