@@ -118,6 +118,10 @@ for port in ttyAMA0 ttyAMA0 ttyS0 ttyS1; do
     fi
 done
 
+sudo cp /boot/firmware/config.txt /boot/firmware/config.txt.backup && \
+grep -q "enable_uart=1" /boot/firmware/config.txt || echo "enable_uart=1" | sudo tee -a /boot/firmware/config.txt && \
+grep -q "dtoverlay=uart0" /boot/firmware/config.txt || echo "dtoverlay=uart0" | sudo tee -a /boot/firmware/config.txt
+sed -i 's/console=[^ ]* //g' "$CMDLINE_PATH"
 echo -e "\n=== Configuration Complete ==="
 echo "For all changes to take effect, please REBOOT your Raspberry Pi 5."
 echo -e "\nAfter rebooting, you can test the serial port with:"
