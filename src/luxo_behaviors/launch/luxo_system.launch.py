@@ -135,7 +135,7 @@ def generate_launch_description():
     # Hardware-specific info
     hardware_info = LogInfo(
         msg=["\n🔧 HARDWARE MODE DETAILS:\n",
-             "- Serial port: /dev/ttyAMA10 (baud: 115200)\n",
+             "- Serial port: /dev/ttyAMA0 (baud: 115200)\n",
              "- Test mode: ", test_mode, " (position=basic movements, animation=complex behaviors)\n",
              "- Proximity sensing: ", PythonExpression(["'enabled' if '", sense_collision, "' == 'true' else 'disabled'"]), "\n",
              "- Hardware joint states enabled\n"],
@@ -259,7 +259,7 @@ def generate_launch_description():
         name='hardware_interface',
         output='screen',
         parameters=[
-            {'serial_port': '/dev/ttyAMA10'},
+            {'serial_port': '/dev/ttyAMA0'},
             {'baud_rate': 115200},
             {'enable_torque': True},
             {'read_throttle': 0.1},

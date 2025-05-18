@@ -8,7 +8,7 @@ from std_msgs.msg import Float64
 import json
 import serial
 
-ser = serial.Serial("/dev/ttyAMA10",115200)
+ser = serial.Serial("/dev/ttyAMA0",115200)
 
 #
 class MinimalSubscriber(Node):

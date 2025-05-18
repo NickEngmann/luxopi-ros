@@ -14,7 +14,7 @@ class SerialManager(threading.Thread):
     Manages serial communication with the robot hardware.
     Acts as an abstraction layer between hardware protocols and ROS nodes.
     """
-    def __init__(self, node, serial_port='/dev/ttyAMA10', baud_rate=115200, read_throttle=0.1):
+    def __init__(self, node, serial_port='/dev/ttyAMA0', baud_rate=115200, read_throttle=0.1):
         """
         Initialize the serial manager.
         

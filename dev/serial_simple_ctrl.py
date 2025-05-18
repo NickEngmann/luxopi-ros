@@ -11,7 +11,7 @@ def read_serial():
 def main():
     global ser
     parser = argparse.ArgumentParser(description='Serial JSON Communication')
-    parser.add_argument('port', type=str, help='Serial port name (e.g., COM1 or /dev/ttyUSB0, or /dev/ttyAMA10)')
+    parser.add_argument('port', type=str, help='Serial port name (e.g., COM1 or /dev/ttyUSB0, or /dev/ttyAMA0)')
 
     args = parser.parse_args()
 

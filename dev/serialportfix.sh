@@ -106,7 +106,7 @@ lsof | grep ttyS || echo "None found"
 
 # Step 7: Prevent serial-getty service from using the port
 echo -e "\n=== Checking for serial-getty services ==="
-for port in ttyAMA0 ttyAMA10 ttyS0 ttyS1; do
+for port in ttyAMA0 ttyAMA0 ttyS0 ttyS1; do
     service="serial-getty@$port.service"
     if systemctl is-enabled $service &>/dev/null; then
         echo "Disabling $service"
@@ -121,6 +121,6 @@ done
 echo -e "\n=== Configuration Complete ==="
 echo "For all changes to take effect, please REBOOT your Raspberry Pi 5."
 echo -e "\nAfter rebooting, you can test the serial port with:"
-echo "1. For basic testing: 'cat /dev/ttyAMA0' or 'cat /dev/ttyAMA10' (depending on your actual port)"
-echo "2. Or using a serial tool: 'sudo apt install minicom && sudo minicom -D /dev/ttyAMA10 -b 115200'"
+echo "1. For basic testing: 'cat /dev/ttyAMA0' or 'cat /dev/ttyAMA0' (depending on your actual port)"
+echo "2. Or using a serial tool: 'sudo apt install minicom && sudo minicom -D /dev/ttyAMA0 -b 115200'"
 echo -e "\nIf issues persist after reboot, run 'dmesg | grep tty' to see kernel messages about serial ports"

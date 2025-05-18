@@ -22,7 +22,7 @@ The RoArm-LuxoPi system combines hardware control, animation capabilities, and i
 
 ### Hardware
 - Raspberry Pi (recommended: Pi 4 with 4GB+ RAM)
-- RoArm robot arm connected to `/dev/ttyAMA10`
+- RoArm robot arm connected to `/dev/ttyAMA0`
 - OAK-D camera (optional for vision features)
 - APDS9960 proximity sensor (optional for collision detection)
 
@@ -105,7 +105,7 @@ source install/setup.bash
 
 ### Set proper permissions for serial port
 ```bash
-sudo chmod 777 /dev/ttyAMA10
+sudo chmod 777 /dev/ttyAMA0
 ```
 
 ### Run the arm controller
@@ -480,10 +480,10 @@ ros2 topic echo /roarm/animation_command
 ### Serial Port Issues
 If you encounter errors related to permissions:
 ```bash
-sudo chmod 777 /dev/ttyAMA10
+sudo chmod 777 /dev/ttyAMA0
 ```
 
-If the device is not found at `/dev/ttyAMA10`, check your connections and run:
+If the device is not found at `/dev/ttyAMA0`, check your connections and run:
 ```bash
 ls -l /dev/tty*
 ```
