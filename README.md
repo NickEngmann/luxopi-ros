@@ -17,8 +17,8 @@ The RoArm-LuxoPi system combines hardware control, animation capabilities, and i
 ## Requirements
 
 ### Operating System
-- Ubuntu 22.04 or Raspberry Pi OS
-- ROS2 Humble
+- Ubuntu 24.04 or Raspberry Pi OS
+- ROS2 Jazzy
 
 ### Hardware
 - Raspberry Pi (recommended: Pi 4 with 4GB+ RAM)
@@ -27,7 +27,7 @@ The RoArm-LuxoPi system combines hardware control, animation capabilities, and i
 - APDS9960 proximity sensor (optional for collision detection)
 
 ### Dependencies
-- ROS2 Humble base installation
+- ROS2 Jazzy base installation
 - Python 3.8+
 - Required ROS2 packages:
   - `joint_state_publisher`
@@ -39,6 +39,14 @@ The RoArm-LuxoPi system combines hardware control, animation capabilities, and i
   - `depthai` (for camera features)
   - `numpy`
   - `cv_bridge` (for camera integration)
+  - `customtkinter` (GUI components)
+  - `requests` (HTTP communication)
+
+## Python Dependencies
+The project requires several Python packages, which can be installed with:
+```bash
+pip install -r requirements.txt
+```
 
 ## Package Structure
 - `roarm`: Core robot arm definitions and visualization (URDF, launch files)
@@ -62,15 +70,15 @@ cd luxopi-ros
 ### Install Dependencies
 ```bash
 sudo apt update
-sudo apt install ros-humble-joint-state-publisher ros-humble-robot-state-publisher ros-humble-rviz2 ros-humble-xacro
-pip3 install pyserial
+sudo apt install ros-jazzy-joint-state-publisher ros-jazzy-robot-state-publisher ros-jazzy-rviz2 ros-jazzy-xacro
+pip3 install pyserial --break-system-packages
 ```
 
 ### For Camera Features (optional)
 ```bash
 # Install DepthAI library and dependencies
-pip3 install depthai opencv-python
-pip3 install blobconverter numpy
+pip3 install depthai opencv-python --break-system-packages
+pip3 install blobconverter numpy --break-system-packages
 ```
 
 ### Build the workspace
@@ -531,10 +539,10 @@ For development on Windows with WSL2:
 
 ```bash
 # Connect the main Luxonis bootloader
-usbipd attach --wsl Ubuntu-22.04 --hardware-id "03e7:f63c" --auto-attach
+usbipd attach --wsl Ubuntu-24.04 --hardware-id "03e7:f63c" --auto-attach
 
 # Connect the actual Luxonis camera
-usbipd attach --wsl Ubuntu-22.04 --hardware-id "03e7:f63b" --auto-attach
+usbipd attach --wsl Ubuntu-24.04 --hardware-id "03e7:f63b" --auto-attach
 ```
 
 ## Contributing

@@ -220,7 +220,7 @@ def generate_launch_description():
     )
     
     jsp_killer = ExecuteProcess(
-        cmd=["bash", "-c", "sleep 5 && pkill -f \"/opt/ros/humble/lib/joint_state_publisher/joint_state_publisher\" || true"],
+        cmd=["bash", "-c", "sleep 5 && pkill -f \"/opt/ros/jazzy/lib/joint_state_publisher/joint_state_publisher\" || true"],
         output='screen',
         condition=IfCondition(PythonExpression(["'", use_hardware, "' == 'false' and '", use_gui, "' == 'true'"]))
     )
