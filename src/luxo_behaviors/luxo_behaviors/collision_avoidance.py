@@ -107,6 +107,11 @@ class CollisionAvoidance:
         self.persistent_head_collision_active = False
         self.persistent_head_collision_last_log = 0.0  # For log throttling
         
+        # Add timeout config for persistent collisions
+        self.short_collision_timeout = 1.25  # Original timeout for quick response (seconds)
+        self.extended_collision_timeout = 8.0  # Extended timeout for persistent collisions (seconds)
+        self.max_collision_timeout = 15.0     # Maximum time before force reset (seconds)
+        
         # Add tracking for idle time
         self.last_activity_time = time.time()
         self.idle_timeout = 4.0  # seconds - used for both idle detection and home position timeout
@@ -397,13 +402,20 @@ class CollisionAvoidance:
                     self.node.get_logger().info(f"Persistent head collision duration: {head_collision_duration:.1f}s")
                     self.persistent_head_collision_last_log = current_time
                 
-                if head_collision_duration > 1.25:
-                    self.node.get_logger().warn(f"Persistent head collision for {head_collision_duration:.1f}s - resetting to home position")
+                # Check if we need to return to home based on collision duration
+                if head_collision_duration > self.extended_collision_timeout:
+                    self.node.get_logger().warn(f"Persistent head collision for over {self.extended_collision_timeout:.1f}s - returning to home position")
                     # Force go to home by setting flag and calling method
                     self.returning_to_home = True
                     self.returning_to_home_start_time = current_time
-                    self.go_to_home_position("Persistent head collision reset")
+                    self.go_to_home_position("Extended persistent head collision - return to home")
                     return  # Skip remaining checks as we're already taking action
+                elif head_collision_duration > self.short_collision_timeout:
+                    # First try more moderate correction for shorter duration collisions
+                    if not self.escape_mode_active and not self.returning_to_home:
+                        self.node.get_logger().warn(f"Persistent head collision for {head_collision_duration:.1f}s - attempting escape mode")
+                        self._activate_escape_mode('front')
+                        return  # Skip remaining checks as we're already taking action
             
             # Check idle timeout (only if we're not already handling a collision)
             if self.idle_check_active and not any(status['active'] for status in self.collision_status.values()):
