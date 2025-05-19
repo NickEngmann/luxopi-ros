@@ -44,13 +44,16 @@ class RoArmHardwareInterface(Node):
         
         # Add parameters for dynamic adaptation/external force control
         self.declare_parameter('enable_dynamic_adaptation', False)  # Default to disabled
-        self.declare_parameter('dynamic_adaptation_base_limit', 550)  # Default torque limits
-        self.declare_parameter('dynamic_adaptation_shoulder_limit', 850)
-        self.declare_parameter('dynamic_adaptation_elbow_limit', 550)
-        self.declare_parameter('dynamic_adaptation_wrist_limit', 550)
-        self.declare_parameter('dynamic_adaptation_roll_limit', 550)
-        self.declare_parameter('dynamic_adaptation_hand_limit', 0)
-        self.declare_parameter('dynamic_adaptation_resume_delay', 5.0)  # Seconds to wait before re-enabling
+        self.declare_parameter('dynamic_adaptation_base_limit', 1)  # Default torque limits
+        self.declare_parameter('dynamic_adaptation_shoulder_limit', 1)
+        self.declare_parameter('dynamic_adaptation_elbow_limit', 1)
+        self.declare_parameter('dynamic_adaptation_wrist_limit', 1)
+        self.declare_parameter('dynamic_adaptation_roll_limit', 1)
+        self.declare_parameter('dynamic_adaptation_hand_limit', 1)
+        self.declare_parameter('dynamic_adaptation_resume_delay', 3.0)  # Changed from 10.0 to 3.0 seconds
+        
+        # Add a new parameter for the DEMA movement source integration
+        self.declare_parameter('enable_movement_source_integration', True)
         
         # Add parameter for initialization method
         self.declare_parameter('use_hardware_position_on_init', True)  # Whether to read actual position from hardware
@@ -123,28 +126,30 @@ class RoArmHardwareInterface(Node):
         self.dynamic_adaptation_pending_resume = False
         self.dynamic_adaptation_lock = threading.Lock()
         self.dynamic_adaptation_timeout = 10.0  # Keep enabled for 10 seconds
+        self.last_movement_source = "unknown"  # Track movement source for DEMA control
         self.initial_adaptation_setup = True  # Flag to track initial setup vs toggle
         
-        # Initialize the collision avoidance system
-        self.collision_avoidance = CollisionAvoidance(
-            self,  # Pass this node to the collision system
-            self.send_safe_joint_command,  # Callback to send joint commands
-            self.publish_actual_joint_states  # Callback to publish joint states
-        )
         
         if self.connection_active:
+            # Initialize the collision avoidance system
+            self.collision_avoidance = CollisionAvoidance(
+                self,  # Pass this node to the collision system
+                self.send_safe_joint_command,  # Callback to send joint commands
+                self.publish_actual_joint_states  # Callback to publish joint states
+            )
             if self.enable_torque_on_start:
                 self.get_logger().info("Torque enabled on startup")
                 self.enable_torque()
             else:
                 self.get_logger().info("Torque disabled on startup")
-            # Enable dynamic adaptation if configured
-            if self.enable_dynamic_adaptation:
-                self.get_logger().info("Dynamic adaptation enabled via launch parameter")
-                self.enable_dynamic_adaptation_mode(is_initial_setup=True)
-            else:
-                self.get_logger().info("Dynamic adaptation disabled via launch parameter")  
-                self.disable_dynamic_adaptation_mode()
+            time.sleep(0.5)   
+            # Configure dynamic adaptation for startup
+            # Always start with dynamic adaptation disabled regardless of parameter
+            self.disable_dynamic_adaptation_mode()
+            self.get_logger().info("Dynamic adaptation disabled for initialization")
+                
+            # Store the parameter value for later re-enabling
+            self.dema_should_be_enabled = self.enable_dynamic_adaptation
             
             # Changed subscription to joint_states_target
             self.subscription = self.create_subscription(
@@ -240,9 +245,9 @@ class RoArmHardwareInterface(Node):
                 10
             )
             
-            # Add timer to turn on the light after 90 seconds
-            self.light_timer = self.create_timer(70.0, self.delayed_light_on)
-            self.get_logger().info("Light will automatically turn on in 90 seconds")
+            # Add timer to turn on the light after X seconds
+            self.light_timer = self.create_timer(60.0, self.delayed_light_on)
+            self.get_logger().info("Light will automatically turn on in 60 seconds")
             
             self.get_logger().info("RoArm hardware interface initialized")
             
@@ -254,11 +259,19 @@ class RoArmHardwareInterface(Node):
             if self.enable_dynamic_adaptation:
                 self.get_logger().info("Dynamic adaptation/external force control enabled")
             
-            # Create subscription to dynamic adaptation toggle topic
+            # Create subscription for dynamic adaptation toggle topic
             self.dynamic_adaptation_sub = self.create_subscription(
                 Bool,
                 '/dynamic_adaptation_toggle',
                 self.dynamic_adaptation_toggle_callback,
+                10
+            )
+            
+            # Add subscription for position feedback
+            self.position_feedback_sub = self.create_subscription(
+                String,
+                '/position_feedback',
+                self.position_feedback_callback,
                 10
             )
         else:
@@ -363,17 +376,34 @@ class RoArmHardwareInterface(Node):
         # Update the last check time at the beginning to track timer operation
         self.last_safety_check_time = self.get_clock().now().nanoseconds / 1e9
         
-        # Check if dynamic adaptation needs to be restored
-        if self.enable_dynamic_adaptation and not self.dynamic_adaptation_active:
+        # Check if dynamic adaptation needs to be restored based on movement completion
+        if self.enable_dynamic_adaptation and not self.dynamic_adaptation_active and self.dynamic_adaptation_pending_resume:
             current_time = time.time()
             
-            with self.dynamic_adaptation_lock:
-                # Check if we should re-enable dynamic adaptation
-                if (self.dynamic_adaptation_pending_resume and 
-                    current_time - self.dynamic_adaptation_last_disable_time >= self.dynamic_adaptation_resume_delay):
-                    self.get_logger().info("Re-enabling dynamic adaptation after movement")
-                    self.enable_dynamic_adaptation_mode()
-                    self.dynamic_adaptation_pending_resume = False
+            # Only check for re-enabling if we have a pending resume request
+            if self.dynamic_adaptation_pending_resume:
+                # Check if there's been no significant movement for a while
+                time_since_command = current_time - getattr(self, 'last_command_time', 0)
+                if hasattr(time_since_command, 'nanoseconds'):  # Check if it's a ROS Time object
+                    time_since_command = time_since_command.nanoseconds / 1e9
+                
+                # Only re-enable DEMA if the arm has been still for a while (3 seconds)
+                # This indicates the movement that required DEMA off has completed
+                if time_since_command > 3.0:
+                    self.get_logger().info(f"Movement appears complete (no commands for {time_since_command:.2f}s) - re-enabling DEMA")
+                    # Re-enable DEMA
+                    success = self.enable_dynamic_adaptation_mode()
+                    if success:
+                        self.get_logger().info("Successfully re-enabled dynamic adaptation mode")
+                        self.dynamic_adaptation_pending_resume = False
+                    else:
+                        self.get_logger().error("Failed to re-enable dynamic adaptation mode, will retry later")
+                        # Don't adjust the timer - we'll retry on the next callback
+                else:
+                    # Log this less frequently to avoid spamming the logs
+                    if not hasattr(self, 'last_dema_pending_log') or current_time - self.last_dema_pending_log > 2.0:
+                        self.get_logger().debug(f"DEMA re-enable pending: waiting for arm to be still (time since command: {time_since_command:.2f}s)")
+                        self.last_dema_pending_log = current_time
         
         # Delegate collision avoidance monitoring to the collision_avoidance system
         try:
@@ -403,6 +433,13 @@ class RoArmHardwareInterface(Node):
             
             # Check if we're returning to home - this check should be prioritized
             if self.collision_avoidance.returning_to_home:
+                # Ensure dynamic adaptation is disabled during return to home
+                if self.enable_dynamic_adaptation and self.dynamic_adaptation_active:
+                    self.get_logger().info("Disabling DEMA during return to home movement")
+                    self.disable_dynamic_adaptation_mode()
+                    # Set a flag to re-enable after the movement completes
+                    self.dynamic_adaptation_pending_resume = True
+                
                 # Ensure the home position override is enforced
                 if self.collision_avoidance.target_override_active and self.collision_avoidance.target_override_joints is not None:
                     self.send_safe_joint_command(
@@ -443,7 +480,7 @@ class RoArmHardwareInterface(Node):
         if dt > 0:
             # Calculate approximate velocities
             self.joint_velocities = [(self.target_joints[i] - self.current_joints[i]) / dt 
-                                     for i in range(len(self.current_joints))]
+                                     for i in len(self.current_joints)]
         
         # Update tracking variables - store as ROS Time for velocity calculations
         self.last_command_time = current_time
@@ -486,7 +523,7 @@ class RoArmHardwareInterface(Node):
             
             # Skip processing if collision avoidance system is returning to home position
             if self.collision_avoidance.returning_to_home:
-                self.get_logger().debug("Skipping joint_states_target - currently returning to home position")
+                self.get_logger().info("Skipping joint_states_target - currently returning to home position")
                 return
             
             # Track recent command times to help collision avoidance detect animations
@@ -503,6 +540,52 @@ class RoArmHardwareInterface(Node):
             # Extract joint positions (in radians)
             names = msg.name
             positions = msg.position
+            
+            # Check for movement source in the velocity field (we use this as a hack to pass metadata)
+            movement_source = "unknown"
+            if len(msg.velocity) > 0:
+                # The movement source is encoded as a special value in the first velocity slot
+                encoded_source = int(msg.velocity[0])
+                self.get_logger().debug(f"Received encoded movement source: {encoded_source}")
+                if encoded_source == 1:
+                    movement_source = "animation"
+                elif encoded_source == 2:
+                    movement_source = "collision"
+                elif encoded_source == 3:
+                    movement_source = "user"
+                elif encoded_source == 0:
+                    movement_source = "idle"
+                
+                # Store the last movement source
+                previous_source = getattr(self, 'last_movement_source', None)
+                self.last_movement_source = movement_source
+                
+                # Only log when the source changes to reduce log spam
+                if previous_source != movement_source:
+                    self.get_logger().info(f"Movement source changed: {previous_source or 'initial'} -> {movement_source}")
+                    # If changing to animation or collision, disable DEMA
+                    if movement_source in ["animation", "collision"]:
+                            self.get_logger().info(f"Movement source is {movement_source} - disabling DEMA")
+                            self.disable_dynamic_adaptation_mode()
+                            # Set flag to re-enable after movement completes
+                            self.dynamic_adaptation_pending_resume = True
+                            self.dynamic_adaptation_last_disable_time = current_time
+                            
+                    # If changing to user mode, always enable DEMA
+                    elif movement_source == "user":
+                            self.get_logger().info(f"Movement source is user - enabling DEMA")
+                            self.enable_dynamic_adaptation_mode()
+                            self.dynamic_adaptation_pending_resume = False
+                            
+                    # If changing to idle and DEMA was pending resume, re-enable it
+                    elif movement_source == "idle":
+                        self.get_logger().info(f"Movement source is idle")
+                        success = self.enable_dynamic_adaptation_mode()
+                        if success:
+                            self.dynamic_adaptation_pending_resume = False
+                            self.get_logger().info("Successfully re-enabled DEMA")
+                        else:
+                            self.get_logger().error("Failed to re-enable DEMA")
             
             # Find indices for our joints (RoArm naming convention)
             indices = {}
@@ -526,25 +609,18 @@ class RoArmHardwareInterface(Node):
                 positions[indices['hand']] if 'hand' in indices else 0.0
             ]
             
-            # Check if positions have changed significantly
-            significant_change = False
-            if hasattr(self, 'target_joints') and len(self.target_joints) == len(target_positions):
-                for i, (old_pos, new_pos) in enumerate(zip(self.target_joints, target_positions)):
-                    if abs(old_pos - new_pos) > 0.2:
-                        significant_change = True
-                        break
-            else:
-                # First update or array size mismatch, consider it significant
-                significant_change = True
-                
+            # Check if this is a significant movement using our method
+            previous_joints = getattr(self, 'target_joints', None)
+            is_significant = self.is_significant_movement(previous_joints, target_positions, threshold=0.05)
+            
+            # Store the flag for use in other methods
+            self.significant_command = is_significant
+            
             # Store for velocity estimation
             self.target_joints = target_positions.copy()
             
-            # Set flag for use in safety_monitor_callback
-            self.significant_command = significant_change
-            
             # Only update activity time if significant change
-            if significant_change:
+            if is_significant:
                 self.collision_avoidance.last_activity_time = current_time
                 self.get_logger().debug(f"Activity timestamp updated due to significant joint position change")
             
@@ -581,6 +657,21 @@ class RoArmHardwareInterface(Node):
             safe_positions = positions
             
         try:
+            # Only disable DEMA if it's active and the command is something other than regular joint control
+            if self.enable_dynamic_adaptation and self.dynamic_adaptation_active and description != "Joint control":
+                self.get_logger().info(f"Temporarily disabling DEMA for command: {description}")
+                self.disable_dynamic_adaptation_mode()
+                # Set a flag to re-enable after movement completes
+                self.dynamic_adaptation_pending_resume = True
+                self.dynamic_adaptation_last_disable_time = time.time()
+                
+                # Schedule a timer to check for re-enabling DEMA after 1 second
+                if not hasattr(self, 'dema_reenable_timer') or not self.dema_reenable_timer.is_alive():
+                    self.dema_reenable_timer = threading.Timer(3.0, self.check_dema_reenable)
+                    self.dema_reenable_timer.daemon = True
+                    self.dema_reenable_timer.start()
+                    self.get_logger().info("Scheduled DEMA re-enable check in 3.0 second")
+            
             # Use T:102 command for joint control in radians
             # From API: {"T":102,"base":0,"shoulder":0,"elbow":1.57,"hand":0.0,"spd":0,"acc":10}
             joint_cmd = {
@@ -612,11 +703,68 @@ class RoArmHardwareInterface(Node):
             
             # Send command as JSON
             cmd_str = json.dumps(joint_cmd)
-            return self.send_command(cmd_str, description)
+            result = self.send_command(cmd_str, description)
+            
+            return result
             
         except Exception as e:
             self.get_logger().error(f"Error sending safe joint commands: {e}")
             return False
+
+    def check_dema_reenable(self):
+        """Check if DEMA can be re-enabled after settling into a position"""
+        try:
+            current_time = time.time()
+            time_since_disable = current_time - self.dynamic_adaptation_last_disable_time
+            
+            self.get_logger().info(f"Checking if robot has settled to re-enable DEMA (disabled for {time_since_disable:.1f}s)")
+            
+            # Only proceed if DEMA is currently disabled but should be enabled
+            if not self.dynamic_adaptation_active and self.dynamic_adaptation_pending_resume:
+                # Check if we've been in position for at least 1 second
+                # We'll use two approaches to determine if we're settled:
+                # 1. Check time since last command
+                # 2. Check if we're close to our target position
+                
+                # Calculate time since last command
+                last_cmd_time = getattr(self, 'last_command_time', 0)
+                if hasattr(last_cmd_time, 'nanoseconds'):  # Check if it's a ROS Time object
+                    last_cmd_time = last_cmd_time.nanoseconds / 1e9
+                time_since_command = current_time - last_cmd_time
+                
+                # Check if target and current positions are close (settled)
+                is_settled = True
+                if hasattr(self, 'target_joints') and hasattr(self, 'current_joints'):
+                    for i in range(min(len(self.target_joints), len(self.current_joints))):
+                        if abs(self.target_joints[i] - self.current_joints[i]) > 0.05:
+                            is_settled = False
+                            break
+                
+                # Re-enable DEMA if we've settled for at least 1 second
+                if time_since_command >= 1.0 and is_settled:
+                    self.get_logger().info("Robot appears to have settled into position - re-enabling DEMA")
+                    success = self.enable_dynamic_adaptation_mode()
+                    if success:
+                        self.dynamic_adaptation_pending_resume = False
+                        self.get_logger().info("Successfully re-enabled DEMA after settling")
+                    else:
+                        self.get_logger().error("Failed to re-enable DEMA, scheduling another check")
+                        # Schedule another check after 0.5 seconds
+                        if not hasattr(self, 'dema_reenable_timer') or not self.dema_reenable_timer.is_alive():
+                            self.dema_reenable_timer = threading.Timer(0.5, self.check_dema_reenable)
+                            self.dema_reenable_timer.daemon = True
+                            self.dema_reenable_timer.start()
+                else:
+                    self.get_logger().info(f"Robot not settled yet (time since command: {time_since_command:.1f}s, is_settled: {is_settled})")
+                    # Schedule another check after 0.5 seconds
+                    if not hasattr(self, 'dema_reenable_timer') or not self.dema_reenable_timer.is_alive():
+                        self.dema_reenable_timer = threading.Timer(0.5, self.check_dema_reenable)
+                        self.dema_reenable_timer.daemon = True
+                        self.dema_reenable_timer.start()
+        except Exception as e:
+            self.get_logger().error(f"Error in DEMA re-enable check: {e}")
+            import traceback
+            self.get_logger().error(traceback.format_exc())
 
     def publish_current_joint_states(self):
         """Publish the current joint states periodically to ensure topic is active."""
@@ -717,6 +865,28 @@ class RoArmHardwareInterface(Node):
             'L4_to_L5': 'roll'
         }
     
+    def is_significant_movement(self, old_positions, new_positions, threshold=0.05):
+        """
+        Determine if a joint movement is significant enough to disable dynamic adaptation.
+        
+        Args:
+            old_positions: Previous joint positions
+            new_positions: New joint positions
+            threshold: Minimum difference to consider significant (radians)
+            
+        Returns:
+            bool: True if movement is significant
+        """
+        if not old_positions or not new_positions or len(old_positions) != len(new_positions):
+            return True  # Consider any first movement or size mismatch as significant
+            
+        # Check each joint for significant changes
+        for i, (old_pos, new_pos) in enumerate(zip(old_positions, new_positions)):
+            if abs(old_pos - new_pos) > threshold:
+                return True
+                
+        return False
+    
     def destroy_node(self):
         """Clean up when node is destroyed."""
         self.get_logger().info("Shutting down hardware interface")
@@ -736,45 +906,41 @@ class RoArmHardwareInterface(Node):
         super().destroy_node()
     
     # Add methods to control dynamic adaptation
-    def enable_dynamic_adaptation_mode(self, is_initial_setup=False):
+    def enable_dynamic_adaptation_mode(self):
         """Enable the dynamic external force adaptation mode"""
         try:
             with self.dynamic_adaptation_lock:
-                if self.dynamic_adaptation_active:
-                    self.get_logger().info("Dynamic adaptation already active")
-                    return True
+                
+                # Log the parameters we're using for better debugging
+                self.get_logger().info(f"DEMA parameters: base:{self.dynamic_adaptation_base_limit}, " +
+                                     f"shoulder:{self.dynamic_adaptation_shoulder_limit}, " +
+                                     f"elbow:{self.dynamic_adaptation_elbow_limit}, " +
+                                     f"wrist:{self.dynamic_adaptation_wrist_limit}")
+                
+                # Critical fix: Make sure we're passing non-zero values to ensure DEMA works properly
+                base_limit = max(1, self.dynamic_adaptation_base_limit)
+                shoulder_limit = max(1, self.dynamic_adaptation_shoulder_limit)
+                elbow_limit = max(1, self.dynamic_adaptation_elbow_limit)
+                wrist_limit = max(1, self.dynamic_adaptation_wrist_limit)
+                roll_limit = max(1, self.dynamic_adaptation_roll_limit)
+                hand_limit = max(1, self.dynamic_adaptation_hand_limit)
                 
                 # Use SerialManager's built-in method with our configured limits
                 success = self.serial_manager.set_dynamic_adaptation(
                     mode=1,
-                    base=self.dynamic_adaptation_base_limit,
-                    shoulder=self.dynamic_adaptation_shoulder_limit,
-                    elbow=self.dynamic_adaptation_elbow_limit,
-                    wrist=self.dynamic_adaptation_wrist_limit,
-                    roll=self.dynamic_adaptation_roll_limit,
-                    hand=self.dynamic_adaptation_hand_limit
+                    base=base_limit,
+                    shoulder=shoulder_limit,
+                    elbow=elbow_limit,
+                    wrist=wrist_limit,
+                    roll=roll_limit,
+                    hand=hand_limit
                 )
                 
                 if success:
                     self.dynamic_adaptation_active = True
-                    
-                    # Save information about when adaptation was enabled
-                    self.dynamic_adaptation_enable_time = time.time()
-                    
-                    if is_initial_setup:
-                        # For initial setup from launch parameter, we don't want a timeout
-                        self.get_logger().info("Dynamic adaptation mode enabled (initial setup)")
-                    else:
-                        # For manually toggled adaptation, we'll use a timeout
-                        self.get_logger().info("Dynamic adaptation mode enabled with timeout")
-                        # Create a timer to check for timeout
-                        if hasattr(self, 'dynamic_adaptation_timer'):
-                            self.dynamic_adaptation_timer.cancel()
-                        self.dynamic_adaptation_timer = self.create_timer(
-                            1.0,  # Check every second
-                            self.check_dynamic_adaptation_timeout
-                        )
-                
+                    self.get_logger().info("Dynamic adaptation mode enabled")
+                else:
+                    self.get_logger().error("Failed to enable dynamic adaptation mode")
                 return success
         except Exception as e:
             self.get_logger().error(f"Error enabling dynamic adaptation mode: {e}")
@@ -784,8 +950,6 @@ class RoArmHardwareInterface(Node):
         """Disable the dynamic external force adaptation mode"""
         try:
             with self.dynamic_adaptation_lock:
-                if not self.dynamic_adaptation_active:
-                    return True  # Already disabled
                 
                 # Use SerialManager's built-in method to disable
                 success = self.serial_manager.set_dynamic_adaptation(mode=0)
@@ -796,7 +960,6 @@ class RoArmHardwareInterface(Node):
                     self.get_logger().info("Dynamic adaptation mode disabled")
                 else:
                     self.get_logger().error("Failed to disable dynamic adaptation mode")
-                
                 return success
         except Exception as e:
             self.get_logger().error(f"Error disabling dynamic adaptation mode: {e}")
@@ -814,36 +977,22 @@ class RoArmHardwareInterface(Node):
             self.last_adaptation_toggle_time = current_time
             
             if msg.data:  # Enable dynamic adaptation
-                if not self.dynamic_adaptation_active:
+                # if not self.dynamic_adaptation_active:
                     self.get_logger().info("Enabling dynamic adaptation mode via toggle")
-                    
-                    # Make sure all existing motions are complete
-                    time.sleep(0.5)
-                    
-                    # Now enable dynamic adaptation (not initial setup)
-                    success = self.enable_dynamic_adaptation_mode(is_initial_setup=False)
+                    # Now enable dynamic adaptation mode
+                    success = self.enable_dynamic_adaptation_mode()
                     if success:
-                        # Store the current time to track when to disable
-                        self.dynamic_adaptation_enable_time = time.time()
-                        self.get_logger().info(f"Dynamic adaptation will remain active for {self.dynamic_adaptation_timeout} seconds")
+                        self.get_logger().info("Dynamic adaptation successfully enabled via toggle")
                     else:
                         self.get_logger().error("Failed to enable dynamic adaptation")
             else:  # Disable dynamic adaptation
-                if self.dynamic_adaptation_active:
-                    self.get_logger().info("Disabling dynamic adaptation mode")
-                    self.disable_dynamic_adaptation_mode()
-                    
-                    # Cancel any timers
-                    if hasattr(self, 'dynamic_adaptation_timer'):
-                        self.dynamic_adaptation_timer.cancel()
-                        delattr(self, 'dynamic_adaptation_timer')
-                    if hasattr(self, 'initial_adaptation_check_timer'):
-                        self.initial_adaptation_check_timer.cancel()
-                        delattr(self, 'initial_adaptation_check_timer')
-                        
-                    # Re-initialize the arm to ensure clean state
-                    time.sleep(0.5)  # Wait for disable to complete
-                    self.serial_manager.initialize_arm()
+                # if self.dynamic_adaptation_active:
+                    self.get_logger().info("Disabling dynamic adaptation mode via toggle")
+                    success = self.disable_dynamic_adaptation_mode()
+                    if success:
+                        self.get_logger().info("Dynamic adaptation successfully disabled via toggle")
+                    else:
+                        self.get_logger().error("Failed to disable dynamic adaptation")
         except Exception as e:
             self.get_logger().error(f"Error in dynamic adaptation toggle callback: {e}")
             # Try to restore state if error occurs
@@ -851,49 +1000,6 @@ class RoArmHardwareInterface(Node):
                 self.disable_dynamic_adaptation_mode()
             except:
                 pass
-
-    # Add a new helper method to check adaptation state
-    def check_adaptation_state(self):
-        """Check the current state of dynamic adaptation and fix if needed"""
-        try:
-            if not self.dynamic_adaptation_active:
-                return  # Nothing to check
-                
-            # Request position feedback which will show if adaptation is working
-            self.serial_manager.request_position_feedback()
-            
-            # The serial_manager should get the response, but we won't process it here
-            # This is just to ensure communication is working
-            
-            return True
-        except Exception as e:
-            self.get_logger().error(f"Error checking adaptation state: {e}")
-            return False
-
-    def check_dynamic_adaptation_timeout(self):
-        """Periodically check if the dynamic adaptation timeout has been reached"""
-        try:
-            # Skip if dynamic adaptation is not active
-            if not self.dynamic_adaptation_active:
-                # Cancel this timer as it's no longer needed
-                if hasattr(self, 'dynamic_adaptation_timer'):
-                    self.dynamic_adaptation_timer.cancel()
-                    delattr(self, 'dynamic_adaptation_timer')
-                return
-                
-            # Check if the timeout has been reached
-            current_time = time.time()
-            if hasattr(self, 'dynamic_adaptation_enable_time'):
-                elapsed = current_time - self.dynamic_adaptation_enable_time
-                if elapsed >= self.dynamic_adaptation_timeout:
-                    self.get_logger().info(f"Timeout reached ({self.dynamic_adaptation_timeout}s) - disabling dynamic adaptation")
-                    self.disable_dynamic_adaptation_mode()
-                    # Cancel this timer as it's no longer needed
-                    if hasattr(self, 'dynamic_adaptation_timer'):
-                        self.dynamic_adaptation_timer.cancel()
-                        delattr(self, 'dynamic_adaptation_timer')
-        except Exception as e:
-            self.get_logger().error(f"Error in dynamic adaptation timeout check: {e}")
 
     def light_control_callback(self, msg):
         """Handle incoming light control commands"""
@@ -933,6 +1039,68 @@ class RoArmHardwareInterface(Node):
             
         except Exception as e:
             self.get_logger().error(f"Error in delayed light control: {e}")
+
+    def position_feedback_callback(self, msg):
+        """Process joint position feedback from hardware and update position tracking"""
+        try:
+            # Parse the position data from feedback message
+            if isinstance(msg, String):
+                feedback_data = json.loads(msg.data)
+            else:
+                feedback_data = json.loads(msg)
+                
+            # Check if this is a position feedback message
+            if 'type' in feedback_data and feedback_data['type'] == 'position':
+                # Extract the current positions
+                positions = [
+                    feedback_data.get('base', 0.0),
+                    feedback_data.get('shoulder', 0.0),
+                    feedback_data.get('elbow', 0.0),
+                    feedback_data.get('wrist', 0.0),
+                    feedback_data.get('hand', 0.0)
+                ]
+                
+                # Check if positions are valid (not all zeros)
+                if all(p == 0.0 for p in positions):
+                    self.get_logger().debug("Ignoring invalid all-zero position feedback")
+                    return
+                
+                # Check if this is a significant change from last reported position
+                previous_joints = getattr(self, 'current_joints', None)
+                is_significant = self.is_significant_movement(previous_joints, positions, threshold=0.05)
+                
+                # Update the current joints
+                self.current_joints = positions
+                
+                # Update collision avoidance system with current position
+                self.collision_avoidance.update_current_joints(positions)
+                
+                # Critical for DEMA: If in dynamic adaptation mode and position changed significantly
+                # but we didn't issue the command ourselves, then this is user movement
+                if (self.dynamic_adaptation_active and is_significant and 
+                    not getattr(self, 'is_commanded_movement', False)):
+                    self.get_logger().info("Detected user manual movement while DEMA is active")
+                    # User is physically moving the arm, keep DEMA enabled to allow this
+                    # Update the DEMA last active time to prevent timeout
+                    self.dynamic_adaptation_last_disable_time = time.time()
+                    # Don't disable DEMA for user movements
+                
+                # Reset the commanded movement flag
+                self.is_commanded_movement = False
+                
+                # Publish the updated joint states
+                self.publish_actual_joint_states(positions)
+                
+                # Also update collision avoidance target if we're in physical teaching mode (DEMA)
+                if self.dynamic_adaptation_active:
+                    # In DEMA mode, update both target and current to match physical position
+                    self.collision_avoidance.update_target_joints(positions)
+                    self.target_joints = positions.copy()
+                
+        except Exception as e:
+            self.get_logger().error(f"Error in position feedback callback: {e}")
+            import traceback
+            self.get_logger().error(traceback.format_exc())
 
 def main(args=None):
     rclpy.init(args=args)

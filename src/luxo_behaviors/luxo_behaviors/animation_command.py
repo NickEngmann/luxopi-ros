@@ -104,6 +104,23 @@ class EnhancedAnimationCommand(Node):
         # Initialize hardware position if enabled
         if self.use_hardware_position_feedback:
             self.request_hardware_position()
+        
+        # Add flag to track the movement source type
+        self.movement_source = "idle"  # Can be "idle", "animation", "user", "collision"
+        self.last_movement_source_change = time.time()
+        
+        # DEMA control integration
+        self.declare_parameter('enable_dema_integration', True)
+        self.enable_dema_integration = True
+        
+        # Create publisher for movement type (to coordinate with DEMA)
+        if self.enable_dema_integration:
+            self.movement_source_publisher = self.create_publisher(
+                String,
+                '/roarm/movement_source',
+                10
+            )
+            self.get_logger().info("Publishing movement source information for DEMA coordination")
 
     def position_feedback_callback(self, msg):
         """Handle position feedback from the hardware."""
@@ -209,6 +226,11 @@ class EnhancedAnimationCommand(Node):
         command_parts = msg.data.strip().lower().split()
         base_command = command_parts[0]
         
+        # Set movement source to "animation" when executing commands
+        # Update movement source state directly - no separate publisher needed
+        self.movement_source = "animation"
+        self.last_movement_source_change = time.time()
+        
         # Extract speed parameter if present
         speed = 1.0  # Default speed
         if len(command_parts) > 1:
@@ -251,11 +273,49 @@ class EnhancedAnimationCommand(Node):
             self.get_logger().warn(f'Unknown animation command: {base_command}')
             self.get_logger().info(f'Available commands: {", ".join(animations.keys())}')
     
+    def publish_movement_source(self):
+        """Publish the current movement source for DEMA coordination."""
+        if not self.enable_dema_integration:
+            return
+            
+        try:
+            # Create and publish the message
+            msg = String()
+            msg.data = self.movement_source
+            self.movement_source_publisher.publish(msg)
+            
+            # Log occasionally to prevent flooding
+            current_time = time.time()
+            if not hasattr(self, '_last_movement_source_log_time') or current_time - self._last_movement_source_log_time > 5.0:
+                self.get_logger().info(f"Publishing movement source: {self.movement_source}")
+                self._last_movement_source_log_time = current_time
+        except Exception as e:
+            self.get_logger().error(f"Error publishing movement source: {e}")
+            
     def publish_joint_states_target(self):
         """Publish target joint states."""
         if not self.should_publish:
             return
+            
+        # Check if we should update the movement source 
+        current_time = time.time()
         
+        # If not animating and movement source is still animation, reset to idle
+        # This is a safety measure to ensure we don't get stuck in animation mode
+        if not self.is_animating and self.movement_source == "animation":
+            if not hasattr(self, 'last_animation_end_time'):
+                self.last_animation_end_time = current_time
+                
+            # If it's been more than 3 seconds since animation stopped, force reset to idle
+            if current_time - self.last_animation_end_time > 3.0:
+                self.get_logger().info(f"Forcing movement source reset to idle (animation ended but source not reset)")
+                self.movement_source = "idle"
+                self.publish_movement_source()
+        
+        # If animating, update the last animation time
+        if self.is_animating:
+            self.last_animation_end_time = current_time
+                
         msg = JointState()
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.name = self.joint_names
@@ -271,6 +331,26 @@ class EnhancedAnimationCommand(Node):
             
             # Assign the validated positions to the message
             msg.position = validated_positions
+            
+            # NEW: Encode movement source in velocity field (since JointState doesn't have custom fields)
+            # This is a hack that allows us to pass metadata without creating a custom message type
+            # 0=idle, 1=animation, 2=collision, 3=user
+            source_code = 0  # Default to idle
+            if self.movement_source == "animation":
+                source_code = 1
+            elif self.movement_source == "collision":
+                source_code = 2
+            elif self.movement_source == "user":
+                source_code = 3
+                
+            # Add the source code as the first element in the velocity array
+            msg.velocity = [float(source_code)]
+            
+            # Log occasionally to avoid flooding
+            current_time = time.time()
+            if not hasattr(self, '_last_source_log') or current_time - self._last_source_log > 5.0:
+                self.get_logger().debug(f"Publishing joint_states_target with movement source: {self.movement_source} (code: {source_code})")
+                self._last_source_log = current_time
             
             self.joint_publisher.publish(msg)
         except (ValueError, TypeError) as e:
@@ -417,59 +497,71 @@ class EnhancedAnimationCommand(Node):
     def _process_next_step(self):
         """Process the next animation step."""
         if not self.is_animating or self.current_step >= len(self.animation_steps):
-            self.is_animating = False
-            # When animation completes, reset to base position
-            if self.current_step > 0:  # Only reset if we actually ran an animation
-                self.get_logger().info('Animation completed, resetting to base position')
+            # Only mark as not animating if we weren't already not animating
+            if self.is_animating:
+                self.is_animating = False
+                # When animation completes, reset to base position
+                if self.current_step > 0:  # Only reset if we actually ran an animation
+                    self.get_logger().info('Animation completed, resetting to base position')
+                    
+                    # Cancel any existing idle reset timer first to avoid multiple timers
+                    if hasattr(self, 'idle_reset_timer') and self.idle_reset_timer is not None:
+                        self.idle_reset_timer.cancel()
+                        self.idle_reset_timer = None
+                    
+                    # Set a timer to change movement source back to idle after animation finishes
+                    # This delay allows the final animation movement to complete before re-enabling DEMA
+                    self.idle_reset_timer = self.create_timer(
+                        3.0,  # Wait 3 seconds before setting to idle (matches the DEMA re-enable delay)
+                        self._reset_to_idle
+                    )
+                    self.get_logger().info('Scheduled reset to idle in 3 seconds')
             return
         
-        # Get the next position and duration
         next_position = self.animation_steps[self.current_step]
         duration = self.step_durations[self.current_step]
         
-        # Determine if we should use easing for this step
-        # Use easing for most steps, but occasionally skip for more dynamic motion
         use_easing = random.random() > 0.2
         
-        # Move to the position
         self.get_logger().info(f'Animation step {self.current_step+1}/{len(self.animation_steps)}')
         
-        # Check if destination is significantly different from current position
-        # This helps detect if collisions or escape maneuvers have moved us far from expected
         if self.current_step > 0 and hasattr(self, 'previous_position'):
-            # Get our current position
             curr_pos = self.current_positions
             expected_pos = self.previous_position
             
-            # Calculate difference 
             diff_magnitude = sum([(curr - expected)**2 for curr, expected in zip(curr_pos, expected_pos)])
-            if diff_magnitude > 1.0:  # Significant deviation
+            if diff_magnitude > 1.0:
                 self.get_logger().debug(f"Detected significant position deviation (mag={diff_magnitude:.2f}) - " +
                                       f"current: {[round(p, 2) for p in curr_pos]}, " +
                                       f"expected: {[round(p, 2) for p in expected_pos]}")
                 
-                # Adjust timing to be a bit slower after deviation to allow for smoother recovery
                 duration = duration * 1.5
                 self.get_logger().debug(f"Increasing move duration to {duration:.2f}s for smoother recovery")
         
-        # Try to move to the position
         self.move_to_position(next_position, duration, easing=use_easing)
         
-        # Remember this target position for next comparison
         self.previous_position = next_position
         
-        # Increment step and schedule next one
         self.current_step += 1
         if self.current_step < len(self.animation_steps):
-            # Add slight random variation to timing for more natural movement
             time_variation = random.uniform(0.9, 1.1)
-            # Schedule the next step using a timer
             self.animation_timer = self.create_timer(
                 duration * time_variation, 
                 self._next_step_callback)
         else:
             self.is_animating = False
             self.get_logger().info('Animation completed, resetting to base position')
+    
+    def _reset_to_idle(self):
+        """Reset the movement source to idle after animation completes."""
+        if self.movement_source != "idle":
+            self.movement_source = "idle"
+            self.get_logger().info('Movement source reset to idle')
+            self.publish_movement_source()
+            
+        if hasattr(self, 'idle_reset_timer'):
+            self.idle_reset_timer.cancel()
+            self.idle_reset_timer = None
     
     def stop_animation(self):
         """Stop the current animation."""
