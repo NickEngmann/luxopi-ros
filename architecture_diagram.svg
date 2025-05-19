@@ -79,10 +79,6 @@
         <text x="100" y="25" font-family="Arial" font-size="14" text-anchor="middle">EnhancedAnimationCommand</text>
         <text x="90" y="45" font-family="Arial" font-size="12" text-anchor="middle">animation_command.py</text>
         
-        <!-- DemoMode -->
-        <rect x="0" y="70" width="140" height="70" fill="#90caf9" stroke="#1976d2" stroke-width="2" rx="5" ry="5" />
-        <text x="70" y="95" font-family="Arial" font-size="14" text-anchor="middle">DemoMode</text>
-        <text x="70" y="115" font-family="Arial" font-size="12" text-anchor="middle">demo_mode.py</text>
         
         <!-- Animation Topic -->
         <rect x="210" y="60" width="160" height="60" fill="#ffcc80" stroke="#e65100" stroke-width="2" rx="5" ry="5" />
@@ -262,7 +258,7 @@
         <!-- Animation Flow -->
         <g transform="translate(0, 30)">
             <text x="0" y="0" font-family="Arial" font-size="14" font-weight="bold">1. Animation Flow</text>
-            <text x="20" y="25" font-family="Arial" font-size="12">Demo/Camera → Animation Command → Joint States Target → Hardware Interface → Robot Arm</text>
+            <text x="20" y="25" font-family="Arial" font-size="12">Camera → Animation Command → Joint States Target → Hardware Interface → Robot Arm</text>
             <polyline points="20,30 600,30" stroke="#1976d2" stroke-width="2" fill="none" marker-end="url(#arrowhead)" />
             <polyline points="150,30 150,40 300,40 300,30" stroke="#1976d2" stroke-width="1" fill="none" />
             <text x="150" y="54" font-family="Arial" font-size="10">via /roarm/animation_command</text>
