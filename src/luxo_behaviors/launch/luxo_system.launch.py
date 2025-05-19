@@ -18,7 +18,6 @@ def generate_launch_description():
     test_mode = LaunchConfiguration('test_mode', default='animation')
     
     # Other standard arguments with simplified defaults
-    run_demo = LaunchConfiguration('run_demo', default='false')  # Always default to false
     use_gui = LaunchConfiguration('use_gui', default='false')
     safety_distance = LaunchConfiguration('safety_distance', default='0.3')
     verbose_output = LaunchConfiguration('verbose', default='false')
@@ -61,11 +60,6 @@ def generate_launch_description():
         description='Enable depth-based collision detection (default: false)'
     )
     
-    declare_run_demo = DeclareLaunchArgument(
-        'run_demo',
-        default_value='false',  # Always default to false
-        description='Whether to run the demo sequence'
-    )
     
     declare_use_gui = DeclareLaunchArgument(
         name='use_gui',
@@ -130,7 +124,7 @@ def generate_launch_description():
                             "- Emotion detection: ", LaunchConfiguration('enable_emotion_detection'), "\n",
                             "- Collision detection: ", enable_depth_collision, "\n",
                             "- Using proximity sensor: ", sense_collision, "\n",
-                            "- Demo mode: ", run_demo, "\n"])
+                            ])
     
     # Hardware-specific info
     hardware_info = LogInfo(
@@ -172,13 +166,6 @@ def generate_launch_description():
         condition=IfCondition(use_camera)
     )
     
-    # Demo mode info
-    demo_info = LogInfo(
-        msg=["\n🎬 DEMO MODE ACTIVE:\n",
-             "- Running pre-programmed demo sequence\n",
-             "- Other manual controls may be overridden\n"],
-        condition=IfCondition(run_demo)
-    )
 
     # Troubleshooting tips
     troubleshooting_info = LogInfo(
@@ -361,15 +348,7 @@ def generate_launch_description():
         condition=IfCondition(use_camera)
     )
     
-    # Demo mode node (optional)
-    demo_node = Node(
-        package='luxo_behaviors',
-        executable='demo_mode',
-        name='demo_mode',
-        output='screen',
-        condition=IfCondition(run_demo)
-    )
-    
+
     # System completion message
     completion_message = LogInfo(
         msg=["\n✅ SYSTEM LAUNCH COMPLETE\n",
@@ -387,7 +366,6 @@ def generate_launch_description():
         declare_use_hardware,
         declare_use_camera,
         declare_enable_emotion_detection,
-        declare_run_demo,
         declare_use_gui,
         use_joint_state_publisher_arg,
         declare_test_mode,
@@ -404,7 +382,6 @@ def generate_launch_description():
         simulation_info,
         quick_reference,
         camera_info,
-        demo_info,
         troubleshooting_info,
         jsp_killer,
         
@@ -422,7 +399,6 @@ def generate_launch_description():
         collision_detection_node,
         apds9960_node,
         camera_interaction_node,
-        demo_node,
         
         # Final info
         completion_message,
