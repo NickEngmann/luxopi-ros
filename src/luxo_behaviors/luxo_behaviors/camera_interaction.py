@@ -61,7 +61,7 @@ class CameraInteraction(Node):
         self.declare_parameter('emotion_buffer_duration', 2.0)
         self.emotion_buffer_duration = self.get_parameter('emotion_buffer_duration').get_parameter_value().double_value
         
-        # Track last emotion and animation time for cooldown
+        # Track last emotion and animation time for cooldown - using ROS2 time
         self.last_emotion = "neutral"
         self.last_animation_time = self.get_clock().now()
         self.emotion_cooldown = 4.0  # seconds between animations
@@ -78,7 +78,7 @@ class CameraInteraction(Node):
             'neutral': ['idle', 'curious', 'stretch', 'nod']
         }
         
-        # Emotion buffer system
+        # Emotion buffer system - using ROS2 time
         self.emotion_buffer = deque(maxlen=60)
         self.emotion_buffer_start_time = self.get_clock().now()
         
@@ -356,8 +356,9 @@ class CameraInteraction(Node):
                 if self.verbose:
                     self.get_logger().info(f"Tracked person with emotion: {emotion_name}")
             
-            # Add to emotion buffer
-            self.emotion_buffer.append((emotion_name, person_distance, time.time()))
+            # Add to emotion buffer with ROS2 timestamp
+            current_time = self.get_clock().now()
+            self.emotion_buffer.append((emotion_name, person_distance, current_time))
             
             # Trigger animations based on buffered emotions if enabled
             if self.react_to_emotions:
@@ -369,10 +370,10 @@ class CameraInteraction(Node):
         
         # Check if we've collected enough data and if the buffer duration has elapsed
         if (len(self.emotion_buffer) > 0 and 
-                (current_time - self.emotion_buffer_start_time) >= self.emotion_buffer_duration):
+                ((current_time - self.emotion_buffer_start_time).nanoseconds / 1e9) >= self.emotion_buffer_duration):
             
             # Get the current elapsed time since last animation
-            time_since_last_animation = current_time - self.last_animation_time
+            time_since_last_animation = (current_time - self.last_animation_time).nanoseconds / 1e9
             
             # Only proceed if we're not in cooldown
             if time_since_last_animation > self.emotion_cooldown:
@@ -381,7 +382,7 @@ class CameraInteraction(Node):
                 avg_distance = 0
                 distance_count = 0
                 
-                for emotion, distance, _ in self.emotion_buffer:
+                for emotion, distance, timestamp in self.emotion_buffer:
                     emotion_counts[emotion] = emotion_counts.get(emotion, 0) + 1
                     if distance is not None:
                         avg_distance += distance
@@ -451,7 +452,7 @@ class CameraInteraction(Node):
 
     def trigger_animation(self, emotion, distance=None):
         """Trigger an animation based on detected emotion"""
-        # Update state
+        # Update state with ROS2 time
         self.last_emotion = emotion
         self.last_animation_time = self.get_clock().now()
         

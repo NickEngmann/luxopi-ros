@@ -18,19 +18,19 @@ class CollisionNode(Node):
         # Initialize I2C
         self.i2c = board.I2C()  # uses board.SCL and board.SDA
         
-        # Error handling variables
+        # Error handling variables - using ROS2 time
         self.error_count = 0
         self.max_errors = 5
         self.last_error_time = self.get_clock().now()
         self.recovery_active = False
         self.gesture_thread_running = True
         
-        # Error message throttling
+        # Error message throttling - using ROS2 time
         self.error_throttle_period = 5.0  # Only log same error once every 5 seconds
         self.last_error_messages = {}  # Track last time each error message was logged
         self.error_counts = defaultdict(int)  # Count occurrences of each error message
         
-        # NEW: Add variables to track last successful data reception
+        # NEW: Add variables to track last successful data reception - using ROS2 time
         self.last_successful_proximity_time = self.get_clock().now()
         self.last_successful_left_distance_time = self.get_clock().now()
         self.last_successful_right_distance_time = self.get_clock().now()
@@ -123,7 +123,7 @@ class CollisionNode(Node):
         
         # Check if we should log this error now
         if error_key not in self.last_error_messages or \
-           (current_time - self.last_error_messages[error_key]) > self.error_throttle_period:
+           ((current_time - self.last_error_messages[error_key]).nanoseconds / 1e9) > self.error_throttle_period:
             
             # If we've accumulated multiple errors, show the count
             if self.error_counts[error_key] > 1:
@@ -149,9 +149,9 @@ class CollisionNode(Node):
             
         try:
             # Check time since last proximity data
-            prox_time_since = current_time - self.last_successful_proximity_time
-            left_time_since = current_time - self.last_successful_left_distance_time
-            right_time_since = current_time - self.last_successful_right_distance_time
+            prox_time_since = (current_time - self.last_successful_proximity_time).nanoseconds / 1e9
+            left_time_since = (current_time - self.last_successful_left_distance_time).nanoseconds / 1e9
+            right_time_since = (current_time - self.last_successful_right_distance_time).nanoseconds / 1e9
             
             # Log the time since last successful readings for debugging
             self.get_logger().debug(f"Time since last data - Proximity: {prox_time_since:.1f}s, Left: {left_time_since:.1f}s, Right: {right_time_since:.1f}s")
@@ -282,7 +282,7 @@ class CollisionNode(Node):
                 
                 # Reset consecutive errors on success
                 consecutive_errors = 0
-                time.sleep(0.01)  # Small sleep to prevent CPU overload
+                time.sleep(0.01)  # Small sleep to prevent CPU overload - keep as time.sleep for thread
                 
             except Exception as e:
                 consecutive_errors += 1
@@ -302,7 +302,7 @@ class CollisionNode(Node):
                     except Exception as reinit_error:
                         self.get_logger().error(f"Failed to reinitialize APDS9960: {reinit_error}")
                         
-                time.sleep(recovery_delay)  # Longer sleep after error
+                time.sleep(recovery_delay)  # Longer sleep after error - keep as time.sleep for thread
 
     def proximity_callback(self):
         """Timer callback for proximity readings"""
