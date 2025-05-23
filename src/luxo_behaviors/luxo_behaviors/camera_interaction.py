@@ -63,7 +63,7 @@ class CameraInteraction(Node):
         
         # Track last emotion and animation time for cooldown
         self.last_emotion = "neutral"
-        self.last_animation_time = time.time()
+        self.last_animation_time = self.get_clock().now()
         self.emotion_cooldown = 4.0  # seconds between animations
         
         # Add a history of recent emotions to avoid repetition
@@ -80,7 +80,7 @@ class CameraInteraction(Node):
         
         # Emotion buffer system
         self.emotion_buffer = deque(maxlen=60)
-        self.emotion_buffer_start_time = time.time()
+        self.emotion_buffer_start_time = self.get_clock().now()
         
         # Start camera detection system
         self.get_logger().info('Starting camera emotion detection...')
@@ -365,7 +365,7 @@ class CameraInteraction(Node):
     
     def process_emotion_buffer(self):
         """Process the emotion buffer and trigger an animation if conditions are met"""
-        current_time = time.time()
+        current_time = self.get_clock().now()
         
         # Check if we've collected enough data and if the buffer duration has elapsed
         if (len(self.emotion_buffer) > 0 and 
@@ -453,7 +453,7 @@ class CameraInteraction(Node):
         """Trigger an animation based on detected emotion"""
         # Update state
         self.last_emotion = emotion
-        self.last_animation_time = time.time()
+        self.last_animation_time = self.get_clock().now()
         
         # Add to recent emotions history
         self.recent_emotions.append(emotion)

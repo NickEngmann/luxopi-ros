@@ -107,7 +107,7 @@ class EnhancedAnimationCommand(Node):
         
         # Add flag to track the movement source type
         self.movement_source = "idle"  # Can be "idle", "animation", "user", "collision"
-        self.last_movement_source_change = time.time()
+        self.last_movement_source_change = self.get_clock().now()  # ROS2 time
         
         # DEMA control integration
         self.declare_parameter('enable_dema_integration', True)
@@ -121,6 +121,13 @@ class EnhancedAnimationCommand(Node):
                 10
             )
             self.get_logger().info("Publishing movement source information for DEMA coordination")
+        
+        # Initialize ROS time tracking variables
+        self._last_debug_time = self.get_clock().now()
+        self._last_position_log_time = self.get_clock().now()
+        self._last_movement_source_log_time = self.get_clock().now()
+        self._last_source_log = self.get_clock().now()
+        self.last_animation_end_time = self.get_clock().now()
 
     def position_feedback_callback(self, msg):
         """Handle position feedback from the hardware."""
@@ -131,11 +138,12 @@ class EnhancedAnimationCommand(Node):
             # Check if this is a valid position list with at least 5 elements
             if isinstance(position_list, list) and len(position_list) >= 5:
                 # Add occasional debug logging to understand what's happening
+                current_time = self.get_clock().now()
                 should_log = not hasattr(self, '_last_debug_time') or \
-                            time.time() - self._last_debug_time > 5.0
+                            (current_time - self._last_debug_time).nanoseconds / 1e9 > 5.0
                 
                 if should_log:
-                    self._last_debug_time = time.time()
+                    self._last_debug_time = current_time
                     
                 # First time receiving position or no current positions yet
                 if self.current_positions is None:
@@ -183,15 +191,15 @@ class EnhancedAnimationCommand(Node):
                 self.hardware_position_received = True
                 
                 # Log occasionally to prevent flooding
-                if not hasattr(self, '_last_position_log_time') or \
-                    time.time() - self._last_position_log_time > 5.0:
-                        self.get_logger().debug(f"Hardware position updated: " +
-                                            f"base={self.current_positions[0]:.2f}, " +
-                                            f"shoulder={self.current_positions[1]:.2f}, " +
-                                            f"elbow={self.current_positions[2]:.2f}, " +
-                                            f"wrist={self.current_positions[3]:.2f}, " +
-                                            f"hand={self.current_positions[4]:.2f}")
-                        self._last_position_log_time = time.time()
+                time_since_log = (current_time - self._last_position_log_time).nanoseconds / 1e9
+                if time_since_log > 5.0:
+                    self.get_logger().debug(f"Hardware position updated: " +
+                                        f"base={self.current_positions[0]:.2f}, " +
+                                        f"shoulder={self.current_positions[1]:.2f}, " +
+                                        f"elbow={self.current_positions[2]:.2f}, " +
+                                        f"wrist={self.current_positions[3]:.2f}, " +
+                                        f"hand={self.current_positions[4]:.2f}")
+                    self._last_position_log_time = current_time
         
         except (json.JSONDecodeError, ValueError) as e:
             self.get_logger().error(f"Error parsing position feedback: {e}")
@@ -210,7 +218,7 @@ class EnhancedAnimationCommand(Node):
         
         # Wait for position feedback with timeout
         while attempts < self.max_position_attempts and not self.hardware_position_received:
-            time.sleep(self.position_request_interval)
+            time.sleep(self.position_request_interval)  # Hardware timing - keep as time.sleep
             attempts += 1
             self.get_logger().debug(f"Waiting for position feedback ({attempts}/{self.max_position_attempts})")
             
@@ -229,7 +237,7 @@ class EnhancedAnimationCommand(Node):
         # Set movement source to "animation" when executing commands
         # Update movement source state directly - no separate publisher needed
         self.movement_source = "animation"
-        self.last_movement_source_change = time.time()
+        self.last_movement_source_change = self.get_clock().now()
         
         # Extract speed parameter if present
         speed = 1.0  # Default speed
@@ -285,8 +293,9 @@ class EnhancedAnimationCommand(Node):
             self.movement_source_publisher.publish(msg)
             
             # Log occasionally to prevent flooding
-            current_time = time.time()
-            if not hasattr(self, '_last_movement_source_log_time') or current_time - self._last_movement_source_log_time > 5.0:
+            current_time = self.get_clock().now()
+            time_since_log = (current_time - self._last_movement_source_log_time).nanoseconds / 1e9
+            if time_since_log > 5.0:
                 self.get_logger().info(f"Publishing movement source: {self.movement_source}")
                 self._last_movement_source_log_time = current_time
         except Exception as e:
@@ -298,7 +307,7 @@ class EnhancedAnimationCommand(Node):
             return
             
         # Check if we should update the movement source 
-        current_time = time.time()
+        current_time = self.get_clock().now()
         
         # If not animating and movement source is still animation, reset to idle
         # This is a safety measure to ensure we don't get stuck in animation mode
@@ -307,7 +316,8 @@ class EnhancedAnimationCommand(Node):
                 self.last_animation_end_time = current_time
                 
             # If it's been more than 3 seconds since animation stopped, force reset to idle
-            if current_time - self.last_animation_end_time > 3.0:
+            time_since_animation_end = (current_time - self.last_animation_end_time).nanoseconds / 1e9
+            if time_since_animation_end > 3.0:
                 self.get_logger().info(f"Forcing movement source reset to idle (animation ended but source not reset)")
                 self.movement_source = "idle"
                 self.publish_movement_source()
@@ -347,8 +357,8 @@ class EnhancedAnimationCommand(Node):
             msg.velocity = [float(source_code)]
             
             # Log occasionally to avoid flooding
-            current_time = time.time()
-            if not hasattr(self, '_last_source_log') or current_time - self._last_source_log > 5.0:
+            time_since_log = (current_time - self._last_source_log).nanoseconds / 1e9
+            if time_since_log > 5.0:
                 self.get_logger().debug(f"Publishing joint_states_target with movement source: {self.movement_source} (code: {source_code})")
                 self._last_source_log = current_time
             
@@ -409,15 +419,17 @@ class EnhancedAnimationCommand(Node):
     def move_to_position(self, positions, duration=1.0, easing=True):
         """Move to a specific position over a duration with optional easing."""
         start_positions = self.target_positions.copy()  # Start from current target positions
-        start_time = time.time()
+        start_time = self.get_clock().now()  # ROS2 time
         
         # Apply speed multiplier to duration
         adjusted_duration = duration / self.speed_multiplier
         
         # Continuously update joint positions
-        while time.time() - start_time < adjusted_duration:
-            progress = (time.time() - start_time) / adjusted_duration
-            progress = min(1.0, progress)  # Clamp to 1.0
+        elapsed_time = 0.0
+        while elapsed_time < adjusted_duration:
+            current_time = self.get_clock().now()
+            elapsed_time = (current_time - start_time).nanoseconds / 1e9
+            progress = min(1.0, elapsed_time / adjusted_duration)
             
             # Apply easing if requested
             if easing:
@@ -429,7 +441,7 @@ class EnhancedAnimationCommand(Node):
             for i in range(len(self.target_positions)):
                 self.target_positions[i] = start_positions[i] + eased_progress * (positions[i] - start_positions[i])
             
-            time.sleep(0.01)  # Small delay to prevent CPU overload
+            time.sleep(0.01)  # Small delay to prevent CPU overload - keep as time.sleep for tight loop
         
         # Add subtle noise to final position to make it less robotic
         self.target_positions = self.add_noise_to_position(positions)
