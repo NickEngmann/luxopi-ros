@@ -8,8 +8,10 @@ import os
 import subprocess
 import atexit
 from std_msgs.msg import String
+from queue import Queue, Empty
+import traceback
 
-class SerialManager(threading.Thread):
+class SerialManager:
     """
     Manages serial communication with the robot hardware.
     Acts as an abstraction layer between hardware protocols and ROS nodes.
@@ -19,31 +21,36 @@ class SerialManager(threading.Thread):
         Initialize the serial manager.
         
         Args:
-            node: The ROS node that owns this manager (for logging)
+            node: The ROS node that owns this manager (for logging and ROS time)
             serial_port: Path to the serial device
             baud_rate: Serial communication baud rate
-            read_throttle: Delay between serial read attempts to reduce CPU usage (set to 0 for max responsiveness)
+            read_throttle: Delay between serial read attempts to reduce CPU usage
         """
-        # Initialize thread
-        threading.Thread.__init__(self, daemon=True)
-        
         self.node = node
         self.serial_port = serial_port
         self.baud_rate = baud_rate
-        self.read_throttle = read_throttle  # Setting this to 0 for responsiveness
+        self.read_throttle = read_throttle
         
-        # Connection control
-        self.running = False
-        self.connection_active = False
-        self.connection_lock = threading.Lock()
-        self.ser = None
+        # Connection control with thread safety
+        self._state_lock = threading.RLock()  # Reentrant lock for nested calls
+        self._running = False
+        self._connection_active = False
+        self._ser = None
+        
+        # Thread management
+        self._read_thread = None
+        self._read_thread_active = False
+        
+        # Command queue for thread-safe writes
+        self._write_queue = Queue()
+        self._write_lock = threading.Lock()
         
         # Callback for data received
         self.data_callback = None
         
-        # Simplified tracking variables
-        self.last_heartbeat_time = 0
-        self.heartbeat_interval = 2.0  # Send a heartbeat every 2 seconds if no other traffic
+        # Tracking variables using ROS time
+        self._last_heartbeat_time = self.node.get_clock().now()
+        self.heartbeat_interval = 2.0  # seconds
         
         # Create publisher for arm position feedback
         self.position_publisher = self.node.create_publisher(
@@ -52,8 +59,16 @@ class SerialManager(threading.Thread):
             10
         )
         
+        # Position feedback callback
+        self._position_feedback_callback = None
+        self._position_feedback_lock = threading.Lock()
+        
         # Register clean shutdown handler
         atexit.register(self.ensure_closed)
+        
+        # Log throttling using ROS time
+        self._last_position_log_time = self.node.get_clock().now()
+        self._position_log_interval = 10.0  # seconds
     
     def set_data_callback(self, callback):
         """Set callback function that will be called when data is received."""
@@ -107,36 +122,38 @@ class SerialManager(threading.Thread):
             # Wait a moment before trying to open again
             time.sleep(0.5)
             
-            # Open serial port with simpler settings similar to the working example
-            self.ser = serial.Serial(
-                port=self.serial_port, 
-                baudrate=self.baud_rate, 
-                timeout=1,      # Add timeout
-                dsrdtr=False,   # Disable hardware flow control
-                rtscts=False    # Disable hardware flow control
-            )
-            
-            # Clear any buffered data
-            self.ser.reset_input_buffer()
-            self.ser.reset_output_buffer()
-            
-            # Flow control settings that work in the test script
-            self.ser.setRTS(False)
-            self.ser.setDTR(False)
+            # Thread-safe connection establishment
+            with self._state_lock:
+                # Open serial port
+                self._ser = serial.Serial(
+                    port=self.serial_port, 
+                    baudrate=self.baud_rate, 
+                    timeout=1,
+                    dsrdtr=False,
+                    rtscts=False
+                )
+                
+                # Clear any buffered data
+                self._ser.reset_input_buffer()
+                self._ser.reset_output_buffer()
+                
+                # Flow control settings
+                self._ser.setRTS(False)
+                self._ser.setDTR(False)
+                
+                self._connection_active = True
+                self._running = True
             
             self.node.get_logger().info(f"Serial port {self.serial_port} connected successfully at {self.baud_rate} baud")
             
-            # Update connection status
-            with self.connection_lock:
-                self.connection_active = True
+            # Reset heartbeat timing using ROS time
+            self._last_heartbeat_time = self.node.get_clock().now()
             
-            # Reset heartbeat timing
-            self.last_heartbeat_time = time.time()
-            
-            # If not already running, start the thread
-            if not self.running:
-                self.running = True
-                self.start()
+            # Start read thread if not already running
+            if self._read_thread is None or not self._read_thread.is_alive():
+                self._read_thread_active = True
+                self._read_thread = threading.Thread(target=self._read_loop, daemon=True)
+                self._read_thread.start()
             
             # Send a ping to verify connection is working
             self.send_command(json.dumps({'T': 0}), "Connection test ping")
@@ -145,17 +162,20 @@ class SerialManager(threading.Thread):
             
         except serial.SerialException as e:
             self.node.get_logger().error(f"Failed to open serial port: {e}")
-            with self.connection_lock:
-                self.connection_active = False
+            with self._state_lock:
+                self._connection_active = False
+                self._running = False
             return False
     
     def is_connected(self):
         """Thread-safe method to check connection status"""
-        with self.connection_lock:
-            return self.connection_active and hasattr(self, 'ser') and self.ser and self.ser.is_open
+        with self._state_lock:
+            return (self._connection_active and 
+                    self._ser is not None and 
+                    self._ser.is_open)
     
     def send_command(self, cmd_str, description=""):
-        """Send a command to the robot arm."""
+        """Send a command to the robot arm (thread-safe)."""
         if not self.is_connected():
             self.node.get_logger().error("Cannot send command: Serial connection is not active")
             return False
@@ -165,64 +185,80 @@ class SerialManager(threading.Thread):
             if description:
                 self.node.get_logger().debug(f"Sending {description}: {cmd_str}")
             
-            # Ensure command ends with CRLF (consistent with working example)
+            # Ensure command ends with CRLF
             if not cmd_str.endswith('\r\n'):
                 cmd_str = cmd_str.rstrip('\n') + '\r\n'
             
-            # Write command to serial port
-            self.ser.write(cmd_str.encode())
-            self.ser.flush()
+            # Thread-safe write
+            with self._write_lock:
+                if self._ser and self._ser.is_open:
+                    self._ser.write(cmd_str.encode())
+                    self._ser.flush()
+                else:
+                    return False
             
-            # Update heartbeat time since we've sent data
-            self.last_heartbeat_time = time.time()
+            # Update heartbeat time using ROS time
+            self._last_heartbeat_time = self.node.get_clock().now()
             
             return True
         except Exception as e:
             self.node.get_logger().error(f"Serial write error: {e}")
-            with self.connection_lock:
-                self.connection_active = False
+            with self._state_lock:
+                self._connection_active = False
             return False
     
-    def run(self):
+    def _read_loop(self):
         """Thread main method - reads from serial port"""
         self.node.get_logger().info("Serial read thread started")
         
-        while self.running:
-            if self.is_connected():
-                try:
-                    # Check if we should send a heartbeat to keep the connection alive
-                    current_time = time.time()
-                    if current_time - self.last_heartbeat_time >= self.heartbeat_interval:
-                        self._send_heartbeat()
+        while self._read_thread_active:
+            try:
+                # Check if we should still be running
+                with self._state_lock:
+                    if not self._running:
+                        break
+                    ser = self._ser
+                
+                if ser is None or not ser.is_open:
+                    time.sleep(1.0)
+                    continue
+                
+                # Check if we should send a heartbeat
+                current_time = self.node.get_clock().now()
+                time_since_heartbeat = (current_time - self._last_heartbeat_time).nanoseconds / 1e9
+                
+                if time_since_heartbeat >= self.heartbeat_interval:
+                    self._send_heartbeat()
+                
+                # Read from serial port
+                if ser.in_waiting > 0:
+                    raw_data = ser.readline()
                     
-                    # Read directly from the serial port without delay
-                    if self.ser.in_waiting > 0:
-                        raw_data = self.ser.readline()
-                        
-                        if raw_data:
-                            try:
-                                line = raw_data.decode('utf-8', errors='replace').strip()
-                                if line:
-                                    # Process immediately without additional logging/filtering
-                                    self._process_response(line)
-                            except UnicodeDecodeError:
-                                self._process_binary_response(raw_data)
-                    # Only sleep a tiny amount if no data to prevent tight loop
-                    elif self.read_throttle > 0:
-                        time.sleep(self.read_throttle)
-                        
-                except Exception as e:
-                    self.node.get_logger().error(f"Error reading from serial: {e}")
-                    time.sleep(1.0)  # Sleep longer on error
-                    # Attempt reconnection on the next loop if there's an error
-                    with self.connection_lock:
-                        self.connection_active = False
-            else:
-                # If not connected, wait a bit before next check
+                    if raw_data:
+                        try:
+                            line = raw_data.decode('utf-8', errors='replace').strip()
+                            if line:
+                                self._process_response(line)
+                        except UnicodeDecodeError:
+                            self._process_binary_response(raw_data)
+                            
+                # Small sleep to prevent CPU spinning
+                elif self.read_throttle > 0:
+                    time.sleep(self.read_throttle)
+                    
+            except serial.SerialException as e:
+                self.node.get_logger().error(f"Serial error in read loop: {e}")
+                with self._state_lock:
+                    self._connection_active = False
                 time.sleep(1.0)
                 
-        self.node.get_logger().info("Serial read thread stopped")
+            except Exception as e:
+                self.node.get_logger().error(f"Unexpected error in read loop: {e}")
+                self.node.get_logger().error(traceback.format_exc())
+                time.sleep(1.0)
         
+        self.node.get_logger().info("Serial read thread stopped")
+    
     def _process_binary_response(self, raw_data):
         """Process binary (non-UTF8) data received from the serial port"""
         try:
@@ -242,16 +278,20 @@ class SerialManager(threading.Thread):
         """Send a heartbeat message to keep the connection alive"""
         try:
             if self.is_connected():
-                # Use CRLF line ending for heartbeat
-                heartbeat_cmd = json.dumps({'T': 0})
-                self.ser.write((heartbeat_cmd + '\r\n').encode())
-                self.ser.flush()
-                self.last_heartbeat_time = time.time()
+                heartbeat_cmd = json.dumps({'T': 0}) + '\r\n'
+                
+                # Direct write for heartbeat (bypass queue)
+                with self._write_lock:
+                    if self._ser and self._ser.is_open:
+                        self._ser.write(heartbeat_cmd.encode())
+                        self._ser.flush()
+                        
+                self._last_heartbeat_time = self.node.get_clock().now()
                 self.node.get_logger().debug("Heartbeat sent")
         except Exception as e:
             self.node.get_logger().debug(f"Failed to send heartbeat: {e}")
-            with self.connection_lock:
-                self.connection_active = False
+            with self._state_lock:
+                self._connection_active = False
     
     def _process_response(self, response):
         """Process a response from the hardware."""
@@ -267,61 +307,70 @@ class SerialManager(threading.Thread):
                         data.get('s', 0.0),  # shoulder
                         data.get('e', 0.0),  # elbow
                         data.get('t', 0.0),  # wrist (t in the message)
-                        data.get('g', 0.0)  # gripper/hand (default to 0.0 if not present)
+                        data.get('g', 0.0)   # gripper/hand
                     ]
                     
-                    # Publish position data to ROS topic as a list format
+                    # Publish position data to ROS topic
                     msg = String()
                     msg.data = json.dumps(position_list)
                     self.position_publisher.publish(msg)
                     
-                    # Only log occasionally to prevent log flooding
-                    if not hasattr(self, '_last_1051_log_time') or time.time() - self._last_1051_log_time > 10.0:
-                        self.node.get_logger().debug(f"Position feedback published: {position_list}")
-                        self._last_1051_log_time = time.time()
+                    # Throttle logging using ROS time
+                    current_time = self.node.get_clock().now()
+                    time_since_log = (current_time - self._last_position_log_time).nanoseconds / 1e9
                     
-                    # If we have a position feedback callback registered, call it with this data
-                    if hasattr(self, '_position_feedback_callback') and self._position_feedback_callback:
-                        self._position_feedback_callback(data)
-                        # Clear the callback after it's been used once
-                        self._position_feedback_callback = None
-                        self.node.get_logger().info("Used continuous position feedback for initialization")
+                    if time_since_log > self._position_log_interval:
+                        self.node.get_logger().debug(f"Position feedback published: {position_list}")
+                        self._last_position_log_time = current_time
+                    
+                    # Thread-safe callback handling
+                    with self._position_feedback_lock:
+                        if self._position_feedback_callback:
+                            callback = self._position_feedback_callback
+                            self._position_feedback_callback = None
+                            callback(data)
+                            self.node.get_logger().info("Used continuous position feedback for initialization")
                     
         except (json.JSONDecodeError, ValueError, TypeError) as e:
             # Not JSON or not the expected format, ignore for position processing
             pass
             
-        # If we have a callback registered, pass the data along
+        # If we have a data callback registered, pass the data along
         if self.data_callback:
             self.data_callback(response)
     
     def close(self):
         """Close the serial connection and clean up resources."""
         self.node.get_logger().info("Closing serial connection")
-        self.running = False
         
-        # Join thread if it's running
-        if threading.current_thread() != self:
-            try:
-                self.join(timeout=1.0)
-            except RuntimeError:
-                # Thread may not have been started yet
-                pass
+        # Stop the read thread
+        self._read_thread_active = False
         
-        # Close the serial port
-        if hasattr(self, 'ser') and self.ser:
-            try:
-                if self.ser.is_open:
-                    self.ser.flush()
-                    self.ser.reset_input_buffer()
-                    self.ser.reset_output_buffer()
-                    self.ser.close()
-            except Exception as e:
-                self.node.get_logger().error(f"Error closing serial port: {e}")
+        # Signal thread to stop
+        with self._state_lock:
+            self._running = False
         
-        with self.connection_lock:
-            self.connection_active = False
-            self.ser = None
+        # Wait for thread to finish
+        if (self._read_thread is not None and 
+            self._read_thread.is_alive() and 
+            threading.current_thread() != self._read_thread):
+            self._read_thread.join(timeout=2.0)
+        
+        # Close serial port
+        with self._state_lock:
+            if self._ser is not None:
+                try:
+                    if self._ser.is_open:
+                        self._ser.flush()
+                        self._ser.reset_input_buffer()
+                        self._ser.reset_output_buffer()
+                        self._ser.close()
+                except Exception as e:
+                    self.node.get_logger().error(f"Error closing serial port: {e}")
+                finally:
+                    self._ser = None
+            
+            self._connection_active = False
             
         self.node.get_logger().info("Serial connection closed")
 
