@@ -91,10 +91,10 @@ class RoArmHardwareInterface(Node):
         self.connection_active = False
         self.connection_lock = threading.Lock()
         
-        # Add timer health tracking variables
+        # Add timer health tracking variables using ROS time
         self.safety_timer_active = False
         self.last_safety_timer_id = 0
-        self.safety_timer_creation_time = 0
+        self.safety_timer_creation_time = self.get_clock().now()
         self.safety_timer_call_count = 0
         self.safety_timer_last_exception = None
         self.safety_timer_lock = threading.Lock()
@@ -115,20 +115,28 @@ class RoArmHardwareInterface(Node):
         self.current_joints = [0.0, 0.0, 0.0, 0.0, 0.0]  # base, shoulder, elbow, wrist, hand
         self.target_joints = [0.0, 0.0, 0.0, 0.0, 0.0]
         self.joint_velocities = [0.0, 0.0, 0.0, 0.0, 0.0]
-        self.last_command_time = self.get_clock().now()
+        self.last_command_time = self.get_clock().now()  # ROS time
         
         # Flag to track whether we have valid joint positions from hardware
         self.position_initialized = False
         
-        # Add tracking variables for dynamic adaptation
+        # Add tracking variables for dynamic adaptation using ROS time
         self.dynamic_adaptation_active = False
-        self.dynamic_adaptation_last_disable_time = 0.0
+        self.dynamic_adaptation_last_disable_time = self.get_clock().now()
         self.dynamic_adaptation_pending_resume = False
         self.dynamic_adaptation_lock = threading.Lock()
         self.dynamic_adaptation_timeout = 10.0  # Keep enabled for 10 seconds
         self.last_movement_source = "unknown"  # Track movement source for DEMA control
         self.initial_adaptation_setup = True  # Flag to track initial setup vs toggle
         
+        # Enable movement source integration
+        self.enable_movement_source_integration = self.get_parameter('enable_movement_source_integration').value
+        if self.enable_movement_source_integration:
+            self.movement_source_publisher = self.create_publisher(
+                String,
+                '/roarm/movement_source',
+                10
+            )
         
         if self.connection_active:
             # Initialize the collision avoidance system
@@ -142,7 +150,8 @@ class RoArmHardwareInterface(Node):
                 self.enable_torque()
             else:
                 self.get_logger().info("Torque disabled on startup")
-            time.sleep(0.5)   
+            time.sleep(0.5)  # Hardware initialization delay - keep as time.sleep
+            
             # Configure dynamic adaptation for startup
             # Always start with dynamic adaptation disabled regardless of parameter
             self.disable_dynamic_adaptation_mode()
@@ -225,14 +234,14 @@ class RoArmHardwareInterface(Node):
                 self.right_severity_callback, 
                 10)
             
-            # Initialize timer tracking variables first
-            self.safety_timer_creation_time = self.get_clock().now().nanoseconds / 1e9
+            # Initialize timer tracking variables with ROS time
+            self.safety_timer_creation_time = self.get_clock().now()
             self.safety_timer_active = True
             self.safety_timer_call_count = 0
             
             # Create the safety timer using our improved method
             self.recreate_safety_timer()
-            self.last_safety_check_time = self.get_clock().now().nanoseconds / 1e9
+            self.last_safety_check_time = self.get_clock().now()
             
             # Add a health check timer to ensure safety_timer is still running
             self.timer_health_check = self.create_timer(5.0, self.safety_timer_watchdog)
@@ -274,13 +283,30 @@ class RoArmHardwareInterface(Node):
                 self.position_feedback_callback,
                 10
             )
+            
+            # Initialize ROS time tracking for various features
+            self.last_publish_time = self.get_clock().now()
+            self.last_watchdog_check_time = self.get_clock().now()
+            self.last_dema_pending_log = self.get_clock().now()
+            self.last_adaptation_toggle_time = self.get_clock().now()
+            
+            # Track command significance
+            self.significant_publish = False
+            self.significant_command = False
+            
+            # Initialize recent command times tracking
+            self.recent_command_times = []
+            
+            # Timer for DEMA re-enable checking
+            self.dema_reenable_timer = None
+            
         else:
             self.get_logger().error("Failed to initialize hardware interface")
             
     def safety_timer_watchdog(self):
         """Check if the safety timer is still functioning properly"""
         try:
-            current_time = self.get_clock().now().nanoseconds / 1e9
+            current_time = self.get_clock().now()
             
             # Use a separate timestamp for watchdog checks
             if not hasattr(self, 'last_watchdog_check_time'):
@@ -297,12 +323,12 @@ class RoArmHardwareInterface(Node):
         """Recreate the safety timer with better tracking"""
         try:
             # Generate a unique ID for this timer instance
-            timer_id = time.time_ns()
+            timer_id = self.get_clock().now().nanoseconds
             
             with self.safety_timer_lock:
                 self.safety_timer_active = True
                 self.last_safety_timer_id = timer_id
-                self.safety_timer_creation_time = self.get_clock().now().nanoseconds / 1e9
+                self.safety_timer_creation_time = self.get_clock().now()
                 self.safety_timer_call_count = 0
                 
             # Create a new timer with a wrapper function that includes error handling
@@ -374,18 +400,16 @@ class RoArmHardwareInterface(Node):
     def safety_monitor_callback(self):
         """Periodic callback to monitor safety and adjust motion if needed"""
         # Update the last check time at the beginning to track timer operation
-        self.last_safety_check_time = self.get_clock().now().nanoseconds / 1e9
+        self.last_safety_check_time = self.get_clock().now()
         
         # Check if dynamic adaptation needs to be restored based on movement completion
         if self.enable_dynamic_adaptation and not self.dynamic_adaptation_active and self.dynamic_adaptation_pending_resume:
-            current_time = time.time()
+            current_time = self.get_clock().now()
             
             # Only check for re-enabling if we have a pending resume request
             if self.dynamic_adaptation_pending_resume:
                 # Check if there's been no significant movement for a while
-                time_since_command = current_time - getattr(self, 'last_command_time', 0)
-                if hasattr(time_since_command, 'nanoseconds'):  # Check if it's a ROS Time object
-                    time_since_command = time_since_command.nanoseconds / 1e9
+                time_since_command = (current_time - self.last_command_time).nanoseconds / 1e9
                 
                 # Only re-enable DEMA if the arm has been still for a while (3 seconds)
                 # This indicates the movement that required DEMA off has completed
@@ -401,7 +425,8 @@ class RoArmHardwareInterface(Node):
                         # Don't adjust the timer - we'll retry on the next callback
                 else:
                     # Log this less frequently to avoid spamming the logs
-                    if not hasattr(self, 'last_dema_pending_log') or current_time - self.last_dema_pending_log > 2.0:
+                    time_since_log = (current_time - self.last_dema_pending_log).nanoseconds / 1e9
+                    if time_since_log > 2.0:
                         self.get_logger().debug(f"DEMA re-enable pending: waiting for arm to be still (time since command: {time_since_command:.2f}s)")
                         self.last_dema_pending_log = current_time
         
@@ -411,8 +436,8 @@ class RoArmHardwareInterface(Node):
             self.collision_avoidance.update_current_joints(self.current_joints)
             
             # Check activity time
-            now = time.time()
-            time_since_publish = now - getattr(self, 'last_publish_time', 0)
+            now = self.get_clock().now()
+            time_since_publish = (now - self.last_publish_time).nanoseconds / 1e9
             
             # If we've published recently, update last activity time in collision avoidance,
             # but only if last_publish was due to a significant change
@@ -422,10 +447,7 @@ class RoArmHardwareInterface(Node):
                 
             # If we've received commands recently, also update activity time,
             # but only apply this based on the significant change flag
-            last_cmd_time = getattr(self, 'last_command_time', 0)
-            if hasattr(last_cmd_time, 'nanoseconds'):  # Check if it's a ROS Time object
-                last_cmd_time = last_cmd_time.nanoseconds / 1e9
-            time_since_command = now - last_cmd_time
+            time_since_command = (now - self.last_command_time).nanoseconds / 1e9
             
             if time_since_command < 1.0 and getattr(self, 'significant_command', False):
                 self.collision_avoidance.last_activity_time = now
@@ -462,9 +484,9 @@ class RoArmHardwareInterface(Node):
             
             # This error could potentially make the timer stop working
             # Let's check if we need to restart it
-            current_time = self.get_clock().now().nanoseconds / 1e9
-            creation_time = self.safety_timer_creation_time
-            if current_time - creation_time > 1.0:  # If timer is older than 1 second
+            current_time = self.get_clock().now()
+            time_since_creation = (current_time - self.safety_timer_creation_time).nanoseconds / 1e9
+            if time_since_creation > 1.0:  # If timer is older than 1 second
                 self.get_logger().warn("Safety timer exception might have corrupted timer - recreating")
                 self.recreate_safety_timer()
         
@@ -477,10 +499,12 @@ class RoArmHardwareInterface(Node):
         current_time = self.get_clock().now()
         dt = (current_time - self.last_command_time).nanoseconds / 1e9
         
-        if dt > 0:
+        if dt > 0 and dt < 1.0:  # Only calculate velocity for recent movements
             # Calculate approximate velocities
             self.joint_velocities = [(self.target_joints[i] - self.current_joints[i]) / dt 
-                                     for i in len(self.current_joints)]
+                                     for i in range(len(self.current_joints))]
+        else:
+            self.joint_velocities = [0.0] * len(self.current_joints)
         
         # Update tracking variables - store as ROS Time for velocity calculations
         self.last_command_time = current_time
@@ -515,11 +539,8 @@ class RoArmHardwareInterface(Node):
             return
         
         try:
-            # Update last movement time
-            current_time = time.time()
-            
-            # Store current time as float to avoid type issues later
-            self.last_command_time = current_time
+            # Update last movement time with ROS time
+            self.last_command_time = self.get_clock().now()
             
             # Skip processing if collision avoidance system is returning to home position
             if self.collision_avoidance.returning_to_home:
@@ -530,7 +551,9 @@ class RoArmHardwareInterface(Node):
             if not hasattr(self, 'recent_command_times'):
                 self.recent_command_times = []
             
-            self.recent_command_times.append(current_time)
+            # Store as float seconds for easier calculation
+            current_seconds = self.get_clock().now().nanoseconds / 1e9
+            self.recent_command_times.append(current_seconds)
             if len(self.recent_command_times) > 5:  # Keep last 5 command times
                 self.recent_command_times.pop(0)
             
@@ -565,27 +588,28 @@ class RoArmHardwareInterface(Node):
                     self.get_logger().info(f"Movement source changed: {previous_source or 'initial'} -> {movement_source}")
                     # If changing to animation or collision, disable DEMA
                     if movement_source in ["animation", "collision"]:
-                            self.get_logger().info(f"Movement source is {movement_source} - disabling DEMA")
-                            self.disable_dynamic_adaptation_mode()
-                            # Set flag to re-enable after movement completes
-                            self.dynamic_adaptation_pending_resume = True
-                            self.dynamic_adaptation_last_disable_time = current_time
+                        self.get_logger().info(f"Movement source is {movement_source} - disabling DEMA")
+                        self.disable_dynamic_adaptation_mode()
+                        # Set flag to re-enable after movement completes
+                        self.dynamic_adaptation_pending_resume = True
+                        self.dynamic_adaptation_last_disable_time = self.get_clock().now()
                             
                     # If changing to user mode, always enable DEMA
                     elif movement_source == "user":
-                            self.get_logger().info(f"Movement source is user - enabling DEMA")
-                            self.enable_dynamic_adaptation_mode()
-                            self.dynamic_adaptation_pending_resume = False
+                        self.get_logger().info(f"Movement source is user - enabling DEMA")
+                        self.enable_dynamic_adaptation_mode()
+                        self.dynamic_adaptation_pending_resume = False
                             
                     # If changing to idle and DEMA was pending resume, re-enable it
                     elif movement_source == "idle":
                         self.get_logger().info(f"Movement source is idle")
-                        success = self.enable_dynamic_adaptation_mode()
-                        if success:
-                            self.dynamic_adaptation_pending_resume = False
-                            self.get_logger().info("Successfully re-enabled DEMA")
-                        else:
-                            self.get_logger().error("Failed to re-enable DEMA")
+                        if self.dynamic_adaptation_pending_resume:
+                            success = self.enable_dynamic_adaptation_mode()
+                            if success:
+                                self.dynamic_adaptation_pending_resume = False
+                                self.get_logger().info("Successfully re-enabled DEMA")
+                            else:
+                                self.get_logger().error("Failed to re-enable DEMA")
             
             # Find indices for our joints (RoArm naming convention)
             indices = {}
@@ -621,7 +645,7 @@ class RoArmHardwareInterface(Node):
             
             # Only update activity time if significant change
             if is_significant:
-                self.collision_avoidance.last_activity_time = current_time
+                self.collision_avoidance.last_activity_time = self.get_clock().now()
                 self.get_logger().debug(f"Activity timestamp updated due to significant joint position change")
             
             # Update the collision avoidance system with new target
@@ -663,14 +687,16 @@ class RoArmHardwareInterface(Node):
                 self.disable_dynamic_adaptation_mode()
                 # Set a flag to re-enable after movement completes
                 self.dynamic_adaptation_pending_resume = True
-                self.dynamic_adaptation_last_disable_time = time.time()
+                self.dynamic_adaptation_last_disable_time = self.get_clock().now()
                 
-                # Schedule a timer to check for re-enabling DEMA after 1 second
-                if not hasattr(self, 'dema_reenable_timer') or not self.dema_reenable_timer.is_alive():
-                    self.dema_reenable_timer = threading.Timer(3.0, self.check_dema_reenable)
-                    self.dema_reenable_timer.daemon = True
-                    self.dema_reenable_timer.start()
-                    self.get_logger().info("Scheduled DEMA re-enable check in 3.0 second")
+                # Schedule a ROS timer to check for re-enabling DEMA after 3 seconds
+                if self.dema_reenable_timer is None or not self.dema_reenable_timer.is_ready():
+                    self.dema_reenable_timer = self.create_timer(
+                        3.0, 
+                        self.check_dema_reenable,
+                        timer_period_ns=int(3.0 * 1e9)
+                    )
+                    self.get_logger().info("Scheduled DEMA re-enable check in 3.0 seconds")
             
             # Use T:102 command for joint control in radians
             # From API: {"T":102,"base":0,"shoulder":0,"elbow":1.57,"hand":0.0,"spd":0,"acc":10}
@@ -714,8 +740,8 @@ class RoArmHardwareInterface(Node):
     def check_dema_reenable(self):
         """Check if DEMA can be re-enabled after settling into a position"""
         try:
-            current_time = time.time()
-            time_since_disable = current_time - self.dynamic_adaptation_last_disable_time
+            current_time = self.get_clock().now()
+            time_since_disable = (current_time - self.dynamic_adaptation_last_disable_time).nanoseconds / 1e9
             
             self.get_logger().info(f"Checking if robot has settled to re-enable DEMA (disabled for {time_since_disable:.1f}s)")
             
@@ -727,10 +753,7 @@ class RoArmHardwareInterface(Node):
                 # 2. Check if we're close to our target position
                 
                 # Calculate time since last command
-                last_cmd_time = getattr(self, 'last_command_time', 0)
-                if hasattr(last_cmd_time, 'nanoseconds'):  # Check if it's a ROS Time object
-                    last_cmd_time = last_cmd_time.nanoseconds / 1e9
-                time_since_command = current_time - last_cmd_time
+                time_since_command = (current_time - self.last_command_time).nanoseconds / 1e9
                 
                 # Check if target and current positions are close (settled)
                 is_settled = True
@@ -750,17 +773,25 @@ class RoArmHardwareInterface(Node):
                     else:
                         self.get_logger().error("Failed to re-enable DEMA, scheduling another check")
                         # Schedule another check after 0.5 seconds
-                        if not hasattr(self, 'dema_reenable_timer') or not self.dema_reenable_timer.is_alive():
-                            self.dema_reenable_timer = threading.Timer(0.5, self.check_dema_reenable)
-                            self.dema_reenable_timer.daemon = True
-                            self.dema_reenable_timer.start()
+                        self.dema_reenable_timer = self.create_timer(
+                            0.5, 
+                            self.check_dema_reenable,
+                            timer_period_ns=int(0.5 * 1e9)
+                        )
                 else:
                     self.get_logger().info(f"Robot not settled yet (time since command: {time_since_command:.1f}s, is_settled: {is_settled})")
                     # Schedule another check after 0.5 seconds
-                    if not hasattr(self, 'dema_reenable_timer') or not self.dema_reenable_timer.is_alive():
-                        self.dema_reenable_timer = threading.Timer(0.5, self.check_dema_reenable)
-                        self.dema_reenable_timer.daemon = True
-                        self.dema_reenable_timer.start()
+                    self.dema_reenable_timer = self.create_timer(
+                        0.5, 
+                        self.check_dema_reenable,
+                        timer_period_ns=int(0.5 * 1e9)
+                    )
+                    
+            # Cancel the timer if we're done
+            if self.dema_reenable_timer and (not self.dynamic_adaptation_pending_resume or self.dynamic_adaptation_active):
+                self.dema_reenable_timer.cancel()
+                self.dema_reenable_timer = None
+                
         except Exception as e:
             self.get_logger().error(f"Error in DEMA re-enable check: {e}")
             import traceback
@@ -770,8 +801,8 @@ class RoArmHardwareInterface(Node):
         """Publish the current joint states periodically to ensure topic is active."""
         try:
             if hasattr(self, 'current_joints') and len(self.current_joints) > 0:
-                # Record the publish time
-                self.last_publish_time = time.time()
+                # Record the publish time with ROS time
+                self.last_publish_time = self.get_clock().now()
                 
                 # Always publish the joint states (important for ROS control)
                 self.publish_actual_joint_states(self.current_joints)
@@ -794,7 +825,7 @@ class RoArmHardwareInterface(Node):
                         self.collision_avoidance.persistent_head_collision_active = False
                         
                         # Reset the activity timer to prevent immediately triggering idle timeout
-                        self.collision_avoidance.last_activity_time = time.time()
+                        self.collision_avoidance.last_activity_time = self.get_clock().now()
         except Exception as e:
             self.get_logger().error(f"Error in direct publish timer: {e}")
 
@@ -836,8 +867,8 @@ class RoArmHardwareInterface(Node):
             # Remember this position for next comparison
             self._last_published_positions = list(positions)
             
-            # Update the last publish time
-            self.last_publish_time = time.time()
+            # Update the last publish time with ROS time
+            self.last_publish_time = self.get_clock().now()
 
             # Publish the message
             self.joint_states_publisher.publish(msg)
@@ -890,6 +921,10 @@ class RoArmHardwareInterface(Node):
     def destroy_node(self):
         """Clean up when node is destroyed."""
         self.get_logger().info("Shutting down hardware interface")
+        
+        # Cancel any active timers
+        if hasattr(self, 'dema_reenable_timer') and self.dema_reenable_timer:
+            self.dema_reenable_timer.cancel()
         
         # Disable dynamic adaptation mode if active
         if self.dynamic_adaptation_active:
@@ -956,7 +991,7 @@ class RoArmHardwareInterface(Node):
                 
                 if success:
                     self.dynamic_adaptation_active = False
-                    self.dynamic_adaptation_last_disable_time = time.time()
+                    self.dynamic_adaptation_last_disable_time = self.get_clock().now()
                     self.get_logger().info("Dynamic adaptation mode disabled")
                 else:
                     self.get_logger().error("Failed to disable dynamic adaptation mode")
@@ -969,30 +1004,30 @@ class RoArmHardwareInterface(Node):
         """Handle incoming toggle commands for dynamic adaptation"""
         try:
             # Add extra check to prevent rapid toggles
-            current_time = time.time()
-            if hasattr(self, 'last_adaptation_toggle_time') and current_time - self.last_adaptation_toggle_time < 2.0:
+            current_time = self.get_clock().now()
+            time_since_toggle = (current_time - self.last_adaptation_toggle_time).nanoseconds / 1e9
+            
+            if time_since_toggle < 2.0:
                 self.get_logger().warn("Ignoring rapid dynamic adaptation toggle - wait at least 2 seconds between toggles")
                 return
                 
             self.last_adaptation_toggle_time = current_time
             
             if msg.data:  # Enable dynamic adaptation
-                # if not self.dynamic_adaptation_active:
-                    self.get_logger().info("Enabling dynamic adaptation mode via toggle")
-                    # Now enable dynamic adaptation mode
-                    success = self.enable_dynamic_adaptation_mode()
-                    if success:
-                        self.get_logger().info("Dynamic adaptation successfully enabled via toggle")
-                    else:
-                        self.get_logger().error("Failed to enable dynamic adaptation")
+                self.get_logger().info("Enabling dynamic adaptation mode via toggle")
+                # Now enable dynamic adaptation mode
+                success = self.enable_dynamic_adaptation_mode()
+                if success:
+                    self.get_logger().info("Dynamic adaptation successfully enabled via toggle")
+                else:
+                    self.get_logger().error("Failed to enable dynamic adaptation")
             else:  # Disable dynamic adaptation
-                # if self.dynamic_adaptation_active:
-                    self.get_logger().info("Disabling dynamic adaptation mode via toggle")
-                    success = self.disable_dynamic_adaptation_mode()
-                    if success:
-                        self.get_logger().info("Dynamic adaptation successfully disabled via toggle")
-                    else:
-                        self.get_logger().error("Failed to disable dynamic adaptation")
+                self.get_logger().info("Disabling dynamic adaptation mode via toggle")
+                success = self.disable_dynamic_adaptation_mode()
+                if success:
+                    self.get_logger().info("Dynamic adaptation successfully disabled via toggle")
+                else:
+                    self.get_logger().error("Failed to disable dynamic adaptation")
         except Exception as e:
             self.get_logger().error(f"Error in dynamic adaptation toggle callback: {e}")
             # Try to restore state if error occurs
@@ -1082,7 +1117,7 @@ class RoArmHardwareInterface(Node):
                     self.get_logger().info("Detected user manual movement while DEMA is active")
                     # User is physically moving the arm, keep DEMA enabled to allow this
                     # Update the DEMA last active time to prevent timeout
-                    self.dynamic_adaptation_last_disable_time = time.time()
+                    self.dynamic_adaptation_last_disable_time = self.get_clock().now()
                     # Don't disable DEMA for user movements
                 
                 # Reset the commanded movement flag
