@@ -42,40 +42,40 @@ class CollisionAvoidance:
         self.base_rest_position = node.get_parameter('base_rest_position').value
         self.rest_variation_range = node.get_parameter('rest_variation_range').value
         
-        # Collision tracking
+        # Collision tracking with ROS time
         self.collision_status = {
             'front': {'active': False, 'distance': float('inf'), 'severity': 'safe', 'consecutive_count': 0},
             'left': {'active': False, 'distance': float('inf'), 'severity': 'safe', 'consecutive_count': 0},
             'right': {'active': False, 'distance': float('inf'), 'severity': 'safe', 'consecutive_count': 0}
         }
         self.collision_lock = threading.Lock()
-        self.last_collision_time = 0.0
+        self.last_collision_time = self.node.get_clock().now()
         self.last_avoidance_direction = None  # Track which direction last triggered avoidance
         
-        # Adjustment tracking
+        # Adjustment tracking with ROS time
         self.adjustment_history = {
-            'front': {'last_time': 0.0, 'last_position': None, 'adjustment_made': False},
-            'left': {'last_time': 0.0, 'last_position': None, 'adjustment_made': False},
-            'right': {'last_time': 0.0, 'last_position': None, 'adjustment_made': False}
+            'front': {'last_time': self.node.get_clock().now(), 'last_position': None, 'adjustment_made': False},
+            'left': {'last_time': self.node.get_clock().now(), 'last_position': None, 'adjustment_made': False},
+            'right': {'last_time': self.node.get_clock().now(), 'last_position': None, 'adjustment_made': False}
         }
         self.adjustment_cooldown = 1.0 
         self.adjustment_position_threshold = 0.1  # Difference threshold to consider a new position
         
-        # Escape mode variables
+        # Escape mode variables with ROS time
         self.escape_mode_active = False
-        self.escape_mode_start_time = 0.0
+        self.escape_mode_start_time = self.node.get_clock().now()
         self.unsafe_zones = []  # List of positions to avoid
         self.last_escape_direction = None  # Track last escape direction
         self.retreat_level = 0  # Tracks how far we've retreated
         self.escape_attempts = 0  # Count escape attempts
         
-        # Target override tracking
+        # Target override tracking with ROS time
         self.target_override_active = False  # Flag to indicate override is active
-        self.target_override_time = 0.0  # When the override was activated
+        self.target_override_time = self.node.get_clock().now()  # When the override was activated
         self.target_override_joints = None  # The safe position we've moved to
         self.target_override_reason = ""  # Why the override exists
         self.target_override_timeout = 10.0  # Time before reconsidering original target
-        self.last_original_target_change_time = 0.0  # Last time original target changed
+        self.last_original_target_change_time = self.node.get_clock().now()  # Last time original target changed
         
         # Rest position tracking
         self.last_rest_position = None  # Track the last used rest position
@@ -86,41 +86,51 @@ class CollisionAvoidance:
         self.target_joints = [0.0, 0.0, 0.0, 0.0, 0.0]   # Target joint positions
         self.joint_velocities = [0.0, 0.0, 0.0, 0.0, 0.0] # Current joint velocities
         
-        # Additional tracking variables
-        self.last_failed_adjustment_time = time.time()
-        self.last_proactive_check = 0.0
+        # Additional tracking variables with ROS time
+        self.last_failed_adjustment_time = self.node.get_clock().now()
+        self.last_proactive_check = self.node.get_clock().now()
         
         # Two-stage home position sequence
         self.home_position_1 = [0.5, 0.5, 1.3, 1.4, 0.0]  # Initial home position
         self.home_position_2 = [0.5, -0.85, 1.3, 1.4, 0.0]  # Final home position
-        self.home_position_tolerance = 0.2  # Tolerance to determine if we're at a position (increased from 0.15 for faster transitions)
+        self.home_position_tolerance = 0.2  # Tolerance to determine if we're at a position
         self.home_position_stage = 1  # Track which stage of the home sequence we're in
-        self.home_position_stage_change_time = 0.0  # When we switched home position stages
+        self.home_position_stage_change_time = self.node.get_clock().now()  # When we switched home position stages
         self.home_position_stage_timeout = 2  # Time to wait at home_position_1 before moving to home_position_2
         
-        # Animation state tracking
-        self.last_movement_time = time.time()
+        # Animation state tracking with ROS time
+        self.last_movement_time = self.node.get_clock().now()
         self.recent_command_times = []
         
-        # Add tracking for persistent front (head) collision
-        self.persistent_head_collision_start = 0.0
+        # Add tracking for persistent front (head) collision with ROS time
+        self.persistent_head_collision_start = self.node.get_clock().now()
         self.persistent_head_collision_active = False
-        self.persistent_head_collision_last_log = 0.0  # For log throttling
+        self.persistent_head_collision_last_log = self.node.get_clock().now()  # For log throttling
         
         # Add timeout config for persistent collisions
         self.short_collision_timeout = 1.25  # Original timeout for quick response (seconds)
         self.extended_collision_timeout = 8.0  # Extended timeout for persistent collisions (seconds)
         self.max_collision_timeout = 15.0     # Maximum time before force reset (seconds)
         
-        # Add tracking for idle time
-        self.last_activity_time = time.time()
+        # Add tracking for idle time with ROS time
+        self.last_activity_time = self.node.get_clock().now()
         self.idle_timeout = 4.0  # seconds - used for both idle detection and home position timeout
         self.idle_check_active = True  # Flag to enable/disable idle detection
-        self.idle_check_last_log = 0.0  # For log throttling
+        self.idle_check_last_log = self.node.get_clock().now()  # For log throttling
         
         # Add flags for special operations
         self.returning_to_home = False
-        self.returning_to_home_start_time = 0.0  # When we started returning to home
+        self.returning_to_home_start_time = self.node.get_clock().now()  # When we started returning to home
+        
+        # Initialize all ROS time tracking variables
+        self.last_error_time = self.node.get_clock().now()
+        self.last_position_log_time = self.node.get_clock().now()
+        self.last_animation_end_time = self.node.get_clock().now()
+        self.last_source_log = self.node.get_clock().now()
+        self.last_home_override_log = self.node.get_clock().now()
+        
+        # Timer for idle reset (will be created when needed)
+        self.idle_reset_timer = None
     
     def update_current_joints(self, joints):
         """Update the current joint positions."""
@@ -129,7 +139,7 @@ class CollisionAvoidance:
     def update_target_joints(self, joints):
         """Update the target joint positions."""
         # Check if position has changed enough to update activity time
-        current_time = time.time()
+        current_time = self.node.get_clock().now()
         significant_change = False
         
         # Check if any joint has changed by more than 0.2 radians
@@ -171,7 +181,7 @@ class CollisionAvoidance:
                 # If we're returning to home, still track collisions but don't react
                 # This ensures we keep tracking persistent head collisions
                 was_active = self.collision_status[direction]['active']
-                current_time = time.time()
+                current_time = self.node.get_clock().now()
                 
                 # Track persistent head collision even when returning home
                 if direction == 'front':
@@ -182,10 +192,12 @@ class CollisionAvoidance:
                             self.persistent_head_collision_active = True
                             self.node.get_logger().info("Started tracking persistent head collision")
                         # Throttle logs for persistent collisions
-                        elif current_time - self.persistent_head_collision_last_log > 2.0:
-                            duration = current_time - self.persistent_head_collision_start
-                            self.node.get_logger().info(f"Persistent head collision ongoing for {duration:.1f}s")
-                            self.persistent_head_collision_last_log = current_time
+                        else:
+                            time_since_log = (current_time - self.persistent_head_collision_last_log).nanoseconds / 1e9
+                            if time_since_log > 2.0:
+                                duration = (current_time - self.persistent_head_collision_start).nanoseconds / 1e9
+                                self.node.get_logger().info(f"Persistent head collision ongoing for {duration:.1f}s")
+                                self.persistent_head_collision_last_log = current_time
                     else:
                         # Reset persistent head collision tracking
                         if self.persistent_head_collision_active:
@@ -236,7 +248,7 @@ class CollisionAvoidance:
                 if is_active:  # If collision is still active
                     # Check if an adjustment was recently made before increasing count
                     adjustment_made = self.adjustment_history[direction]['adjustment_made']
-                    time_since_adjustment = current_time - self.adjustment_history[direction]['last_time']
+                    time_since_adjustment = (current_time - self.adjustment_history[direction]['last_time']).nanoseconds / 1e9
                     
                     # Only increment counter if:
                     # 1. No adjustment has been made yet, or
@@ -310,14 +322,16 @@ class CollisionAvoidance:
             self.collision_status[direction]['distance'] = distance
             
             # Fast reaction path: If distance is critically low and we haven't reacted recently
-            current_time = time.time()
+            current_time = self.node.get_clock().now()
             
             # Enhanced trigger conditions: react when distance DECREASES below threshold
             # This ensures we react when approaching, not when moving away
             distance_getting_smaller = old_distance == float('inf') or distance < old_distance
+            time_since_collision = (current_time - self.last_collision_time).nanoseconds / 1e9
+            
             if (distance <= self.hard_limit_distance and 
                 distance_getting_smaller and
-                (current_time - self.last_collision_time) > 0.25 and  # Prevent rapid reactions
+                time_since_collision > 0.25 and  # Prevent rapid reactions
                 not self.adjustment_history[direction]['adjustment_made']):
                 
                 self.last_collision_time = current_time
@@ -342,7 +356,7 @@ class CollisionAvoidance:
             
             # Update persistent head collision tracking for front direction
             if direction == 'front':
-                current_time = time.time()
+                current_time = self.node.get_clock().now()
                 if severity == 'danger':
                     if not self.persistent_head_collision_active:
                         self.persistent_head_collision_start = current_time
@@ -357,8 +371,9 @@ class CollisionAvoidance:
             
             # Fast reaction path: If severity changed to danger, react immediately
             if severity == 'danger' and old_severity != 'danger':
-                current_time = time.time()
-                if (current_time - self.last_collision_time) > 0.25:  # Prevent too rapid reactions
+                current_time = self.node.get_clock().now()
+                time_since_collision = (current_time - self.last_collision_time).nanoseconds / 1e9
+                if time_since_collision > 0.25:  # Prevent too rapid reactions
                     # Update for tracking
                     self.last_collision_time = current_time
                     self.collision_status[direction]['active'] = True
@@ -381,11 +396,11 @@ class CollisionAvoidance:
             
         try:
             # Get current time for this check cycle
-            current_time = time.time()
+            current_time = self.node.get_clock().now()
             
             # Check if we're currently trying to go home and handle timeouts
             if self.returning_to_home:
-                time_since_home_attempt = current_time - self.returning_to_home_start_time
+                time_since_home_attempt = (current_time - self.returning_to_home_start_time).nanoseconds / 1e9
                 if time_since_home_attempt > self.idle_timeout:
                     self.node.get_logger().warn(f"Home position return timeout after {time_since_home_attempt:.1f}s - giving up")
                     self.returning_to_home = False
@@ -396,9 +411,10 @@ class CollisionAvoidance:
             
             # Check persistent head collision duration
             if self.persistent_head_collision_active:
-                head_collision_duration = current_time - self.persistent_head_collision_start
+                head_collision_duration = (current_time - self.persistent_head_collision_start).nanoseconds / 1e9
                 # Log the duration periodically
-                if current_time - self.persistent_head_collision_last_log > 1.0:
+                time_since_log = (current_time - self.persistent_head_collision_last_log).nanoseconds / 1e9
+                if time_since_log > 1.0:
                     self.node.get_logger().info(f"Persistent head collision duration: {head_collision_duration:.1f}s")
                     self.persistent_head_collision_last_log = current_time
                 
@@ -419,7 +435,7 @@ class CollisionAvoidance:
             
             # Check idle timeout (only if we're not already handling a collision)
             if self.idle_check_active and not any(status['active'] for status in self.collision_status.values()):
-                time_since_activity = current_time - self.last_activity_time
+                time_since_activity = (current_time - self.last_activity_time).nanoseconds / 1e9
                 
                 # Check if we're already at or very close to home positions
                 already_at_home2 = self._at_position(self.current_joints, self.home_position_2, self.home_position_tolerance)
@@ -436,9 +452,11 @@ class CollisionAvoidance:
                     position_status = "away from home position"
                 
                 # Log the idle time periodically to help debugging
-                if time_since_activity > 1.5 and current_time - self.idle_check_last_log > 2.0:
-                    self.node.get_logger().debug(f"Device idle for {time_since_activity:.1f}s (timeout: {effective_timeout}s, {position_status})")
-                    self.idle_check_last_log = current_time
+                if time_since_activity > 1.5:
+                    time_since_idle_log = (current_time - self.idle_check_last_log).nanoseconds / 1e9
+                    if time_since_idle_log > 2.0:
+                        self.node.get_logger().debug(f"Device idle for {time_since_activity:.1f}s (timeout: {effective_timeout}s, {position_status})")
+                        self.idle_check_last_log = current_time
                 
                 if time_since_activity > effective_timeout and not already_at_home2:
                     self.node.get_logger().info(f"Device idle for {time_since_activity:.1f}s ({position_status}) - returning to home position")
@@ -486,7 +504,8 @@ class CollisionAvoidance:
             # Check if escape mode is active and should be updated or deactivated
             if escape_mode_active:
                 # Check if escape mode has been active too long
-                if current_time - self.escape_mode_start_time > self.escape_mode_duration:
+                escape_duration = (current_time - self.escape_mode_start_time).nanoseconds / 1e9
+                if escape_duration > self.escape_mode_duration:
                     self.escape_mode_active = False
                     self.node.get_logger().info("Escape mode deactivated - normal operation resuming")
                     
@@ -546,7 +565,7 @@ class CollisionAvoidance:
     def perform_collision_avoidance(self, direction, distance, emergency=False):
         """Perform collision avoidance with more significant adjustments for emergency cases."""
         # Update activity time when performing collision avoidance
-        current_time = time.time()
+        current_time = self.node.get_clock().now()
         self.last_activity_time = current_time
         self.node.get_logger().debug(f"Activity timestamp updated due to collision avoidance action")
         
@@ -617,7 +636,7 @@ class CollisionAvoidance:
             
             # Set this as our target override position
             self.target_override_active = True
-            self.target_override_time = time.time()
+            self.target_override_time = self.node.get_clock().now()
             self.target_override_joints = new_position.copy()
             self.target_override_reason = f"Collision avoidance for {direction} at {distance:.1f}cm"
             self.node.get_logger().info(f"Created target override: {self.target_override_reason}")
@@ -704,12 +723,13 @@ class CollisionAvoidance:
     
     def get_effective_target_position(self, original_target):
         """Determine which target position to use based on overrides and safety."""
-        current_time = time.time()
+        current_time = self.node.get_clock().now()
         
         # When returning to home, always return the home position override
         if self.returning_to_home and self.target_override_active and self.target_override_joints is not None:
             # Log that we're enforcing home position override (throttled)
-            if not hasattr(self, 'last_home_override_log') or current_time - self.last_home_override_log > 1.0:
+            time_since_log = (current_time - self.last_home_override_log).nanoseconds / 1e9
+            if time_since_log > 1.0:
                 self.node.get_logger().info(f"Enforcing home position override (stage {self.home_position_stage})")
                 self.last_home_override_log = current_time
             
@@ -758,14 +778,15 @@ class CollisionAvoidance:
                 # Check if we've reached home_position_1 (within tolerance)
                 if self._at_position(self.current_joints, self.home_position_1, self.home_position_tolerance):
                     # Check if we've been at position 1 long enough before moving to position 2
-                    current_time = time.time()
                     
                     # Initialize the stage change time if it's not set yet
-                    if self.home_position_stage_change_time == 0.0:
+                    # Check if it's already ROS time or needs conversion
+                    if not hasattr(self, 'home_position_stage_change_time') or \
+                       not hasattr(self.home_position_stage_change_time, 'nanoseconds'):
                         self.home_position_stage_change_time = current_time
                         self.node.get_logger().info(f"Started timing home position stage 1 - will wait {self.home_position_stage_timeout}s")
                     
-                    time_at_position_1 = current_time - self.home_position_stage_change_time
+                    time_at_position_1 = (current_time - self.home_position_stage_change_time).nanoseconds / 1e9
                     
                     # Check if we've waited long enough at position 1
                     if time_at_position_1 >= self.home_position_stage_timeout:
@@ -789,15 +810,18 @@ class CollisionAvoidance:
                         
                         # Send command to move to home_position_2
                         self.send_safe_joint_command(home_with_variation, "Home position stage 2")
-                    elif current_time - self.idle_check_last_log > 1.0:
+                    else:
                         # Periodically log the waiting progress
-                        self.node.get_logger().debug(f"At home_position_1, waiting {self.home_position_stage_timeout - time_at_position_1:.1f}s before transitioning to stage 2")
-                        self.idle_check_last_log = current_time
+                        time_since_idle_log = (current_time - self.idle_check_last_log).nanoseconds / 1e9
+                        if time_since_idle_log > 1.0:
+                            self.node.get_logger().debug(f"At home_position_1, waiting {self.home_position_stage_timeout - time_at_position_1:.1f}s before transitioning to stage 2")
+                            self.idle_check_last_log = current_time
                 else:
                     # Reset stage change time if we're not at position 1
-                    if self.home_position_stage_change_time != 0.0:
+                    if hasattr(self, 'home_position_stage_change_time') and \
+                       hasattr(self.home_position_stage_change_time, 'nanoseconds'):
                         self.node.get_logger().debug("Lost home_position_1 - resetting stage timer")
-                        self.home_position_stage_change_time = 0.0
+                        self.home_position_stage_change_time = current_time
             
             # Always return the override position when in home movement sequence
             return self.target_override_joints
@@ -814,7 +838,7 @@ class CollisionAvoidance:
             
         # Check if collision has been clear for a while
         any_collision_active = any(self.collision_status[direction]['active'] for direction in self.collision_status)
-        override_duration = current_time - self.target_override_time
+        override_duration = (current_time - self.target_override_time).nanoseconds / 1e9
         
         if not any_collision_active and override_duration > self.target_override_timeout:
             self.node.get_logger().warn(f"Collisions clear for {override_duration:.1f}s - gradually returning to original target")
@@ -918,12 +942,9 @@ class CollisionAvoidance:
             return
             
         # Update activity time when adjusting path
-        current_time = time.time()
+        current_time = self.node.get_clock().now()
         self.last_activity_time = current_time
         self.node.get_logger().debug(f"Activity timestamp updated due to collision path adjustment")
-        
-        # Get current time for cooldown checks
-        current_time = time.time()
         
         # Calculate adjustment factors based on distance and severity
         front_factor = self.calculate_adjustment_factor(front_status)
@@ -944,7 +965,7 @@ class CollisionAvoidance:
         
         # Check for cooldown period on right adjustments
         right_cooldown_active = (
-            current_time - self.adjustment_history['right']['last_time'] < self.adjustment_cooldown and
+            (current_time - self.adjustment_history['right']['last_time']).nanoseconds / 1e9 < self.adjustment_cooldown and
             self.adjustment_history['right']['adjustment_made']
         )
         
@@ -975,10 +996,11 @@ class CollisionAvoidance:
                 self.send_safe_joint_command(temp_position, "Immediate right collision response")
                 
         elif right_factor > 0.1 and right_cooldown_active:
-            self.node.get_logger().info(f"Skipping right adjustment - on cooldown ({current_time - self.adjustment_history['right']['last_time']:.1f}s)")
+            time_since_adjustment = (current_time - self.adjustment_history['right']['last_time']).nanoseconds / 1e9
+            self.node.get_logger().info(f"Skipping right adjustment - on cooldown ({time_since_adjustment:.1f}s)")
             
             # If we've been in cooldown for a while and still have collisions, reset
-            if current_time - self.adjustment_history['right']['last_time'] > (self.adjustment_cooldown * 0.75):
+            if time_since_adjustment > (self.adjustment_cooldown * 0.75):
                 # Artificially decrease the consecutive count to prevent escalation
                 with self.collision_lock:
                     # Don't reset completely, but prevent unlimited growth
@@ -988,7 +1010,7 @@ class CollisionAvoidance:
         
         # Check for cooldown period on left adjustments
         left_cooldown_active = (
-            current_time - self.adjustment_history['left']['last_time'] < self.adjustment_cooldown and
+            (current_time - self.adjustment_history['left']['last_time']).nanoseconds / 1e9 < self.adjustment_cooldown and
             self.adjustment_history['left']['adjustment_made']
         )
         
@@ -1019,10 +1041,11 @@ class CollisionAvoidance:
                 self.send_safe_joint_command(temp_position, "Immediate left collision response")
                 
         elif left_factor > 0.1 and left_cooldown_active:
-            self.node.get_logger().info(f"Skipping left adjustment - on cooldown ({current_time - self.adjustment_history['left']['last_time']:.1f}s)")
+            time_since_adjustment = (current_time - self.adjustment_history['left']['last_time']).nanoseconds / 1e9
+            self.node.get_logger().info(f"Skipping left adjustment - on cooldown ({time_since_adjustment:.1f}s)")
             
             # If we've been in cooldown for a while and still have collisions, reset
-            if current_time - self.adjustment_history['left']['last_time'] > (self.adjustment_cooldown * 0.75):
+            if time_since_adjustment > (self.adjustment_cooldown * 0.75):
                 # Artificially decrease the consecutive count to prevent escalation
                 with self.collision_lock:
                     # Don't reset completely, but prevent unlimited growth
@@ -1036,7 +1059,7 @@ class CollisionAvoidance:
             
         # Check for cooldown period on front adjustments
         front_cooldown_active = (
-            current_time - self.adjustment_history['front']['last_time'] < self.adjustment_cooldown and
+            (current_time - self.adjustment_history['front']['last_time']).nanoseconds / 1e9 < self.adjustment_cooldown and
             self.adjustment_history['front']['adjustment_made']
         )
         
@@ -1064,10 +1087,11 @@ class CollisionAvoidance:
             self.adjustment_history['front']['last_position'] = self.current_joints.copy()
             self.adjustment_history['front']['adjustment_made'] = True
         elif front_factor > 0.1 and front_cooldown_active:
-            self.node.get_logger().info(f"Skipping front adjustment - on cooldown ({current_time - self.adjustment_history['front']['last_time']:.1f}s)")
+            time_since_adjustment = (current_time - self.adjustment_history['front']['last_time']).nanoseconds / 1e9
+            self.node.get_logger().info(f"Skipping front adjustment - on cooldown ({time_since_adjustment:.1f}s)")
             
             # If we've been in cooldown for a while and still have collisions, reset
-            if current_time - self.adjustment_history['front']['last_time'] > (self.adjustment_cooldown * 0.75):
+            if time_since_adjustment > (self.adjustment_cooldown * 0.75):
                 # Artificially decrease the consecutive count to prevent escalation
                 with self.collision_lock:
                     # Don't reset completely, but prevent unlimited growth
@@ -1094,11 +1118,10 @@ class CollisionAvoidance:
             
             # If we've been at this position for a while and still have collisions,
             # we need a more dramatic response
-            if not hasattr(self, 'last_failed_adjustment_time'):
-                self.last_failed_adjustment_time = current_time
+            time_since_failed = (current_time - self.last_failed_adjustment_time).nanoseconds / 1e9
             
             # If we've been stuck for more than 2 seconds, try escape mode
-            if current_time - self.last_failed_adjustment_time > 2.0:
+            if time_since_failed > 2.0:
                 # Find the most persistent collision
                 if right_status['consecutive_count'] > max(front_status['consecutive_count'], left_status['consecutive_count']):
                     direction = 'right'
@@ -1121,7 +1144,7 @@ class CollisionAvoidance:
         
         # Set this as our target override position
         self.target_override_active = True
-        self.target_override_time = time.time()
+        self.target_override_time = self.node.get_clock().now()
         self.target_override_joints = adjusted_targets.copy()
         
         # Create a descriptive reason for the override
@@ -1134,7 +1157,7 @@ class CollisionAvoidance:
         
         self.node.get_logger().debug(f"ADJUSTMENT SENT: {[round(p, 2) for p in adjusted_targets]}")
         # Update last movement time when we make an adjustment
-        self.last_movement_time = time.time()
+        self.last_movement_time = self.node.get_clock().now()
     
     def calculate_adjustment_factor(self, status):
         """Calculate adjustment factor (0.0-1.0) based on collision status."""
@@ -1226,7 +1249,7 @@ class CollisionAvoidance:
             self.escape_mode_active = False
             self.target_override_active = False  # Clear any previous override
             
-            current_time = time.time()
+            current_time = self.node.get_clock().now()
             current_base_position = self.current_joints[0]
             
             # Create modified home positions that preserve the current base rotation
@@ -1239,7 +1262,7 @@ class CollisionAvoidance:
             # IMPROVED: Check if we're already at or near home_position_2 - use a more relaxed tolerance
             # Skip checking joint 0 (base) when determining if we're at home
             hp2_diffs = [abs(curr - target) if i > 0 else 0.0 
-            for i, (curr, target) in enumerate(zip(self.current_joints, mod_home_position_2))]
+                        for i, (curr, target) in enumerate(zip(self.current_joints, mod_home_position_2))]
             already_at_home2 = max(hp2_diffs) <= 0.2
             
             if already_at_home2:
@@ -1249,7 +1272,7 @@ class CollisionAvoidance:
             else:
                 # Also check if we're close to home_position_1, ignoring base position
                 hp1_diffs = [abs(curr - target) if i > 0 else 0.0 
-                for i, (curr, target) in enumerate(zip(self.current_joints, mod_home_position_1))]
+                            for i, (curr, target) in enumerate(zip(self.current_joints, mod_home_position_1))]
                 already_at_home1 = max(hp1_diffs) <= self.home_position_tolerance
                 
                 if already_at_home1:
@@ -1263,12 +1286,12 @@ class CollisionAvoidance:
             noise_range = 0.05
             if self.home_position_stage == 1:
                 home_with_variation = [
-                current_base_position if i == 0 else pos + random.uniform(-noise_range, noise_range) 
+                    current_base_position if i == 0 else pos + random.uniform(-noise_range, noise_range) 
                     for i, pos in enumerate(mod_home_position_1)
                 ]
             else:
                 home_with_variation = [
-                current_base_position if i == 0 else                     pos + random.uniform(-noise_range, noise_range) 
+                    current_base_position if i == 0 else pos + random.uniform(-noise_range, noise_range) 
                     for i, pos in enumerate(mod_home_position_2)
                 ]
             
@@ -1337,13 +1360,13 @@ class CollisionAvoidance:
             
             # Update tracking variables
             self.target_joints = safe_position.copy()
-            self.last_movement_time = time.time()
+            self.last_movement_time = self.node.get_clock().now()
             
             # Send the command
             success = self.send_safe_joint_command(safe_position, description)
             
             # Short delay to let the movement start
-            time.sleep(0.1)
+            time.sleep(0.1)  # Hardware timing delay - keep as time.sleep
             
             return success
         except Exception as e:
@@ -1365,7 +1388,7 @@ class CollisionAvoidance:
     def _activate_escape_mode(self, direction):
         """Activate escape mode to avoid persistent collisions in a direction."""
         self.escape_mode_active = True
-        self.escape_mode_start_time = time.time()
+        self.escape_mode_start_time = self.node.get_clock().now()
         self.last_escape_direction = direction
         self.escape_attempts = 0
         
@@ -1415,7 +1438,7 @@ class CollisionAvoidance:
         
         # Update tracking variables
         self.target_override_active = True
-        self.target_override_time = time.time()
+        self.target_override_time = self.node.get_clock().now()
         self.target_override_joints = new_position.copy()
         self.target_override_reason = f"Escape from {direction} collision (attempt {self.escape_attempts})"
     
@@ -1454,7 +1477,7 @@ class CollisionAvoidance:
     def is_animating(self):
         """Determine if the robot is currently executing an animation."""
         # Check if we've had any joint command in the last second that might be part of an animation
-        time_since_last_command = time.time() - self.last_movement_time
+        time_since_last_command = (self.node.get_clock().now() - self.last_movement_time).nanoseconds / 1e9
         
         # If we've moved very recently, consider it an animation in progress
         if time_since_last_command < 0.5:
@@ -1475,6 +1498,31 @@ class CollisionAvoidance:
                 return True
         
         return False
+    
+    def _reset_to_idle(self):
+        """Reset the movement source to idle after animation completes."""
+        if self.movement_source != "idle":
+            self.movement_source = "idle"
+            self.node.get_logger().info('Movement source reset to idle')
+            self.publish_movement_source()
+            
+        if hasattr(self, 'idle_reset_timer') and self.idle_reset_timer:
+            self.idle_reset_timer.cancel()
+            self.idle_reset_timer = None
+    
+    def publish_movement_source(self):
+        """Publish the current movement source for DEMA coordination."""
+        if not hasattr(self, 'movement_source'):
+            self.movement_source = "idle"
+            
+        self._publish_movement_source(self.movement_source)
+        
+        # Throttle logging
+        current_time = self.node.get_clock().now()
+        time_since_log = (current_time - self.last_source_log).nanoseconds / 1e9
+        if time_since_log > 5.0:
+            self.node.get_logger().info(f"Publishing movement source: {self.movement_source}")
+            self.last_source_log = current_time
     
     def _publish_movement_source(self, source):
         """Publish movement source information for DEMA coordination."""
