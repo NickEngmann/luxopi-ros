@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
+#collision_avoidance.py
 
 import random
 import time
 import math
 import threading
+from rclpy.action import ActionClient
+from luxo_interfaces.action import PlayAnimation
+import time
 from sensor_msgs.msg import JointState
 from std_msgs.msg import String
 
@@ -101,7 +105,16 @@ class CollisionAvoidance:
         # Animation state tracking with ROS time
         self.last_movement_time = self.node.get_clock().now()
         self.recent_command_times = []
+
+        # Animation action tracking for collision coordination
+        self.current_animation_name = None
+        self.animation_allow_interruption = True
+        self.animation_progress = 0.0
+        self.animation_lock = threading.Lock()
         
+        # Track if we've preempted an animation
+        self.animation_preempted = False
+        self.animation_preemption_time = self.node.get_clock().now()
         # Add tracking for persistent front (head) collision with ROS time
         self.persistent_head_collision_start = self.node.get_clock().now()
         self.persistent_head_collision_active = False
@@ -131,6 +144,152 @@ class CollisionAvoidance:
         
         # Timer for idle reset (will be created when needed)
         self.idle_reset_timer = None
+
+
+    def set_active_animation(self, animation_name, allow_interruption=True):
+        """Track the currently active animation."""
+        with self.animation_lock:
+            # Only log if animation name is actually changing
+            if self.current_animation_name != animation_name:
+                self.current_animation_name = animation_name
+                self.animation_allow_interruption = allow_interruption
+                self.animation_preempted = False
+                self.node.get_logger().debug(f"Tracking animation: {animation_name} (interruptible: {allow_interruption})")
+                
+                # Reset activity time when animation starts to prevent idle timeout
+                self.last_activity_time = self.node.get_clock().now()
+                
+                # If we're currently returning to home, cancel it
+                if self.returning_to_home:
+                    self.node.get_logger().info("Cancelling return to home due to new animation")
+                    self.returning_to_home = False
+                    self.target_override_active = False
+                    
+            # If same animation, just update the interruption flag if needed
+            elif self.animation_allow_interruption != allow_interruption:
+                self.animation_allow_interruption = allow_interruption
+                self.node.get_logger().debug(f"Updated interruption flag for {animation_name}: {allow_interruption}")
+
+    
+    def clear_active_animation(self):
+        """Clear the active animation tracking."""
+        with self.animation_lock:
+            if self.current_animation_name:
+                self.node.get_logger().info(f"Animation {self.current_animation_name} completed")
+            self.current_animation_name = None
+            self.animation_progress = 0.0
+            self.animation_preempted = False
+    
+    def update_animation_progress(self, progress):
+        """Update current animation progress for smarter collision handling."""
+        with self.animation_lock:
+            self.animation_progress = progress
+    
+    def should_preempt_animation(self, severity="warning"):
+        """Determine if current animation should be preempted."""
+        with self.animation_lock:
+            if not self.current_animation_name:
+                return False
+            
+            # Don't preempt if not allowed
+            if not self.animation_allow_interruption:
+                return False
+            
+            # Only preempt for danger, not warnings
+            if severity != "danger":
+                return False
+            
+            # Don't preempt same animation repeatedly
+            time_since_preemption = (self.node.get_clock().now() - self.animation_preemption_time).nanoseconds / 1e9
+            if self.animation_preempted and time_since_preemption < 2.0:
+                return False
+            
+            return True
+
+    def validate_animation_keyframe(self, keyframe, animation_name=None):
+        """
+        Check if a keyframe is safe to execute given current collision status.
+        
+        Args:
+            keyframe: List of joint positions [base, shoulder, elbow, wrist, hand]
+            animation_name: Optional name for animation-specific handling
+            
+        Returns:
+            Tuple of (is_safe, adjusted_keyframe, severity)
+        """
+        # Make a copy to potentially adjust
+        adjusted_keyframe = keyframe.copy()
+        is_safe = True
+        severity = "safe"
+        adjustments_made = []
+        
+        with self.collision_lock:
+            # Check front collision impact on shoulder/elbow
+            if self.collision_status['front']['active']:
+                front_severity = self.collision_status['front']['severity']
+                
+                if front_severity == 'danger':
+                    # Don't allow forward movement
+                    if len(keyframe) > 1 and adjusted_keyframe[1] < self.current_joints[1]:  # Shoulder forward
+                        adjusted_keyframe[1] = max(adjusted_keyframe[1], self.current_joints[1])
+                        adjustments_made.append("shoulder_limited")
+                        is_safe = False
+                        severity = "danger"
+                    
+                    if len(keyframe) > 2 and adjusted_keyframe[2] < self.current_joints[2]:  # Elbow extend
+                        adjusted_keyframe[2] = max(adjusted_keyframe[2], self.current_joints[2])
+                        adjustments_made.append("elbow_limited")
+                        is_safe = False
+                        severity = "danger"
+                        
+                elif front_severity == 'warning' and self.animation_progress < 0.8:
+                    # For warnings, only limit if animation isn't almost done
+                    reduction_factor = 0.5
+                    if len(keyframe) > 1 and adjusted_keyframe[1] < self.current_joints[1]:
+                        delta = self.current_joints[1] - adjusted_keyframe[1]
+                        adjusted_keyframe[1] += delta * reduction_factor
+                        adjustments_made.append("shoulder_reduced")
+                        severity = "warning" if severity == "safe" else severity
+            
+            # Check side collisions impact on base rotation
+            if self.collision_status['left']['active'] and len(keyframe) > 0:
+                if adjusted_keyframe[0] > self.current_joints[0] + 0.1:  # Rotating right
+                    adjusted_keyframe[0] = self.current_joints[0] + 0.1  # Allow small movement
+                    adjustments_made.append("base_right_limited")
+                    is_safe = False
+                    severity = "warning" if severity == "safe" else severity
+                    
+            if self.collision_status['right']['active'] and len(keyframe) > 0:
+                if adjusted_keyframe[0] < self.current_joints[0] - 0.1:  # Rotating left
+                    adjusted_keyframe[0] = self.current_joints[0] - 0.1  # Allow small movement
+                    adjustments_made.append("base_left_limited")
+                    is_safe = False
+                    severity = "warning" if severity == "safe" else severity
+        
+        # Log adjustments if any were made
+        if adjustments_made:
+            self.node.get_logger().debug(f"Animation keyframe adjusted: {', '.join(adjustments_made)}")
+        
+        return is_safe, adjusted_keyframe, severity
+    
+    def get_animation_collision_status(self):
+        """Return collision status formatted for animation feedback."""
+        with self.collision_lock:
+            active_collisions = []
+            
+            if self.collision_status['front']['active']:
+                active_collisions.append(f"front:{self.collision_status['front']['severity']}")
+            if self.collision_status['left']['active']:
+                active_collisions.append(f"left:{self.collision_status['left']['severity']}")
+            if self.collision_status['right']['active']:
+                active_collisions.append(f"right:{self.collision_status['right']['severity']}")
+            
+            if not active_collisions:
+                return "safe"
+            elif any('danger' in c for c in active_collisions):
+                return "danger:" + ",".join(active_collisions)
+            else:
+                return "warning:" + ",".join(active_collisions)
     
     def update_current_joints(self, joints):
         """Update the current joint positions."""
@@ -567,6 +726,11 @@ class CollisionAvoidance:
         # Update activity time when performing collision avoidance
         current_time = self.node.get_clock().now()
         self.last_activity_time = current_time
+        if emergency and self.should_preempt_animation("danger"):
+            with self.animation_lock:
+                self.animation_preempted = True
+                self.animation_preemption_time = self.node.get_clock().now()
+                self.node.get_logger().warn(f"Animation '{self.current_animation_name}' should be preempted due to {direction} collision")
         self.node.get_logger().debug(f"Activity timestamp updated due to collision avoidance action")
         
         # Report collision movement source for DEMA coordination
@@ -1476,28 +1640,43 @@ class CollisionAvoidance:
     
     def is_animating(self):
         """Determine if the robot is currently executing an animation."""
-        # Check if we've had any joint command in the last second that might be part of an animation
+        # Check if we have an active animation tracked
+        with self.animation_lock:
+            if self.current_animation_name is not None:
+                return True
+        
+        # Fall back to movement detection
         time_since_last_command = (self.node.get_clock().now() - self.last_movement_time).nanoseconds / 1e9
         
-        # If we've moved very recently, consider it an animation in progress
         if time_since_last_command < 0.5:
             return True
             
-        # Also check if we're in the middle of a dramatic movement (high velocity)
         max_velocity = max([abs(v) for v in self.joint_velocities]) if self.joint_velocities else 0
-        if max_velocity > 0.5:  # Significant movement in progress
+        if max_velocity > 0.5:
             return True
             
-        # Check if recent movements form a pattern consistent with animation
-        # This helps detect ongoing animations even if current velocity is low
         if len(self.recent_command_times) >= 3:
-            # Check for regular timing pattern in recent commands (animation typically has regular timing)
             intervals = [self.recent_command_times[i+1] - self.recent_command_times[i] 
                         for i in range(len(self.recent_command_times)-1)]
-            if intervals and max(intervals) - min(intervals) < 0.2:  # Regular timing pattern
+            if intervals and max(intervals) - min(intervals) < 0.2:
                 return True
         
         return False
+    
+    def get_animation_escape_position(self, direction):
+        """Calculate a safe escape position during animation collision."""
+        escape_position = self.current_joints.copy()
+        
+        # Smaller adjustments during animations
+        if direction == 'front':
+            escape_position[1] -= 0.3  # Pull shoulder back
+            escape_position[2] += 0.2  # Fold elbow slightly
+        elif direction == 'left':
+            escape_position[0] -= 0.2  # Rotate slightly right
+        elif direction == 'right':
+            escape_position[0] += 0.2  # Rotate slightly left
+        
+        return escape_position
     
     def _reset_to_idle(self):
         """Reset the movement source to idle after animation completes."""

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+#animation_command.py
 import rclpy
 from rclpy.node import Node
 from rclpy.action import ActionServer, CancelResponse, GoalResponse
@@ -120,6 +121,18 @@ class AnimationCommandActionServer(Node):
             )
             self.get_logger().info("Publishing movement source information for DEMA coordination")
         
+        # Subscribe to collision status
+        self.collision_status = "safe"
+        self.collision_status_sub = self.create_subscription(
+            String,
+            '/collision_status_for_animation',
+            self.collision_status_callback,
+            10
+        )
+        
+        # Track if animation was preempted by collision
+        self.collision_preempted = False
+        
         # Load animation plugins
         self.animation_plugins = self._load_animation_plugins()
         self.get_logger().info(f'Loaded {len(self.animation_plugins)} animation plugins')
@@ -164,6 +177,18 @@ class AnimationCommandActionServer(Node):
         self.last_animation_end_time = now
         self.last_valid_positions = [0.0] * 5
         self.idle_reset_timer = None
+    
+    def collision_status_callback(self, msg):
+        """Update collision status from collision avoidance system."""
+        self.collision_status = msg.data
+        
+        # Check if this is a danger status while we have an active goal
+        if "danger" in self.collision_status and self._goal_handle and self._goal_handle.is_active:
+            # Check if interruption is allowed
+            goal = self._goal_handle.request
+            if goal.allow_interruption:
+                self.get_logger().warn(f"Collision danger detected during animation: {self.collision_status}")
+                self.collision_preempted = True
     
     def _load_animation_plugins(self) -> Dict[str, AnimationPlugin]:
         """Dynamically load all animation plugins."""
@@ -245,6 +270,9 @@ class AnimationCommandActionServer(Node):
         collision_interruptions = 0
         final_state = "completed"
         
+        # Reset collision preemption flag
+        self.collision_preempted = False
+        
         try:
             goal = goal_handle.request
             animation_name = goal.animation_name
@@ -289,11 +317,17 @@ class AnimationCommandActionServer(Node):
                     final_state = "preempted"
                     break
                 
+                # Check if we've been preempted by collision
+                if self.collision_preempted and goal.allow_interruption:
+                    final_state = "preempted"
+                    self.get_logger().warn("Animation preempted by collision system")
+                    break
+                
                 # Add noise to keyframe
                 noisy_keyframe = plugin.add_noise_to_position(keyframe)
                 
-                # Check collision status (placeholder - will integrate with collision system)
-                collision_status = "safe"  # TODO: Get from collision system
+                # Use actual collision status
+                collision_status = self.collision_status
                 
                 # Calculate progress
                 elapsed_time = time.time() - start_time
@@ -319,7 +353,7 @@ class AnimationCommandActionServer(Node):
                 )
                 
                 # Move to position
-                self.move_to_position(noisy_keyframe, duration, easing=True)
+                self.move_to_position(noisy_keyframe, duration, easing=True, animation_name=animation_name)
                 
                 # If collision interrupted, increment counter
                 if collision_status != "safe":
@@ -409,7 +443,7 @@ class AnimationCommandActionServer(Node):
         
         # Start animation
         self.speed_multiplier = speed
-        self.start_animation(keyframes, durations)
+        self.start_animation(keyframes, durations, animation_name)
         
         # Schedule idle reset after animation completes
         total_duration = sum([d / speed for d in durations])
@@ -548,12 +582,16 @@ class AnimationCommandActionServer(Node):
         else:
             return 1 - pow(-2 * t + 2, 3) / 2
     
-    def move_to_position(self, positions, duration=1.0, easing=True):
+    def move_to_position(self, positions, duration=1.0, easing=True, animation_name=None):
         """Move to a specific position over a duration with optional easing."""
         start_positions = self.target_positions.copy()
         start_time = self.get_clock().now()
         
         adjusted_duration = duration / self.speed_multiplier
+        
+        # Store current animation name for tracking
+        if animation_name:
+            self.current_animation_name = animation_name
         
         elapsed_time = 0.0
         while elapsed_time < adjusted_duration:
@@ -581,12 +619,13 @@ class AnimationCommandActionServer(Node):
         
         return True
     
-    def start_animation(self, keyframes, durations):
+    def start_animation(self, keyframes, durations, animation_name=None):
         """Start an animation with keyframes and durations."""
         self.animation_steps = keyframes
         self.step_durations = [d / self.speed_multiplier for d in durations]
         self.current_step = 0
         self.is_animating = True
+        self.current_animation_name = animation_name
         
         self._process_next_step()
     
@@ -595,13 +634,14 @@ class AnimationCommandActionServer(Node):
         if not self.is_animating or self.current_step >= len(self.animation_steps):
             if self.is_animating:
                 self.is_animating = False
+                self.current_animation_name = None
                 self.get_logger().info('Legacy animation completed')
             return
         
         next_position = self.animation_steps[self.current_step]
         duration = self.step_durations[self.current_step]
         
-        self.move_to_position(next_position, duration, easing=True)
+        self.move_to_position(next_position, duration, easing=True, animation_name=self.current_animation_name)
         
         self.current_step += 1
         if self.current_step < len(self.animation_steps):
@@ -611,6 +651,7 @@ class AnimationCommandActionServer(Node):
             self.animation_timer = self.create_timer(duration, self._next_step_callback)
         else:
             self.is_animating = False
+            self.current_animation_name = None
             self.get_logger().info('Legacy animation completed')
     
     def _next_step_callback(self):
@@ -633,6 +674,10 @@ class AnimationCommandActionServer(Node):
         if self.idle_reset_timer:
             self.idle_reset_timer.cancel()
             self.idle_reset_timer = None
+    
+    def _reset_to_idle_once(self):
+        """Reset to idle and cancel the timer (for one-shot timers)."""
+        self._reset_to_idle()
     
     def publish_movement_source(self):
         """Publish the current movement source."""

@@ -2,6 +2,7 @@
 
 import rclpy
 from rclpy.node import Node
+from rclpy.action import ActionClient
 from .MultiMsgSync import TwoStageHostSeqSync
 import blobconverter
 import depthai as dai
@@ -12,6 +13,7 @@ from std_msgs.msg import String, Float32
 from sensor_msgs.msg import Image
 from cv_bridge import CvBridge
 from collections import deque
+from luxo_interfaces.action import PlayAnimation
 
 def frame_norm(frame, bbox):
     normVals = np.full(len(bbox), frame.shape[0])
@@ -28,11 +30,22 @@ class CameraInteraction(Node):
         self.emotion_publisher = self.create_publisher(String, '/camera/emotion', 10)
         self.distance_publisher = self.create_publisher(Float32, '/camera/person_distance', 10)
         
-        # Create publisher for animation commands - direct animation control
-        self.animation_publisher = self.create_publisher(
-            String,
-            '/roarm/animation_command',
-            10)
+        # Create action client for animation control
+        self._animation_action_client = ActionClient(
+            self,
+            PlayAnimation,
+            'play_animation'
+        )
+        
+        # Wait for action server to be available
+        self.get_logger().info('Waiting for animation action server...')
+        if not self._animation_action_client.wait_for_server(timeout_sec=10.0):
+            self.get_logger().warn('Animation action server not available after 10 seconds')
+        else:
+            self.get_logger().info('Connected to animation action server')
+        
+        # Track active animation goals
+        self._active_goal_handle = None
         
         # Parameter for publishing the camera feed
         self.declare_parameter('publish_camera_feed', False)
@@ -64,10 +77,10 @@ class CameraInteraction(Node):
         # Track last emotion and animation time for cooldown - using ROS2 time
         self.last_emotion = "neutral"
         self.last_animation_time = self.get_clock().now()
-        self.emotion_cooldown = 4.0  # seconds between animations
+        self.emotion_cooldown = 5.0  # Changed from 4.0 to 5.0 seconds between animations
         
         # Add a history of recent emotions to avoid repetition
-        self.recent_emotions = deque(maxlen=1)  # Keep track of last X emotions that triggered animations
+        self.recent_emotions = deque(maxlen=3)  # Keep track of last 3 emotions that triggered animations
         
         # Map emotions to animations
         self.emotion_to_animation = {
@@ -388,9 +401,9 @@ class CameraInteraction(Node):
                         avg_distance += distance
                         distance_count += 1
                 
-                # Check if we have at least 4 emotion samples to make a reliable classification
-                if len(self.emotion_buffer) < 4:
-                    self.get_logger().info(f"Not enough emotion samples ({len(self.emotion_buffer)}), need at least 4")
+                # Check if we have at least 3 emotion samples to make a reliable classification
+                if len(self.emotion_buffer) < 3:
+                    self.get_logger().info(f"Not enough emotion samples ({len(self.emotion_buffer)}), need at least 3")
                     # Reset buffer and start time
                     self.emotion_buffer.clear()
                     self.emotion_buffer_start_time = current_time
@@ -419,14 +432,17 @@ class CameraInteraction(Node):
                     else:
                         avg_distance = None
                     
-                    # Only trigger if dominant enough
-                    if dominant_percentage >= 70:
+                    # Only trigger if dominant enough (changed from 70% to 60%)
+                    if dominant_percentage >= 60:
                         self.get_logger().info(f"Emotion counts: {emotion_counts}, Dominant emotion: {dominant_emotion} ({dominant_percentage:.2f}%)")
                         
                         # Trigger the animation
                         self.trigger_animation(dominant_emotion, avg_distance)
                     else:
                         self.get_logger().info(f"No dominant emotion found, highest: {dominant_emotion} ({dominant_percentage:.2f}%)")
+            else:
+                remaining_cooldown = self.emotion_cooldown - time_since_last_animation
+                self.get_logger().debug(f"Still in cooldown period, {remaining_cooldown:.1f}s remaining")
             
             # Reset the buffer and start time
             self.emotion_buffer.clear()
@@ -434,24 +450,24 @@ class CameraInteraction(Node):
 
     def _is_too_repetitive(self, emotion):
         """Check if an emotion is being detected too repetitively"""
-        # If it's the same as the last triggered emotion, avoid repeating
+        # If it's the same as the last triggered emotion, avoid repeating immediately
         if emotion == self.last_emotion:
             return True
             
-        # If this emotion appears too frequently in our recent history, avoid it
-        if len(self.recent_emotions) >= 1:  # Only check when we have some history
+        # If this emotion appears too frequently in our recent history, be more lenient
+        if len(self.recent_emotions) >= 2:  # Only check when we have some history
             emotion_counts = {}
             for e in self.recent_emotions:
                 emotion_counts[e] = emotion_counts.get(e, 0) + 1
                 
-            # If this emotion appears in more than half of our recent history, it's too repetitive
-            if emotion in emotion_counts and emotion_counts[emotion] >= len(self.recent_emotions) // 2:
+            # If this emotion appears in ALL of our recent history, it's too repetitive
+            if emotion in emotion_counts and emotion_counts[emotion] >= len(self.recent_emotions):
                 return True
         
         return False
 
     def trigger_animation(self, emotion, distance=None):
-        """Trigger an animation based on detected emotion"""
+        """Trigger an animation based on detected emotion using the action system"""
         # Update state with ROS2 time
         self.last_emotion = emotion
         self.last_animation_time = self.get_clock().now()
@@ -466,20 +482,102 @@ class CameraInteraction(Node):
             animation = np.random.choice(animation_options)
             
             # Add speed modifier based on distance if available
-            speed_modifier = ""
+            speed_modifier = 1.0
             if distance is not None:
                 # Closer distance = faster reaction (within reason)
                 if 0.5 <= distance <= 3.0:
                     # Map 0.5m->1.5 (faster) and 3.0m->0.7 (slower)
                     speed = 1.5 - ((distance - 0.5) * 0.32)
-                    speed_modifier = f" {speed:.1f}"
+                    speed_modifier = speed
                 
-            # Publish the animation command
-            cmd = String()
-            cmd.data = f"{animation}{speed_modifier}"
-            self.animation_publisher.publish(cmd)
+            # Cancel any existing animation goal
+            if self._active_goal_handle and self._active_goal_handle.is_active:
+                self.get_logger().info("Cancelling previous emotion-triggered animation")
+                self._active_goal_handle.cancel_goal_async()
             
-            self.get_logger().info(f"Published emotion-triggered animation: {cmd.data} (based on {emotion}) from options: {animation_options}")
+            # Send animation goal using action system
+            self._send_animation_goal(animation, speed_modifier, emotion)
+    
+    def _send_animation_goal(self, animation_name, speed_multiplier, trigger_emotion):
+        """Send an animation goal to the action server"""
+        if not self._animation_action_client.server_is_ready():
+            self.get_logger().warn("Animation action server not ready")
+            return
+        
+        # Create goal message
+        goal_msg = PlayAnimation.Goal()
+        goal_msg.animation_name = animation_name
+        goal_msg.speed_multiplier = speed_multiplier
+        goal_msg.allow_interruption = True  # Emotions can be interrupted
+        goal_msg.use_hardware_feedback = False
+        
+        self.get_logger().info(
+            f"Sending emotion-triggered animation: {animation_name} "
+            f"(speed: {speed_multiplier:.1f}, emotion: {trigger_emotion})"
+        )
+        
+        # Send goal asynchronously
+        send_goal_future = self._animation_action_client.send_goal_async(
+            goal_msg,
+            feedback_callback=self._animation_feedback_callback
+        )
+        
+        # Add callback for when goal is accepted/rejected
+        send_goal_future.add_done_callback(
+            lambda future: self._goal_response_callback(future, animation_name)
+        )
+    
+    def _goal_response_callback(self, future, animation_name):
+        """Handle the goal response from the action server"""
+        try:
+            goal_handle = future.result()
+            
+            if not goal_handle.accepted:
+                self.get_logger().warn(f'Animation goal rejected: {animation_name}')
+                return
+            
+            self.get_logger().info(f'Animation goal accepted: {animation_name}')
+            self._active_goal_handle = goal_handle
+            
+            # Get the result asynchronously
+            result_future = goal_handle.get_result_async()
+            result_future.add_done_callback(
+                lambda future: self._get_result_callback(future, animation_name)
+            )
+            
+        except Exception as e:
+            self.get_logger().error(f"Error in goal response callback: {e}")
+    
+    def _get_result_callback(self, future, animation_name):
+        """Handle the result of the animation"""
+        try:
+            result = future.result().result
+            
+            if result.success:
+                self.get_logger().info(
+                    f"Emotion-triggered animation completed: {animation_name} "
+                    f"(duration: {result.actual_duration:.1f}s)"
+                )
+            else:
+                self.get_logger().warn(
+                    f"Emotion-triggered animation failed: {animation_name} - {result.message}"
+                )
+                
+            # Clear the active goal handle
+            self._active_goal_handle = None
+            
+        except Exception as e:
+            self.get_logger().error(f"Error in result callback: {e}")
+    
+    def _animation_feedback_callback(self, feedback_msg):
+        """Handle feedback from the animation action"""
+        feedback = feedback_msg.feedback
+        
+        if self.verbose:
+            self.get_logger().debug(
+                f"Animation progress: {feedback.progress*100:.1f}% "
+                f"(step {feedback.current_keyframe+1}/{feedback.total_keyframes})"
+            )
     
     def destroy_node(self):
         """Clean up resources when the node is shut down"""
