@@ -8,7 +8,7 @@ package_name = 'luxo_behaviors'
 setup(
     name=package_name,
     version='0.0.1',
-    packages=[package_name],
+    packages=[package_name, package_name + '.animation_plugins'],
     data_files=[
         ('share/ament_index/resource_index/packages',
             ['resource/' + package_name]),
@@ -32,6 +32,7 @@ setup(
             'demo_mode = luxo_behaviors.demo_mode:main',
             'hardware_interface = luxo_behaviors.hardware_interface:main',
             'collision_detection = luxo_behaviors.collision_detection:main',
+            'animation_action_client = luxo_behaviors.animation_action_client:main',
         ],
     },
 )

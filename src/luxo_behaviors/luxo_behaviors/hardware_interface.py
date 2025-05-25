@@ -693,8 +693,7 @@ class RoArmHardwareInterface(Node):
                 if self.dema_reenable_timer is None or not self.dema_reenable_timer.is_ready():
                     self.dema_reenable_timer = self.create_timer(
                         3.0, 
-                        self.check_dema_reenable,
-                        timer_period_ns=int(3.0 * 1e9)
+                        self.check_dema_reenable
                     )
                     self.get_logger().info("Scheduled DEMA re-enable check in 3.0 seconds")
             
@@ -775,16 +774,14 @@ class RoArmHardwareInterface(Node):
                         # Schedule another check after 0.5 seconds
                         self.dema_reenable_timer = self.create_timer(
                             0.5, 
-                            self.check_dema_reenable,
-                            timer_period_ns=int(0.5 * 1e9)
+                            self.check_dema_reenable
                         )
                 else:
                     self.get_logger().info(f"Robot not settled yet (time since command: {time_since_command:.1f}s, is_settled: {is_settled})")
                     # Schedule another check after 0.5 seconds
                     self.dema_reenable_timer = self.create_timer(
                         0.5, 
-                        self.check_dema_reenable,
-                        timer_period_ns=int(0.5 * 1e9)
+                        self.check_dema_reenable
                     )
                     
             # Cancel the timer if we're done
