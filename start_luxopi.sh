@@ -16,7 +16,7 @@ ros2 launch luxo_behaviors luxo_system.launch.py \
   use_camera:=true \
   enable_emotion_detection:=true \
   verbose:=true \
-  enable_dynamic_adaptation:=true \
+  enable_dynamic_adaptation:=false \
   sense_collision:=true
 
 # Keep the script running 
