@@ -1,0 +1,22 @@
+# Goal definition
+string animation_name      # Name of animation to play (e.g., "excited", "sad", "playful")
+float32 speed_multiplier   # Speed control: 0.1-2.0 (default: 1.0)
+bool allow_interruption    # Allow collision system to interrupt/modify animation
+bool use_hardware_feedback # Use hardware position feedback for smoother transitions
+---
+# Result definition
+bool success               # Whether animation completed successfully
+string message            # Descriptive message about completion
+float32 actual_duration   # How long the animation took (seconds)
+int32 collision_interruptions  # Number of times collision system intervened
+string final_state        # Final state: "completed", "preempted", "aborted"
+float32[] final_positions # Final joint positions
+---
+# Feedback definition
+float32 progress          # 0.0 to 1.0 completion percentage
+int32 current_keyframe    # Current keyframe index
+int32 total_keyframes     # Total number of keyframes
+string current_step_name  # Descriptive name of current step
+string collision_status   # "safe", "adjusting", "interrupted", "blocked"
+float32[] current_joints  # Current joint positions [base, shoulder, elbow, wrist, hand]
+float32 time_remaining    # Estimated time remaining (seconds)

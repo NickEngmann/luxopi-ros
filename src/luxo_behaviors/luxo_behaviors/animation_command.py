@@ -1,13 +1,26 @@
 #!/usr/bin/env python3
+#animation_command.py
 import rclpy
 from rclpy.node import Node
+from rclpy.action import ActionServer, CancelResponse, GoalResponse
+from rclpy.callback_groups import ReentrantCallbackGroup
+from rclpy.executors import MultiThreadedExecutor
 from std_msgs.msg import String
 from sensor_msgs.msg import JointState
+from luxo_interfaces.action import PlayAnimation
 import time
-import random
 import json
+import threading
+import importlib
+import inspect
+import pkgutil
+from typing import Dict, List, Optional
 
-class EnhancedAnimationCommand(Node):
+# Import the base plugin class
+from luxo_behaviors.animation_plugin_base import AnimationPlugin
+
+
+class AnimationCommandActionServer(Node):
     def __init__(self):
         super().__init__('animation_command')
         
@@ -23,16 +36,16 @@ class EnhancedAnimationCommand(Node):
         self.declare_parameter('publish_target_topic', False)
         self.publish_target = self.get_parameter('publish_target_topic').get_parameter_value().bool_value
         
-        # Add joint limits configuration
+        # Joint limits configuration
         self.joint_limits = {
-            'L1_to_L2': {'min': -1.57, 'max': 2.05},  # Limit L1_to_L2 to max +0.75
+            'L1_to_L2': {'min': -1.57, 'max': 2.05},
             # Add other joint limits here if needed
         }
         
         self.declare_parameter('enforce_joint_limits', True)
         self.enforce_joint_limits = self.get_parameter('enforce_joint_limits').value
         
-        # Add parameter to control if we should use hardware position feedback
+        # Hardware position feedback parameter
         self.declare_parameter('use_hardware_position_feedback', False)
         self.use_hardware_position_feedback = self.get_parameter('use_hardware_position_feedback').get_parameter_value().bool_value
         
@@ -48,14 +61,14 @@ class EnhancedAnimationCommand(Node):
                 10)
             self.get_logger().info('Subscribed to roarm/position for hardware feedback')
         
-        # Create subscription for animation commands
+        # Create subscription for animation commands (backward compatibility)
         self.command_subscription = self.create_subscription(
             String,
             '/roarm/animation_command',
             self.command_callback,
             10)
         
-        # Create publisher for joint states (topic depends on hardware vs simulation)
+        # Create publisher for joint states
         joint_topic = '/joint_states_target' if self.publish_target else '/joint_states'
         self.joint_publisher = self.create_publisher(
             JointState, 
@@ -64,19 +77,17 @@ class EnhancedAnimationCommand(Node):
         
         self.get_logger().info(f'Publishing joint states to: {joint_topic}')
 
-        # Current joint positions (will be updated from hardware if available)
-        self.current_positions = [0.0, 0.0, 0.0, 0.0, 0.0]  # Added gripper value
-        
-        # Target positions to publish (separate from current hardware positions)
+        # Current joint positions
+        self.current_positions = [0.0, 0.0, 0.0, 0.0, 0.0]
         self.target_positions = self.current_positions.copy()
         
-        # Define joint names based on the configuration
+        self.collision_avoidance = None
+
+        # Define joint names
         if self.use_hardware_joint_names:
-            # Hardware interface expected joint names
             self.joint_names = ['base', 'shoulder', 'elbow', 'wrist', 'hand']
             self.get_logger().info('Using hardware joint names for RoArm compatibility')
         else:
-            # URDF-based joint names
             self.joint_names = ['base_to_L1', 'L1_to_L2', 'L2_to_L3', 'L3_to_L4', 'hand']
         
         # Timer for regular publishing
@@ -88,32 +99,22 @@ class EnhancedAnimationCommand(Node):
         self.current_step = 0
         self.step_durations = []
         self.animation_timer = None
-        
-        # Default animation speed multiplier (1.0 = normal)
         self.speed_multiplier = 1.0
         
-        # Random noise amplitude
-        self.noise_amplitude = 0.05  # Small noise for subtle variability
+        # Action server state
+        self._goal_handle = None
+        self._goal_lock = threading.Lock()
+        self._cancel_requested = False
         
-        # Maximum attempts to get hardware position before timing out
-        self.max_position_attempts = 10
-        self.position_request_interval = 0.5  # seconds
-        
-        self.get_logger().info('Enhanced animation command interface initialized')
-        
-        # Initialize hardware position if enabled
-        if self.use_hardware_position_feedback:
-            self.request_hardware_position()
-        
-        # Add flag to track the movement source type
-        self.movement_source = "idle"  # Can be "idle", "animation", "user", "collision"
-        self.last_movement_source_change = time.time()
+        # Movement source tracking
+        self.movement_source = "idle"
+        self.last_movement_source_change = self.get_clock().now()
         
         # DEMA control integration
         self.declare_parameter('enable_dema_integration', True)
         self.enable_dema_integration = True
         
-        # Create publisher for movement type (to coordinate with DEMA)
+        # Create publisher for movement type
         if self.enable_dema_integration:
             self.movement_source_publisher = self.create_publisher(
                 String,
@@ -121,283 +122,512 @@ class EnhancedAnimationCommand(Node):
                 10
             )
             self.get_logger().info("Publishing movement source information for DEMA coordination")
+        
+        # Subscribe to collision status
+        self.collision_status = "safe"
+        self.collision_status_sub = self.create_subscription(
+            String,
+            '/collision_status_for_animation',
+            self.collision_status_callback,
+            10
+        )
+        
+        # Track if animation was preempted by collision
+        self.collision_preempted = False
+        
+        # Load animation plugins
+        self.animation_plugins = self._load_animation_plugins()
+        self.get_logger().info(f'Loaded {len(self.animation_plugins)} animation plugins')
+        
+        # Create action server
+        self._action_server = ActionServer(
+            self,
+            PlayAnimation,
+            'play_animation',
+            execute_callback=self.execute_callback,
+            goal_callback=self.goal_callback,
+            handle_accepted_callback=self.handle_accepted_callback,
+            cancel_callback=self.cancel_callback,
+            callback_group=ReentrantCallbackGroup()
+        )
+        
+        # Initialize ROS time tracking
+        self._init_time_tracking()
+        
+        # Maximum attempts to get hardware position
+        self.max_position_attempts = 10
+        self.position_request_interval = 0.5
+        
+        self.get_logger().info('Animation command action server initialized')
+        self.get_logger().info(f'Available animations: {", ".join(self.animation_plugins.keys())}')
+        self.get_logger().info(f'Publishing to topic: {joint_topic}')
+        self.get_logger().info(f'Publish enabled: {self.should_publish}')
+        self.get_logger().info(f'Hardware joint names: {self.use_hardware_joint_names}')
+        self.get_logger().info(f'Joint names: {self.joint_names}')
+        
+        # Initialize hardware position if enabled
+        if self.use_hardware_position_feedback:
+            self.request_hardware_position()
+    
+    def set_collision_avoidance(self, collision_avoidance):
+        """Set the collision avoidance reference from hardware interface."""
+        self.collision_avoidance = collision_avoidance
+        self.get_logger().info("Collision avoidance reference set in animation command")
+    
+    def _init_time_tracking(self):
+        """Initialize all ROS time tracking variables."""
+        now = self.get_clock().now()
+        self._last_debug_time = now
+        self._last_position_log_time = now
+        self._last_movement_source_log_time = now
+        self._last_source_log = now
+        self.last_animation_end_time = now
+        self.last_valid_positions = [0.0] * 5
+        self.idle_reset_timer = None
+    
+    def collision_status_callback(self, msg):
+        """Update collision status from collision avoidance system."""
+        self.collision_status = msg.data
+        
+        # Check if this is a danger status while we have an active goal
+        if "danger" in self.collision_status and self._goal_handle and self._goal_handle.is_active:
+            # Check if interruption is allowed
+            goal = self._goal_handle.request
+            if goal.allow_interruption:
+                self.get_logger().warn(f"Collision danger detected during animation: {self.collision_status}")
+                self.collision_preempted = True
+    
+    def _load_animation_plugins(self) -> Dict[str, AnimationPlugin]:
+        """Dynamically load all animation plugins."""
+        plugins = {}
+        
+        # Try to import animation plugin modules
+        plugin_modules = [
+            'luxo_behaviors.animation_plugins.emotion_animations',
+            'luxo_behaviors.animation_plugins.action_animations',
+            'luxo_behaviors.animation_plugins.response_animations'
+        ]
+        
+        for module_name in plugin_modules:
+            try:
+                module = importlib.import_module(module_name)
+                
+                # Find all classes that inherit from AnimationPlugin
+                for name, obj in inspect.getmembers(module, inspect.isclass):
+                    if issubclass(obj, AnimationPlugin) and obj != AnimationPlugin:
+                        # Create instance of the plugin
+                        plugin_instance = obj(self)
+                        
+                        # Validate the plugin
+                        if plugin_instance.validate_keyframes():
+                            plugins[plugin_instance.name] = plugin_instance
+                            self.get_logger().debug(f"Loaded animation plugin: {plugin_instance.name}")
+                        else:
+                            self.get_logger().error(f"Failed to validate animation plugin: {name}")
+                            
+            except ImportError as e:
+                self.get_logger().warn(f"Could not import plugin module {module_name}: {e}")
+            except Exception as e:
+                self.get_logger().error(f"Error loading plugins from {module_name}: {e}")
+        
+        return plugins
+    
+    def goal_callback(self, goal_request):
+        """Decide whether to accept or reject a goal request."""
+        self.get_logger().info(f'Received animation goal request: {goal_request.animation_name}')
+        
+        # Check if animation exists
+        if goal_request.animation_name not in self.animation_plugins:
+            self.get_logger().warn(f'Unknown animation: {goal_request.animation_name}')
+            return GoalResponse.REJECT
+        
+        # Accept the goal
+        return GoalResponse.ACCEPT
+    
+    def handle_accepted_callback(self, goal_handle):
+        """Start executing an accepted goal."""
+        with self._goal_lock:
+            # Cancel any existing goal
+            if self._goal_handle is not None and self._goal_handle.is_active:
+                self.get_logger().info('Cancelling previous animation goal')
+                self._goal_handle.canceled()
+            
+            self._goal_handle = goal_handle
+            self._cancel_requested = False
+        
+        # Execute the goal immediately
+        goal_handle.execute()
+    
+    def cancel_callback(self, goal_handle):
+        """Accept or reject a cancel request."""
+        self.get_logger().info('Received cancel request')
+        with self._goal_lock:
+            self._cancel_requested = True
+        return CancelResponse.ACCEPT
+    
+    def execute_callback(self, goal_handle):
+        """Execute the animation goal (called by action server)."""
+        # Now we execute in the callback thread
+        result = self._execute_animation(goal_handle)
+        return result
+    
+    def _execute_animation(self, goal_handle):
+        """Execute animation in the action server thread."""
+        start_time = time.time()
+        collision_interruptions = 0
+        final_state = "completed"
+        
+        # Reset collision preemption flag
+        self.collision_preempted = False
+        
+        try:
+            goal = goal_handle.request
+            animation_name = goal.animation_name
+            speed_multiplier = goal.speed_multiplier if 0.1 <= goal.speed_multiplier <= 2.0 else 1.0
+            
+            self.get_logger().info(
+                f'Executing animation: {animation_name} with speed {speed_multiplier}'
+            )
+            
+            # Get the animation plugin
+            plugin = self.animation_plugins[animation_name]
+            
+            # Get hardware position if requested
+            if goal.use_hardware_feedback and self.use_hardware_position_feedback:
+                self.request_hardware_position()
+            
+            # Get keyframes and durations
+            keyframes, durations = plugin.get_keyframes()
+            keyframe_names = plugin.get_keyframe_names()
+            
+            # Prepare keyframes for current position
+            if self.hardware_position_received:
+                keyframes = plugin.prepare_for_current_position(
+                    self.current_positions, keyframes
+                )
+            
+            # Apply speed multiplier
+            self.speed_multiplier = speed_multiplier  # Set the instance variable
+            adjusted_durations = [d / speed_multiplier for d in durations]
+            
+            # Set movement source
+            self.movement_source = "animation"
+            self.last_movement_source_change = self.get_clock().now()
+            self.is_animating = True  # Set animation flag
+            
+            # Execute animation with progress feedback
+            total_duration = sum(adjusted_durations)
+            
+            for i, (keyframe, duration) in enumerate(zip(keyframes, adjusted_durations)):
+                # Check for cancel
+                if self._cancel_requested:
+                    final_state = "preempted"
+                    break
+                
+                # Check if we've been preempted by collision
+                if self.collision_preempted and goal.allow_interruption:
+                    final_state = "preempted"
+                    self.get_logger().warn("Animation preempted by collision system")
+                    break
+                
+                # Add noise to keyframe
+                noisy_keyframe = plugin.add_noise_to_position(keyframe)
+                
+                # Use actual collision status
+                collision_status = self.collision_status
+                
+                # Calculate progress
+                elapsed_time = time.time() - start_time
+                progress = min(1.0, elapsed_time / total_duration)
+                time_remaining = max(0.0, total_duration - elapsed_time)
+                
+                # Publish feedback
+                feedback = PlayAnimation.Feedback()
+                feedback.progress = progress
+                feedback.current_keyframe = i
+                feedback.total_keyframes = len(keyframes)
+                feedback.current_step_name = keyframe_names[i] if keyframe_names else f"Step {i+1}"
+                feedback.collision_status = collision_status
+                feedback.current_joints = list(self.current_positions)
+                feedback.time_remaining = time_remaining
+                
+                goal_handle.publish_feedback(feedback)
+                
+                # Log keyframe execution
+                self.get_logger().info(
+                    f"Executing keyframe {i+1}/{len(keyframes)}: "
+                    f"{feedback.current_step_name} -> {[round(p, 2) for p in noisy_keyframe]}"
+                )
+                
+                # Move to position
+                self.move_to_position(noisy_keyframe, duration, easing=True, animation_name=animation_name)
+                
+                # If collision interrupted, increment counter
+                if collision_status != "safe":
+                    collision_interruptions += 1
+            
+            # Animation complete
+            self.is_animating = False
+            actual_duration = time.time() - start_time
+            
+            # Schedule return to home position after 1 second if animation completed successfully
+            if final_state == "completed":
+                    # Fallback: schedule idle state after delay
+                    self.get_logger().info("Scheduling idle state after animation")
+                    if hasattr(self, 'idle_reset_timer') and self.idle_reset_timer:
+                        self.idle_reset_timer.cancel()
+                    self.idle_reset_timer = self.create_timer(
+                        0.5,
+                        lambda: self._reset_to_idle_once()
+                    )
+            
+            # Create result
+            result = PlayAnimation.Result()
+            result.success = final_state == "completed"
+            result.message = f"Animation {animation_name} {final_state}"
+            result.actual_duration = actual_duration
+            result.collision_interruptions = collision_interruptions
+            result.final_state = final_state
+            result.final_positions = list(self.current_positions)
+            
+            if final_state == "completed":
+                goal_handle.succeed()
+            elif final_state == "preempted":
+                goal_handle.canceled()
+            else:
+                goal_handle.abort()
+            
+            return result
+                    
+        except Exception as e:
+            self.get_logger().error(f"Error executing animation: {e}")
+            result = PlayAnimation.Result()
+            result.success = False
+            result.message = f"Animation failed: {str(e)}"
+            result.actual_duration = time.time() - start_time
+            result.collision_interruptions = collision_interruptions
+            result.final_state = "aborted"
+            result.final_positions = list(self.current_positions)
+            goal_handle.abort()
+            return result
 
+    
+    def command_callback(self, msg):
+        """Handle animation command messages (backward compatibility)."""
+        command_parts = msg.data.strip().lower().split()
+        base_command = command_parts[0]
+        
+        # Extract speed parameter if present
+        speed = 1.0
+        if len(command_parts) > 1:
+            try:
+                speed = float(command_parts[1])
+                speed = max(0.1, min(2.0, speed))
+            except ValueError:
+                pass
+        
+        # Check if animation exists
+        if base_command not in self.animation_plugins:
+            self.get_logger().warn(f'Unknown animation command: {base_command}')
+            self.get_logger().info(f'Available: {", ".join(self.animation_plugins.keys())}')
+            return
+        
+        # Execute via simple method (not action)
+        self.execute_animation_simple(base_command, speed)
+    
+    def execute_animation_simple(self, animation_name, speed=1.0):
+        """Execute animation without action server (for topic compatibility)."""
+        # Prevent running if action-based animation is active
+        with self._goal_lock:
+            if self._goal_handle and self._goal_handle.is_active:
+                self.get_logger().warn("Cannot run topic-based animation while action is active")
+                return
+        
+        self.get_logger().info(f'Executing animation: {animation_name} with speed {speed}')
+        
+        # Set movement source
+        self.movement_source = "animation"
+        self.last_movement_source_change = self.get_clock().now()
+        
+        # Get plugin and execute
+        plugin = self.animation_plugins[animation_name]
+        keyframes, durations = plugin.get_keyframes()
+        
+        # Prepare for current position if hardware feedback available
+        if self.use_hardware_position_feedback and self.hardware_position_received:
+            keyframes = plugin.prepare_for_current_position(
+                self.current_positions, keyframes
+            )
+        
+        # Start animation
+        self.speed_multiplier = speed
+        self.start_animation(keyframes, durations, animation_name)
+        
+        # Schedule return to home after animation completes
+        total_duration = sum([d / speed for d in durations])
+        
+        # Cancel any existing idle reset timer
+        if hasattr(self, 'idle_reset_timer') and self.idle_reset_timer:
+            self.idle_reset_timer.cancel()
+        
+        # Schedule home position 1 second after animation ends
+        home_delay = total_duration + 1.0
+        self.idle_reset_timer = self.create_timer(
+            home_delay,
+            lambda: self._schedule_home_or_idle()
+        )
+    
+    def _schedule_home_position(self):
+        """Schedule return to home position after animation."""
+        try:
+            # Cancel the timer
+            if hasattr(self, 'idle_reset_timer') and self.idle_reset_timer:
+                self.idle_reset_timer.cancel()
+                self.idle_reset_timer = None
+            
+            # Use collision avoidance to schedule home if available
+            if self.collision_avoidance:
+                self.collision_avoidance.schedule_home_after_animation(delay=0.1)
+            else:
+                # Just set to idle state
+                self.get_logger().info("Setting movement source to idle (collision avoidance not available)")
+                self.movement_source = "idle"
+                self.publish_movement_source()
+        except Exception as e:
+            self.get_logger().error(f"Error scheduling home position: {e}")
+    
+    def _schedule_home_or_idle(self):
+        """Schedule home position if collision avoidance available, otherwise just go idle."""
+        try:
+            if hasattr(self, 'idle_reset_timer') and self.idle_reset_timer:
+                self.idle_reset_timer.cancel()
+                self.idle_reset_timer = None
+            
+            # Just set to idle state since we don't have collision avoidance
+            self.movement_source = "idle"
+            self.publish_movement_source()
+            self.get_logger().info("Animation complete - movement source set to idle")
+        except Exception as e:
+            self.get_logger().error(f"Error in schedule home or idle: {e}")
+    
     def position_feedback_callback(self, msg):
         """Handle position feedback from the hardware."""
         try:
-            # Parse the list from the message
             position_list = json.loads(msg.data)
             
-            # Check if this is a valid position list with at least 5 elements
             if isinstance(position_list, list) and len(position_list) >= 5:
-                # Add occasional debug logging to understand what's happening
-                should_log = not hasattr(self, '_last_debug_time') or \
-                            time.time() - self._last_debug_time > 5.0
-                
-                if should_log:
-                    self._last_debug_time = time.time()
-                    
-                # First time receiving position or no current positions yet
+                # Filter positions
                 if self.current_positions is None:
-                    # First reading, use as is
                     self.current_positions = position_list.copy()
-                    if should_log:
-                        self.get_logger().info(f"Initial position reading: {position_list}")
                 else:
-                    # Calculate differences between new position and current saved positions
-                    diff_report = []
-                    has_significant_change = False
-                    tolerance = 0.03  # radians
-                    
-                    # Create filtered position list starting with raw values
-                    filtered_position_list = position_list.copy()
+                    tolerance = 0.03
+                    filtered_positions = position_list.copy()
                     
                     for i in range(min(len(position_list), len(self.current_positions))):
-                        # Calculate difference between current raw reading and current saved position
                         diff = abs(float(position_list[i]) - float(self.current_positions[i]))
-                        
-                        if should_log:
-                            diff_report.append(f"{i}: {diff:.4f}")
-                        
-                        # Check if difference exceeds tolerance
-                        if diff >= tolerance:
-                            has_significant_change = True
-                        else:
-                            # Only for positions within tolerance, keep current value
-                            filtered_position_list[i] = self.current_positions[i]
+                        if diff < tolerance:
+                            filtered_positions[i] = self.current_positions[i]
                     
-                    if should_log:
-                        self.get_logger().debug(f"Position differences: {', '.join(diff_report)}")
-                        self.get_logger().debug(f"Raw: {position_list}")
-                        self.get_logger().debug(f"Filtered: {filtered_position_list}")
-                        self.get_logger().debug(f"Current positions: {self.current_positions}")
-                        self.get_logger().debug(f"Has significant change: {has_significant_change}")
-                    
-                    # Update current positions with filtered values
-                    self.current_positions = filtered_position_list
-                # Only update target positions when not animating to avoid disrupting animations
+                    self.current_positions = filtered_positions
+                
                 if not self.is_animating:
                     self.target_positions = self.current_positions.copy()
                 
-                # Mark that we've received hardware position
                 self.hardware_position_received = True
                 
-                # Log occasionally to prevent flooding
-                if not hasattr(self, '_last_position_log_time') or \
-                    time.time() - self._last_position_log_time > 5.0:
-                        self.get_logger().debug(f"Hardware position updated: " +
-                                            f"base={self.current_positions[0]:.2f}, " +
-                                            f"shoulder={self.current_positions[1]:.2f}, " +
-                                            f"elbow={self.current_positions[2]:.2f}, " +
-                                            f"wrist={self.current_positions[3]:.2f}, " +
-                                            f"hand={self.current_positions[4]:.2f}")
-                        self._last_position_log_time = time.time()
-        
-        except (json.JSONDecodeError, ValueError) as e:
-            self.get_logger().error(f"Error parsing position feedback: {e}")
         except Exception as e:
-            self.get_logger().error(f"Error in position feedback callback: {e}")
+            self.get_logger().error(f"Error parsing position feedback: {e}")
     
     def request_hardware_position(self):
         """Request and wait for hardware position before proceeding."""
         if not self.use_hardware_position_feedback:
-            return True  # Not using hardware feedback
-            
+            return True
+        
         self.get_logger().info("Waiting for initial hardware position...")
         
         attempts = 0
         self.hardware_position_received = False
         
-        # Wait for position feedback with timeout
         while attempts < self.max_position_attempts and not self.hardware_position_received:
             time.sleep(self.position_request_interval)
             attempts += 1
-            self.get_logger().debug(f"Waiting for position feedback ({attempts}/{self.max_position_attempts})")
-            
+        
         if self.hardware_position_received:
-            self.get_logger().info("Hardware position received, ready for animations")
+            self.get_logger().info("Hardware position received")
             return True
         else:
-            self.get_logger().warn("Failed to get hardware position after timeout, using default positions")
+            self.get_logger().warn("Failed to get hardware position, using defaults")
             return False
     
-    def command_callback(self, msg):
-        """Handle animation command messages."""
-        command_parts = msg.data.strip().lower().split()
-        base_command = command_parts[0]
-        
-        # Set movement source to "animation" when executing commands
-        # Update movement source state directly - no separate publisher needed
-        self.movement_source = "animation"
-        self.last_movement_source_change = time.time()
-        
-        # Extract speed parameter if present
-        speed = 1.0  # Default speed
-        if len(command_parts) > 1:
-            try:
-                speed_param = float(command_parts[1])
-                if 0.1 <= speed_param <= 2.0:  # Clamp speed to reasonable range
-                    speed = speed_param
-                    self.get_logger().info(f'Using speed multiplier: {speed}')
-            except ValueError:
-                self.get_logger().warn(f'Invalid speed parameter: {command_parts[1]}, using default speed')
-        
-        self.speed_multiplier = speed
-        
-        # If using hardware, ensure we have the latest position before starting animation
-        if self.use_hardware_position_feedback and not self.hardware_position_received:
-            self.get_logger().info("Getting hardware position before starting animation...")
-            self.request_hardware_position()
-
-        # Map of animation names to methods
-        animations = {
-            'excited': self.excited_hop,
-            'playful': self.playful_bounce,
-            'dance': self.dancing_animation, 
-            'sad': self.sad_droop,
-            'think': self.thinking_animation, 
-            'idle': self.idle_state,
-            'curious': self.curious_look,
-            'stretch': self.stretching_animation,   
-            'nod': self.nodding_animation,          
-            'shake': self.head_shake_animation,
-            'startled': self.startled_jump,          
-            'stop': self.stop_animation,
-            'close': self.close_animation
-        }
-        
-        if base_command in animations:
-            self.get_logger().info(f'Executing animation: {base_command} with speed {speed}')
-            animations[base_command]()
-        else:
-            self.get_logger().warn(f'Unknown animation command: {base_command}')
-            self.get_logger().info(f'Available commands: {", ".join(animations.keys())}')
-    
-    def publish_movement_source(self):
-        """Publish the current movement source for DEMA coordination."""
-        if not self.enable_dema_integration:
-            return
-            
-        try:
-            # Create and publish the message
-            msg = String()
-            msg.data = self.movement_source
-            self.movement_source_publisher.publish(msg)
-            
-            # Log occasionally to prevent flooding
-            current_time = time.time()
-            if not hasattr(self, '_last_movement_source_log_time') or current_time - self._last_movement_source_log_time > 5.0:
-                self.get_logger().info(f"Publishing movement source: {self.movement_source}")
-                self._last_movement_source_log_time = current_time
-        except Exception as e:
-            self.get_logger().error(f"Error publishing movement source: {e}")
-            
     def publish_joint_states_target(self):
         """Publish target joint states."""
         if not self.should_publish:
+            self.get_logger().debug("Publishing disabled by parameter")
             return
-            
-        # Check if we should update the movement source 
-        current_time = time.time()
         
-        # If not animating and movement source is still animation, reset to idle
-        # This is a safety measure to ensure we don't get stuck in animation mode
+        # Check movement source status
+        current_time = self.get_clock().now()
+        
         if not self.is_animating and self.movement_source == "animation":
             if not hasattr(self, 'last_animation_end_time'):
                 self.last_animation_end_time = current_time
-                
-            # If it's been more than 3 seconds since animation stopped, force reset to idle
-            if current_time - self.last_animation_end_time > 3.0:
-                self.get_logger().info(f"Forcing movement source reset to idle (animation ended but source not reset)")
+            
+            time_since_animation_end = (current_time - self.last_animation_end_time).nanoseconds / 1e9
+            if time_since_animation_end > 3.0:
                 self.movement_source = "idle"
                 self.publish_movement_source()
         
-        # If animating, update the last animation time
         if self.is_animating:
             self.last_animation_end_time = current_time
-                
+        
+        # Create joint state message
         msg = JointState()
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.name = self.joint_names
         
-        # Ensure all position values are valid floats
         try:
-            # Make a copy and ensure all elements are floats
             validated_positions = [float(pos) for pos in self.target_positions]
             
-            # Apply joint limits before publishing
             if self.enforce_joint_limits:
                 validated_positions = self.apply_joint_limits(msg.name, validated_positions)
             
-            # Assign the validated positions to the message
             msg.position = validated_positions
             
-            # NEW: Encode movement source in velocity field (since JointState doesn't have custom fields)
-            # This is a hack that allows us to pass metadata without creating a custom message type
-            # 0=idle, 1=animation, 2=collision, 3=user
-            source_code = 0  # Default to idle
+            # Encode movement source in velocity field
+            source_code = 0  # idle
             if self.movement_source == "animation":
                 source_code = 1
             elif self.movement_source == "collision":
                 source_code = 2
             elif self.movement_source == "user":
                 source_code = 3
-                
-            # Add the source code as the first element in the velocity array
+            
             msg.velocity = [float(source_code)]
             
-            # Log occasionally to avoid flooding
-            current_time = time.time()
-            if not hasattr(self, '_last_source_log') or current_time - self._last_source_log > 5.0:
-                self.get_logger().debug(f"Publishing joint_states_target with movement source: {self.movement_source} (code: {source_code})")
-                self._last_source_log = current_time
-            
             self.joint_publisher.publish(msg)
-        except (ValueError, TypeError) as e:
-            self.get_logger().error(f"Invalid position value in target_positions: {self.target_positions}")
-            self.get_logger().error(f"Error details: {e}")
             
-            # Attempt to recover by using the last known good positions or zeros
-            if hasattr(self, 'last_valid_positions') and self.last_valid_positions:
-                self.get_logger().warn("Using last valid positions as fallback")
-                msg.position = self.last_valid_positions
-                self.joint_publisher.publish(msg)
-            else:
-                self.get_logger().warn("No valid positions available, using zeros")
-                msg.position = [0.0] * len(msg.name)
-                self.joint_publisher.publish(msg)
-        else:
-            # If successful, store these as the last valid positions
-            self.last_valid_positions = validated_positions.copy()
+            # Add debug logging
+            if self.is_animating:
+                self.get_logger().debug(f"Published joint states during animation: {[round(p, 2) for p in validated_positions]}")
+            
+        except Exception as e:
+            self.get_logger().error(f"Error publishing joint states: {e}")
     
     def apply_joint_limits(self, joint_names, joint_positions):
-        """Apply joint limits to the given positions and return the corrected values."""
-        limited_positions = list(joint_positions)  # Create a copy to modify
+        """Apply joint limits to positions."""
+        limited_positions = list(joint_positions)
         
         for i, name in enumerate(joint_names):
             if name in self.joint_limits:
                 limits = self.joint_limits[name]
                 original_value = joint_positions[i]
                 
-                # Apply min limit
                 if original_value < limits['min']:
                     limited_positions[i] = limits['min']
-                    self.get_logger().debug(f"Limited {name} from {original_value:.3f} to min {limits['min']:.3f}")
-                
-                # Apply max limit
                 elif original_value > limits['max']:
                     limited_positions[i] = limits['max']
-                    self.get_logger().warn(f"Limited {name} from {original_value:.3f} to max {limits['max']:.3f}")
-                    
+        
         return limited_positions
-    
-    def add_noise_to_position(self, positions):
-        """Add subtle random noise to make animations less mechanical."""
-        noisy_positions = []
-        for pos in positions:
-            noise = random.uniform(-self.noise_amplitude, self.noise_amplitude)
-            noisy_positions.append(pos + noise)
-        return noisy_positions
     
     def ease_in_out(self, t):
         """Cubic easing function for smoother motion."""
@@ -406,1041 +636,134 @@ class EnhancedAnimationCommand(Node):
         else:
             return 1 - pow(-2 * t + 2, 3) / 2
     
-    def move_to_position(self, positions, duration=1.0, easing=True):
+    def move_to_position(self, positions, duration=1.0, easing=True, animation_name=None):
         """Move to a specific position over a duration with optional easing."""
-        start_positions = self.target_positions.copy()  # Start from current target positions
-        start_time = time.time()
+        start_positions = self.target_positions.copy()
+        start_time = self.get_clock().now()
         
-        # Apply speed multiplier to duration
         adjusted_duration = duration / self.speed_multiplier
         
-        # Continuously update joint positions
-        while time.time() - start_time < adjusted_duration:
-            progress = (time.time() - start_time) / adjusted_duration
-            progress = min(1.0, progress)  # Clamp to 1.0
+        # Store current animation name for tracking
+        if animation_name:
+            self.current_animation_name = animation_name
+        
+        elapsed_time = 0.0
+        while elapsed_time < adjusted_duration:
+            current_time = self.get_clock().now()
+            elapsed_time = (current_time - start_time).nanoseconds / 1e9
+            progress = min(1.0, elapsed_time / adjusted_duration)
             
-            # Apply easing if requested
             if easing:
                 eased_progress = self.ease_in_out(progress)
             else:
                 eased_progress = progress
             
-            # Linear interpolation for each joint
             for i in range(len(self.target_positions)):
                 self.target_positions[i] = start_positions[i] + eased_progress * (positions[i] - start_positions[i])
             
-            time.sleep(0.01)  # Small delay to prevent CPU overload
+            # IMPORTANT: Explicitly publish the joint states during movement
+            self.publish_joint_states_target()
+            
+            time.sleep(0.01)
         
-        # Add subtle noise to final position to make it less robotic
-        self.target_positions = self.add_noise_to_position(positions)
+        self.target_positions = list(positions)
         
-        # Return success status
+        # Final publish at target position
+        self.publish_joint_states_target()
+        
         return True
-
-    def start_animation(self, keyframes, durations):
+    
+    def start_animation(self, keyframes, durations, animation_name=None):
         """Start an animation with keyframes and durations."""
-        # If we have hardware feedback, make sure we start from current position
-        if self.use_hardware_position_feedback and self.hardware_position_received:
-            # Adjust the first keyframe to be relative to the current position
-            # This helps animations blend from whatever position the arm is actually in
-            if len(keyframes) > 0:
-                self.get_logger().debug("Adjusting animation to start from current hardware position")
-                
-                # Create a modified first keyframe that's a blend between 
-                # the intended first keyframe and the current position
-                first_keyframe = keyframes[0].copy()
-                
-                # Use current hardware position but keep the intended relative movements
-                # This preserves the "character" of the animation while respecting actual position
-                for i in range(min(len(first_keyframe), len(self.current_positions))):
-                    # Get the difference between original starting point and the intended position
-                    intended_offset = first_keyframe[i] - self.target_positions[i]
-                    # Scale down the offset to create a smoother transition
-                    scaled_offset = intended_offset * 0.5
-                    # Apply this scaled offset to the current position
-                    first_keyframe[i] = self.current_positions[i] + scaled_offset
-                
-                # Replace the first keyframe with our adjusted version
-                keyframes[0] = first_keyframe
-                
-                # Also update target positions to match current positions before starting animation
-                self.target_positions = self.current_positions.copy()
-        
-        # Add subtle variations to keyframes for more natural movement
-        varied_keyframes = []
-        for keyframe in keyframes:
-            varied_keyframe = self.add_noise_to_position(keyframe)
-            varied_keyframes.append(varied_keyframe)
-        
-        self.animation_steps = varied_keyframes
-        
-        # Apply speed multiplier to durations
-        adjusted_durations = [d / self.speed_multiplier for d in durations]
-        self.step_durations = adjusted_durations
-        
+        self.animation_steps = keyframes
+        self.step_durations = [d / self.speed_multiplier for d in durations]
         self.current_step = 0
         self.is_animating = True
+        self.current_animation_name = animation_name
         
-        # Start the animation
         self._process_next_step()
-
+    
+    def _process_next_step(self):
+        """Process the next animation step."""
+        if not self.is_animating or self.current_step >= len(self.animation_steps):
+            if self.is_animating:
+                self.is_animating = False
+                self.current_animation_name = None
+                self.get_logger().info('Legacy animation completed')
+            return
+        
+        next_position = self.animation_steps[self.current_step]
+        duration = self.step_durations[self.current_step]
+        
+        self.move_to_position(next_position, duration, easing=True, animation_name=self.current_animation_name)
+        
+        self.current_step += 1
+        if self.current_step < len(self.animation_steps):
+            # Cancel any existing timer
+            if hasattr(self, 'animation_timer') and self.animation_timer:
+                self.animation_timer.cancel()
+            self.animation_timer = self.create_timer(duration, self._next_step_callback)
+        else:
+            self.is_animating = False
+            self.current_animation_name = None
+            self.get_logger().info('Legacy animation completed')
+    
     def _next_step_callback(self):
         """Handle timer callback for the next animation step."""
-        # Cancel this timer so it doesn't fire again
-        if self.animation_timer:
+        # Cancel this timer immediately to prevent repeated calls
+        if hasattr(self, 'animation_timer') and self.animation_timer:
             self.animation_timer.cancel()
             self.animation_timer = None
         
         # Process the next step
         self._process_next_step()
     
-    def _process_next_step(self):
-        """Process the next animation step."""
-        if not self.is_animating or self.current_step >= len(self.animation_steps):
-            # Only mark as not animating if we weren't already not animating
-            if self.is_animating:
-                self.is_animating = False
-                # When animation completes, reset to base position
-                if self.current_step > 0:  # Only reset if we actually ran an animation
-                    self.get_logger().info('Animation completed, resetting to base position')
-                    
-                    # Cancel any existing idle reset timer first to avoid multiple timers
-                    if hasattr(self, 'idle_reset_timer') and self.idle_reset_timer is not None:
-                        self.idle_reset_timer.cancel()
-                        self.idle_reset_timer = None
-                    
-                    # Set a timer to change movement source back to idle after animation finishes
-                    # This delay allows the final animation movement to complete before re-enabling DEMA
-                    self.idle_reset_timer = self.create_timer(
-                        3.0,  # Wait 3 seconds before setting to idle (matches the DEMA re-enable delay)
-                        self._reset_to_idle
-                    )
-                    self.get_logger().info('Scheduled reset to idle in 3 seconds')
-            return
-        
-        next_position = self.animation_steps[self.current_step]
-        duration = self.step_durations[self.current_step]
-        
-        use_easing = random.random() > 0.2
-        
-        self.get_logger().info(f'Animation step {self.current_step+1}/{len(self.animation_steps)}')
-        
-        if self.current_step > 0 and hasattr(self, 'previous_position'):
-            curr_pos = self.current_positions
-            expected_pos = self.previous_position
-            
-            diff_magnitude = sum([(curr - expected)**2 for curr, expected in zip(curr_pos, expected_pos)])
-            if diff_magnitude > 1.0:
-                self.get_logger().debug(f"Detected significant position deviation (mag={diff_magnitude:.2f}) - " +
-                                      f"current: {[round(p, 2) for p in curr_pos]}, " +
-                                      f"expected: {[round(p, 2) for p in expected_pos]}")
-                
-                duration = duration * 1.5
-                self.get_logger().debug(f"Increasing move duration to {duration:.2f}s for smoother recovery")
-        
-        self.move_to_position(next_position, duration, easing=use_easing)
-        
-        self.previous_position = next_position
-        
-        self.current_step += 1
-        if self.current_step < len(self.animation_steps):
-            time_variation = random.uniform(0.9, 1.1)
-            self.animation_timer = self.create_timer(
-                duration * time_variation, 
-                self._next_step_callback)
-        else:
-            self.is_animating = False
-            self.get_logger().info('Animation completed, resetting to base position')
-    
     def _reset_to_idle(self):
-        """Reset the movement source to idle after animation completes."""
+        """Reset movement source to idle."""
         if self.movement_source != "idle":
             self.movement_source = "idle"
             self.get_logger().info('Movement source reset to idle')
             self.publish_movement_source()
-            
-        if hasattr(self, 'idle_reset_timer'):
+        
+        if self.idle_reset_timer:
             self.idle_reset_timer.cancel()
             self.idle_reset_timer = None
     
-    def stop_animation(self):
-        """Stop the current animation."""
-        self.is_animating = False
-        if self.animation_timer:
-            self.animation_timer.cancel()
-        self.get_logger().info('Animation stopped')
-
-    def close_animation(self):
-        """Move the arm to a closed/shutdown position."""
-                # Get current position for a smooth transition
-        base_pos = self.current_positions[0]
-        # Define the close position
-        self.close_position = [base_pos, -1.4, 2.0, 1.8, 0.0]
-        # [base_pos,-0.83, 1.9, 1.40,0.0]
-        # Keyframe positions
-        keyframes = [
-            # Intermediate position - prepare for folding
-            [base_pos, -0.9, 1.0, 1.5, 0.0],
-            
-            # Begin folding movement
-            [base_pos, -0.9, 1.5, 1.6, 0.0],
-            
-            # Continue folding - getting closer to final position
-            [base_pos, -1.1, 2.0, 1.7, 0.0],
-            
-            # Final closed position
-            self.close_position
-        ]
-        
-        # Durations for smooth transition to closed position
-        durations = [0.9, 1.2, 1.2, 1.2]
-        
-        # Start the animation
-        self.start_animation(keyframes, durations)
-        self.get_logger().info('Executing close animation - moving to compact position')
-
-    # Enhanced animation methods implementing Disney animation principles
-    def curious_look(self):
-        """Make the arm look curiously at something with Disney animation principles."""
-        # Starting from current position but with slight randomization
-        start_pos = self.current_positions.copy()
-        
-        # Calculate relative positions from current state
-        base_center = start_pos[0]
-        
-        # Keyframe positions with enhanced Disney animation principles
-        keyframes = [
-            # Anticipation: slight backward movement before main action
-            [base_center, start_pos[1]+0.1, start_pos[2]-0.15, start_pos[3]-0.1, 0.0],
-            
-            # Quick "notice something" movement with overshoot (exaggeration)
-            [base_center-0.25, start_pos[1], start_pos[2]-0.2, -0.3, 0.0],
-            
-            # Secondary action: slight adjustment while focusing
-            [base_center-0.2, 0.4, 0.9, 0.4, 0.0],  # Slightly open gripper
-            
-            # Squash and stretch: lean in to investigate (overlapping action)
-            [base_center-0.15, 0.7, 1.4, 0.6, 0.0],
-            
-            # Follow through: quick surprised reaction with head movement
-            [base_center-0.1, 0.4, 1.0, 0.9, 0.0],
-            
-            # Arcs: move in curved path to other side (using arcs in motion)
-            [base_center+0.3, 0.5, 1.1, 0.3, 0.0],
-            
-            # More intense inspection - tilt other way (solid drawing - clear poses)
-            [base_center+0.4, 0.6, 1.3, -0.3, 0.0],
-            
-            # Slow in, slow out: final examination (timing)
-            [base_center+0.2, 0.5, 1.2, 0.7, 0.0],
-            
-            # Staging: clear final pose showing interest
-            [base_center, 0.4, 0.8, 0.5, 0.0]
-        ]
-        
-        # Duration for each keyframe (in seconds) - varied timing for interest
-        durations = [0.3, 0.25, 0.4, 0.5, 0.2, 0.6, 0.7, 0.6, 0.8]
-        
-        # Start the animation
-        self.start_animation(keyframes, durations)
-        self.get_logger().info('Executing enhanced curious look animation')
-
-    def excited_hop(self):
-        """Make the arm do an excited bouncy hop with Disney principles."""
-        # Starting position
-        base_pos = self.current_positions[0]
-        
-        # Get current gripper position or use default closed position
-        
-        # Keyframe positions with Disney animation principles
-        keyframes = [
-            # Initial excited wiggle (anticipation)
-            [base_pos+0.2, 0.35, 0.7, 0.3, 0.0],  # Open gripper for excitement
-            
-            # Opposite wiggle (building energy)
-            [base_pos-0.2, 0.32, 0.68, 0.35, 0.0], 
-            
-            # Final anticipation - crouch down deeply before jump
-            [base_pos, 0.7, 1.3, 0.0, 0.0],
-            
-            # Exaggerate squash - compress even more with slight angle
-            [base_pos+0.1, 1.0, 1.8, -0.3, 0.0],
-            
-            # Begin compact fold (extreme squash)
-            [base_pos, -1.0, 1.0, 0.0, 0.0],
-            
-            # Maximum compression - compact fold for powerful jump
-            [base_pos, -2.0, 2.0, 2.0, 0.0],  
-            
-            # Explosive release - extremely quick stretch upward
-            [base_pos, 0.0, 0.3, 1.0, 0.0],
-            
-            # Maximum extension at apex (extreme stretch)
-            [base_pos, -0.3, 0.1, 1.4, 0.0],  # Wide open gripper
-            
-            # Follow through - dramatic overshoot at top
-            [base_pos-0.2, -0.4, 0.0, 1.6, 0.0],
-            
-            # Secondary action - excited wiggle at apex
-            [base_pos+0.3, -0.35, 0.05, 1.5, 0.0],
-            
-            # Second wiggle (overlapping action)
-            [base_pos-0.25, -0.35, 0.05, 1.5, 0.0],
-            
-            # Start descent with anticipation
-            [base_pos, -0.1, 0.3, 1.2, 0.0],
-            
-            # Continue descent with arcing motion
-            [base_pos+0.2, 0.2, 0.6, 0.8, 0.0],
-            
-            # Dramatic squash on impact - exaggerate landing
-            [base_pos+0.1, 0.75, 1.7, 0.0, 0.0],
-            
-            # Compression at landing - absorb energy
-            [base_pos, 0.75, 1.8, -0.2, 0.0],
-            
-            # Secondary bounce preparation - small anticipation
-            [base_pos-0.1, 0.75, 1.5, 0.1, 0.0],
-            
-            # Secondary smaller bounce - reduced height
-            [base_pos-0.05, 0.2, 0.6, 0.8, 0.0],
-            
-            # Small apex on second bounce
-            [base_pos+0.1, 0.15, 0.5, 0.9, 0.0],
-            
-            # Second landing - less dramatic
-            [base_pos+0.15, 0.6, 1.2, 0.3, 0.0],
-            
-            # Mini-fold for final bounce
-            [base_pos, 0.5, 1.0, 0.4, 0.0],
-            
-            # Final tiny hop
-            [base_pos-0.05, 0.3, 0.8, 0.6, 0.0],
-            
-            # Settle with continued motion - follow through
-            [base_pos+0.05, 0.35, 0.75, 0.5, 0.0],
-            
-            # Final satisfied position - slight anticipation for next action
-            [base_pos, 0.3, 0.7, 0.5, 0.0]
-        ]
-        
-        # Varied durations for more dynamic movement
-        # Extremely quick for explosive moments, longer for anticipation and recovery
-        durations = [
-            0.2,  # Initial wiggle
-            0.2,  # Opposite wiggle
-            0.3,  # Crouch down
-            0.25, # Deeper crouch
-            0.2,  # Begin compact fold
-            0.3,  # Maximum compression
-            0.1,  # Explosive release (extremely quick!)
-            0.08, # Maximum extension
-            0.08, # Overshoot at top
-            0.1,  # Excited wiggle
-            0.1,  # Second wiggle
-            0.15, # Start descent
-            0.15, # Continue descent
-            0.1,  # Impact landing
-            0.15, # Compression
-            0.2,  # Secondary bounce preparation
-            0.15, # Secondary bounce up
-            0.1,  # Small apex
-            0.15, # Second landing
-            0.12, # Final tiny bounce prep
-            0.1,  # Final tiny hop
-            0.2,  # Settling
-            0.3   # Final position
-        ]
-        
-        # Start the animation
-        self.start_animation(keyframes, durations)
-        self.get_logger().info('Executing enhanced dynamic excited hop animation')
-
-    def idle_state(self):
-        """Make the arm return to its idle state with slight variation, then look around briefly."""
-        # Starting from current position
-        base_pos = self.current_positions[0]
-        shoulder_pos = self.current_positions[1]
-        elbow_pos = self.current_positions[2]
-        wrist_pos = self.current_positions[3]
-        # Add subtle variations to idle state target
-        target_base = base_pos + random.uniform(-0.1, 0.1)
-        target_shoulder = shoulder_pos + random.uniform(-0.15, 0.15)
-        target_elbow = elbow_pos + random.uniform(-0.1, 0.1)
-        target_wrist = wrist_pos + random.uniform(-0.2, 0.2)
-        
-        # Random amounts to look left and right (different values)
-        look_right_amount = random.uniform(0.2, 0.4)
-        look_left_amount = random.uniform(0.2, 0.5)  # Potentially more to the left
-        
-        # Keyframe positions - first go to idle position, then look around
-        keyframes = [
-            # First transition to the idle position with variation
-            [target_base, target_shoulder, target_elbow, target_wrist, 0.0],
-            
-            # Brief pause in idle position
-            [target_base, target_shoulder, target_elbow, target_wrist, 0.0],
-            
-            # Look right with random amount
-            [target_base + look_right_amount, target_shoulder, target_elbow, target_wrist, 0.0],
-            
-            # Look back to center
-            [target_base, target_shoulder, target_elbow, target_wrist, 0.0],
-            
-            # Look left with different random amount
-            [target_base - look_left_amount, target_shoulder, target_elbow, target_wrist, 0.0],
-            
-            # Return to idle position with slight variation
-            [target_base + random.uniform(-0.05, 0.05), target_shoulder, target_elbow, target_wrist, 0.0]
-        ]
+    def _reset_to_idle_once(self):
+        """Reset to idle and cancel the timer (for one-shot timers)."""
+        self._reset_to_idle()
     
-        # Duration for each keyframe (in seconds) - longer for initial positioning, quicker for looking around
-        durations = [1.0, 0.7, 0.5, 0.4, 0.5, 0.6]
-    
-        # Start the animation
-        self.start_animation(keyframes, durations)
-        self.get_logger().info('Executing idle animation: using current position as base with slight variations')
+    def publish_movement_source(self):
+        """Publish the current movement source."""
+        if not self.enable_dema_integration:
+            self.get_logger().debug("DEMA integration disabled, not publishing movement source")
+            return
+        
+        try:
+            msg = String()
+            msg.data = self.movement_source
+            self.movement_source_publisher.publish(msg)
+        except Exception as e:
+            self.get_logger().error(f"Error publishing movement source: {e}")
 
-    def sad_droop(self):
-        """Make the arm droop down sadly with Disney principles."""
-        # Get current position values
-        base_pos = self.current_positions[0]
-        # Keyframe positions with Disney animation principles
-        keyframes = [
-            # Anticipation - slight upward movement showing initial energy
-            [base_pos, 0.15, 0.5, 0.2, 0.0],
-            
-            # Staging - brief moment of realization 
-            [base_pos-0.05, 0.25, 0.65, 0.0, 0.0],
-            
-            # Slow in - start of the droop movement
-            [base_pos-0.1, 0.4, 0.8, -0.3, 0.0],  # Close gripper tighter
-            
-            # Secondary action - slight shake (hesitation)
-            [base_pos-0.15, 0.45, 0.85, -0.35, 0.0],
-            
-            # Attempt to look up (showing character resistance)
-            [base_pos-0.1, 0.35, 0.75, -0.2, 0.0],
-            
-            # Heavy droop - more dramatic folding
-            [base_pos-0.25, 0.9, 1.6, -0.9, 0.0],
-            
-            # Full slump - extreme folding position (staging the emotion)
-            [base_pos-0.3, -1.0, 1.5, -0.8, 0.0],
-            
-            # Even more compression - collapsing with weight of sadness
-            [base_pos-0.35, -1.5, 1.8, 0.0, 0.0],
-            
-            # Maximum sad position - full compact fold (extreme squash)
-            [base_pos-0.4, -2.0, 2.0, 1.0, 0.0],
-            
-            # Small movement - deep sigh (follow through)
-            [base_pos-0.35, -1.9, 1.9, 1.1, 0.0],
-            
-            # Another small movement (appeal - showing emotion)
-            [base_pos-0.4, -2.0, 2.0, 1.0, 0.0],
-            
-            # Very slight movement (secondary action - slight trembling)
-            [base_pos-0.38, -1.95, 1.95, 0.95, 0.0],
-            
-            # Long pause in sad position (timing - dwelling in emotion)
-            [base_pos-0.4, -2.0, 2.0, 1.0, 0.0],
-            
-            # Very slow recovery starts (slow out - reluctant to move)
-            [base_pos-0.35, -1.5, 1.7, 0.5, 0.0],
-            
-            # Continue slow recovery - still low energy
-            [base_pos-0.3, -1.0, 1.5, 0.0, 0.0],
-            
-        ]
-        
-        # Slower, heavier durations for sadness - long pauses and slow movements
-        durations = [
-            0.4,  # 1 Initial moment
-            0.4,  # 2 Realization
-            0.5,  # 3 Start drooping
-            0.2,  # Hesitation
-            0.6,  # Resistance attempt
-            0.8,  # Heavy droop
-            0.9,  # Full slump
-            0.9,  # More compression
-            0.7,  # Maximum sad position
-            0.5,  # Deep sigh
-            0.4,  # Small movement
-            0.2,  # Trembling
-            0.8,  # Long emotional pause
-            0.6,  # Very slow recovery starts
-            0.6,  # Continue recovery
-        ]
-        
-        # Start the animation
-        self.start_animation(keyframes, durations)
-        self.get_logger().info('Executing enhanced emotional sad droop animation')
-
-
-    def playful_bounce(self):
-        """Make the arm perform a playful, energetic bounce with Disney principles."""
-        # Get current positions
-        base_pos = self.current_positions[0]
-        
-        # Keyframe positions with Disney animation principles
-        keyframes = [
-            # Initial pose - slight anticipation wiggle
-            [base_pos, 0.35, 0.8, 0.4, 0.0],  # Slightly open gripper
-            
-            # More anticipation - opposite wiggle (build energy)
-            [base_pos+0.25, 0.3, 0.75, 0.45, 0.0],
-            
-            # Even more anticipation - swing other way
-            [base_pos-0.25, 0.3, 0.75, 0.5, 0.0],
-            
-            # Deeper anticipation - start folding back (extreme squash)
-            [base_pos, -1.0, 1.0, 0.0, 0.0],
-            
-            # Maximum compression - compact fold (extreme squash)
-            [base_pos, -2.0, 2.0, 2.0, 0.0],  # Using your sitting position 3
-            
-            # Hold compact state briefly (timing - building anticipation)
-            [base_pos, -2.0, 2.0, 1.8, 0.0],
-            
-            # Explosive release - big bounce up (extreme stretch)
-            [base_pos, 0.0, 0.2, 1.2, 0.0],  # Open gripper more
-            
-            # Maximum extension at apex (exaggeration)
-            [base_pos, -0.2, 0.1, 1.5, 0.0],
-            
-            # Follow through - slight overshoot at apex
-            [base_pos+0.2, -0.1, 0.1, 1.6, 0.0],
-            
-            # Secondary action - joyful wiggle at apex
-            [base_pos-0.2, -0.1, 0.1, 1.5, 0.0],
-            
-            # Begin to fall in curved motion (arcs)
-            [base_pos+0.1, 0.2, 0.4, 0.9, 0.0],
-            
-            # Squash - land with dramatic impact
-            [base_pos+0.2, 0.8, 1.5, 0.1, 0.0],
-            
-            # Follow through - compression after landing
-            [base_pos+0.3, 0.9, 1.6, 0.0, 0.0],
-            
-            # Prepare for second bounce - fold back again
-            [base_pos+0.2, -1.0, 1.0, 0.5, 0.0],
-            
-            # Second compact fold - not as extreme
-            [base_pos+0.1, -1.8, 1.8, 1.5, 0.0],
-            
-            # Second bounce - smaller height (diminishing energy)
-            [base_pos-0.3, 0.1, 0.4, 0.9, 0.0],
-            
-            # Secondary action at second apex
-            [base_pos-0.4, 0.05, 0.35, 1.0, 0.0],
-            
-            # Second landing with less impact
-            [base_pos-0.5, 0.7, 1.3, 0.2, 0.0],
-            
-            # Mini-fold for final bounce
-            [base_pos-0.3, -0.5, 1.0, 1.0, 0.0],
-            
-            # Final small hop toward center
-            [base_pos, 0.15, 0.5, 0.8, 0.0],
-            
-            # Follow through - slight overshoot at landing
-            [base_pos+0.05, 0.4, 0.85, 0.45, 0.0],
-            
-            # Settle with continued motion - slow in
-            [base_pos, 0.3, 0.7, 0.5, 0.0],
-            
-            # Final satisfied position
-            [base_pos, 0.35, 0.75, 0.4, 0.0]
-        ]
-        
-        # Energetic timing with dynamic variations
-        # Quick compression, explosive stretch, slower recovery
-        durations = [
-            0.3,  # Initial wiggle
-            0.15, # Opposite wiggle
-            0.15, # Another wiggle
-            0.3,  # Start folding
-            0.25, # Complete fold
-            0.2,  # Hold fold (anticipation)
-            0.1,  # Explosive release (very quick!)
-            0.1,  # Maximum extension
-            0.08, # Overshoot
-            0.08, # Wiggle at apex
-            0.25, # Begin falling
-            0.1,  # Impact land
-            0.15, # Compression
-            0.2,  # Second fold start
-            0.2,  # Second compact
-            0.15, # Second bounce
-            0.12, # Second apex
-            0.15, # Second land
-            0.2,  # Mini-fold
-            0.15, # Final hop
-            0.15, # Overshoot
-            0.3,  # Settle
-            0.4   # Final position
-        ]
-        
-        # Start the animation
-        self.start_animation(keyframes, durations)
-        self.get_logger().info('Executing enhanced dynamic playful bounce animation')
-
-  
-    def startled_jump(self):
-        """Make the arm perform a startled jump with Disney principles."""
-        # Get current positions
-        base_pos = self.current_positions[0]
-        
-        # Keyframe positions with Disney principles
-        keyframes = [
-            # Calm, unsuspecting starting position
-            [base_pos, 0.3, 0.7, 0.0, 0.0],
-            
-            # Tiny freeze with subtle tension (anticipation)
-            [base_pos, 0.32, 0.72, -0.05, 0.0],  # Tighten gripper
-            
-            # Ultra-quick compression (extreme squash before jump)
-            [base_pos, -1.0, 1.0, 0.0, 0.0],  # Even tighter grip in panic
-            
-            # Explosive panic reaction (extreme stretch, exaggeration)
-            [base_pos-0.4, -0.3, 0.1, 1.6, 0.0],  # Gripper flies open in shock
-            
-            # Maximum extension with overshoot (follow-through)
-            [base_pos-0.6, -0.4, 0.0, 1.8, 0.0],  # Maximum shock expression
-            
-            # Secondary action - violent shake at apex
-            [base_pos-0.5, -0.35, 0.05, 1.7, 0.0],
-            
-            # Quick opposing shake (overlapping action)
-            [base_pos-0.7, -0.35, 0.05, 1.7, 0.0],
-            
-            # Initial settling but still alert (slow out)
-            [base_pos-0.55, -0.15, 0.3, 1.3, 0.0],
-            
-            # Begin cautious stance (staging)
-            [base_pos-0.45, 0.5, 1.0, 0.7, 0.0],
-            
-            # Nervous bounce back (secondary action)
-            [base_pos-0.6, 0.4, 0.9, 0.8, 0.0],
-            
-            # Hesitant peek forward (appeal - showing character)
-            [base_pos-0.3, 0.45, 0.95, 0.5, 0.0],
-            
-            # Quick startled recoil (timing)
-            [base_pos-0.5, 0.5, 1.0, 0.7, 0.0],
-            
-            # Another hesitant peek, braver this time (overlapping action)
-            [base_pos-0.2, 0.4, 0.9, 0.4, 0.0],
-            
-            # Quick nervous glance right (timing, exaggeration)
-            [base_pos+0.3, 0.35, 0.85, 0.5, 0.0],
-            
-            # Rapid glance left (arcs, secondary action)
-            [base_pos-0.4, 0.35, 0.85, 0.5, 0.0],
-            
-            # Glance back right, less extreme (diminishing energy)
-            [base_pos+0.2, 0.35, 0.85, 0.5, 0.0],
-            
-            # Back to cautious center position (arc motion)
-            [base_pos-0.1, 0.4, 0.9, 0.45, 0.0],
-            
-            # Beginning to relax but still alert (slow in)
-            [base_pos-0.05, 0.35, 0.8, 0.35, 0.0],
-            
-            # Calming down but with lingering vigilance
-            [base_pos, 0.3, 0.7, 0.25, 0.0]
-        ]
-        
-        # Varied durations for dynamic startled movement
-        durations = [
-            0.3,  # Calm starting position
-            0.2,  # Subtle tension
-            0.1,  # Ultra-quick compression (very fast!)
-            0.08, # Explosive reaction (extremely fast!)
-            0.1,  # Maximum extension
-            0.08, # Shake at apex
-            0.08, # Opposing shake
-            0.15, # Initial settling
-            0.2,  # Cautious stance
-            0.15, # Nervous bounce
-            0.25, # Hesitant peek
-            0.15, # Startled recoil
-            0.3,  # Another peek
-            0.15, # Nervous glance right
-            0.15, # Rapid glance left
-            0.2,  # Less extreme glance
-            0.25, # Back to center
-            0.4,  # Beginning to relax
-            0.5   # Final vigilant pose
-        ]
-        
-        # Start the animation
-        self.start_animation(keyframes, durations)
-        self.get_logger().info('Executing enhanced dynamic startled jump animation')
-
-    def thinking_animation(self):
-        """Make the arm appear to be thinking like a person pondering a question."""
-        # Get current positions
-        base_pos = self.current_positions[0]
-        
-        # Keyframe positions with Disney animation principles
-        keyframes = [
-            # Initial pose - upright, alert
-            [base_pos, 0.3, 0.7, 0.3, 0.0],  # Slightly open gripper
-            
-            # Anticipation - slight pause, "processing" the question
-            [base_pos+0.05, 0.28, 0.68, 0.35, 0.0],
-            
-            # Tilt "head" slightly (staging, establishing character)
-            [base_pos+0.1, 0.25, 0.65, 0.5, 0.0],
-            
-            # Secondary action - slight rotation showing contemplation
-            [base_pos+0.2, 0.25, 0.65, 0.55, 0.0],
-            
-            # Main thinking pose - "hand on chin" equivalent
-            [base_pos+0.2, 0.35, 0.75, 0.2, 0.0],
-            
-            # Deeper thought - fold back partially (using compact position)
-            [base_pos+0.15, -0.5, 0.8, 0.4, 0.0],
-            
-            # Slight downward tilt while folded (staging)
-            [base_pos+0.2, -0.6, 0.9, 0.3, 0.0],
-            
-            # Hold in deep thought (timing)
-            [base_pos+0.2, -0.7, 1.0, 0.2, 0.0],
-            
-            # Small "hmm" movement (appeal)
-            [base_pos+0.25, -0.65, 0.95, 0.25, 0.0],
-            
-            # Another contemplative pose - shifting position
-            [base_pos-0.15, -0.5, 0.8, 0.3, 0.0],
-            
-            # Look up slightly (as if having an idea forming)
-            [base_pos-0.1, -0.3, 0.7, 0.5, 0.0],
-            
-            # Unfold more as idea develops (arc motion)
-            [base_pos, 0.1, 0.5, 0.7, 0.0],
-            
-            # "Eureka" movement - dramatic unfolding (exaggeration)
-            [base_pos+0.1, 0.0, 0.3, 1.1, 0.0],  # Open gripper more
-            
-            # Excited response to idea - full extension (stretch)
-            [base_pos, -0.2, 0.2, 1.3, 0.0],
-            
-            # Bouncy movement showing excitement (secondary action)
-            [base_pos+0.2, -0.15, 0.15, 1.4, 0.0],
-            
-            # Quick confirmation nod (follow through)
-            [base_pos, 0.1, 0.3, 1.0, 0.0],
-            
-            # Satisfied bounce (appeal)
-            [base_pos-0.1, 0.2, 0.5, 0.7, 0.0],
-            
-            # Final satisfied position with slight lean
-            [base_pos, 0.3, 0.7, 0.4, 0.0]
-        ]
-        
-        # Varied durations for natural thinking pattern with longer pauses
-        durations = [
-            0.5,  # Initial pose
-            0.6,  # Anticipation pause
-            0.4,  # Head tilt
-            0.5,  # Rotation
-            0.7,  # Hand on chin pose
-            0.8,  # Fold back
-            0.5,  # Downward tilt
-            1.2,  # Hold in thought (long pause)
-            0.4,  # "Hmm" movement
-            0.7,  # Shift position
-            0.6,  # Look up
-            0.5,  # Unfold more
-            0.4,  # Eureka moment
-            0.3,  # Excited response
-            0.3,  # Bouncy movement
-            0.4,  # Confirmation nod
-            0.5,  # Satisfied bounce
-            0.6   # Final position
-        ]
-        
-        # Start the animation
-        self.start_animation(keyframes, durations)
-        self.get_logger().info('Executing enhanced thinking animation')
-
-    def dancing_animation(self):
-        """Make the arm perform a rhythmic dance with Disney principles."""
-        # Get current positions
-        base_pos = self.current_positions[0]
-        
-        # Keyframe positions with Disney principles
-        keyframes = [
-            # Starting pose - upright, ready
-            [base_pos, 0.3, 0.7, 0.3, 0.0],  # Slightly open gripper
-            
-            # Anticipation - slight bounce down
-            [base_pos, 0.4, 0.8, 0.2, 0.0],
-            
-            # Dance move 1 - bounce up right (exaggeration)
-            [base_pos+0.3, 0.15, 0.5, 0.6, 0.0],
-            
-            # Follow through - slight overshoot
-            [base_pos+0.35, 0.1, 0.45, 0.65, 0.0],
-            
-            # Dance move 2 - bounce down right (squash)
-            [base_pos+0.3, 0.5, 0.9, 0.1, 0.0],
-            
-            # Dance move 3 - bounce up left (stretch, arcs)
-            [base_pos-0.3, 0.15, 0.5, 0.6, 0.0],
-            
-            # Follow through - slight overshoot
-            [base_pos-0.35, 0.1, 0.45, 0.65, 0.0],
-            
-            # Dance move 4 - bounce down left (squash)
-            [base_pos-0.3, 0.5, 0.9, 0.1, 0.0],
-            
-            # Dance move 5 - twist middle (secondary action)
-            [base_pos, 0.3, 0.7, 0.7, 0.0],  # Open gripper more
-            
-            # Follow through - slight twist
-            [base_pos+0.1, 0.25, 0.65, 0.75, 0.0],
-            
-            # Dance move 6 - spin right (exaggeration, arcs)
-            [base_pos+0.5, 0.2, 0.6, 0.5, 0.0],
-            
-            # Dance move 7 - spin left (exaggeration, arcs)
-            [base_pos-0.5, 0.2, 0.6, 0.5, 0.0],
-            
-            # Dance move 8 - dip down (solid drawing, staging)
-            [base_pos, 0.6, 1.0, 0.0, 0.0],
-            
-            # Dance move 9 - pop up (stretch)
-            [base_pos, 0.1, 0.4, 0.9, 0.0],
-            
-            # Dance finale - pose with style (appeal)
-            [base_pos+0.2, 0.2, 0.5, 0.7, 0.0],
-            
-            # Hold finale pose
-            [base_pos+0.2, 0.2, 0.5, 0.7, 0.0],
-            
-            # Return to neutral with style (slow in)
-            [base_pos, 0.3, 0.7, 0.3, 0.0]
-        ]
-        
-        # Rhythmic durations with musical feel
-        durations = [0.4, 0.3, 0.4, 0.2, 0.4, 0.4, 0.2, 0.4, 0.4, 0.2, 0.5, 0.5, 0.4, 0.3, 0.2, 0.6, 0.7]
-        
-        # Start the animation
-        self.start_animation(keyframes, durations)
-        self.get_logger().info('Executing dancing animation')
-
-    def stretching_animation(self):
-        """Make the arm perform a satisfying stretch with Disney principles."""
-        # Get current positions
-        base_pos = self.current_positions[0]
-        
-        # Keyframe positions with Disney animation principles
-        keyframes = [
-            # Starting position - compressed, tired looking pose
-            [base_pos, 0.6, 1.2, -0.2, 0.0],  # Changed gripper value to 0
-            
-            # Initial tiny stretch movement (anticipation)
-            [base_pos+0.1, 0.55, 1.15, -0.1, 0.0],
-            
-            # Slight contraction - building tension (more anticipation)
-            [base_pos+0.05, 0.65, 1.25, -0.3, 0.0],
-            
-            # First small stretch attempt - not quite there yet
-            [base_pos, 0.4, 1.0, 0.1, 0.0],
-            
-            # Bigger contraction - really preparing (extreme anticipation)
-            [base_pos, -0.5, 1.0, 0.0, 0.0],  # Folded back position
-            
-            # Compact fold for maximum tension (extreme squash)
-            [base_pos, -1.5, 1.8, 1.0, 0.0],  # Using folded position
-            
-            # Begin big stretch upward (initial stretch)
-            [base_pos, 0.2, 0.5, 0.6, 0.0],  # Removed gripper open operation
-            
-            # Continue stretch upward with tilt (exaggeration)
-            [base_pos+0.3, 0.0, 0.3, 1.0, 0.0],
-            
-            # Maximum stretch with twist right (extreme stretch)
-            [base_pos+0.5, -0.2, 0.2, 1.4, 0.0],  # Removed gripper open operation
-            
-            # Hold stretch at apex with slight wobble (timing, appeal)
-            [base_pos+0.45, -0.25, 0.15, 1.45, 0.0],
-            
-            # Stretch to left side with arcing motion (arcs)
-            [base_pos-0.5, -0.2, 0.2, 1.4, 0.0],  # Removed gripper operation
-            
-            # Hold left stretch with slight adjustment (secondary action)
-            [base_pos-0.45, -0.25, 0.15, 1.45, 0.0],
-            
-            # Second phase - bend down stretch (solid drawing)
-            [base_pos, 0.7, 1.4, -0.5, 0.0],  # Removed gripper operation
-            
-            # Maximum down stretch (exaggeration)
-            [base_pos, 0.9, 1.7, -0.8, 0.0],
-            
-            # Hold down stretch with slight shake (appeal)
-            [base_pos+0.1, 0.85, 1.65, -0.75, 0.0],
-            
-            # Start relaxing with a sigh (slow out)
-            [base_pos-0.1, 0.7, 1.5, -0.5, 0.0],
-            
-            # Twist stretch - rotate base fully (secondary action)
-            [base_pos+0.8, 0.5, 1.2, -0.2, 0.0],
-            
-            # Counter twist - opposite direction (follow through)
-            [base_pos-0.8, 0.5, 1.2, -0.2, 0.0],
-            
-            # Final folded stretch position (squash and stretch)
-            [base_pos, -1.0, 1.5, 1.0, 0.0],  # Removed gripper operation
-            
-            # Begin final relaxing (follow through)
-            [base_pos, 0.1, 0.6, 0.7, 0.0],
-            
-            # Continue relaxing with satisfaction (arc motion)
-            [base_pos, 0.2, 0.7, 0.5, 0.0],
-            
-            # Small bounce in relaxation (overlapping action)
-            [base_pos, 0.3, 0.75, 0.35, 0.0],
-            
-            # Final settled position with satisfaction and slight wiggle
-            [base_pos+0.1, 0.35, 0.8, 0.3, 0.0]
-        ]
-        
-        # Varied durations for a more satisfying stretch experience
-        durations = [
-            0.5,  # Tired starting position
-            0.3,  # Initial tiny stretch
-            0.4,  # Building tension
-            0.5,  # First small attempt
-            0.6,  # Bigger contraction
-            0.7,  # Maximum compact tension
-            0.5,  # Begin big stretch
-            0.6,  # Continue stretch
-            0.7,  # Maximum stretch right
-            1.2,  # Hold and savor stretch (long hold)
-            0.8,  # Stretch to left
-            1.0,  # Hold left stretch
-            0.6,  # Bend down stretch
-            0.7,  # Maximum down
-            0.8,  # Hold with shake
-            0.6,  # Start relaxing
-            0.4,  # Twist stretch
-            0.4,  # Counter twist
-            0.8,  # Final folded stretch
-            0.5,  # Begin final relaxing
-            0.6,  # Continue relaxing
-            0.4,  # Bounce in relaxation
-            0.7   # Final settled position
-        ]
-        
-        # Start the animation
-        self.start_animation(keyframes, durations)
-        self.get_logger().info('Executing enhanced satisfying stretch animation')
-
-    def nodding_animation(self):
-        """Make the arm nod yes with Disney principles."""
-        # Get current positions
-        base_pos = self.current_positions[0]
-        
-        # Keyframe positions with Disney principles
-        keyframes = [
-            # Starting pose - neutral, upright
-            [base_pos, 0.3, 0.7, 0.3, 0.0],
-            
-            # First nod down - anticipation
-            [base_pos, 0.35, 0.8, 0.0, 0.0],
-            
-            # First nod up - with slight overshoot (exaggeration)
-            [base_pos, 0.25, 0.6, 0.5, 0.0],
-            
-            # Second nod down - stronger (squash)
-            [base_pos, 0.4, 0.85, -0.1, 0.0],
-            
-            # Second nod up - not as high (follow through, diminishing energy)
-            [base_pos, 0.27, 0.65, 0.4, 0.0],
-            
-            # Third nod down - smaller (overlapping action)
-            [base_pos, 0.35, 0.75, 0.1, 0.0],
-            
-            # Third nod up - smaller (follow through)
-            [base_pos, 0.28, 0.68, 0.35, 0.0],
-            
-            # Final tiny nod down - smallest (appeal)
-            [base_pos, 0.32, 0.72, 0.25, 0.0],
-            
-            # Return to neutral with slight satisfaction (solid drawing)
-            [base_pos, 0.3, 0.7, 0.3, 0.0]
-        ]
-        
-        # Durations for nodding - quick down, slower up
-        durations = [0.3, 0.4, 0.3, 0.4, 0.25, 0.35, 0.2, 0.25, 0.4]
-        
-        # Start the animation
-        self.start_animation(keyframes, durations)
-        self.get_logger().info('Executing nodding animation')
-
-    def head_shake_animation(self):
-        """Make the arm shake 'no' with Disney principles."""
-        # Get current positions
-        base_pos = self.current_positions[0]
-        
-        # Keyframe positions with Disney principles
-        keyframes = [
-            # Starting pose - neutral, upright
-            [base_pos, 0.3, 0.7, 0.3, 0.0],
-            
-            # Initial anticipation - slight rotation opposite first shake
-            [base_pos-0.1, 0.3, 0.7, 0.3, 0.0],  # Slight gripper close
-            
-            # First shake right - exaggeration
-            [base_pos+0.3, 0.3, 0.7, 0.35, 0.0],
-            
-            # First shake left - overshoot (follow through)
-            [base_pos-0.35, 0.3, 0.7, 0.35, 0.0],
-            
-            # Second shake right - not as far (diminishing energy)
-            [base_pos+0.25, 0.3, 0.7, 0.32, 0.0],
-            
-            # Second shake left - not as far (timing)
-            [base_pos-0.3, 0.3, 0.7, 0.32, 0.0],
-            
-            # Third shake right - smaller (overlapping action)
-            [base_pos+0.2, 0.3, 0.7, 0.3, 0.0],
-            
-            # Third shake left - smaller (solid drawing)
-            [base_pos-0.2, 0.3, 0.7, 0.3, 0.0],
-            
-            # Final tiny shake right - smallest (appeal)
-            [base_pos+0.1, 0.3, 0.7, 0.3, 0.0],
-            
-            # Final tiny shake left - smallest
-            [base_pos-0.1, 0.3, 0.7, 0.3, 0.0],
-            
-            # Return to neutral with slight attitude (staging)
-            [base_pos, 0.32, 0.72, 0.28, 0.0]
-        ]
-        
-        # Durations for head shaking - snappy side to side
-        durations = [0.3, 0.2, 0.25, 0.25, 0.25, 0.25, 0.2, 0.2, 0.15, 0.15, 0.4]
-        
-        # Start the animation
-        self.start_animation(keyframes, durations)
-        self.get_logger().info('Executing head shake animation')
 
 def main(args=None):
     rclpy.init(args=args)
-    command_interface = EnhancedAnimationCommand()
     
-    # Keep the node running
-    rclpy.spin(command_interface)
+    # Use MultiThreadedExecutor for action server
+    executor = MultiThreadedExecutor()
+    animation_server = AnimationCommandActionServer()
     
-    command_interface.destroy_node()
-    rclpy.shutdown()
+    executor.add_node(animation_server)
+    
+    try:
+        executor.spin()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        animation_server.destroy_node()
+        rclpy.shutdown()
+
 
 if __name__ == '__main__':
     main()

@@ -18,22 +18,22 @@ class CollisionNode(Node):
         # Initialize I2C
         self.i2c = board.I2C()  # uses board.SCL and board.SDA
         
-        # Error handling variables
+        # Error handling variables - using ROS2 time
         self.error_count = 0
         self.max_errors = 5
-        self.last_error_time = time.time()
+        self.last_error_time = self.get_clock().now()
         self.recovery_active = False
         self.gesture_thread_running = True
         
-        # Error message throttling
+        # Error message throttling - using ROS2 time
         self.error_throttle_period = 5.0  # Only log same error once every 5 seconds
         self.last_error_messages = {}  # Track last time each error message was logged
         self.error_counts = defaultdict(int)  # Count occurrences of each error message
         
-        # NEW: Add variables to track last successful data reception
-        self.last_successful_proximity_time = time.time()
-        self.last_successful_left_distance_time = time.time()
-        self.last_successful_right_distance_time = time.time()
+        # NEW: Add variables to track last successful data reception - using ROS2 time
+        self.last_successful_proximity_time = self.get_clock().now()
+        self.last_successful_left_distance_time = self.get_clock().now()
+        self.last_successful_right_distance_time = self.get_clock().now()
         self.no_data_timeout = 1.5  # 3 seconds timeout threshold
         
         # Parameter to enable/disable gesture detection
@@ -116,14 +116,14 @@ class CollisionNode(Node):
 
     def log_throttled_error(self, error_key, error_message):
         """Log error messages with throttling to prevent spam"""
-        current_time = time.time()
+        current_time = self.get_clock().now()
         
         # Increment the error count for this type of error
         self.error_counts[error_key] += 1
         
         # Check if we should log this error now
         if error_key not in self.last_error_messages or \
-           (current_time - self.last_error_messages[error_key]) > self.error_throttle_period:
+           ((current_time - self.last_error_messages[error_key]).nanoseconds / 1e9) > self.error_throttle_period:
             
             # If we've accumulated multiple errors, show the count
             if self.error_counts[error_key] > 1:
@@ -141,7 +141,7 @@ class CollisionNode(Node):
 
     def data_watchdog(self):
         """Check if we haven't received data from sensors for too long"""
-        current_time = time.time()
+        current_time = self.get_clock().now()
         
         # Skip if recovery is already in progress
         if self.recovery_active:
@@ -149,9 +149,9 @@ class CollisionNode(Node):
             
         try:
             # Check time since last proximity data
-            prox_time_since = current_time - self.last_successful_proximity_time
-            left_time_since = current_time - self.last_successful_left_distance_time
-            right_time_since = current_time - self.last_successful_right_distance_time
+            prox_time_since = (current_time - self.last_successful_proximity_time).nanoseconds / 1e9
+            left_time_since = (current_time - self.last_successful_left_distance_time).nanoseconds / 1e9
+            right_time_since = (current_time - self.last_successful_right_distance_time).nanoseconds / 1e9
             
             # Log the time since last successful readings for debugging
             self.get_logger().debug(f"Time since last data - Proximity: {prox_time_since:.1f}s, Left: {left_time_since:.1f}s, Right: {right_time_since:.1f}s")
@@ -282,7 +282,7 @@ class CollisionNode(Node):
                 
                 # Reset consecutive errors on success
                 consecutive_errors = 0
-                time.sleep(0.01)  # Small sleep to prevent CPU overload
+                time.sleep(0.01)  # Small sleep to prevent CPU overload - keep as time.sleep for thread
                 
             except Exception as e:
                 consecutive_errors += 1
@@ -302,7 +302,7 @@ class CollisionNode(Node):
                     except Exception as reinit_error:
                         self.get_logger().error(f"Failed to reinitialize APDS9960: {reinit_error}")
                         
-                time.sleep(recovery_delay)  # Longer sleep after error
+                time.sleep(recovery_delay)  # Longer sleep after error - keep as time.sleep for thread
 
     def proximity_callback(self):
         """Timer callback for proximity readings"""
@@ -310,7 +310,7 @@ class CollisionNode(Node):
             # Read proximity
             proximity = self.apds.proximity
             
-            self.last_successful_proximity_time = time.time()
+            self.last_successful_proximity_time = self.get_clock().now()
             
             # Publish raw proximity value
             proximity_msg = Int16()
@@ -397,7 +397,7 @@ class CollisionNode(Node):
                 try:
                     left_distance = self.vl53_left.distance
                     
-                    self.last_successful_left_distance_time = time.time()
+                    self.last_successful_left_distance_time = self.get_clock().now()
                     
                     # Ignore readings below 1cm (treat as invalid)
                     if left_distance < 1.0:
@@ -445,7 +445,7 @@ class CollisionNode(Node):
                 try:
                     right_distance = self.vl53_right.distance
                     
-                    self.last_successful_right_distance_time = time.time()
+                    self.last_successful_right_distance_time = self.get_clock().now()
                     
                     # Ignore readings below 1cm (treat as invalid)
                     if right_distance < 1.0:
