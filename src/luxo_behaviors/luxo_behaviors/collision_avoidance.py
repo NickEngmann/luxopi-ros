@@ -100,7 +100,7 @@ class CollisionAvoidance:
         self.home_position_tolerance = 0.2  # Tolerance to determine if we're at a position
         self.home_position_stage = 1  # Track which stage of the home sequence we're in
         self.home_position_stage_change_time = self.node.get_clock().now()  # When we switched home position stages
-        self.home_position_stage_timeout = 2  # Time to wait at home_position_1 before moving to home_position_2
+        self.home_position_stage_timeout = 0.5  # Time to wait at home_position_1 before moving to home_position_2
         
         # Animation state tracking with ROS time
         self.last_movement_time = self.node.get_clock().now()
@@ -571,6 +571,14 @@ class CollisionAvoidance:
         except Exception as e:
             self.node.get_logger().error(f"Error scheduling home position: {e}")
     
+    def _at_home_position(self, current_pos, home_pos, tolerance):
+        """Check if robot is at a home position, ignoring base joint."""
+        # Compare all joints except base (index 0)
+        for i in range(1, min(len(current_pos), len(home_pos))):
+            if abs(current_pos[i] - home_pos[i]) > tolerance:
+                return False
+        return True
+
     def _post_animation_home_callback(self):
         """Callback to return to home position after animation."""
         try:
@@ -609,6 +617,67 @@ class CollisionAvoidance:
                     # Reset other state variables for clean slate
                     self.persistent_head_collision_active = False
                     self.target_override_active = False
+                    return  # Skip other checks when returning to home
+                
+                # Check for home position stage transitions
+                if self.target_override_active and self.target_override_joints is not None:
+                    # Check if we're in stage 1 and at home_position_1
+                    if self.home_position_stage == 1:
+                        # Calculate current position difference from home_position_1
+                        # Preserve base position when comparing
+                        mod_home_1 = self.home_position_1.copy()
+                        mod_home_1[0] = self.current_joints[0]  # Use current base position
+                        
+                        if self._at_home_position(self.current_joints, self.home_position_1, self.home_position_tolerance):
+                            # Initialize stage change time if not set
+                            if not hasattr(self, '_stage1_reached_time'):
+                                self._stage1_reached_time = current_time
+                                self.node.get_logger().info(f"Reached home_position_1, waiting {self.home_position_stage_timeout}s before stage 2")
+                            
+                            # Check if we've waited long enough
+                            time_at_stage1 = (current_time - self._stage1_reached_time).nanoseconds / 1e9
+                            if time_at_stage1 >= self.home_position_stage_timeout:
+                                self.node.get_logger().info(f"Transitioning to home_position_2 after {time_at_stage1:.1f}s at position 1")
+                                
+                                # Transition to stage 2
+                                self.home_position_stage = 2
+                                delattr(self, '_stage1_reached_time')  # Clean up the timer
+                                
+                                # Preserve current base position
+                                mod_home_2 = self.home_position_2.copy()
+                                mod_home_2[0] = self.current_joints[0]
+                                
+                                # Add slight random variation
+                                noise_range = 0.05
+                                home_with_variation = [
+                                    mod_home_2[i] + (0 if i == 0 else random.uniform(-noise_range, noise_range))
+                                    for i in range(len(mod_home_2))
+                                ]
+                                
+                                # Update target override
+                                self.target_override_joints = home_with_variation
+                                self.target_override_time = current_time
+                                self.target_override_reason = "Home position sequence stage 2"
+                                
+                                # Send command to move to stage 2
+                                self.send_safe_joint_command(home_with_variation, "Home position stage 2")
+                        else:
+                            # Not at position 1, reset timer
+                            if hasattr(self, '_stage1_reached_time'):
+                                delattr(self, '_stage1_reached_time')
+                    
+                    # Check if we're in stage 2 and at home_position_2
+                    elif self.home_position_stage == 2:
+                        mod_home_2 = self.home_position_2.copy()
+                        mod_home_2[0] = self.current_joints[0]  # Use current base position
+                        
+                        if self._at_home_position(self.current_joints, self.home_position_2, self.home_position_tolerance):
+                            self.node.get_logger().info("Successfully reached final home position (stage 2)")
+                            self.returning_to_home = False
+                            self.persistent_head_collision_active = False
+                            # Reset idle timer
+                            self.last_activity_time = current_time
+                
                 return  # Skip other checks when returning to home
             
             # Check persistent head collision duration
@@ -886,8 +955,8 @@ class CollisionAvoidance:
                 stage_target = "home_position_2"
                 compare_target = self.home_position_2
                 
-            self.node.get_logger().info(f"Position comparison: differences={[round(d, 4) for d in differences]}, tolerance={tolerance}")
-            self.node.get_logger().info(f"Target ({stage_target})={[round(p, 4) for p in target_pos]}, Current={[round(p, 4) for p in current_pos]}")
+            self.node.get_logger().debug(f"Position comparison: differences={[round(d, 4) for d in differences]}, tolerance={tolerance}")
+            self.node.get_logger().debug(f"Target ({stage_target})={[round(p, 4) for p in target_pos]}, Current={[round(p, 4) for p in current_pos]}")
             
             # If any difference is too large for the current stage, handle it
             if max(differences) > 0.4 and self.home_position_stage == 2:
@@ -896,7 +965,9 @@ class CollisionAvoidance:
                 return False
             
             # Add additional validation - verify we're actually comparing against the correct target
-            correct_target_diffs = [abs(c - t) for c, t in zip(current_pos, compare_target)]
+            # IGNORE BASE POSITION (index 0) when checking home positions
+            correct_target_diffs = [abs(c - t) if i != 0 else 0.0 
+                                  for i, (c, t) in enumerate(zip(current_pos, compare_target))]
             if stage_target == "home_position_1" and max(correct_target_diffs) > self.home_position_tolerance * 1.5:
                 self.node.get_logger().warn(f"Robot not close to {stage_target}: actual diffs={[round(d, 4) for d in correct_target_diffs]}")
                 return False
@@ -906,21 +977,27 @@ class CollisionAvoidance:
                 
             # If we're in stage 1 and the robot thinks it's at position 1, double-check with actual data
             if self.home_position_stage == 1 and max(differences) <= tolerance:
-                hp1_diffs = [abs(c - t) for c, t in zip(current_pos, self.home_position_1)]
+                # Create modified home position that preserves current base
+                mod_hp1 = self.home_position_1.copy()
+                mod_hp1[0] = current_pos[0]  # Use current base position
+                hp1_diffs = [abs(c - t) for c, t in zip(current_pos, mod_hp1)]
                 if max(hp1_diffs) > self.home_position_tolerance:
                     self.node.get_logger().warn(f"False positive detection of home_position_1: actual diffs={[round(d, 4) for d in hp1_diffs]}")
                     return False
                 else:
-                    self.node.get_logger().info(f"DETECTED: Robot has reached home_position_1 within tolerance {self.home_position_tolerance}")
+                    self.node.get_logger().debug(f"DETECTED: Robot has reached home_position_1 within tolerance {self.home_position_tolerance}")
             
             # Same validation for stage 2
             if self.home_position_stage == 2 and max(differences) <= tolerance:
-                hp2_diffs = [abs(c - t) for c, t in zip(current_pos, self.home_position_2)]
+                # Create modified home position that preserves current base
+                mod_hp2 = self.home_position_2.copy()
+                mod_hp2[0] = current_pos[0]  # Use current base position
+                hp2_diffs = [abs(c - t) for c, t in zip(current_pos, mod_hp2)]
                 if max(hp2_diffs) > self.home_position_tolerance:
                     self.node.get_logger().warn(f"False positive detection of home_position_2: actual diffs={[round(d, 4) for d in hp2_diffs]}")
                     return False
                 else:
-                    self.node.get_logger().info(f"DETECTED: Robot has reached home_position_2 within tolerance {self.home_position_tolerance}")
+                    self.node.get_logger().debug(f"DETECTED: Robot has reached home_position_2 within tolerance {self.home_position_tolerance}")
         
         # The actual position comparison
         for i, (pos1, pos2) in enumerate(zip(position1, position2)):
@@ -936,7 +1013,7 @@ class CollisionAvoidance:
         if self.returning_to_home and self.target_override_active and self.target_override_joints is not None:
             # Log that we're enforcing home position override (throttled)
             time_since_log = (current_time - self.last_home_override_log).nanoseconds / 1e9
-            if time_since_log > 1.0:
+            if time_since_log > 5.0:  # Increased from 1.0 to reduce log spam
                 self.node.get_logger().info(f"Enforcing home position override (stage {self.home_position_stage})")
                 self.last_home_override_log = current_time
             
@@ -980,55 +1057,6 @@ class CollisionAvoidance:
                     # Clear returning to home flag once we've fully reached home
                     self.returning_to_home = False
                 
-            # Check if we're in the first stage of the home sequence
-            elif self.home_position_stage == 1:
-                # Check if we've reached home_position_1 (within tolerance)
-                if self._at_position(self.current_joints, self.home_position_1, self.home_position_tolerance):
-                    # Check if we've been at position 1 long enough before moving to position 2
-                    
-                    # Initialize the stage change time if it's not set yet
-                    # Check if it's already ROS time or needs conversion
-                    if not hasattr(self, 'home_position_stage_change_time') or \
-                       not hasattr(self.home_position_stage_change_time, 'nanoseconds'):
-                        self.home_position_stage_change_time = current_time
-                        self.node.get_logger().info(f"Started timing home position stage 1 - will wait {self.home_position_stage_timeout}s")
-                    
-                    time_at_position_1 = (current_time - self.home_position_stage_change_time).nanoseconds / 1e9
-                    
-                    # Check if we've waited long enough at position 1
-                    if time_at_position_1 >= self.home_position_stage_timeout:
-                        self.node.get_logger().info(f"Reached home_position_1 and waited {time_at_position_1:.1f}s - transitioning to home_position_2")
-                        
-                        # Switch to stage 2
-                        self.home_position_stage = 2
-                        self.home_position_stage_change_time = current_time
-                        
-                        # Add slight random variation to home_position_2
-                        noise_range = 0.05
-                        home_with_variation = [
-                            pos + random.uniform(-noise_range, noise_range) 
-                            for pos in self.home_position_2
-                        ]
-                        
-                        # Update the target override with home_position_2
-                        self.target_override_joints = home_with_variation
-                        self.target_override_time = current_time
-                        self.target_override_reason = "Home position sequence stage 2"
-                        
-                        # Send command to move to home_position_2
-                        self.send_safe_joint_command(home_with_variation, "Home position stage 2")
-                    else:
-                        # Periodically log the waiting progress
-                        time_since_idle_log = (current_time - self.idle_check_last_log).nanoseconds / 1e9
-                        if time_since_idle_log > 1.0:
-                            self.node.get_logger().debug(f"At home_position_1, waiting {self.home_position_stage_timeout - time_at_position_1:.1f}s before transitioning to stage 2")
-                            self.idle_check_last_log = current_time
-                else:
-                    # Reset stage change time if we're not at position 1
-                    if hasattr(self, 'home_position_stage_change_time') and \
-                       hasattr(self.home_position_stage_change_time, 'nanoseconds'):
-                        self.node.get_logger().debug("Lost home_position_1 - resetting stage timer")
-                        self.home_position_stage_change_time = current_time
             
             # Always return the override position when in home movement sequence
             return self.target_override_joints

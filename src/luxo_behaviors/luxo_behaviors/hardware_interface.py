@@ -570,7 +570,7 @@ class RoArmHardwareInterface(Node):
             
             # Skip processing if collision avoidance system is returning to home position
             if self.collision_avoidance.returning_to_home:
-                self.get_logger().info("Skipping joint_states_target - currently returning to home position")
+                self.get_logger().debug("Skipping joint_states_target - currently returning to home position")
                 return
             
             # Track recent command times to help collision avoidance detect animations
