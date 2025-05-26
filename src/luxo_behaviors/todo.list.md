@@ -1,4 +1,3 @@
-[] Fix Camera
 [] React to Camera Faster!
 [] Add a FSM
 [] Priority on Animations even when we are scheduled to go back home

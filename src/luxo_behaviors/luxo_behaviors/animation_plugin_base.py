@@ -55,19 +55,23 @@ class AnimationPlugin(ABC):
         """
         return None
     
-    def add_noise_to_position(self, positions: List[float]) -> List[float]:
+    def add_noise_to_position(self, positions: List[float], noise_amplitude: Optional[float] = None) -> List[float]:
         """
         Add subtle random noise to make animations less mechanical.
         
         Args:
             positions: Joint positions to add noise to
+            noise_amplitude: Optional amplitude of noise to apply. Defaults to the instance's noise_amplitude.
             
         Returns:
             Joint positions with noise added
         """
+        if noise_amplitude is None:
+            noise_amplitude = self.noise_amplitude
+        
         noisy_positions = []
         for pos in positions:
-            noise = random.uniform(-self.noise_amplitude, self.noise_amplitude)
+            noise = random.uniform(-noise_amplitude, noise_amplitude)
             noisy_positions.append(pos + noise)
         return noisy_positions
     
