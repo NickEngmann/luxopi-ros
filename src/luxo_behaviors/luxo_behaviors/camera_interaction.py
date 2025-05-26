@@ -26,6 +26,18 @@ class CameraInteraction(Node):
     def __init__(self):
         super().__init__('camera_interaction')
         
+        # Camera connection state
+        self.camera_connected = False
+        self.camera_retry_interval = 30.0  # seconds
+        self.camera_retry_attempts = 0
+        self.max_retry_attempts = -1  # -1 means infinite retries
+
+        # Error tracking for camera disconnection detection
+        self.consecutive_camera_errors = 0
+        self.max_consecutive_errors = 5  # Trigger reconnect after 5 consecutive errors
+        self.last_camera_error_log_time = self.get_clock().now()
+        self.camera_error_log_interval = 5.0  # Log errors at most every 5 seconds
+        
         # Create ROS publishers
         self.emotion_publisher = self.create_publisher(String, '/camera/emotion', 10)
         self.distance_publisher = self.create_publisher(Float32, '/camera/person_distance', 10)
@@ -74,10 +86,21 @@ class CameraInteraction(Node):
         self.declare_parameter('emotion_buffer_duration', 2.0)
         self.emotion_buffer_duration = self.get_parameter('emotion_buffer_duration').get_parameter_value().double_value
         
+        # Add parameter for emotion detection threshold
+        self.declare_parameter('emotion_threshold', 50.0)
+        self.emotion_threshold = self.get_parameter('emotion_threshold').get_parameter_value().double_value
+        
+        # Add parameter for emotion cooldown
+        self.declare_parameter('emotion_cooldown', 5.0)
+        self.emotion_cooldown = self.get_parameter('emotion_cooldown').get_parameter_value().double_value
+        
+        # Add parameter for camera retry interval
+        self.declare_parameter('camera_retry_interval', 30.0)
+        self.camera_retry_interval = self.get_parameter('camera_retry_interval').get_parameter_value().double_value
+        
         # Track last emotion and animation time for cooldown - using ROS2 time
         self.last_emotion = "neutral"
         self.last_animation_time = self.get_clock().now()
-        self.emotion_cooldown = 5.0  # Changed from 4.0 to 5.0 seconds between animations
         
         # Add a history of recent emotions to avoid repetition
         self.recent_emotions = deque(maxlen=3)  # Keep track of last 3 emotions that triggered animations
@@ -95,9 +118,68 @@ class CameraInteraction(Node):
         self.emotion_buffer = deque(maxlen=60)
         self.emotion_buffer_start_time = self.get_clock().now()
         
-        # Start camera detection system
-        self.get_logger().info('Starting camera emotion detection...')
+        # Log configuration summary
+        if self.react_to_emotions:
+            self.get_logger().info('Emotion-triggered animations are ENABLED')
+        else:
+            self.get_logger().info('Emotion-triggered animations are DISABLED')
+        
+        # Initialize camera-related variables
+        self.device = None
+        self.stereo = False
+        self.sync = None
+        self.queues = {}
+        self.timer = None
+        
+        # Try to initialize camera
+        self.get_logger().info('Attempting to initialize camera...')
+        self.get_logger().info(f'Emotion detection parameters: buffer_duration={self.emotion_buffer_duration}s, '
+                             f'threshold={self.emotion_threshold}%, cooldown={self.emotion_cooldown}s')
+        
+        if self.initialize_camera():
+            self.get_logger().info('Camera initialized successfully')
+        else:
+            self.get_logger().warn(f'Camera not found. Will retry every {self.camera_retry_interval} seconds...')
+            # Create retry timer
+            self.create_camera_retry_timer()
+    
+    def create_camera_retry_timer(self):
+        """Create a timer to periodically retry camera connection."""
+        self.camera_retry_timer = self.create_timer(
+            self.camera_retry_interval,
+            self.retry_camera_connection
+        )
+    
+    def retry_camera_connection(self):
+        """Attempt to reconnect to the camera."""
+        self.camera_retry_attempts += 1
+        self.get_logger().info(f'Retrying camera connection (attempt {self.camera_retry_attempts})...')
+        
+        if self.initialize_camera():
+            self.get_logger().info('Camera reconnection successful!')
+            # Cancel the retry timer
+            self.camera_retry_timer.cancel()
+            self.camera_retry_timer = None
+            self.camera_retry_attempts = 0
+            # Reset error tracking
+            self.consecutive_camera_errors = 0
+        else:
+            if self.max_retry_attempts > 0 and self.camera_retry_attempts >= self.max_retry_attempts:
+                self.get_logger().error(f'Maximum camera retry attempts ({self.max_retry_attempts}) reached. Giving up.')
+                self.camera_retry_timer.cancel()
+                self.camera_retry_timer = None
+            else:
+                self.get_logger().warn(f'Camera still not found. Will retry again in {self.camera_retry_interval} seconds...')
+    
+    def initialize_camera(self):
+        """Initialize the camera system. Returns True if successful, False otherwise."""
         try:
+            # Check if a device is available
+            device_infos = dai.Device.getAllAvailableDevices()
+            if not device_infos:
+                self.get_logger().warn("No DepthAI devices found")
+                return False
+            
             # Initialize device and determine if stereo is available
             self.device = dai.Device()
             self.stereo = 1 < len(self.device.getConnectedCameras())
@@ -114,17 +196,24 @@ class CameraInteraction(Node):
             for name in ["color", "detection", "recognition"]:
                 self.queues[name] = self.device.getOutputQueue(name)
             
-            # Create timer callback for processing camera data
-            self.timer = self.create_timer(0.03, self.process_camera_data)  # ~30fps
+            # Create timer callback for processing camera data if not already created
+            if self.timer is None:
+                self.timer = self.create_timer(0.03, self.process_camera_data)  # ~30fps
             
-            self.get_logger().info('Camera emotion detection initialized successfully')
+            self.camera_connected = True
+            return True
             
         except Exception as e:
             self.get_logger().error(f'Failed to initialize camera: {e}')
-            self.get_logger().fatal('Camera is required for this application. Exiting...')
-            # Clean up and exit
-            self.destroy_node()
-            sys.exit(1)
+            # Clean up any partial initialization
+            if self.device is not None:
+                try:
+                    self.device.close()
+                except:
+                    pass
+                self.device = None
+            self.camera_connected = False
+            return False
     
     def create_pipeline(self):
         pipeline = dai.Pipeline()
@@ -299,83 +388,144 @@ class CameraInteraction(Node):
 
     def process_camera_data(self):
         """Process camera data and publish emotion results as ROS messages"""
-        if self.device is None:
-            return  # Skip if camera initialization failed
+        # Skip if camera is not connected
+        if not self.camera_connected or self.device is None:
+            return
         
-        # Process all available messages
-        for name, q in self.queues.items():
-            # Add all msgs (color frames, object detections and age/gender recognitions) to the Sync class.
-            if q.has():
-                self.sync.add_msg(q.get(), name)
+        try:
+            # Process all available messages
+            for name, q in self.queues.items():
+                # Add all msgs (color frames, object detections and age/gender recognitions) to the Sync class.
+                if q.has():
+                    self.sync.add_msg(q.get(), name)
 
-        msgs = self.sync.get_msgs()
-        if msgs is not None:
-            frame = msgs["color"].getCvFrame()
-            detections = msgs["detection"].detections
-            recognitions = msgs["recognition"]
+            msgs = self.sync.get_msgs()
+            if msgs is not None:
+                frame = msgs["color"].getCvFrame()
+                detections = msgs["detection"].detections
+                recognitions = msgs["recognition"]
 
-            # If set to publish camera feed
-            if self.publish_camera_feed and frame is not None:
-                try:
-                    # Convert frame to ROS Image message
-                    ros_image = self.bridge.cv2_to_imgmsg(frame, "bgr8")
-                    # Publish the image
-                    self.image_publisher.publish(ros_image)
-                except Exception as e:
-                    self.get_logger().error(f"Error publishing camera image: {e}")
-            
-            # If no people detected, skip processing
-            if not detections:
-                return
+                # If set to publish camera feed
+                if self.publish_camera_feed and frame is not None:
+                    try:
+                        # Convert frame to ROS Image message
+                        ros_image = self.bridge.cv2_to_imgmsg(frame, "bgr8")
+                        # Publish the image
+                        self.image_publisher.publish(ros_image)
+                    except Exception as e:
+                        self.get_logger().error(f"Error publishing camera image: {e}")
                 
-            # Find the closest person if stereo camera is available
-            closest_person_idx = 0
-            if self.stereo and len(detections) > 1:
-                min_distance = float('inf')
-                for i, detection in enumerate(detections):
-                    person_distance = detection.spatialCoordinates.z / 1000.0  # mm to m
-                    if person_distance < min_distance:
-                        min_distance = person_distance
-                        closest_person_idx = i
-                        
-                if self.verbose:
-                    self.get_logger().info(f"Multiple people detected, focusing on closest person at index {closest_person_idx}")
-            
-            # Process only the closest person (or the first one if no distance data)
-            detection = detections[closest_person_idx]
-            rec = recognitions[closest_person_idx]
-
-            bbox = frame_norm(frame, (detection.xmin, detection.ymin, detection.xmax, detection.ymax))
-            emotion_results = np.array(rec.getFirstLayerFp16())
-            emotion_name = emotions[np.argmax(emotion_results)]
-            
-            # Always publish current emotion for monitoring/debugging
-            emotion_msg = String()
-            emotion_msg.data = emotion_name
-            self.emotion_publisher.publish(emotion_msg)
-            
-            # Get person distance if stereo camera is available
-            person_distance = None
-            if self.stereo:
-                distance_msg = Float32()
-                # Convert from millimeters to meters
-                person_distance = detection.spatialCoordinates.z / 1000.0
-                distance_msg.data = person_distance
-                self.distance_publisher.publish(distance_msg)
+                # If no people detected, skip processing
+                if not detections:
+                    # Reset error counter on successful processing (even with no detections)
+                    self.consecutive_camera_errors = 0
+                    return
+                    
+                # Find the closest person if stereo camera is available
+                closest_person_idx = 0
+                if self.stereo and len(detections) > 1:
+                    min_distance = float('inf')
+                    for i, detection in enumerate(detections):
+                        person_distance = detection.spatialCoordinates.z / 1000.0  # mm to m
+                        if person_distance < min_distance:
+                            min_distance = person_distance
+                            closest_person_idx = i
+                            
+                    if self.verbose:
+                        self.get_logger().info(f"Multiple people detected, focusing on closest person at index {closest_person_idx}")
                 
-                if self.verbose:
-                    self.get_logger().info(f"Tracked person with emotion: {emotion_name} at {person_distance:.2f}m")
-            else:
-                if self.verbose:
-                    self.get_logger().info(f"Tracked person with emotion: {emotion_name}")
+                # Process only the closest person (or the first one if no distance data)
+                detection = detections[closest_person_idx]
+                rec = recognitions[closest_person_idx]
+
+                bbox = frame_norm(frame, (detection.xmin, detection.ymin, detection.xmax, detection.ymax))
+                emotion_results = np.array(rec.getFirstLayerFp16())
+                emotion_name = emotions[np.argmax(emotion_results)]
+                
+                # Always publish current emotion for monitoring/debugging
+                emotion_msg = String()
+                emotion_msg.data = emotion_name
+                self.emotion_publisher.publish(emotion_msg)
+                
+                # Get person distance if stereo camera is available
+                person_distance = None
+                if self.stereo:
+                    distance_msg = Float32()
+                    # Convert from millimeters to meters
+                    raw_distance = detection.spatialCoordinates.z / 1000.0
+                    
+                    # Filter out invalid readings
+                    if raw_distance <= 0.001:  # Too close to be real
+                        person_distance = None
+                        if self.verbose:
+                            self.get_logger().debug(f"Invalid distance reading: {raw_distance:.3f}m")
+                    else:
+                        person_distance = raw_distance
+                        distance_msg.data = person_distance
+                        self.distance_publisher.publish(distance_msg)
+                    
+                    if self.verbose and person_distance is not None:
+                        self.get_logger().info(f"Tracked person with emotion: {emotion_name} at {person_distance:.2f}m")
+                else:
+                    if self.verbose:
+                        self.get_logger().info(f"Tracked person with emotion: {emotion_name}")
+                
+                # Add to emotion buffer with ROS2 timestamp
+                current_time = self.get_clock().now()
+                self.emotion_buffer.append((emotion_name, person_distance, current_time))
+                
+                # Trigger animations based on buffered emotions if enabled
+                if self.react_to_emotions:
+                    self.process_emotion_buffer()
+                    
+                # Reset error counter on successful processing
+                self.consecutive_camera_errors = 0
+                
+        except Exception as e:
+            # Increment error counter
+            self.consecutive_camera_errors += 1
             
-            # Add to emotion buffer with ROS2 timestamp
+            # Throttle error logging
             current_time = self.get_clock().now()
-            self.emotion_buffer.append((emotion_name, person_distance, current_time))
+            time_since_last_log = (current_time - self.last_camera_error_log_time).nanoseconds / 1e9
             
-            # Trigger animations based on buffered emotions if enabled
-            if self.react_to_emotions:
-                self.process_emotion_buffer()
+            if time_since_last_log >= self.camera_error_log_interval:
+                self.get_logger().error(f"Error processing camera data: {e} (consecutive errors: {self.consecutive_camera_errors})")
+                self.last_camera_error_log_time = current_time
+            
+            # Check if we should attempt reconnection
+            if self.consecutive_camera_errors >= self.max_consecutive_errors:
+                self.get_logger().warn(f"Camera appears to be disconnected after {self.consecutive_camera_errors} consecutive errors. Attempting reconnection...")
+                self.handle_camera_disconnection()
+
+    def handle_camera_disconnection(self):
+        """Handle camera disconnection by cleaning up and starting retry timer"""
+        # Mark camera as disconnected
+        self.camera_connected = False
+        
+        # Clean up the device
+        if self.device is not None:
+            try:
+                self.device.close()
+                self.get_logger().info("Closed disconnected camera device")
+            except Exception as e:
+                self.get_logger().debug(f"Error closing device: {e}")
+            finally:
+                self.device = None
+        
+        # Reset error counter
+        self.consecutive_camera_errors = 0
+        
+        # Clear queues and sync
+        self.queues = {}
+        self.sync = None
+        
+        # Start retry timer if not already running
+        if not hasattr(self, 'camera_retry_timer') or self.camera_retry_timer is None:
+            self.get_logger().info(f"Starting camera reconnection timer (retry every {self.camera_retry_interval} seconds)")
+            self.create_camera_retry_timer()
+        else:
+            self.get_logger().debug("Camera retry timer already active")
     
     def process_emotion_buffer(self):
         """Process the emotion buffer and trigger an animation if conditions are met"""
@@ -388,61 +538,68 @@ class CameraInteraction(Node):
             # Get the current elapsed time since last animation
             time_since_last_animation = (current_time - self.last_animation_time).nanoseconds / 1e9
             
-            # Only proceed if we're not in cooldown
-            if time_since_last_animation > self.emotion_cooldown:
-                # Count occurrences of each emotion in the buffer
-                emotion_counts = {}
-                avg_distance = 0
-                distance_count = 0
+            # Count occurrences of each emotion in the buffer
+            emotion_counts = {}
+            valid_distances = []
+            
+            for emotion, distance, timestamp in self.emotion_buffer:
+                emotion_counts[emotion] = emotion_counts.get(emotion, 0) + 1
+                # Filter out invalid distance readings (0.00m or >4.0m likely errors)
+                if distance is not None and 0.3 < distance < 4.0:
+                    valid_distances.append(distance)
+            
+            # Calculate average distance from valid readings only
+            avg_distance = None
+            if valid_distances:
+                avg_distance = sum(valid_distances) / len(valid_distances)
+                if self.verbose:
+                    self.get_logger().debug(f"Valid distances: {len(valid_distances)}/{len(self.emotion_buffer)}, avg: {avg_distance:.2f}m")
+            
+            # Check if we have at least 3 emotion samples
+            if len(self.emotion_buffer) < 3:
+                self.get_logger().debug(f"Not enough emotion samples ({len(self.emotion_buffer)}), need at least 3")
+                # Reset buffer and start time
+                self.emotion_buffer.clear()
+                self.emotion_buffer_start_time = current_time
+                return
+            
+            # Find the most common emotion
+            if emotion_counts:
+                # Sort emotions by count (highest first)
+                sorted_emotions = sorted(emotion_counts.items(), key=lambda x: x[1], reverse=True)
+                dominant_emotion = sorted_emotions[0][0]
                 
-                for emotion, distance, timestamp in self.emotion_buffer:
-                    emotion_counts[emotion] = emotion_counts.get(emotion, 0) + 1
-                    if distance is not None:
-                        avg_distance += distance
-                        distance_count += 1
+                # Calculate percentage of dominant emotion
+                dominant_percentage = (emotion_counts[dominant_emotion] / len(self.emotion_buffer)) * 100
                 
-                # Check if we have at least 3 emotion samples to make a reliable classification
-                if len(self.emotion_buffer) < 3:
-                    self.get_logger().info(f"Not enough emotion samples ({len(self.emotion_buffer)}), need at least 3")
-                    # Reset buffer and start time
-                    self.emotion_buffer.clear()
-                    self.emotion_buffer_start_time = current_time
-                    return
-                    
-                # Find the most common emotion
-                if emotion_counts:
-                    # Sort emotions by count (highest first)
-                    sorted_emotions = sorted(emotion_counts.items(), key=lambda x: x[1], reverse=True)
-                    dominant_emotion = sorted_emotions[0][0]
-                    
-                    # Calculate percentage of dominant emotion
-                    dominant_percentage = (emotion_counts[dominant_emotion] / len(self.emotion_buffer)) * 100
-                    
-                    # Check if this emotion is too repetitive
-                    if self._is_too_repetitive(dominant_emotion):
-                        self.get_logger().info(f"Skipping repetitive emotion: {dominant_emotion}")
-                        # Reset buffer and start time
-                        self.emotion_buffer.clear()
-                        self.emotion_buffer_start_time = current_time
-                        return
-                    
-                    # Calculate average distance if available
-                    if distance_count > 0:
-                        avg_distance = avg_distance / distance_count
+                # Log buffer statistics
+                if self.verbose:
+                    self.get_logger().info(f"Buffer stats: {emotion_counts}, samples: {len(self.emotion_buffer)}")
+                
+                # Only trigger if dominant enough (using configurable threshold)
+                if dominant_percentage >= self.emotion_threshold:
+                    # Check cooldown period
+                    if time_since_last_animation > self.emotion_cooldown:
+                        # Check if this emotion is too repetitive
+                        if self._is_too_repetitive(dominant_emotion):
+                            self.get_logger().info(f"Emotion {dominant_emotion} is repetitive, but checking if we should override...")
+                            
+                            # If it's been a long time since last animation, allow it anyway
+                            if time_since_last_animation > self.emotion_cooldown * 2:
+                                self.get_logger().info(f"Overriding repetition check due to long idle time ({time_since_last_animation:.1f}s)")
+                                # Trigger the animation
+                                self.trigger_animation(dominant_emotion, avg_distance)
+                            else:
+                                self.get_logger().info(f"Skipping repetitive emotion: {dominant_emotion}")
+                        else:
+                            self.get_logger().info(f"Triggering animation for emotion: {dominant_emotion} ({dominant_percentage:.1f}%)")
+                            # Trigger the animation
+                            self.trigger_animation(dominant_emotion, avg_distance)
                     else:
-                        avg_distance = None
-                    
-                    # Only trigger if dominant enough (changed from 70% to 60%)
-                    if dominant_percentage >= 60:
-                        self.get_logger().info(f"Emotion counts: {emotion_counts}, Dominant emotion: {dominant_emotion} ({dominant_percentage:.2f}%)")
-                        
-                        # Trigger the animation
-                        self.trigger_animation(dominant_emotion, avg_distance)
-                    else:
-                        self.get_logger().info(f"No dominant emotion found, highest: {dominant_emotion} ({dominant_percentage:.2f}%)")
-            else:
-                remaining_cooldown = self.emotion_cooldown - time_since_last_animation
-                self.get_logger().debug(f"Still in cooldown period, {remaining_cooldown:.1f}s remaining")
+                        remaining_cooldown = self.emotion_cooldown - time_since_last_animation
+                        self.get_logger().info(f"Still in cooldown period, {remaining_cooldown:.1f}s remaining")
+                else:
+                    self.get_logger().debug(f"No dominant emotion found, highest: {dominant_emotion} ({dominant_percentage:.1f}%)")
             
             # Reset the buffer and start time
             self.emotion_buffer.clear()
@@ -450,18 +607,23 @@ class CameraInteraction(Node):
 
     def _is_too_repetitive(self, emotion):
         """Check if an emotion is being detected too repetitively"""
-        # If it's the same as the last triggered emotion, avoid repeating immediately
+        # If it's the same as the last triggered emotion, check how long ago that was
         if emotion == self.last_emotion:
+            # But allow it if enough time has passed
+            current_time = self.get_clock().now()
+            time_since_last = (current_time - self.last_animation_time).nanoseconds / 1e9
+            if time_since_last > self.emotion_cooldown * 1.5:  # 7.5 seconds
+                return False  # Allow it after extended time
             return True
             
-        # If this emotion appears too frequently in our recent history, be more lenient
-        if len(self.recent_emotions) >= 2:  # Only check when we have some history
+        # If this emotion appears too frequently in our recent history
+        if len(self.recent_emotions) >= 3:  # Check last 3 animations
             emotion_counts = {}
             for e in self.recent_emotions:
                 emotion_counts[e] = emotion_counts.get(e, 0) + 1
                 
-            # If this emotion appears in ALL of our recent history, it's too repetitive
-            if emotion in emotion_counts and emotion_counts[emotion] >= len(self.recent_emotions):
+            # If this emotion was ALL of our last 3 animations, skip it
+            if emotion in emotion_counts and emotion_counts[emotion] >= 3:
                 return True
         
         return False
@@ -581,9 +743,15 @@ class CameraInteraction(Node):
     
     def destroy_node(self):
         """Clean up resources when the node is shut down"""
+        if hasattr(self, 'camera_retry_timer') and self.camera_retry_timer is not None:
+            self.camera_retry_timer.cancel()
+            
         if hasattr(self, 'device') and self.device is not None:
             self.get_logger().info("Shutting down camera")
-            self.device.close()
+            try:
+                self.device.close()
+            except:
+                pass
         super().destroy_node()
 
 def main(args=None):
