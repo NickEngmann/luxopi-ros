@@ -555,7 +555,7 @@ class CollisionAvoidance:
                         # Re-acquire lock after operation
                         self.collision_lock.acquire()
 
-    def schedule_home_after_animation(self, delay=3.0):
+    def schedule_home_after_animation(self, delay=0.5):
         """Schedule a return to home position after animation completes."""
         try:
             # Cancel any existing home timer

@@ -372,15 +372,12 @@ class AnimationCommandActionServer(Node):
             
             # Schedule return to home position after 1 second if animation completed successfully
             if final_state == "completed":
-                if self.collision_avoidance:
-                    self.collision_avoidance.schedule_home_after_animation(delay=3.0)
-                else:
                     # Fallback: schedule idle state after delay
-                    self.get_logger().info("Scheduling idle state after animation (collision avoidance not available)")
+                    self.get_logger().info("Scheduling idle state after animation")
                     if hasattr(self, 'idle_reset_timer') and self.idle_reset_timer:
                         self.idle_reset_timer.cancel()
                     self.idle_reset_timer = self.create_timer(
-                        3.0,
+                        0.5,
                         lambda: self._reset_to_idle_once()
                     )
             
@@ -739,6 +736,7 @@ class AnimationCommandActionServer(Node):
     def publish_movement_source(self):
         """Publish the current movement source."""
         if not self.enable_dema_integration:
+            self.get_logger().debug("DEMA integration disabled, not publishing movement source")
             return
         
         try:

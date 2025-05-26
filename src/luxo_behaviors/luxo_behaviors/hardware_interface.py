@@ -612,7 +612,7 @@ class RoArmHardwareInterface(Node):
                     self.collision_avoidance.clear_active_animation()
                     # Schedule home position after becoming idle
                     if self.collision_avoidance:
-                        self.collision_avoidance.schedule_home_after_animation(delay=1.0)
+                        self.collision_avoidance.schedule_home_after_animation(delay=0.5)
                     else:
                         self.get_logger().warn("Collision avoidance not available for home scheduling")
                 
