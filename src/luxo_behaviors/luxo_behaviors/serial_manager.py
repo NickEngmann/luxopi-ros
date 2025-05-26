@@ -8,7 +8,7 @@ import os
 import subprocess
 import atexit
 from std_msgs.msg import String
-from queue import Queue, Empty
+from queue import Queue
 import traceback
 
 class SerialManager:
