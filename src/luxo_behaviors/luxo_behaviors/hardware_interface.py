@@ -26,6 +26,8 @@ class RoArmHardwareInterface(Node):
         self.declare_parameter('hard_limit_distance', 8.0)   # cm
         self.declare_parameter('max_deceleration', 2.0)  # rad/s²
         self.declare_parameter('collision_recovery_timeout', 3.0)  # seconds
+        self.declare_parameter('idle_timeout_min', 3.0)  # Minimum idle timeout
+        self.declare_parameter('idle_timeout_max', 12.0)  # Maximum idle timeout
         
         # Additional parameters for proactive avoidance
         self.declare_parameter('avoidance_playfulness', 0.3)  # 0.0-1.0 random factor
@@ -145,6 +147,9 @@ class RoArmHardwareInterface(Node):
                 self.send_safe_joint_command,  # Callback to send joint commands
                 self.publish_actual_joint_states  # Callback to publish joint states
             )
+
+            if hasattr(self, 'animation_command_server'):
+                self.animation_command_server.set_collision_avoidance(self.collision_avoidance)
             if self.enable_torque_on_start:
                 self.get_logger().info("Torque enabled on startup")
                 self.enable_torque()
@@ -605,6 +610,11 @@ class RoArmHardwareInterface(Node):
                     movement_source = "idle"
                     # Clear any active animation tracking
                     self.collision_avoidance.clear_active_animation()
+                    # Schedule home position after becoming idle
+                    if self.collision_avoidance:
+                        self.collision_avoidance.schedule_home_after_animation(delay=1.0)
+                    else:
+                        self.get_logger().warn("Collision avoidance not available for home scheduling")
                 
                 # Store the last movement source
                 previous_source = getattr(self, 'last_movement_source', None)
@@ -877,12 +887,20 @@ class RoArmHardwareInterface(Node):
                         self.current_joints, 
                         self.collision_avoidance.target_override_joints)):
                         
-                        self.get_logger().info("Successfully reached home position")
-                        self.collision_avoidance.returning_to_home = False
-                        self.collision_avoidance.persistent_head_collision_active = False
-                        
-                        # Reset the activity timer to prevent immediately triggering idle timeout
-                        self.collision_avoidance.last_activity_time = self.get_clock().now()
+                        # Add throttling for stage 1 logging
+                        if self.collision_avoidance.home_position_stage == 1:
+                            # Force the collision avoidance system to check for stage transition
+                            # by calling get_effective_target_position which contains the transition logic
+                            _ = self.collision_avoidance.get_effective_target_position(
+                                self.collision_avoidance.target_joints
+                            )
+                        elif self.collision_avoidance.home_position_stage == 2:
+                            self.get_logger().info("Successfully reached final home position (stage 2)")
+                            self.collision_avoidance.returning_to_home = False
+                            self.collision_avoidance.persistent_head_collision_active = False
+                            
+                            # Reset the activity timer to prevent immediately triggering idle timeout
+                            self.collision_avoidance.last_activity_time = self.get_clock().now()
         except Exception as e:
             self.get_logger().error(f"Error in direct publish timer: {e}")
 

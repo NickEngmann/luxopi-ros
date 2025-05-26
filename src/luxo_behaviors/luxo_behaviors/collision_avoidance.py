@@ -127,9 +127,13 @@ class CollisionAvoidance:
         
         # Add tracking for idle time with ROS time
         self.last_activity_time = self.node.get_clock().now()
-        self.idle_timeout = 4.0  # seconds - used for both idle detection and home position timeout
+        # Random idle timeout between 3-12 seconds
+        self.idle_timeout = random.uniform(3.0, 12.0)
         self.idle_check_active = True  # Flag to enable/disable idle detection
         self.idle_check_last_log = self.node.get_clock().now()  # For log throttling
+        
+        # Log the selected timeout
+        self.node.get_logger().info(f"Idle timeout set to {self.idle_timeout:.1f} seconds")
         
         # Add flags for special operations
         self.returning_to_home = False
@@ -145,6 +149,10 @@ class CollisionAvoidance:
         # Timer for idle reset (will be created when needed)
         self.idle_reset_timer = None
 
+    def reset_idle_timeout(self):
+        """Reset idle timeout to a new random value between 45-90 seconds."""
+        self.idle_timeout = random.uniform(45.0, 90.0)
+        self.node.get_logger().info(f"Idle timeout reset to {self.idle_timeout:.1f} seconds")
 
     def set_active_animation(self, animation_name, allow_interruption=True):
         """Track the currently active animation."""
@@ -546,6 +554,41 @@ class CollisionAvoidance:
                     finally:
                         # Re-acquire lock after operation
                         self.collision_lock.acquire()
+
+    def schedule_home_after_animation(self, delay=3.0):
+        """Schedule a return to home position after animation completes."""
+        try:
+            # Cancel any existing home timer
+            if hasattr(self, 'post_animation_home_timer') and self.post_animation_home_timer:
+                self.post_animation_home_timer.cancel()
+            
+            # Create a one-shot timer to go home after delay
+            self.post_animation_home_timer = self.node.create_timer(
+                delay,
+                lambda: self._post_animation_home_callback()
+            )
+            self.node.get_logger().debug(f"Scheduled return to home position in {delay} seconds")
+        except Exception as e:
+            self.node.get_logger().error(f"Error scheduling home position: {e}")
+    
+    def _post_animation_home_callback(self):
+        """Callback to return to home position after animation."""
+        try:
+            # Cancel the timer
+            if hasattr(self, 'post_animation_home_timer') and self.post_animation_home_timer:
+                self.post_animation_home_timer.cancel()
+                self.post_animation_home_timer = None
+            
+            # Only go home if we're still in idle state
+            if hasattr(self, 'movement_source') and self.movement_source == "idle":
+                self.node.get_logger().info("Animation complete and idle - returning to home position")
+                self.returning_to_home = True
+                self.returning_to_home_start_time = self.node.get_clock().now()
+                self.go_to_home_position("Post-animation return to home")
+            else:
+                self.node.get_logger().debug("Movement source changed, skipping post-animation home position")
+        except Exception as e:
+            self.node.get_logger().error(f"Error in post-animation home callback: {e}")
     
     def safety_monitor_callback(self):
         """Periodic callback to monitor safety and adjust motion if needed."""
@@ -1005,7 +1048,7 @@ class CollisionAvoidance:
         override_duration = (current_time - self.target_override_time).nanoseconds / 1e9
         
         if not any_collision_active and override_duration > self.target_override_timeout:
-            self.node.get_logger().warn(f"Collisions clear for {override_duration:.1f}s - gradually returning to original target")
+            self.node.get_logger().debug(f"Collisions clear for {override_duration:.1f}s - gradually returning to original target")
             
             # Gradually blend between override and original target
             blend_factor = min(1.0, (override_duration - self.target_override_timeout) / 2.0)
@@ -1672,9 +1715,9 @@ class CollisionAvoidance:
             escape_position[1] -= 0.3  # Pull shoulder back
             escape_position[2] += 0.2  # Fold elbow slightly
         elif direction == 'left':
-            escape_position[0] -= 0.2  # Rotate slightly right
+            escape_position[0] += 0.2  # Rotate slightly right
         elif direction == 'right':
-            escape_position[0] += 0.2  # Rotate slightly left
+            escape_position[0] -= 0.2  # Rotate slightly left
         
         return escape_position
     

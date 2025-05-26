@@ -81,6 +81,8 @@ class AnimationCommandActionServer(Node):
         self.current_positions = [0.0, 0.0, 0.0, 0.0, 0.0]
         self.target_positions = self.current_positions.copy()
         
+        self.collision_avoidance = None
+
         # Define joint names
         if self.use_hardware_joint_names:
             self.joint_names = ['base', 'shoulder', 'elbow', 'wrist', 'hand']
@@ -166,6 +168,11 @@ class AnimationCommandActionServer(Node):
         # Initialize hardware position if enabled
         if self.use_hardware_position_feedback:
             self.request_hardware_position()
+    
+    def set_collision_avoidance(self, collision_avoidance):
+        """Set the collision avoidance reference from hardware interface."""
+        self.collision_avoidance = collision_avoidance
+        self.get_logger().info("Collision avoidance reference set in animation command")
     
     def _init_time_tracking(self):
         """Initialize all ROS time tracking variables."""
@@ -363,6 +370,20 @@ class AnimationCommandActionServer(Node):
             self.is_animating = False
             actual_duration = time.time() - start_time
             
+            # Schedule return to home position after 1 second if animation completed successfully
+            if final_state == "completed":
+                if self.collision_avoidance:
+                    self.collision_avoidance.schedule_home_after_animation(delay=3.0)
+                else:
+                    # Fallback: schedule idle state after delay
+                    self.get_logger().info("Scheduling idle state after animation (collision avoidance not available)")
+                    if hasattr(self, 'idle_reset_timer') and self.idle_reset_timer:
+                        self.idle_reset_timer.cancel()
+                    self.idle_reset_timer = self.create_timer(
+                        3.0,
+                        lambda: self._reset_to_idle_once()
+                    )
+            
             # Create result
             result = PlayAnimation.Result()
             result.success = final_state == "completed"
@@ -445,16 +466,52 @@ class AnimationCommandActionServer(Node):
         self.speed_multiplier = speed
         self.start_animation(keyframes, durations, animation_name)
         
-        # Schedule idle reset after animation completes
+        # Schedule return to home after animation completes
         total_duration = sum([d / speed for d in durations])
+        
+        # Cancel any existing idle reset timer
         if hasattr(self, 'idle_reset_timer') and self.idle_reset_timer:
             self.idle_reset_timer.cancel()
         
-        # Use a one-shot timer to reset to idle
+        # Schedule home position 1 second after animation ends
+        home_delay = total_duration + 1.0
         self.idle_reset_timer = self.create_timer(
-            total_duration + 3.0,  # Animation duration + 3 seconds
-            lambda: self._reset_to_idle_once()
+            home_delay,
+            lambda: self._schedule_home_or_idle()
         )
+    
+    def _schedule_home_position(self):
+        """Schedule return to home position after animation."""
+        try:
+            # Cancel the timer
+            if hasattr(self, 'idle_reset_timer') and self.idle_reset_timer:
+                self.idle_reset_timer.cancel()
+                self.idle_reset_timer = None
+            
+            # Use collision avoidance to schedule home if available
+            if self.collision_avoidance:
+                self.collision_avoidance.schedule_home_after_animation(delay=0.1)
+            else:
+                # Just set to idle state
+                self.get_logger().info("Setting movement source to idle (collision avoidance not available)")
+                self.movement_source = "idle"
+                self.publish_movement_source()
+        except Exception as e:
+            self.get_logger().error(f"Error scheduling home position: {e}")
+    
+    def _schedule_home_or_idle(self):
+        """Schedule home position if collision avoidance available, otherwise just go idle."""
+        try:
+            if hasattr(self, 'idle_reset_timer') and self.idle_reset_timer:
+                self.idle_reset_timer.cancel()
+                self.idle_reset_timer = None
+            
+            # Just set to idle state since we don't have collision avoidance
+            self.movement_source = "idle"
+            self.publish_movement_source()
+            self.get_logger().info("Animation complete - movement source set to idle")
+        except Exception as e:
+            self.get_logger().error(f"Error in schedule home or idle: {e}")
     
     def position_feedback_callback(self, msg):
         """Handle position feedback from the hardware."""
