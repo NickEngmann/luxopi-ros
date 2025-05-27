@@ -9,6 +9,10 @@ import depthai as dai
 import numpy as np
 import time
 import sys
+import cv2
+import subprocess
+import os
+import threading
 from std_msgs.msg import String, Float32
 from sensor_msgs.msg import Image
 from cv_bridge import CvBridge
@@ -69,6 +73,32 @@ class CameraInteraction(Node):
         if self.publish_camera_feed:
             self.bridge = CvBridge()
             self.image_publisher = self.create_publisher(Image, '/camera/image_raw', 10)
+        
+        # Parameter for framebuffer display
+        self.declare_parameter('enable_framebuffer_display', True)
+        self.enable_framebuffer_display = self.get_parameter('enable_framebuffer_display').get_parameter_value().bool_value
+        
+        # Framebuffer display parameters
+        self.declare_parameter('framebuffer_device', '/dev/fb0')
+        self.framebuffer_device = self.get_parameter('framebuffer_device').get_parameter_value().string_value
+        
+        self.declare_parameter('framebuffer_tty', '1')
+        self.framebuffer_tty = self.get_parameter('framebuffer_tty').get_parameter_value().string_value
+        
+        self.declare_parameter('framebuffer_update_interval', 0.1)  # seconds
+        self.framebuffer_update_interval = self.get_parameter('framebuffer_update_interval').get_parameter_value().double_value
+        self.last_framebuffer_update = self.get_clock().now()
+        # Framebuffer display state
+        if self.enable_framebuffer_display:
+            # Import the framebuffer display class
+            from .framebuffer_display import CameraFramebufferDisplay
+            self.framebuffer_display = CameraFramebufferDisplay(self, self.framebuffer_device)
+            
+            if self.framebuffer_display.enabled:
+                self.get_logger().info(f'Direct framebuffer display initialized on {self.framebuffer_device}')
+            else:
+                self.get_logger().warn('Failed to initialize framebuffer display')
+                self.enable_framebuffer_display = False
         
         # Parameter for verbose mode
         self.declare_parameter('verbose', False)
@@ -145,6 +175,34 @@ class CameraInteraction(Node):
             self.get_logger().warn(f'Camera not found. Will retry every {self.camera_retry_interval} seconds...')
             # Create retry timer
             self.create_camera_retry_timer()
+    
+    def _update_framebuffer_display(self, frame):
+        """Update the framebuffer display with the latest frame"""
+        if not self.enable_framebuffer_display:
+            return
+        
+        current_time = self.get_clock().now()
+        time_since_last_update = (current_time - self.last_framebuffer_update).nanoseconds / 1e9
+        
+        # Only update at the specified interval
+        if time_since_last_update < self.framebuffer_update_interval:
+            return
+        
+        try:
+            # Get current emotion and distance
+            emotion = getattr(self, 'last_detected_emotion', None)
+            distance = getattr(self, 'last_person_distance', None)
+            
+            # Update display
+            self.framebuffer_display.update_display(frame, emotion, distance)
+            
+            self.last_framebuffer_update = current_time
+            
+            if self.verbose:
+                self.get_logger().debug("Updated framebuffer display")
+                
+        except Exception as e:
+            self.get_logger().error(f"Error updating framebuffer display: {e}")
     
     def create_camera_retry_timer(self):
         """Create a timer to periodically retry camera connection."""
@@ -408,6 +466,10 @@ class CameraInteraction(Node):
                 detections = msgs["detection"].detections
                 recognitions = msgs["recognition"]
 
+                # Update framebuffer display if enabled
+                if self.enable_framebuffer_display and frame is not None:
+                    self._update_framebuffer_display(frame)
+
                 # If set to publish camera feed
                 if self.publish_camera_feed and frame is not None:
                     try:
@@ -445,6 +507,9 @@ class CameraInteraction(Node):
                 emotion_results = np.array(rec.getFirstLayerFp16())
                 emotion_name = emotions[np.argmax(emotion_results)]
                 
+                # Store for framebuffer display
+                self.last_detected_emotion = emotion_name
+                
                 # Always publish current emotion for monitoring/debugging
                 emotion_msg = String()
                 emotion_msg.data = emotion_name
@@ -464,6 +529,7 @@ class CameraInteraction(Node):
                             self.get_logger().debug(f"Invalid distance reading: {raw_distance:.3f}m")
                     else:
                         person_distance = raw_distance
+                        self.last_person_distance = person_distance  # Store for framebuffer display
                         distance_msg.data = person_distance
                         self.distance_publisher.publish(distance_msg)
                     
@@ -758,6 +824,10 @@ class CameraInteraction(Node):
     
     def destroy_node(self):
         """Clean up resources when the node is shut down"""
+        # Clean up framebuffer display
+        if self.enable_framebuffer_display and hasattr(self, 'framebuffer_display'):
+            self.framebuffer_display.cleanup()
+        
         if hasattr(self, 'camera_retry_timer') and self.camera_retry_timer is not None:
             self.camera_retry_timer.cancel()
             

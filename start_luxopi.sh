@@ -18,6 +18,7 @@ ros2 launch luxo_behaviors luxo_system.launch.py \
   verbose:=true \
   enable_idle_animations:=true \
   enable_dynamic_adaptation:=false \
+  enable_framebuffer_display:=true \
   sense_collision:=true
 
 # Keep the script running 

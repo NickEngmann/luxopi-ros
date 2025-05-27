@@ -254,6 +254,19 @@ pip3 install RPi.GPIO --break-system-packages
 # Install DepthAI lsusb | grep 03e7Camera Code
 sudo wget -qO- https://docs.luxonis.com/install_depthai.sh | bash
 
+
+# Install FBI and give it the correct permissions
+sudo apt install fbi -y
+sudo usermod -a -G video,tty $USER
+newgrp video
+newgrp tty
+groups
+sudo chmod 666 /dev/tty1
+sudo chown $USER:$USER /dev/tty1
+sudo chmod 660 /dev/tty1
+sudo chgrp tty /dev/tty1
+sudo chmod 660 /dev/tty1
+
 # Don't enable the firewall automatically - let the user do it
 echo "Firewall configured but not enabled. To enable, run: sudo ufw enable"
 
