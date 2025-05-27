@@ -7,6 +7,7 @@ from std_msgs.msg import Bool, String, Float32
 import json
 import threading
 import time
+import random
 from luxo_behaviors.serial_manager import SerialManager
 from luxo_behaviors.collision_avoidance import CollisionAvoidance
 from luxo_behaviors.state_machine import LuxoStateMachine, LuxoState
@@ -61,6 +62,12 @@ class RoArmHardwareInterface(Node):
         # Add parameter for initialization method
         self.declare_parameter('use_hardware_position_on_init', True)  # Whether to read actual position from hardware
         self.declare_parameter('init_position_timeout', 10.0)  # Timeout for getting initial position
+        
+        # Idle animation parameters
+        self.declare_parameter('enable_idle_animations', True)
+        self.declare_parameter('idle_animation_min_interval', 10.0)
+        self.declare_parameter('idle_animation_max_interval', 30.0)
+        self.declare_parameter('idle_time_before_animation', 5.0)
         
         # Get parameters
         self.serial_port = self.get_parameter('serial_port').value
@@ -153,9 +160,25 @@ class RoArmHardwareInterface(Node):
                 self.publish_actual_joint_states,  # Callback to publish joint states
                 self.state_machine  # Pass the state machine
             )
-
-            if hasattr(self, 'animation_command_server'):
+            
+            # Pass idle animation parameters to collision avoidance
+            self.collision_avoidance.idle_animations_enabled = self.get_parameter('enable_idle_animations').value
+            self.collision_avoidance.min_idle_time_before_animation = self.get_parameter('idle_time_before_animation').value
+            self.collision_avoidance.idle_animation_interval = random.uniform(
+                self.get_parameter('idle_animation_min_interval').value,
+                self.get_parameter('idle_animation_max_interval').value
+            )
+            
+            # Import and create animation command server with collision avoidance
+            try:
+                from luxo_behaviors.animation_command import AnimationCommandActionServer
+                self.animation_command_server = AnimationCommandActionServer()
                 self.animation_command_server.set_collision_avoidance(self.collision_avoidance)
+                self.animation_command_server.set_state_machine(self.state_machine)
+                self.get_logger().info("Animation command server integrated with hardware interface")
+            except Exception as e:
+                self.get_logger().warn(f"Could not integrate animation command server: {e}")
+
             if self.enable_torque_on_start:
                 self.get_logger().info("Torque enabled on startup")
                 self.enable_torque()
@@ -745,20 +768,8 @@ class RoArmHardwareInterface(Node):
                     # Clear any active animation tracking
                     self.collision_avoidance.clear_active_animation()
                     
-                    # Check if we were previously animating by looking at the stored last_movement_source
                     if hasattr(self, 'last_movement_source') and self.last_movement_source == "animation":
-                        self.get_logger().info("Animation completed - transitioning directly to RETURNING_HOME")
-                        # Transition to RETURNING_HOME state
-                        self.state_machine.transition_to(LuxoState.RETURNING_HOME)
-                        # Set the timestamp before calling go_to_home_position
-                        self.collision_avoidance.returning_to_home_start_time = self.get_clock().now()
-                        # Immediately trigger return to home
-                        if self.collision_avoidance:
-                            self.collision_avoidance.go_to_home_position("Post-animation return to home")
-                        else:
-                            self.get_logger().warn("Collision avoidance not available for home positioning")
-                    else:
-                        # For other cases, just transition to IDLE
+                        self.get_logger().info(f"Animation completed - transitioning to IDLE state")
                         self.state_machine.transition_to(LuxoState.IDLE)
 
                 

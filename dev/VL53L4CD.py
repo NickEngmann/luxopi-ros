@@ -18,8 +18,8 @@ i2c = board.I2C()  # uses board.SCL and board.SDA
 # i2c = board.STEMMA_I2C()  # For using the built-in STEMMA QT connector on a microcontroller
 
 # Create two sensor instances - left with custom address, right with default address
+vl53_right = adafruit_vl53l4cd.VL53L4CD(i2c, 0x29)  # using default address
 vl53_left = adafruit_vl53l4cd.VL53L4CD(i2c, 0x59)
-vl53_right = adafruit_vl53l4cd.VL53L4CD(i2c)  # using default address
 
 # Set the same configuration for both sensors
 for vl53 in (vl53_left, vl53_right):

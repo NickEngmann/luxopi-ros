@@ -150,6 +150,23 @@ class CollisionAvoidance:
         # Timer for idle reset (will be created when needed)
         self.idle_reset_timer = None
 
+        self.idle_animations = [
+            'gentle_sway', 'curious_exploration', 'breathing', 
+            'attentive_listening', 'playful_bob', 'scanning_watch',
+            'settling_adjust', 'dreamy_drift'
+        ]
+        self.last_idle_animation = None
+        self.min_idle_time_before_animation = 5.0  # seconds before first idle animation
+        self.idle_animation_interval = random.uniform(10.0, 60.0)  # time between animations
+        self.last_idle_animation_time = self.node.get_clock().now()
+        
+        # Create action client for triggering animations
+        self._idle_animation_client = ActionClient(
+            self.node,
+            PlayAnimation,
+            'play_animation'
+        )
+
     def reset_idle_timeout(self):
         """Reset idle timeout to a new random value between 45-90 seconds."""
         self.idle_timeout = random.uniform(45.0, 90.0)
@@ -720,42 +737,36 @@ class CollisionAvoidance:
                         self._activate_escape_mode('front')
                         return  # Skip remaining checks as we're already taking action
             
-            # Check idle timeout (only if we're not already handling a collision)
+            # Check idle timeout for idle animations
             if self.idle_check_active and not any(status['active'] for status in self.collision_status.values()):
                 time_since_activity = (current_time - self.last_activity_time).nanoseconds / 1e9
+                time_since_last_animation = (current_time - self.last_idle_animation_time).nanoseconds / 1e9
                 
                 # Check if we're already at or very close to home positions
                 already_at_home2 = self._at_position(self.current_joints, self.home_position_2, self.home_position_tolerance)
-                already_at_home1 = self._at_position(self.current_joints, self.home_position_1, self.home_position_tolerance * 1.2)
                 
-                # Use different timeout values based on position
-                if already_at_home1 or already_at_home2:
-                    # If already near a home position, use shorter timeout
-                    effective_timeout = self.home_position_stage_timeout
-                    position_status = "near home position"
-                else:
-                    # Regular timeout for positions away from home
-                    effective_timeout = self.idle_timeout
-                    position_status = "away from home position"
-                
-                # Log the idle time periodically to help debugging
-                if time_since_activity > 1.5:
-                    time_since_idle_log = (current_time - self.idle_check_last_log).nanoseconds / 1e9
-                    if time_since_idle_log > 2.0:
-                        self.node.get_logger().debug(f"Device idle for {time_since_activity:.1f}s (timeout: {effective_timeout}s, {position_status})")
-                        self.idle_check_last_log = current_time
-                
-                if time_since_activity > effective_timeout and not already_at_home2:
-                    self.node.get_logger().info(f"Device idle for {time_since_activity:.1f}s ({position_status}) - returning to home position")
-                    # Transition to RETURNING_HOME state
+                # If we've been idle for a while and enough time has passed since last animation
+                if (time_since_activity > self.min_idle_time_before_animation and 
+                    time_since_last_animation > self.idle_animation_interval and
+                    self.state_machine.is_in_state(LuxoState.IDLE) and
+                    getattr(self, 'idle_animations_enabled', True)):  # Check if enabled
+                    
+                    self.node.get_logger().info(f"Device idle for {time_since_activity:.1f}s - triggering idle animation")
+                    
+                    # Trigger a random idle animation
+                    self.trigger_idle_animation()
+                    
+                    # Update timers
+                    self.last_idle_animation_time = current_time
+                    self.idle_animation_interval = random.uniform(10.0, 60.0)  # Random interval for next animation
+                    
+                # Still check for extended idle to return home eventually
+                elif time_since_activity > 120.0 and not already_at_home2:  # 2 minutes
+                    self.node.get_logger().info(f"Extended idle timeout - returning to home position")
                     self.state_machine.transition_to(LuxoState.RETURNING_HOME)
                     self.returning_to_home_start_time = current_time
-                    self.go_to_home_position("Idle timeout reset")
-                    return  # Skip remaining checks as we're already taking action
-                elif time_since_activity > effective_timeout and already_at_home2:
-                    # We're already at home, so just reset the activity timer to prevent continuous triggering
-                    self.node.get_logger().debug("Device idle, but already at final home position - resetting activity timer")
-                    self.last_activity_time = current_time
+                    self.go_to_home_position("Extended idle timeout")
+                    return
             
             # Fast path: Check if there are any active collisions or we're in escape mode
             with self.collision_lock:
@@ -1593,7 +1604,56 @@ class CollisionAvoidance:
             # Return to IDLE state on error
             self.state_machine.transition_to(LuxoState.IDLE)
             return False
+
+    def trigger_idle_animation(self):
+        """Trigger a random idle animation."""
+        try:
+            # Don't trigger if not in IDLE state or action client not ready
+            if not self.state_machine.is_in_state(LuxoState.IDLE):
+                return
+                
+            if not self._idle_animation_client.wait_for_server(timeout_sec=1.0):
+                self.node.get_logger().warn("Animation action server not available for idle animation")
+                return
+            
+            # Select a random animation, avoiding the last one
+            available_animations = [a for a in self.idle_animations if a != self.last_idle_animation]
+            if not available_animations:
+                available_animations = self.idle_animations
+                
+            selected_animation = random.choice(available_animations)
+            self.last_idle_animation = selected_animation
+            
+            # Create goal for idle animation
+            goal = PlayAnimation.Goal()
+            goal.animation_name = selected_animation
+            goal.speed_multiplier = random.uniform(0.8, 1.2)  # Slight speed variation
+            goal.allow_interruption = True  # Always allow interruption for idle animations
+            goal.use_hardware_feedback = False
+            
+            self.node.get_logger().info(f"Triggering idle animation: {selected_animation} (speed: {goal.speed_multiplier:.1f})")
+            
+            # Send goal asynchronously
+            future = self._idle_animation_client.send_goal_async(goal)
+            future.add_done_callback(self._idle_animation_response_callback)
+            
+            # Update activity time to prevent immediate re-triggering
+            self.last_activity_time = self.node.get_clock().now()
+            
+        except Exception as e:
+            self.node.get_logger().error(f"Error triggering idle animation: {e}")
     
+    def _idle_animation_response_callback(self, future):
+        """Handle the response from idle animation goal."""
+        try:
+            goal_handle = future.result()
+            if not goal_handle.accepted:
+                self.node.get_logger().debug("Idle animation goal rejected")
+            else:
+                self.node.get_logger().debug("Idle animation goal accepted")
+        except Exception as e:
+            self.node.get_logger().error(f"Error in idle animation response: {e}")
+
     def move_to_safe_position(self, position, description="Proactive avoidance movement", override_checks=False):
         """Move to a position with collision checking."""
         try:

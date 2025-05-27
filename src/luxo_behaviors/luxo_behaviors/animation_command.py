@@ -217,7 +217,8 @@ class AnimationCommandActionServer(Node):
         plugin_modules = [
             'luxo_behaviors.animation_plugins.emotion_animations',
             'luxo_behaviors.animation_plugins.action_animations',
-            'luxo_behaviors.animation_plugins.response_animations'
+            'luxo_behaviors.animation_plugins.response_animations',
+            'luxo_behaviors.animation_plugins.idle_animations'
         ]
         
         for module_name in plugin_modules:
@@ -424,24 +425,10 @@ class AnimationCommandActionServer(Node):
             self.is_animating = False
             actual_duration = time.time() - start_time
             
-            # Transition directly to RETURNING_HOME state if animation completed successfully
-            if self.state_machine and final_state == "completed":
-                if self.state_machine.transition_to(LuxoState.RETURNING_HOME):
-                    self.get_logger().info("Animation completed - transitioning directly to RETURNING_HOME")
-                    # Immediately trigger return to home
-                    if self.collision_avoidance:
-                        self.collision_avoidance.go_to_home_position("Post-action-animation return to home")
-                    else:
-                        self.get_logger().warn("Collision avoidance not available - forcing RETURNING_HOME state")
-                        # Even without collision avoidance, transition to RETURNING_HOME to avoid unstable idle
-                else:
-                    # Fallback to IDLE if direct transition fails
-                    self.get_logger().warn("Failed to transition directly to RETURNING_HOME, going to IDLE")
-                    self.state_machine.transition_to(LuxoState.IDLE)
-            else:
-                # For non-completed animations (preempted, aborted), transition to IDLE
-                if self.state_machine:
-                    self.state_machine.transition_to(LuxoState.IDLE)
+            # Transition to IDLE state after animation completes
+            if self.state_machine:
+                self.state_machine.transition_to(LuxoState.IDLE)
+                self.get_logger().info(f"Animation {final_state} - transitioning to IDLE")
             
             # Create result
             result = PlayAnimation.Result()
@@ -550,43 +537,21 @@ class AnimationCommandActionServer(Node):
         self.speed_multiplier = speed
         self.start_animation(keyframes, durations, animation_name)
         
-        # Schedule DIRECT transition to RETURNING_HOME after animation completes
-        total_duration = sum([d / speed for d in durations])
-        
-        # Cancel any existing idle reset timer
-        if hasattr(self, 'idle_reset_timer') and self.idle_reset_timer:
-            self.idle_reset_timer.cancel()
-        
-        # Schedule transition to RETURNING_HOME state after animation ends
-        home_delay = total_duration + 0.2  # Reduced delay for faster transition
-        self.idle_reset_timer = self.create_timer(
-            home_delay,
-            lambda: self._transition_to_home_after_simple_animation()
-        )
-
-    def _transition_to_home_after_simple_animation(self):
-        """Transition directly to RETURNING_HOME state after simple animation."""
+    def _transition_to_idle_after_simple_animation(self):
+        """Transition to IDLE state after simple animation."""
         try:
             # Cancel the timer
             if hasattr(self, 'idle_reset_timer') and self.idle_reset_timer:
                 self.idle_reset_timer.cancel()
                 self.idle_reset_timer = None
             
-            # Transition directly to RETURNING_HOME state
+            # Transition to IDLE state
             if self.state_machine:
-                if self.state_machine.transition_to(LuxoState.RETURNING_HOME):
-                    self.get_logger().info("Simple animation completed - transitioning directly to RETURNING_HOME")
-                else:
-                    self.get_logger().warn("Failed to transition to RETURNING_HOME from simple animation")
-            
-            # Start return to home
-            if self.collision_avoidance:
-                self.collision_avoidance.go_to_home_position("Post-simple-animation return to home")
-            else:
-                self.get_logger().warn("Collision avoidance not available for home positioning")
-                
+                self.state_machine.transition_to(LuxoState.IDLE)
+                self.get_logger().info("Simple animation completed - transitioning to IDLE")
+                    
         except Exception as e:
-            self.get_logger().error(f"Error transitioning to home after simple animation: {e}")
+            self.get_logger().error(f"Error transitioning to idle after simple animation: {e}")
     
     def _schedule_home_position(self):
         """Schedule return to home position after animation."""
@@ -812,16 +777,11 @@ class AnimationCommandActionServer(Node):
             if self.is_animating:
                 self.is_animating = False
                 self.current_animation_name = None
-                self.get_logger().info('Legacy animation completed - transitioning to RETURNING_HOME')
+                self.get_logger().info('Legacy animation completed - transitioning to IDLE')
                 
-                # Transition directly to RETURNING_HOME instead of IDLE
+                # Transition to IDLE state
                 if self.state_machine:
-                    if self.state_machine.transition_to(LuxoState.RETURNING_HOME):
-                        if self.collision_avoidance:
-                            self.collision_avoidance.go_to_home_position("Post-legacy-animation return to home")
-                    else:
-                        self.get_logger().warn("Failed to transition to RETURNING_HOME, falling back to IDLE")
-                        self.state_machine.transition_to(LuxoState.IDLE)
+                    self.state_machine.transition_to(LuxoState.IDLE)
             return
         
         next_position = self.animation_steps[self.current_step]
