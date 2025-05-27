@@ -27,7 +27,7 @@ class CuriousLookAnimation(AnimationPlugin):
         return [
             "Anticipation", "Notice something", "Adjust focus", "Lean in",
             "Surprised reaction", "Move to other side", "Intense inspection",
-            "Final examination", "Return to center"
+            "Final examination", "Return to center", "Return home 1", "Return home 2"
         ]
     
     def get_keyframes(self) -> Tuple[List[List[float]], List[float]]:
@@ -42,10 +42,13 @@ class CuriousLookAnimation(AnimationPlugin):
             [base_center+0.3, 0.5, 1.1, 0.3, 0.0],    # Move to other side
             [base_center+0.4, 0.6, 1.3, -0.3, 0.0],   # Intense inspection
             [base_center+0.2, 0.5, 1.2, 0.7, 0.0],    # Final examination
-            [base_center, 0.4, 0.8, 0.5, 0.0]         # Return to center
+            [base_center, 0.4, 0.8, 0.5, 0.0],        # Return to center
+            [base_center, 0.5, 1.3, 1.4, 0.0],        # Return home 1
+            [base_center, -0.85, 1.3, 1.4, 0.0]       # Return home 2
         ]
         
-        durations = [0.3, 0.25, 0.4, 0.5, 0.2, 0.6, 0.7, 0.6, 0.8]
+        # Doubled durations for safety
+        durations = [0.6, 0.5, 0.8, 1.0, 0.4, 1.2, 1.4, 1.2, 1.6, 0.7, 1.3]
         
         return keyframes, durations
 
@@ -70,7 +73,8 @@ class ThinkingAnimation(AnimationPlugin):
             "Hand on chin", "Deep thought fold", "Deeper thought",
             "Hold thought", "Hmm movement", "Shift position",
             "Look up", "Idea forming", "Eureka", "Full extension",
-            "Excitement", "Confirmation nod", "Satisfied bounce", "Final position"
+            "Excitement", "Confirmation nod", "Satisfied bounce", "Final position",
+            "Return home 1", "Return home 2"
         ]
     
     def get_keyframes(self) -> Tuple[List[List[float]], List[float]]:
@@ -94,12 +98,15 @@ class ThinkingAnimation(AnimationPlugin):
             [base_pos+0.2, -0.15, 0.15, 1.4, 0.0], # Excitement
             [base_pos, 0.1, 0.3, 1.0, 0.0],       # Confirmation nod
             [base_pos-0.1, 0.2, 0.5, 0.7, 0.0],   # Satisfied bounce
-            [base_pos, 0.3, 0.7, 0.4, 0.0]        # Final position
+            [base_pos, 0.3, 0.7, 0.4, 0.0],       # Final position
+            [base_pos, 0.5, 1.3, 1.4, 0.0],       # Return home 1
+            [base_pos, -0.85, 1.3, 1.4, 0.0]      # Return home 2
         ]
         
+        # Doubled durations for safety
         durations = [
-            0.5, 0.6, 0.4, 0.5, 0.7, 0.8, 0.5, 1.2, 0.4, 0.7,
-            0.6, 0.5, 0.4, 0.3, 0.3, 0.4, 0.5, 0.6
+            1.0, 1.2, 0.8, 1.0, 1.4, 1.6, 1.0, 2.4, 0.8, 1.4,
+            1.2, 1.0, 0.8, 0.6, 0.6, 0.8, 1.0, 1.2, 0.7, 1.3
         ]
         
         return keyframes, durations
@@ -145,13 +152,16 @@ class StretchingAnimation(AnimationPlugin):
             [base_pos, 0.1, 0.6, 0.7, 0.0],        # Begin relax
             [base_pos, 0.2, 0.7, 0.5, 0.0],        # Continue relax
             [base_pos, 0.3, 0.75, 0.35, 0.0],      # Small bounce
-            [base_pos+0.1, 0.35, 0.8, 0.3, 0.0]    # Final settled
+            [base_pos+0.1, 0.35, 0.8, 0.3, 0.0],   # Final settled
+            [base_pos, 0.5, 1.3, 1.4, 0.0],        # Return home 1
+            [base_pos, -0.85, 1.3, 1.4, 0.0]       # Return home 2
         ]
         
+        # Doubled durations for safety
         durations = [
-            0.5, 0.3, 0.4, 0.5, 0.6, 0.7, 0.5, 0.6, 0.7, 1.2,
-            0.8, 1.0, 0.6, 0.7, 0.8, 0.6, 0.4, 0.4, 0.8, 0.5,
-            0.6, 0.4, 0.7
+            1.0, 0.6, 0.8, 1.0, 1.2, 1.4, 1.0, 1.2, 1.4, 2.4,
+            1.6, 2.0, 1.2, 1.4, 1.6, 1.2, 0.8, 0.8, 1.6, 1.0,
+            1.2, 0.8, 1.4, 0.7, 1.3
         ]
         
         return keyframes, durations
@@ -191,12 +201,15 @@ class DancingAnimation(AnimationPlugin):
             [base_pos, 0.1, 0.4, 0.9, 0.0],       # Pop up
             [base_pos+0.2, 0.2, 0.5, 0.7, 0.0],   # Finale pose
             [base_pos+0.2, 0.2, 0.5, 0.7, 0.0],   # Hold finale
-            [base_pos, 0.3, 0.7, 0.3, 0.0]        # Return
+            [base_pos, 0.3, 0.7, 0.3, 0.0],       # Return
+            [base_pos, 0.5, 1.3, 1.4, 0.0],       # Return home 1
+            [base_pos, -0.85, 1.3, 1.4, 0.0]      # Return home 2
         ]
         
+        # Doubled durations for safety
         durations = [
-            0.4, 0.3, 0.4, 0.2, 0.4, 0.4, 0.2, 0.4, 0.4, 0.2,
-            0.5, 0.5, 0.4, 0.3, 0.2, 0.6, 0.7
+            0.8, 0.6, 0.8, 0.4, 0.8, 0.8, 0.4, 0.8, 0.8, 0.4,
+            1.0, 1.0, 0.8, 0.6, 0.4, 1.2, 1.4, 0.7, 1.3
         ]
         
         return keyframes, durations
@@ -233,9 +246,12 @@ class IdleAnimation(AnimationPlugin):
             [base_var + look_right, shoulder_var, elbow_var, wrist_var, 0.0],  # Look right
             [base_var, shoulder_var, elbow_var, wrist_var, 0.0],  # Center
             [base_var - look_left, shoulder_var, elbow_var, wrist_var, 0.0],  # Look left
-            [base_var + random.uniform(-0.05, 0.05), shoulder_var, elbow_var, wrist_var, 0.0]  # Final
+            [base_var + random.uniform(-0.05, 0.05), shoulder_var, elbow_var, wrist_var, 0.0],  # Final
+            [0.0, 0.5, 1.3, 1.4, 0.0],  # Return home 1
+            [0.0, -0.85, 1.3, 1.4, 0.0]  # Return home 2
         ]
         
-        durations = [1.0, 0.7, 0.5, 0.4, 0.5, 0.6]
+        # Doubled durations for safety
+        durations = [2.0, 1.4, 1.0, 0.8, 1.0, 1.2, 0.7, 1.3]
         
         return keyframes, durations

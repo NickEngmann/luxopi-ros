@@ -10,11 +10,12 @@ from luxo_interfaces.action import PlayAnimation
 import time
 from sensor_msgs.msg import JointState
 from std_msgs.msg import String
+from luxo_behaviors.state_machine import LuxoState
 
 class CollisionAvoidance:
     """Class to handle collision avoidance logic for the RoArm hardware interface."""
     
-    def __init__(self, node, send_safe_joint_command_callback, publish_actual_joint_states_callback):
+    def __init__(self, node, send_safe_joint_command_callback, publish_actual_joint_states_callback, state_machine):
         """
         Initialize the CollisionAvoidance system.
         
@@ -22,10 +23,12 @@ class CollisionAvoidance:
             node: The ROS node that owns this system (for logging and parameters)
             send_safe_joint_command_callback: Callback to send commands to hardware
             publish_actual_joint_states_callback: Callback to publish joint states
+            state_machine: The LuxoStateMachine instance for state management
         """
         self.node = node
         self.send_safe_joint_command = send_safe_joint_command_callback
         self.publish_actual_joint_states = publish_actual_joint_states_callback
+        self.state_machine = state_machine
         
         # Load parameters from the node
         self.enable_collision_avoidance = node.get_parameter('enable_collision_avoidance').value
@@ -66,7 +69,6 @@ class CollisionAvoidance:
         self.adjustment_position_threshold = 0.1  # Difference threshold to consider a new position
         
         # Escape mode variables with ROS time
-        self.escape_mode_active = False
         self.escape_mode_start_time = self.node.get_clock().now()
         self.unsafe_zones = []  # List of positions to avoid
         self.last_escape_direction = None  # Track last escape direction
@@ -136,7 +138,6 @@ class CollisionAvoidance:
         self.node.get_logger().info(f"Idle timeout set to {self.idle_timeout:.1f} seconds")
         
         # Add flags for special operations
-        self.returning_to_home = False
         self.returning_to_home_start_time = self.node.get_clock().now()  # When we started returning to home
         
         # Initialize all ROS time tracking variables
@@ -167,11 +168,11 @@ class CollisionAvoidance:
                 # Reset activity time when animation starts to prevent idle timeout
                 self.last_activity_time = self.node.get_clock().now()
                 
-                # If we're currently returning to home, cancel it
-                if self.returning_to_home:
-                    self.node.get_logger().info("Cancelling return to home due to new animation")
-                    self.returning_to_home = False
+                # If we're currently returning to home, cancel it immediately
+                if self.state_machine.is_in_state(LuxoState.RETURNING_HOME):
+                    self.node.get_logger().info("Animation starting - cancelling return to home operation")
                     self.target_override_active = False
+                    self.state_machine.transition_to(LuxoState.ANIMATING)
                     
             # If same animation, just update the interruption flag if needed
             elif self.animation_allow_interruption != allow_interruption:
@@ -373,7 +374,7 @@ class CollisionAvoidance:
                 
                 # If we're already returning to home, just track state but don't react to collisions
                 # This prevents collision reactions from interrupting the return to home
-                if self.returning_to_home:
+                if self.state_machine.is_in_state(LuxoState.RETURNING_HOME):
                     self.collision_status[direction]['active'] = is_active
                     return
                 
@@ -387,6 +388,9 @@ class CollisionAvoidance:
                     self.node.get_logger().info(f"{direction.capitalize()} collision warning activated")
                     self.collision_status[direction]['active'] = True
                     self.collision_status[direction]['consecutive_count'] = 1
+                    
+                    # Transition to COLLISION_AVOIDING state
+                    self.state_machine.transition_to(LuxoState.COLLISION_AVOIDING)
                     
                     # Fast reaction for immediate danger
                     if self.collision_status[direction]['severity'] == 'danger':
@@ -407,6 +411,12 @@ class CollisionAvoidance:
                     self.collision_status[direction]['consecutive_count'] = 0
                     # Reset adjustment tracking to allow new adjustments
                     self.adjustment_history[direction]['adjustment_made'] = False
+                    
+                    # Check if all collisions are cleared
+                    if not any(status['active'] for status in self.collision_status.values()):
+                        # Transition back to IDLE if no collisions remain
+                        if self.state_machine.is_in_state(LuxoState.COLLISION_AVOIDING):
+                            self.state_machine.transition_to(LuxoState.IDLE)
                     return
                     
                 # Update the active state
@@ -431,7 +441,7 @@ class CollisionAvoidance:
                         # Check if we need to trigger escape mode
                         if self.collision_status[direction]['consecutive_count'] > self.escape_threshold:
                             self.node.get_logger().warn(f"Persistent collision detected ({self.collision_status[direction]['consecutive_count']}), attempting to escape")
-                            if not self.escape_mode_active:
+                            if not self.state_machine.is_in_state(LuxoState.ESCAPE_MODE):
                                 # Release lock before calling _activate_escape_mode to prevent deadlock
                                 self.collision_lock.release()
                                 try:
@@ -448,7 +458,6 @@ class CollisionAvoidance:
                                 finally:
                                     # Re-acquire lock for remaining processing
                                     self.collision_lock.acquire()
-                                self.escape_mode_active = False
                                 self.escape_attempts = 0
                     else:
                         # If we're on cooldown and still detecting the collision,
@@ -504,6 +513,9 @@ class CollisionAvoidance:
                 self.last_collision_time = current_time
                 self.collision_status[direction]['active'] = True
                 
+                # Transition to COLLISION_AVOIDING state
+                self.state_machine.transition_to(LuxoState.COLLISION_AVOIDING)
+                
                 # Release lock before potentially long operation
                 self.collision_lock.release()
                 try:
@@ -544,6 +556,9 @@ class CollisionAvoidance:
                     # Update for tracking
                     self.last_collision_time = current_time
                     self.collision_status[direction]['active'] = True
+                    
+                    # Transition to COLLISION_AVOIDING state
+                    self.state_machine.transition_to(LuxoState.COLLISION_AVOIDING)
                     
                     # Release lock before potentially long operation
                     self.collision_lock.release()
@@ -588,13 +603,12 @@ class CollisionAvoidance:
                 self.post_animation_home_timer = None
             
             # Only go home if we're still in idle state
-            if hasattr(self, 'movement_source') and self.movement_source == "idle":
+            if self.state_machine.is_in_state(LuxoState.IDLE):
                 self.node.get_logger().info("Animation complete and idle - returning to home position")
-                self.returning_to_home = True
                 self.returning_to_home_start_time = self.node.get_clock().now()
                 self.go_to_home_position("Post-animation return to home")
             else:
-                self.node.get_logger().debug("Movement source changed, skipping post-animation home position")
+                self.node.get_logger().debug(f"Not returning home - current state: {self.state_machine.current_state.name}")
         except Exception as e:
             self.node.get_logger().error(f"Error in post-animation home callback: {e}")
     
@@ -609,11 +623,12 @@ class CollisionAvoidance:
             current_time = self.node.get_clock().now()
             
             # Check if we're currently trying to go home and handle timeouts
-            if self.returning_to_home:
+            if self.state_machine.is_in_state(LuxoState.RETURNING_HOME):
                 time_since_home_attempt = (current_time - self.returning_to_home_start_time).nanoseconds / 1e9
                 if time_since_home_attempt > self.idle_timeout:
                     self.node.get_logger().warn(f"Home position return timeout after {time_since_home_attempt:.1f}s - giving up")
-                    self.returning_to_home = False
+                    # Transition back to IDLE
+                    self.state_machine.transition_to(LuxoState.IDLE)
                     # Reset other state variables for clean slate
                     self.persistent_head_collision_active = False
                     self.target_override_active = False
@@ -673,7 +688,8 @@ class CollisionAvoidance:
                         
                         if self._at_home_position(self.current_joints, self.home_position_2, self.home_position_tolerance):
                             self.node.get_logger().info("Successfully reached final home position (stage 2)")
-                            self.returning_to_home = False
+                            # Transition back to IDLE
+                            self.state_machine.transition_to(LuxoState.IDLE)
                             self.persistent_head_collision_active = False
                             # Reset idle timer
                             self.last_activity_time = current_time
@@ -692,14 +708,14 @@ class CollisionAvoidance:
                 # Check if we need to return to home based on collision duration
                 if head_collision_duration > self.extended_collision_timeout:
                     self.node.get_logger().warn(f"Persistent head collision for over {self.extended_collision_timeout:.1f}s - returning to home position")
-                    # Force go to home by setting flag and calling method
-                    self.returning_to_home = True
+                    # Force go to home by transitioning to RETURNING_HOME state
+                    self.state_machine.transition_to(LuxoState.RETURNING_HOME)
                     self.returning_to_home_start_time = current_time
                     self.go_to_home_position("Extended persistent head collision - return to home")
                     return  # Skip remaining checks as we're already taking action
                 elif head_collision_duration > self.short_collision_timeout:
                     # First try more moderate correction for shorter duration collisions
-                    if not self.escape_mode_active and not self.returning_to_home:
+                    if not self.state_machine.is_in_state(LuxoState.ESCAPE_MODE):
                         self.node.get_logger().warn(f"Persistent head collision for {head_collision_duration:.1f}s - attempting escape mode")
                         self._activate_escape_mode('front')
                         return  # Skip remaining checks as we're already taking action
@@ -731,8 +747,8 @@ class CollisionAvoidance:
                 
                 if time_since_activity > effective_timeout and not already_at_home2:
                     self.node.get_logger().info(f"Device idle for {time_since_activity:.1f}s ({position_status}) - returning to home position")
-                    # Force go to home by setting flag and calling method
-                    self.returning_to_home = True
+                    # Transition to RETURNING_HOME state
+                    self.state_machine.transition_to(LuxoState.RETURNING_HOME)
                     self.returning_to_home_start_time = current_time
                     self.go_to_home_position("Idle timeout reset")
                     return  # Skip remaining checks as we're already taking action
@@ -745,10 +761,9 @@ class CollisionAvoidance:
             with self.collision_lock:
                 any_collision_active = any(status['active'] for status in self.collision_status.values())
                 any_persistent_collision = any(status['consecutive_count'] > 5 for status in self.collision_status.values())
-                escape_mode_active = self.escape_mode_active
                 
                 # If nothing needs attention, return early to reduce overhead
-                if not any_collision_active and not any_persistent_collision and not escape_mode_active:
+                if not any_collision_active and not any_persistent_collision and not self.state_machine.is_in_state(LuxoState.ESCAPE_MODE):
                     return
                 
                 # Get current collision status (do this early so we have latest data)
@@ -773,11 +788,12 @@ class CollisionAvoidance:
                     self.perform_collision_avoidance('right', right_status['distance'], emergency=True)
 
             # Check if escape mode is active and should be updated or deactivated
-            if escape_mode_active:
+            if self.state_machine.is_in_state(LuxoState.ESCAPE_MODE):
                 # Check if escape mode has been active too long
                 escape_duration = (current_time - self.escape_mode_start_time).nanoseconds / 1e9
                 if escape_duration > self.escape_mode_duration:
-                    self.escape_mode_active = False
+                    # Transition back to IDLE
+                    self.state_machine.transition_to(LuxoState.IDLE)
                     self.node.get_logger().info("Escape mode deactivated - normal operation resuming")
                     
                     # Force publish current position to ensure animation can continue
@@ -810,7 +826,8 @@ class CollisionAvoidance:
                                 # Too many failed attempts, return to rest
                                 self.node.get_logger().warn(f"Escape attempts exceeded ({self.escape_attempts}/{self.max_escape_attempts}), returning to rest")
                                 self.go_to_rest_position("Escape failure rest position")
-                                self.escape_mode_active = False
+                                # Transition back to IDLE
+                                self.state_machine.transition_to(LuxoState.IDLE)
                                 self.escape_attempts = 0
                             else:
                                 # Try another escape attempt
@@ -942,7 +959,7 @@ class CollisionAvoidance:
         differences = [abs(pos1 - pos2) for pos1, pos2 in zip(position1, position2)]
         
         # Add debugging to help diagnose position comparison issues
-        if hasattr(self, 'returning_to_home') and self.returning_to_home:
+        if self.state_machine.is_in_state(LuxoState.RETURNING_HOME):
             # Explicitly identify which position is target and which is current
             target_pos = position1  # First parameter should be the target position
             current_pos = position2  # Second parameter should be the current position
@@ -1010,7 +1027,7 @@ class CollisionAvoidance:
         current_time = self.node.get_clock().now()
         
         # When returning to home, always return the home position override
-        if self.returning_to_home and self.target_override_active and self.target_override_joints is not None:
+        if self.state_machine.is_in_state(LuxoState.RETURNING_HOME) and self.target_override_active and self.target_override_joints is not None:
             # Log that we're enforcing home position override (throttled)
             time_since_log = (current_time - self.last_home_override_log).nanoseconds / 1e9
             if time_since_log > 5.0:  # Increased from 1.0 to reduce log spam
@@ -1054,8 +1071,7 @@ class CollisionAvoidance:
                 elif self._at_position(self.current_joints, self.home_position_2, self.home_position_tolerance):
                     # We've successfully reached the final home position
                     self.node.get_logger().debug("Successfully reached final home position (stage 2)")
-                    # Clear returning to home flag once we've fully reached home
-                    self.returning_to_home = False
+                    # Transition back to IDLE will be handled in safety_monitor_callback
                 
             
             # Always return the override position when in home movement sequence
@@ -1099,7 +1115,7 @@ class CollisionAvoidance:
     def apply_safety_limits(self, positions):
         """Apply safety limits to joint positions based on collision status."""
         # If returning to home position, don't apply collision-based safety limits
-        if self.returning_to_home:
+        if self.state_machine.is_in_state(LuxoState.RETURNING_HOME):
             return positions
             
         # Get a copy of the target positions
@@ -1163,7 +1179,7 @@ class CollisionAvoidance:
                 safe_positions[0] = self.current_joints[0] - (delta * limit_factor)
         
         # Add additional check for escape mode
-        if self.escape_mode_active:
+        if self.state_machine.is_in_state(LuxoState.ESCAPE_MODE):
             # In escape mode, we relax some limits to allow more dramatic movements
             # We'll only apply hard limits here, no soft limits
             pass  # Continue with existing logic, but with modified thresholds
@@ -1173,7 +1189,7 @@ class CollisionAvoidance:
     def adjust_path_for_collision(self, front_status, left_status, right_status):
         """Adjust the current motion path to avoid obstacles."""
         # Skip if we're returning to home - don't adjust the home positioning
-        if self.returning_to_home:
+        if self.state_machine.is_in_state(LuxoState.RETURNING_HOME):
             return
             
         # Update activity time when adjusting path
@@ -1452,7 +1468,8 @@ class CollisionAvoidance:
             
             # Reset collision counters and escape status when we return to rest
             if success:
-                self.escape_mode_active = False
+                # Transition back to IDLE when returning to rest
+                self.state_machine.transition_to(LuxoState.IDLE)
                 self.escape_attempts = 0
                 with self.collision_lock:
                     for direction in self.collision_status:
@@ -1477,11 +1494,16 @@ class CollisionAvoidance:
         Preserves the current base rotation (joint 0) regardless of what's in the home positions.
         """
         try:
+            # Transition to RETURNING_HOME state
+            self.state_machine.transition_to(LuxoState.RETURNING_HOME)
+            
+            # IMPORTANT: Set the start time for timeout tracking
+            self.returning_to_home_start_time = self.node.get_clock().now()
+            
             # Publish a "collision" movement source to disable DEMA during home movement
             self._publish_movement_source("collision")
             
             # Force disable any other modes that might interfere
-            self.escape_mode_active = False
             self.target_override_active = False  # Clear any previous override
             
             current_time = self.node.get_clock().now()
@@ -1550,8 +1572,7 @@ class CollisionAvoidance:
             
             # Reset collision counters and escape status
             if success:
-                # The arm is moving to home, but we'll keep the returning_to_home flag set
-                # until we detect we've reached home or timeout
+                # The arm is moving to home
                 self.escape_attempts = 0
                 # Don't reset persistent_head_collision_active here since we want to 
                 # keep tracking it until we reach home or the collision naturally clears
@@ -1560,7 +1581,8 @@ class CollisionAvoidance:
                         self.collision_status[direction]['consecutive_count'] = 0
             else:
                 self.node.get_logger().error("Failed to send home position command")
-                self.returning_to_home = False  # Clear flag if command failed
+                # Return to IDLE state if command failed
+                self.state_machine.transition_to(LuxoState.IDLE)
             
             # Reset idle timer
             self.last_activity_time = current_time
@@ -1568,7 +1590,8 @@ class CollisionAvoidance:
             return success
         except Exception as e:
             self.node.get_logger().error(f"Error moving to home position: {e}")
-            self.returning_to_home = False  # Clear flag on error
+            # Return to IDLE state on error
+            self.state_machine.transition_to(LuxoState.IDLE)
             return False
     
     def move_to_safe_position(self, position, description="Proactive avoidance movement", override_checks=False):
@@ -1622,7 +1645,9 @@ class CollisionAvoidance:
     
     def _activate_escape_mode(self, direction):
         """Activate escape mode to avoid persistent collisions in a direction."""
-        self.escape_mode_active = True
+        # Transition to ESCAPE_MODE state
+        self.state_machine.transition_to(LuxoState.ESCAPE_MODE)
+        
         self.escape_mode_start_time = self.node.get_clock().now()
         self.last_escape_direction = direction
         self.escape_attempts = 0
@@ -1711,6 +1736,10 @@ class CollisionAvoidance:
     
     def is_animating(self):
         """Determine if the robot is currently executing an animation."""
+        # Check state machine first
+        if self.state_machine.is_in_state(LuxoState.ANIMATING):
+            return True
+            
         # Check if we have an active animation tracked
         with self.animation_lock:
             if self.current_animation_name is not None:
@@ -1748,31 +1777,6 @@ class CollisionAvoidance:
             escape_position[0] -= 0.2  # Rotate slightly left
         
         return escape_position
-    
-    def _reset_to_idle(self):
-        """Reset the movement source to idle after animation completes."""
-        if self.movement_source != "idle":
-            self.movement_source = "idle"
-            self.node.get_logger().info('Movement source reset to idle')
-            self.publish_movement_source()
-            
-        if hasattr(self, 'idle_reset_timer') and self.idle_reset_timer:
-            self.idle_reset_timer.cancel()
-            self.idle_reset_timer = None
-    
-    def publish_movement_source(self):
-        """Publish the current movement source for DEMA coordination."""
-        if not hasattr(self, 'movement_source'):
-            self.movement_source = "idle"
-            
-        self._publish_movement_source(self.movement_source)
-        
-        # Throttle logging
-        current_time = self.node.get_clock().now()
-        time_since_log = (current_time - self.last_source_log).nanoseconds / 1e9
-        if time_since_log > 5.0:
-            self.node.get_logger().info(f"Publishing movement source: {self.movement_source}")
-            self.last_source_log = current_time
     
     def _publish_movement_source(self, source):
         """Publish movement source information for DEMA coordination."""

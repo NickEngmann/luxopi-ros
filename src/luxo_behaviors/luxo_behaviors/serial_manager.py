@@ -16,7 +16,7 @@ class SerialManager:
     Manages serial communication with the robot hardware.
     Acts as an abstraction layer between hardware protocols and ROS nodes.
     """
-    def __init__(self, node, serial_port='/dev/ttyAMA0', baud_rate=115200, read_throttle=0.1):
+    def __init__(self, node, serial_port='/dev/ttyAMA0', baud_rate=115200, read_throttle=0.0):
         """
         Initialize the serial manager.
         
@@ -128,9 +128,8 @@ class SerialManager:
                 self._ser = serial.Serial(
                     port=self.serial_port, 
                     baudrate=self.baud_rate, 
-                    timeout=1,
-                    dsrdtr=False,
-                    rtscts=False
+                    timeout=1.0,
+                    dsrdtr=None,
                 )
                 
                 # Clear any buffered data

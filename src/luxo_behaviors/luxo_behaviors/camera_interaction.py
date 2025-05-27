@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-
+#camera_interaction.py
 import rclpy
 from rclpy.node import Node
 from rclpy.action import ActionClient
@@ -41,6 +41,9 @@ class CameraInteraction(Node):
         # Create ROS publishers
         self.emotion_publisher = self.create_publisher(String, '/camera/emotion', 10)
         self.distance_publisher = self.create_publisher(Float32, '/camera/person_distance', 10)
+        
+        # Publisher for notifying animation command about emotion trigger
+        self.animation_trigger_publisher = self.create_publisher(String, '/animation_trigger_source', 10)
         
         # Create action client for animation control
         self._animation_action_client = ActionClient(
@@ -657,8 +660,20 @@ class CameraInteraction(Node):
                 self.get_logger().info("Cancelling previous emotion-triggered animation")
                 self._active_goal_handle.cancel_goal_async()
             
+            # Notify animation command that this is an emotion trigger
+            self._notify_animation_trigger('emotion')
+            
             # Send animation goal using action system
             self._send_animation_goal(animation, speed_modifier, emotion)
+    
+    def _notify_animation_trigger(self, source: str):
+        """Notify the animation command server about the trigger source."""
+        try:
+            msg = String()
+            msg.data = source
+            self.animation_trigger_publisher.publish(msg)
+        except Exception as e:
+            self.get_logger().error(f"Error publishing animation trigger source: {e}")
     
     def _send_animation_goal(self, animation_name, speed_multiplier, trigger_emotion):
         """Send an animation goal to the action server"""

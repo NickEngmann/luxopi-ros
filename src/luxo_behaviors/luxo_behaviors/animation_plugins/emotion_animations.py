@@ -60,13 +60,14 @@ class ExcitedHopAnimation(AnimationPlugin):
             [base_pos, 0.5, 1.0, 0.4, 0.0],       # Mini-fold
             [base_pos-0.05, 0.3, 0.8, 0.6, 0.0],  # Final hop
             [base_pos+0.05, 0.35, 0.75, 0.5, 0.0], # Settling
-            [base_pos, 0.3, 0.7, 0.5, 0.0]        # Final position
+            [base_pos, -0.85, 1.3, 1.4, 0.0]      # Final position (already at home!)
         ]
         
+        # Doubled most durations to slow down animation
         durations = [
-            0.2, 0.2, 0.3, 0.25, 0.2, 0.3, 0.1, 0.08, 0.08, 0.1,
-            0.1, 0.15, 0.15, 0.1, 0.15, 0.2, 0.15, 0.1, 0.15, 0.12,
-            0.1, 0.2, 0.3
+            0.4, 0.4, 0.6, 0.5, 0.4, 0.6, 0.4, 0.35, 0.35, 0.4,
+            0.4, 0.3, 0.3, 0.2, 0.3, 0.4, 0.3, 0.2, 0.3, 0.25,
+            0.4, 0.4, 0.6
         ]
         
         return keyframes, durations
@@ -91,7 +92,8 @@ class SadDroopAnimation(AnimationPlugin):
             "Initial energy", "Realization", "Start droop", "Hesitation",
             "Resistance", "Heavy droop", "Full slump", "More compression",
             "Maximum sad", "Deep sigh", "Small movement", "Trembling",
-            "Long pause", "Slow recovery start", "Continue recovery"
+            "Long pause", "Slow recovery start", "Continue recovery",
+            "Return home 1", "Return home 2"
         ]
     
     def get_keyframes(self) -> Tuple[List[List[float]], List[float]]:
@@ -113,11 +115,14 @@ class SadDroopAnimation(AnimationPlugin):
             [base_pos-0.4, -2.0, 2.0, 1.0, 0.0],  # Long pause
             [base_pos-0.35, -1.5, 1.7, 0.5, 0.0], # Slow recovery start
             [base_pos-0.3, -1.0, 1.5, 0.0, 0.0],  # Continue recovery
+            [base_pos, 0.5, 1.3, 1.4, 0.0],       # Return home 1
+            [base_pos, -0.85, 1.3, 1.4, 0.0]      # Return home 2
         ]
         
+        # Increased durations for slower movement
         durations = [
-            0.4, 0.4, 0.5, 0.2, 0.6, 0.8, 0.9, 0.9, 0.7, 0.5,
-            0.4, 0.2, 0.8, 0.6, 0.6
+            0.8, 0.8, 1.0, 0.4, 1.2, 1.6, 1.8, 1.8, 1.4, 1.0,
+            0.8, 0.4, 1.6, 1.2, 1.2, 0.7, 1.3
         ]
         
         return keyframes, durations
@@ -163,13 +168,16 @@ class PlayfulBounceAnimation(AnimationPlugin):
             [base_pos, 0.15, 0.5, 0.8, 0.0],      # Final hop
             [base_pos+0.05, 0.4, 0.85, 0.45, 0.0], # Overshoot
             [base_pos, 0.3, 0.7, 0.5, 0.0],       # Settle
-            [base_pos, 0.35, 0.75, 0.4, 0.0]      # Final position
+            [base_pos, 0.35, 0.75, 0.4, 0.0],     # Final position
+            [base_pos, 0.5, 1.3, 1.4, 0.0],       # Return home 1
+            [base_pos, -0.85, 1.3, 1.4, 0.0]      # Return home 2
         ]
         
+        # Doubled durations for safety
         durations = [
-            0.3, 0.15, 0.15, 0.3, 0.25, 0.2, 0.1, 0.1, 0.08, 0.08,
-            0.25, 0.1, 0.15, 0.2, 0.2, 0.15, 0.12, 0.15, 0.2, 0.15,
-            0.15, 0.3, 0.4
+            0.6, 0.3, 0.3, 0.6, 0.5, 0.4, 0.25, 0.25, 0.16, 0.16,
+            0.5, 0.25, 0.3, 0.4, 0.4, 0.3, 0.25, 0.3, 0.4, 0.3,
+            0.3, 0.6, 0.8, 0.7, 1.3
         ]
         
         return keyframes, durations
@@ -211,12 +219,15 @@ class StartledJumpAnimation(AnimationPlugin):
             [base_pos+0.2, 0.35, 0.85, 0.5, 0.0], # Less extreme glance
             [base_pos-0.1, 0.4, 0.9, 0.45, 0.0],  # Back to center
             [base_pos-0.05, 0.35, 0.8, 0.35, 0.0], # Beginning to relax
-            [base_pos, 0.3, 0.7, 0.25, 0.0]       # Vigilant final pose
+            [base_pos, 0.3, 0.7, 0.25, 0.0],      # Vigilant final pose
+            [base_pos, 0.5, 1.3, 1.4, 0.0],       # Return home 1
+            [base_pos, -0.85, 1.3, 1.4, 0.0]      # Return home 2
         ]
         
+        # Doubled durations for safety (but kept some quick movements for effect)
         durations = [
-            0.3, 0.2, 0.1, 0.08, 0.1, 0.08, 0.08, 0.15, 0.2, 0.15,
-            0.25, 0.15, 0.3, 0.15, 0.15, 0.2, 0.25, 0.4, 0.5
+            0.6, 0.4, 0.25, 0.16, 0.25, 0.16, 0.16, 0.3, 0.4, 0.3,
+            0.5, 0.3, 0.6, 0.3, 0.3, 0.4, 0.5, 0.8, 1.0, 0.7, 1.3
         ]
         
         return keyframes, durations
