@@ -169,12 +169,46 @@ class CameraInteraction(Node):
         self.get_logger().info(f'Emotion detection parameters: buffer_duration={self.emotion_buffer_duration}s, '
                              f'threshold={self.emotion_threshold}%, cooldown={self.emotion_cooldown}s')
         
+        self._active_goal_handle = None
+        self._goal_is_active = False  # Track state manually
+
+        # Store face bounding boxes for display
+        self.last_face_bboxes = []  # List of (x1, y1, x2, y2) tuples
+        
+        # Subscribe to animation name and state topics
+        self.current_animation_name = None
+        self.current_state = "UNKNOWN"
+        
+        # Subscribe to animation status
+        self.animation_status_sub = self.create_subscription(
+            String,
+            '/roarm/current_animation',
+            self.animation_status_callback,
+            10
+        )
+        
+        # Subscribe to state machine status
+        self.state_status_sub = self.create_subscription(
+            String,
+            '/luxo/current_state',
+            self.state_status_callback,
+            10
+        )
+
         if self.initialize_camera():
             self.get_logger().info('Camera initialized successfully')
         else:
             self.get_logger().warn(f'Camera not found. Will retry every {self.camera_retry_interval} seconds...')
             # Create retry timer
             self.create_camera_retry_timer()
+
+    def animation_status_callback(self, msg):
+        """Update current animation name."""
+        self.current_animation_name = msg.data if msg.data else None
+
+    def state_status_callback(self, msg):
+        """Update current state machine state."""
+        self.current_state = msg.data
     
     def _update_framebuffer_display(self, frame):
         """Update the framebuffer display with the latest frame"""
@@ -193,13 +227,27 @@ class CameraInteraction(Node):
             emotion = getattr(self, 'last_detected_emotion', None)
             distance = getattr(self, 'last_person_distance', None)
             
-            # Update display
-            self.framebuffer_display.update_display(frame, emotion, distance)
+            # Get face bounding boxes
+            face_bboxes = getattr(self, 'last_face_bboxes', [])
+            
+            # Get animation and state info
+            animation_name = self.current_animation_name
+            state = self.current_state
+            
+            # Update display with all debug info
+            self.framebuffer_display.update_display(
+                frame, 
+                emotion=emotion, 
+                distance=distance,
+                face_bboxes=face_bboxes,
+                animation_name=animation_name,
+                state=state
+            )
             
             self.last_framebuffer_update = current_time
             
             if self.verbose:
-                self.get_logger().debug("Updated framebuffer display")
+                self.get_logger().debug("Updated framebuffer display with debug info")
                 
         except Exception as e:
             self.get_logger().error(f"Error updating framebuffer display: {e}")
@@ -466,26 +514,23 @@ class CameraInteraction(Node):
                 detections = msgs["detection"].detections
                 recognitions = msgs["recognition"]
 
-                # Update framebuffer display if enabled
-                if self.enable_framebuffer_display and frame is not None:
-                    self._update_framebuffer_display(frame)
-
-                # If set to publish camera feed
-                if self.publish_camera_feed and frame is not None:
-                    try:
-                        # Convert frame to ROS Image message
-                        ros_image = self.bridge.cv2_to_imgmsg(frame, "bgr8")
-                        # Publish the image
-                        self.image_publisher.publish(ros_image)
-                    except Exception as e:
-                        self.get_logger().error(f"Error publishing camera image: {e}")
-                
-                # If no people detected, skip processing
+                # Clear face bboxes if no detections
                 if not detections:
+                    self.last_face_bboxes = []
+                    # Update framebuffer display even with no faces
+                    if self.enable_framebuffer_display and frame is not None:
+                        self._update_framebuffer_display(frame)
                     # Reset error counter on successful processing (even with no detections)
                     self.consecutive_camera_errors = 0
                     return
-                    
+                
+                # Store all face bounding boxes
+                face_bboxes = []
+                for detection in detections:
+                    bbox = frame_norm(frame, (detection.xmin, detection.ymin, detection.xmax, detection.ymax))
+                    face_bboxes.append(bbox)
+                self.last_face_bboxes = face_bboxes
+                
                 # Find the closest person if stereo camera is available
                 closest_person_idx = 0
                 if self.stereo and len(detections) > 1:
@@ -510,6 +555,10 @@ class CameraInteraction(Node):
                 # Store for framebuffer display
                 self.last_detected_emotion = emotion_name
                 
+                # Update framebuffer display with all data
+                if self.enable_framebuffer_display and frame is not None:
+                    self._update_framebuffer_display(frame)
+
                 # Always publish current emotion for monitoring/debugging
                 emotion_msg = String()
                 emotion_msg.data = emotion_name
@@ -722,7 +771,7 @@ class CameraInteraction(Node):
                     speed_modifier = speed
                 
             # Cancel any existing animation goal
-            if self._active_goal_handle and self._active_goal_handle.is_active:
+            if self._active_goal_handle:
                 self.get_logger().info("Cancelling previous emotion-triggered animation")
                 self._active_goal_handle.cancel_goal_async()
             

@@ -77,7 +77,15 @@ class AnimationCommandActionServer(Node):
             joint_topic,
             10)
         
+        # Publisher for current animation status
+        self.current_animation_publisher = self.create_publisher(
+            String,
+            '/roarm/current_animation',
+            10
+        )
+        
         self.get_logger().info(f'Publishing joint states to: {joint_topic}')
+        self.get_logger().info('Publishing animation status to: /roarm/current_animation')
 
         # Current joint positions
         self.current_positions = [0.0, 0.0, 0.0, 0.0, 0.0]
@@ -340,6 +348,11 @@ class AnimationCommandActionServer(Node):
                 f'Executing animation: {animation_name} with speed {speed_multiplier}'
             )
             
+            # Publish animation name
+            anim_msg = String()
+            anim_msg.data = animation_name
+            self.current_animation_publisher.publish(anim_msg)
+            
             # Transition to appropriate state
             if self.state_machine:
                 target_state = self._determine_animation_state(animation_name)
@@ -502,6 +515,11 @@ class AnimationCommandActionServer(Node):
                 self.get_logger().debug(f"Could not abort goal: {abort_error}")
             
             return result
+        finally:
+            # Clear animation name when done
+            anim_msg = String()
+            anim_msg.data = ""
+            self.current_animation_publisher.publish(anim_msg)
     
     def command_callback(self, msg):
         """Handle animation command messages (backward compatibility)."""
@@ -549,6 +567,11 @@ class AnimationCommandActionServer(Node):
                 self.collision_avoidance.target_override_active = False
         
         self.get_logger().info(f'Executing animation: {animation_name} with speed {speed}')
+        
+        # Publish animation name at start
+        anim_msg = String()
+        anim_msg.data = animation_name
+        self.current_animation_publisher.publish(anim_msg)
         
         # Transition to appropriate state
         if self.state_machine:
@@ -778,6 +801,10 @@ class AnimationCommandActionServer(Node):
         # Store current animation name for tracking
         if animation_name:
             self.current_animation_name = animation_name
+            # Publish animation name
+            anim_msg = String()
+            anim_msg.data = animation_name
+            self.current_animation_publisher.publish(anim_msg)
         
         elapsed_time = 0.0
         while elapsed_time < adjusted_duration:
@@ -821,6 +848,10 @@ class AnimationCommandActionServer(Node):
             if self.is_animating:
                 self.is_animating = False
                 self.current_animation_name = None
+                # Clear animation name
+                anim_msg = String()
+                anim_msg.data = ""
+                self.current_animation_publisher.publish(anim_msg)
                 self.get_logger().info('Legacy animation completed - transitioning to IDLE')
                 
                 # Transition to IDLE state
@@ -842,6 +873,10 @@ class AnimationCommandActionServer(Node):
         else:
             self.is_animating = False
             self.current_animation_name = None
+            # Clear animation name
+            anim_msg = String()
+            anim_msg.data = ""
+            self.current_animation_publisher.publish(anim_msg)
             self.get_logger().info('Legacy animation completed')
             
             # Transition to IDLE state

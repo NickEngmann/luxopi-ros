@@ -99,6 +99,22 @@ class RoArmHardwareInterface(Node):
         
         # Initialize the state machine
         self.state_machine = LuxoStateMachine(self, LuxoState.INITIALIZING)
+
+        # Publisher for state machine state
+        self.state_publisher = self.create_publisher(
+            String,
+            '/luxo/current_state',
+            10
+        )
+        
+        # Timer to publish state periodically
+        self.state_publish_timer = self.create_timer(0.5, self.publish_current_state)
+        
+        # Register callbacks with state machine to publish on state changes
+        for state in LuxoState:
+            self.state_machine.register_on_enter(state, self._on_state_change)
+        
+        self.get_logger().info("State publisher initialized - publishing to /luxo/current_state")
         self._setup_state_callbacks()
         
         # Connection control
@@ -353,6 +369,19 @@ class RoArmHardwareInterface(Node):
         else:
             self.get_logger().error("Failed to initialize hardware interface")
             self.state_machine.transition_to(LuxoState.ERROR)
+    # Add this method to the class:
+    def publish_current_state(self):
+        """Publish the current state machine state."""
+        if self.state_machine:
+            state_msg = String()
+            state_msg.data = self.state_machine.current_state.name
+            self.state_publisher.publish(state_msg)
+
+    # Add this callback method:
+    def _on_state_change(self):
+        """Callback when state changes - immediately publish new state."""
+        self.publish_current_state()
+        self.get_logger().info(f"State changed to: {self.state_machine.current_state.name}")
     
     def _setup_state_callbacks(self):
         """Set up callbacks for state transitions."""
@@ -1157,6 +1186,9 @@ class RoArmHardwareInterface(Node):
         """Clean up when node is destroyed."""
         self.get_logger().info("Shutting down hardware interface")
         
+        if hasattr(self, 'state_publish_timer'):
+            self.state_publish_timer.cancel()
+
         # Transition to shutdown state
         self.state_machine.transition_to(LuxoState.SHUTDOWN, force=True)
         

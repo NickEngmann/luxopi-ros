@@ -174,8 +174,8 @@ class CameraFramebufferDisplay:
         if not self.enabled:
             self.node.get_logger().warn("Framebuffer display could not be initialized")
     
-    def update_display(self, frame, emotion=None, distance=None):
-        """Update framebuffer with camera frame and overlays"""
+    def update_display(self, frame, emotion=None, distance=None, face_bboxes=None, animation_name=None, state=None):
+        """Update framebuffer with camera frame and overlays including debug info"""
         if not self.enabled:
             return
         
@@ -183,28 +183,79 @@ class CameraFramebufferDisplay:
             # Create display frame
             display_frame = frame.copy()
             
+            # Draw face bounding boxes
+            if face_bboxes:
+                for bbox in face_bboxes:
+                    if len(bbox) >= 4:
+                        x1, y1, x2, y2 = bbox[0], bbox[1], bbox[2], bbox[3]
+                        # Draw rectangle around face
+                        cv2.rectangle(display_frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                        # Add "Face" label above bbox
+                        cv2.putText(display_frame, "Face", (x1, y1 - 10), 
+                                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+            
             # Add overlays
             font = cv2.FONT_HERSHEY_SIMPLEX
-            font_scale = 1.5
-            thickness = 3
+            font_scale = 1.2
+            thickness = 2
+            
+            # Y position for text
+            y_pos = 40
+            line_height = 45
+            
+            # Add state information (top left, larger font)
+            if state:
+                state_text = f"State: {state}"
+                cv2.putText(display_frame, state_text, (30, y_pos), font, 
+                           font_scale * 1.2, (255, 255, 0), thickness + 1)  # Yellow, thicker
+                y_pos += line_height + 10
+            
+            # Add animation name
+            if animation_name:
+                anim_text = f"Animation: {animation_name}"
+                cv2.putText(display_frame, anim_text, (30, y_pos), font, 
+                           font_scale, (0, 255, 255), thickness)  # Cyan
+                y_pos += line_height
+            else:
+                anim_text = "Animation: None"
+                cv2.putText(display_frame, anim_text, (30, y_pos), font, 
+                           font_scale, (128, 128, 128), thickness)  # Gray
+                y_pos += line_height
             
             # Add emotion text
             if emotion:
                 text = f"Emotion: {emotion}"
-                cv2.putText(display_frame, text, (30, 60), font, 
+                cv2.putText(display_frame, text, (30, y_pos), font, 
                            font_scale, (0, 255, 0), thickness)
+                y_pos += line_height
             
             # Add distance text
             if distance is not None:
                 text = f"Distance: {distance:.2f}m"
-                cv2.putText(display_frame, text, (30, 120), font, 
+                cv2.putText(display_frame, text, (30, y_pos), font, 
                            font_scale, (0, 255, 0), thickness)
             
-            # Add timestamp
+            # Add timestamp in bottom right corner
             import datetime
             timestamp = datetime.datetime.now().strftime("%H:%M:%S")
-            cv2.putText(display_frame, timestamp, (30, display_frame.shape[0] - 30), 
+            text_size = cv2.getTextSize(timestamp, font, font_scale, thickness)[0]
+            timestamp_x = display_frame.shape[1] - text_size[0] - 30
+            timestamp_y = display_frame.shape[0] - 30
+            cv2.putText(display_frame, timestamp, (timestamp_x, timestamp_y), 
                        font, font_scale, (255, 255, 255), thickness)
+            
+            # Add debug info in bottom left corner
+            debug_y = display_frame.shape[0] - 100
+            debug_font_scale = 0.7
+            debug_thickness = 1
+            
+            # Show number of faces detected
+            if face_bboxes:
+                face_count_text = f"Faces detected: {len(face_bboxes)}"
+            else:
+                face_count_text = "Faces detected: 0"
+            cv2.putText(display_frame, face_count_text, (30, debug_y), 
+                       font, debug_font_scale, (200, 200, 200), debug_thickness)
             
             # Display the frame
             self.display.display_frame(display_frame)

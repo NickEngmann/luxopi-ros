@@ -1,3 +1,5 @@
-[] Sometimes it doesn't react to the camera/actions
+[] More debug/identifiable information on the camera framebuffer
+[] Sometimes it doesn't react to the camera/actions (more of a delay in between actions)
 [] React to Camera Faster!
 [] Simplify Launch Files
+[] Identify and react to its environment like a human
