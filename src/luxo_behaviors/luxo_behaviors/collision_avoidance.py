@@ -153,7 +153,8 @@ class CollisionAvoidance:
         self.idle_animations = [
             'gentle_sway', 'curious_exploration', 'breathing', 
             'attentive_listening', 'playful_bob', 'scanning_watch',
-            'settling_adjust', 'dreamy_drift'
+            'settling_adjust', 'dreamy_drift', 'neck_stretch',
+            'yawning_stretch', 'shoulder_shimmy', 'look_around_casual'
         ]
         self.last_idle_animation = None
         self.min_idle_time_before_animation = 5.0  # seconds before first idle animation

@@ -85,7 +85,7 @@ class CameraInteraction(Node):
         self.declare_parameter('framebuffer_tty', '1')
         self.framebuffer_tty = self.get_parameter('framebuffer_tty').get_parameter_value().string_value
         
-        self.declare_parameter('framebuffer_update_interval', 0.1)  # seconds
+        self.declare_parameter('framebuffer_update_interval', 0.05)  # seconds
         self.framebuffer_update_interval = self.get_parameter('framebuffer_update_interval').get_parameter_value().double_value
         self.last_framebuffer_update = self.get_clock().now()
         # Framebuffer display state

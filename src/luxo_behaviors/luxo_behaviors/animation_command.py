@@ -299,8 +299,10 @@ class AnimationCommandActionServer(Node):
             # Cancel any existing goal
             if self._goal_handle is not None and self._goal_handle.is_active:
                 self.get_logger().info('Cancelling previous animation goal')
-                self._goal_handle.canceled()
-            
+                # Don't call canceled() directly - just mark for cancellation
+                self._cancel_requested = True
+                # The executing goal will check this flag and cancel itself
+                
             self._goal_handle = goal_handle
             self._cancel_requested = False
         
@@ -374,9 +376,17 @@ class AnimationCommandActionServer(Node):
             total_duration = sum(adjusted_durations)
             
             for i, (keyframe, duration) in enumerate(zip(keyframes, adjusted_durations)):
-                # Check for cancel
-                if self._cancel_requested:
+                # Check for cancel request (NOT checking goal_handle methods)
+                with self._goal_lock:
+                    if self._cancel_requested:
+                        final_state = "preempted"
+                        self.get_logger().info("Animation preempted by cancel request")
+                        break
+                
+                # Check if goal handle is still valid before proceeding
+                if not goal_handle.is_active:
                     final_state = "preempted"
+                    self.get_logger().warn("Goal handle no longer active")
                     break
                 
                 # Check if we've been preempted by collision
@@ -396,22 +406,28 @@ class AnimationCommandActionServer(Node):
                 progress = min(1.0, elapsed_time / total_duration)
                 time_remaining = max(0.0, total_duration - elapsed_time)
                 
-                # Publish feedback
-                feedback = PlayAnimation.Feedback()
-                feedback.progress = progress
-                feedback.current_keyframe = i
-                feedback.total_keyframes = len(keyframes)
-                feedback.current_step_name = keyframe_names[i] if keyframe_names else f"Step {i+1}"
-                feedback.collision_status = collision_status
-                feedback.current_joints = list(self.current_positions)
-                feedback.time_remaining = time_remaining
-                
-                goal_handle.publish_feedback(feedback)
+                # Publish feedback - with error handling
+                try:
+                    if goal_handle.is_active:
+                        feedback = PlayAnimation.Feedback()
+                        feedback.progress = progress
+                        feedback.current_keyframe = i
+                        feedback.total_keyframes = len(keyframes)
+                        feedback.current_step_name = keyframe_names[i] if keyframe_names else f"Step {i+1}"
+                        feedback.collision_status = collision_status
+                        feedback.current_joints = list(self.current_positions)
+                        feedback.time_remaining = time_remaining
+                        
+                        goal_handle.publish_feedback(feedback)
+                except Exception as e:
+                    # If we can't publish feedback, it's likely the goal was canceled
+                    self.get_logger().debug(f"Could not publish feedback: {e}")
+                    # Don't break - continue animation if possible
                 
                 # Log keyframe execution
                 self.get_logger().info(
                     f"Executing keyframe {i+1}/{len(keyframes)}: "
-                    f"{feedback.current_step_name} -> {[round(p, 2) for p in noisy_keyframe]}"
+                    f"{feedback.current_step_name if 'feedback' in locals() else f'Step {i+1}'} -> {[round(p, 2) for p in noisy_keyframe]}"
                 )
                 
                 # Move to position
@@ -439,12 +455,20 @@ class AnimationCommandActionServer(Node):
             result.final_state = final_state
             result.final_positions = list(self.current_positions)
             
-            if final_state == "completed":
-                goal_handle.succeed()
-            elif final_state == "preempted":
-                goal_handle.canceled()
-            else:
-                goal_handle.abort()
+            # Handle goal completion based on state
+            # IMPORTANT: Check if goal handle is still valid before calling methods
+            try:
+                if goal_handle.is_active:
+                    if final_state == "completed":
+                        goal_handle.succeed()
+                    else:
+                        # For any non-completed state, abort
+                        goal_handle.abort()
+                else:
+                    self.get_logger().debug("Goal handle no longer active, skipping state update")
+            except Exception as e:
+                self.get_logger().debug(f"Could not update goal state: {e}")
+                # Goal was likely already canceled/aborted
             
             return result
                     
@@ -455,6 +479,7 @@ class AnimationCommandActionServer(Node):
             if self.state_machine:
                 self.state_machine.transition_to(LuxoState.ERROR)
             
+            # Create error result
             result = PlayAnimation.Result()
             result.success = False
             result.message = f"Animation failed: {str(e)}"
@@ -462,7 +487,14 @@ class AnimationCommandActionServer(Node):
             result.collision_interruptions = collision_interruptions
             result.final_state = "aborted"
             result.final_positions = list(self.current_positions)
-            goal_handle.abort()
+            
+            # Try to abort the goal if it's still active
+            try:
+                if goal_handle.is_active:
+                    goal_handle.abort()
+            except Exception as abort_error:
+                self.get_logger().debug(f"Could not abort goal: {abort_error}")
+            
             return result
     
     def command_callback(self, msg):
