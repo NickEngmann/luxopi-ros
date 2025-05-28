@@ -1107,7 +1107,8 @@ class CollisionAvoidance:
             self.node.get_logger().debug(f"Collisions clear for {override_duration:.1f}s - gradually returning to original target")
             
             # Gradually blend between override and original target
-            blend_factor = min(1.0, (override_duration - self.target_override_timeout) / 2.0)
+            max_blend = 0.3  # Only blend back part of the way
+            blend_factor = min(max_blend, (override_duration - self.target_override_timeout) / 2.0)
             blended_target = [
                 self.target_override_joints[i] * (1.0 - blend_factor) + original_target[i] * blend_factor
                 for i in range(len(original_target))

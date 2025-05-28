@@ -357,6 +357,12 @@ class AnimationCommandActionServer(Node):
             keyframes, durations = plugin.get_keyframes()
             keyframe_names = plugin.get_keyframe_names()
             
+            # Adjust keyframes to use current base position
+            if not hasattr(plugin, 'preserve_base_position') or plugin.preserve_base_position:
+                current_base = self.current_positions[0] if self.current_positions else 0.0
+                keyframes = plugin.adjust_keyframes_to_current_base(keyframes, current_base)
+                self.get_logger().info(f"Adjusted animation to current base position: {current_base:.2f}")
+            
             # Prepare keyframes for current position
             if self.hardware_position_received:
                 keyframes = plugin.prepare_for_current_position(
@@ -558,6 +564,12 @@ class AnimationCommandActionServer(Node):
         # Get plugin and execute
         plugin = self.animation_plugins[animation_name]
         keyframes, durations = plugin.get_keyframes()
+        
+        # Adjust keyframes to use current base position
+        if not hasattr(plugin, 'preserve_base_position') or plugin.preserve_base_position:
+            current_base = self.current_positions[0] if self.current_positions else 0.0
+            keyframes = plugin.adjust_keyframes_to_current_base(keyframes, current_base)
+            self.get_logger().info(f"Adjusted animation to current base position: {current_base:.2f}")
         
         # Prepare for current position if hardware feedback available
         if self.use_hardware_position_feedback and self.hardware_position_received:

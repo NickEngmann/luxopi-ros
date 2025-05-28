@@ -113,6 +113,11 @@ class CloseAnimation(AnimationPlugin):
     def get_category(self) -> str:
         return "response"
     
+    @property
+    def preserve_base_position(self) -> bool:
+        """This animation should not preserve base position - always returns to center."""
+        return False
+    
     def get_keyframe_names(self) -> Optional[List[str]]:
         return [
             "Prepare fold", "Begin folding", "Continue fold", "Final position", "Return home 2"
@@ -149,6 +154,11 @@ class StopAnimation(AnimationPlugin):
     
     def get_category(self) -> str:
         return "response"
+    
+    @property
+    def preserve_base_position(self) -> bool:
+        """Emergency stop should center the base for safety."""
+        return False
     
     def get_keyframes(self) -> Tuple[List[List[float]], List[float]]:
         # Just return to a safe neutral position quickly, then home

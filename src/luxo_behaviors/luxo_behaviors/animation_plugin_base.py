@@ -137,7 +137,56 @@ class AnimationPlugin(ABC):
             'num_keyframes': len(keyframes),
             'keyframe_names': self.get_keyframe_names()
         }
-    
+
+    def adjust_keyframes_to_current_base(self, keyframes: List[List[float]], current_base_position: float) -> List[List[float]]:
+        """
+        Adjust all keyframes to use the current base position while preserving relative movements.
+        
+        Args:
+            keyframes: Original keyframes from the animation
+            current_base_position: Current base joint position
+            
+        Returns:
+            Modified keyframes with adjusted base positions
+        """
+        if not keyframes:
+            return keyframes
+        
+        adjusted_keyframes = []
+        
+        # Find the "neutral" base position used in the animation
+        # This is typically the first keyframe's base position
+        animation_base_reference = keyframes[0][0] if len(keyframes[0]) > 0 else 0.0
+        
+        for keyframe in keyframes:
+            adjusted_keyframe = keyframe.copy()
+            if len(adjusted_keyframe) > 0:
+                # Calculate the offset from the animation's reference position
+                base_offset = keyframe[0] - animation_base_reference
+                
+                # Apply this offset to the current base position
+                adjusted_keyframe[0] = current_base_position + base_offset
+                
+                # Optional: Clamp to safe limits if needed
+                # adjusted_keyframe[0] = max(-1.57, min(1.57, adjusted_keyframe[0]))
+            
+            adjusted_keyframes.append(adjusted_keyframe)
+        
+        self.node.get_logger().debug(
+            f"Adjusted base positions from reference {animation_base_reference:.2f} "
+            f"to current {current_base_position:.2f}"
+        )
+        
+        return adjusted_keyframes
+
+    @property
+    def preserve_base_position(self) -> bool:
+        """
+        Whether this animation should preserve the current base position.
+        Override in subclasses to return False for animations that need specific base positions.
+        """
+        return True
+
     def prepare_for_current_position(self, current_position: List[float], 
                                    keyframes: List[List[float]]) -> List[List[float]]:
         """

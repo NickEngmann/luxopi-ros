@@ -66,7 +66,7 @@ class ExcitedHopAnimation(AnimationPlugin):
         # Doubled most durations to slow down animation
         durations = [
             0.4, 0.4, 0.6, 0.5, 0.4, 0.6, 0.4, 0.35, 0.35, 0.4,
-            0.4, 0.3, 0.3, 0.2, 0.3, 0.4, 0.3, 0.2, 0.3, 0.25,
+            0.4, 0.4, 0.5, 0.4, 0.5, 0.4, 0.4, 0.5, 0.6, 0.65,
             0.4, 0.4, 0.6
         ]
         
@@ -176,7 +176,7 @@ class PlayfulBounceAnimation(AnimationPlugin):
         # Doubled durations for safety
         durations = [
             0.6, 0.3, 0.3, 0.6, 0.5, 0.4, 0.25, 0.25, 0.16, 0.16,
-            0.5, 0.25, 0.3, 0.4, 0.4, 0.3, 0.25, 0.3, 0.4, 0.3,
+            0.5, 0.25, 0.4, 0.4, 0.4, 0.3, 0.25, 0.3, 0.4, 0.3,
             0.3, 0.6, 0.8, 0.7, 1.3
         ]
         
