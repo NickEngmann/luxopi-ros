@@ -131,10 +131,17 @@ class CameraInteraction(Node):
         self.declare_parameter('camera_retry_interval', 30.0)
         self.camera_retry_interval = self.get_parameter('camera_retry_interval').get_parameter_value().double_value
         
+        # Add parameter for emotion timeout
+        self.declare_parameter('emotion_timeout', 3.0)
+        self.emotion_timeout = self.get_parameter('emotion_timeout').get_parameter_value().double_value
+        
         # Track last emotion and animation time for cooldown - using ROS2 time
         self.last_emotion = "neutral"
         self.last_animation_time = self.get_clock().now()
         
+        # Track last emotion detection time
+        self.last_emotion_detection_time = None
+
         # Add a history of recent emotions to avoid repetition
         self.recent_emotions = deque(maxlen=3)  # Keep track of last 3 emotions that triggered animations
         
@@ -223,8 +230,14 @@ class CameraInteraction(Node):
             return
         
         try:
-            # Get current emotion and distance
-            emotion = getattr(self, 'last_detected_emotion', None)
+            # Determine current emotion based on timeout
+            emotion = None
+            if self.last_emotion_detection_time is not None:
+                time_since_last_emotion = (current_time - self.last_emotion_detection_time).nanoseconds / 1e9
+                if time_since_last_emotion <= self.emotion_timeout:
+                    emotion = getattr(self, 'last_detected_emotion', None)
+                # If timeout exceeded, emotion remains None
+            
             distance = getattr(self, 'last_person_distance', None)
             
             # Get face bounding boxes
@@ -552,8 +565,9 @@ class CameraInteraction(Node):
                 emotion_results = np.array(rec.getFirstLayerFp16())
                 emotion_name = emotions[np.argmax(emotion_results)]
                 
-                # Store for framebuffer display
+                # Store for framebuffer display and update detection time
                 self.last_detected_emotion = emotion_name
+                self.last_emotion_detection_time = self.get_clock().now()
                 
                 # Update framebuffer display with all data
                 if self.enable_framebuffer_display and frame is not None:

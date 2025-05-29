@@ -65,9 +65,9 @@ class ExcitedHopAnimation(AnimationPlugin):
         
         # Doubled most durations to slow down animation
         durations = [
-            0.4, 0.4, 0.6, 0.5, 0.4, 0.6, 0.4, 0.35, 0.35, 0.4,
-            0.4, 0.4, 0.5, 0.4, 0.5, 0.4, 0.4, 0.5, 0.6, 0.65,
-            0.4, 0.4, 0.6
+            0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6,
+            0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.65,
+            0.6, 0.6, 0.6
         ]
         
         return keyframes, durations
@@ -121,8 +121,8 @@ class SadDroopAnimation(AnimationPlugin):
         
         # Increased durations for slower movement
         durations = [
-            0.8, 0.8, 1.0, 0.4, 1.2, 1.6, 1.8, 1.8, 1.4, 1.0,
-            0.8, 0.4, 1.6, 1.2, 1.2, 0.7, 1.3
+            0.8, 0.8, 1.0, 0.6, 1.2, 1.6, 1.8, 1.8, 1.4, 1.0,
+            0.8, 0.6, 1.6, 1.2, 1.2, 0.7, 1.3
         ]
         
         return keyframes, durations
@@ -175,9 +175,9 @@ class PlayfulBounceAnimation(AnimationPlugin):
         
         # Doubled durations for safety
         durations = [
-            0.6, 0.3, 0.3, 0.6, 0.5, 0.4, 0.25, 0.25, 0.16, 0.16,
-            0.5, 0.25, 0.4, 0.4, 0.4, 0.3, 0.25, 0.3, 0.4, 0.3,
-            0.3, 0.6, 0.8, 0.7, 1.3
+            0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6,
+            0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6,
+            0.6, 0.6, 0.8, 0.7, 1.3
         ]
         
         return keyframes, durations
@@ -226,8 +226,8 @@ class StartledJumpAnimation(AnimationPlugin):
         
         # Doubled durations for safety (but kept some quick movements for effect)
         durations = [
-            0.6, 0.4, 0.25, 0.16, 0.25, 0.16, 0.16, 0.3, 0.4, 0.3,
-            0.5, 0.3, 0.6, 0.3, 0.3, 0.4, 0.5, 0.8, 1.0, 0.7, 1.3
+            0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6,
+            0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.8, 1.0, 0.7, 1.3
         ]
         
         return keyframes, durations

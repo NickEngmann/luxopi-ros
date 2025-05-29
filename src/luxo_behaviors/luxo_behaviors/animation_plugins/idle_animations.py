@@ -52,8 +52,7 @@ class GentleSwayAnimation(AnimationPlugin):
             [base_pos - sway_amount, -0.6 + breath_lift*0.5, 1.08, 1.46, 0.0], # Full left with settle
             [base_pos - sway_amount*0.4, -0.74, 1.2, 1.4, 0.0],        # Gentle return
             [base_pos - 0.05, -0.8, 1.26, 1.41, 0.0],                  # Balance check
-            [base_pos, -0.83, 1.29, 1.4, 0.0],                         # Near home
-            [base_pos, 0.5, 1.3, 1.4, 0.0],                            # Home 1
+            [base_pos, -0.8, 1.29, 1.4, 0.0],                         # Near home
             [base_pos, -0.85, 1.3, 1.4, 0.0]                           # Home 2
         ]
         
@@ -107,7 +106,7 @@ class CuriousExplorationAnimation(AnimationPlugin):
         ]
         
         # Varied timing for natural investigation
-        durations = [0.5, 0.6, 0.4, 0.8, 0.5, 0.6, 0.4, 0.9, 0.4, 0.7, 1.0, 0.7, 0.5, 0.8, 0.6, 0.7]
+        durations = [0.6, 0.6, 0.6, 0.8, 0.7, 0.6, 0.7, 0.9, 0.6, 0.7, 1.0, 0.7, 0.5, 0.8, 0.6, 0.7]
         
         return keyframes, durations
 
@@ -150,7 +149,7 @@ class BreathingAnimation(AnimationPlugin):
             [base_pos, -0.62, 1.18, 1.22, 0.0],                  # Bottom of breath pause
             [base_pos, -0.72, 1.24, 1.32, 0.0],                  # Small recovery inhale
             [base_pos, -0.8, 1.28, 1.38, 0.0],                   # Settling
-            [base_pos, -0.84, 1.29, 1.39, 0.0],                  # Peaceful state
+            [base_pos, -0.84, 1.2, 1.39, 0.0],                  # Peaceful state
             [base_pos, -0.85, 1.3, 1.4, 0.0]                     # Home directly
         ]
         
@@ -200,12 +199,11 @@ class AttentiveListeningAnimation(AnimationPlugin):
             [base_pos, -0.68, 1.18, 1.38, 0.0],                  # Understanding dawns
             [base_pos, -0.55, 1.05, 1.25, 0.0],                  # Agreement gesture forward
             [base_pos, -0.78, 1.26, 1.38, 0.0],                  # Settle back satisfied
-            [base_pos, 0.5, 1.3, 1.4, 0.0],                      # Home 1
             [base_pos, -0.85, 1.3, 1.4, 0.0]                     # Home 2
         ]
         
         # Conversational rhythm
-        durations = [0.6, 0.5, 0.4, 0.7, 0.4, 0.8, 0.6, 0.4, 0.7, 0.8, 0.5, 0.9, 0.7, 0.5, 0.8, 0.5, 0.8]
+        durations = [0.6, 0.7, 0.7, 0.7, 0.7, 0.8, 0.6, 0.6, 0.7, 0.8, 0.6, 0.9, 0.7, 0.6, 0.8, 0.6, 0.8]
         
         return keyframes, durations
 
@@ -251,12 +249,11 @@ class PlayfulBobAnimation(AnimationPlugin):
             [base_pos + 0.25, -0.72, 1.18, 1.42, 0.0],                 # Wiggle right
             [base_pos - 0.25, -0.75, 1.2, 1.45, 0.0],                  # And left
             [base_pos, -0.8, 1.25, 1.38, 0.0],                         # Happy settling
-            [base_pos, 0.5, 1.3, 1.4, 0.0],                            # Home 1
             [base_pos, -0.85, 1.3, 1.4, 0.0]                           # Home 2
         ]
         
         # Rhythmic, musical timing
-        durations = [0.5, 0.5, 0.4, 0.4, 0.4, 0.5, 0.6, 0.4, 0.6, 0.4, 0.4, 0.4, 0.4, 0.4, 0.6, 0.5, 0.8]
+        durations = [0.7, 0.7, 0.6, 0.8, 0.7, 0.6, 0.6, 0.7, 0.8, 0.6, 0.7, 0.7, 0.8, 0.8, 0.6, 0.6, 0.8]
         
         return keyframes, durations
 
@@ -299,12 +296,12 @@ class ScanningWatchAnimation(AnimationPlugin):
             [0.4, alert_height + 0.1, 1.1, 1.4, 0.0],            # Relax - false alarm
             [-0.3, alert_height, 1.05, 1.35, 0.0],               # One final check
             [0.0, -0.7, 1.15, 1.38, 0.0],                        # All clear, lowering
-            [0.0, -0.82, 1.27, 1.39, 0.0],                       # Return to rest
+            [0.0, -0.82, 1.2, 1.39, 0.0],                       # Return to rest
             [0.0, -0.85, 1.3, 1.4, 0.0]                          # Home directly
         ]
         
         # Alert, purposeful timing with snap movements
-        durations = [0.6, 0.5, 0.4, 0.5, 0.8, 0.7, 0.8, 0.4, 0.5, 0.4, 0.9, 0.6, 0.7, 0.6, 0.7, 0.8]
+        durations = [0.6, 0.6, 0.6, 0.8, 0.8, 0.7, 0.8, 0.8, 0.6, 0.7, 0.9, 0.6, 0.7, 0.6, 0.7, 0.8]
         
         return keyframes, durations
 
@@ -349,12 +346,12 @@ class SettlingAdjustAnimation(AnimationPlugin):
             [base_adj * 0.1, -0.83, 1.3, 1.4, 0.0],                        # Another tiny one
             [0.05, -0.84, 1.3, 1.4, 0.0],                                  # Almost perfect
             [0.0, -0.845, 1.3, 1.4, 0.0],                                  # One final shift
-            [0.0, -0.85, 1.3, 1.4, 0.0],                                   # Ahh, comfortable
+            [0.0, -0.85, 1.1, 1.4, 0.0],                                   # Ahh, comfortable
             [0.0, -0.85, 1.3, 1.4, 0.0]                                    # Already home
         ]
         
         # Fidgety, restless timing
-        durations = [0.5, 0.6, 0.7, 0.5, 0.4, 0.7, 0.6, 0.5, 0.8, 0.6, 0.4, 0.4, 0.5, 0.4, 0.8, 0.4]
+        durations = [0.7, 0.6, 0.7, 0.6, 0.7, 0.7, 0.6, 0.6, 0.8, 0.6, 0.8, 0.8, 0.6, 0.8, 0.8, 0.8]
         
         return keyframes, durations
 
@@ -397,12 +394,12 @@ class DreamyDriftAnimation(AnimationPlugin):
             [-0.2, -0.65, 1.35, 1.25, 0.0],                        # Slow downward spiral
             [0.0, -0.75, 1.28, 1.35, 0.0],                         # Gravity slowly returns
             [0.0, -0.82, 1.29, 1.38, 0.0],                         # Soft landing approach
-            [0.0, -0.84, 1.3, 1.39, 0.0],                          # Almost settled
+            [0.0, -0.84, 1.2, 1.39, 0.0],                          # Almost settled
             [0.0, -0.85, 1.3, 1.4, 0.0]                            # Home directly (close enough)
         ]
         
         # Slow, ethereal timing
-        durations = [0.8, 1.0, 1.4, 1.6, 2.0, 1.5, 1.3, 1.4, 1.2, 1.5, 1.3, 1.0, 0.8, 0.6, 0.8]
+        durations = [0.8, 1.0, 1.4, 1.6, 2.0, 1.5, 1.3, 1.4, 1.2, 1.5, 1.3, 1.0, 0.8, 0.7, 0.8]
         
         return keyframes, durations
 
@@ -444,13 +441,12 @@ class NeckStretchAnimation(AnimationPlugin):
             [base_pos + 0.05, -0.85, 1.2, 1.4, 0.0],             # Quick center adjustment
             [base_pos - 0.05, -0.85, 1.25, 1.4, 0.0],            # Relief shake
             [base_pos, -0.83, 1.28, 1.39, 0.0],                  # Final position adjust
-            [base_pos, -0.84, 1.29, 1.4, 0.0],                   # Relaxed after stretch
-            [base_pos, 0.5, 1.3, 1.4, 0.0],                      # Home 1
+            [base_pos, -0.84, 1.2, 1.4, 0.0],                   # Relaxed after stretch
             [base_pos, -0.85, 1.3, 1.4, 0.0]                     # Home 2
         ]
         
         # Slow stretching movements
-        durations = [0.6, 0.8, 1.0, 1.5, 1.2, 1.0, 1.5, 1.2, 1.3, 1.8, 0.4, 0.4, 0.6, 0.8, 0.5, 0.8]
+        durations = [0.6, 0.8, 1.0, 1.5, 1.2, 1.0, 1.5, 1.2, 1.3, 1.8, 0.6, 0.6, 0.6, 0.8, 0.7, 0.8]
         
         return keyframes, durations
 
@@ -491,12 +487,12 @@ class YawningStretchAnimation(AnimationPlugin):
             [base_pos, -0.8, 1.2, 1.4, 0.0],                     # Yawn closing
             [base_pos, -0.78, 1.25, 1.38, 0.0],                  # Sleepy blink
             [base_pos + 0.15, -0.82, 1.27, 1.4, 0.0],            # Shake head to wake
-            [base_pos, -0.84, 1.29, 1.4, 0.0],                   # Back to normal
+            [base_pos, -0.84, 1.2, 1.4, 0.0],                   # Back to normal
             [base_pos, -0.85, 1.3, 1.4, 0.0]                     # Home directly
         ]
         
         # Yawning rhythm with holds
-        durations = [0.6, 0.8, 1.0, 1.2, 1.4, 0.8, 2.0, 0.6, 1.2, 1.0, 0.8, 0.5, 0.7, 0.8]
+        durations = [0.6, 0.8, 1.0, 1.2, 1.4, 0.8, 2.0, 0.6, 1.2, 1.0, 0.8, 0.7, 0.7, 0.8]
         
         return keyframes, durations
 
@@ -542,7 +538,7 @@ class ShoulderShimmy(AnimationPlugin):
         ]
         
         # Rhythmic shimmy timing
-        durations = [0.5, 0.6, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.5, 0.5, 0.6, 0.4, 0.7, 0.8]
+        durations = [0.5, 0.6, 0.6, 0.6, 0.6, 0.7, 0.6, 0.6, 0.5, 0.5, 0.6, 0.6, 0.7, 0.8]
         
         return keyframes, durations
 

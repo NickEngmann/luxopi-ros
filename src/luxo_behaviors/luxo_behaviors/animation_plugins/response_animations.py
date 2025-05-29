@@ -46,8 +46,8 @@ class NoddingAnimation(AnimationPlugin):
             [base_pos, -0.85, 1.3, 1.4, 0.0]   # Return to home position 2
         ]
         
-        # Doubled durations and fixed home transition times
-        durations = [0.6, 0.8, 0.6, 0.8, 0.5, 0.7, 0.4, 0.5, 0.8, 0.7, 1.3]
+        # Ensure all durations are at least 0.6 seconds
+        durations = [0.6, 0.8, 0.6, 0.8, 0.6, 0.7, 0.6, 0.6, 0.8, 0.7, 1.3]
         
         return keyframes, durations
 
@@ -93,8 +93,8 @@ class HeadShakeAnimation(AnimationPlugin):
             [base_pos, -0.85, 1.3, 1.4, 0.0]     # Return home 2
         ]
         
-        # Doubled durations for safety
-        durations = [0.6, 0.4, 0.5, 0.5, 0.5, 0.5, 0.4, 0.4, 0.3, 0.3, 0.8, 0.7, 1.3]
+        # Ensure all durations are at least 0.6 seconds
+        durations = [0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.8, 0.7, 1.3]
         
         return keyframes, durations
 
@@ -135,7 +135,7 @@ class CloseAnimation(AnimationPlugin):
             [base_pos, -0.85, 1.3, 1.4, 0.0]  # Go directly to home 2 (close)
         ]
         
-        # Increased durations for safety
+        # Ensure all durations are at least 0.6 seconds
         durations = [1.8, 2.4, 2.4, 2.4, 1.3]
         
         return keyframes, durations

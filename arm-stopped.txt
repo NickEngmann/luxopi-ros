@@ -1,0 +1,97 @@
+[ 2365.020319] usb 4-1: Product: Luxonis Device
+[ 2365.020323] usb 4-1: Manufacturer: Intel Corporation
+[ 2365.020326] usb 4-1: SerialNumber: 1944301031A2152F00
+[ 3804.297451] usb 4-1: USB disconnect, device number 13
+[ 3804.530134] usb 4-1: new high-speed USB device number 14 using xhci-hcd
+[ 3804.661281] usb 4-1: New USB device found, idVendor=03e7, idProduct=2485, bcdDevice= 0.01
+[ 3804.661289] usb 4-1: New USB device strings: Mfr=1, Product=2, SerialNumber=3
+[ 3804.661293] usb 4-1: Product: Movidius MyriadX
+[ 3804.661297] usb 4-1: Manufacturer: Movidius Ltd.
+[ 3804.661300] usb 4-1: SerialNumber: 03e72485
+[ 3813.562654] usb 4-1: USB disconnect, device number 14
+[ 3814.417104] usb 4-1: new high-speed USB device number 15 using xhci-hcd
+[ 3814.549167] usb 4-1: New USB device found, idVendor=03e7, idProduct=f63b, bcdDevice= 1.00
+[ 3814.549180] usb 4-1: New USB device strings: Mfr=1, Product=2, SerialNumber=3
+[ 3814.549184] usb 4-1: Product: Luxonis Device
+[ 3814.549188] usb 4-1: Manufacturer: Intel Corporation
+[ 3814.549191] usb 4-1: SerialNumber: 1944301031A2152F00
+[ 4172.242386] usb 4-1: USB disconnect, device number 15
+[ 4172.476284] usb 4-1: new full-speed USB device number 16 using xhci-hcd
+[ 4172.596316] usb 4-1: device descriptor read/64, error -71
+[ 4172.823313] usb 4-1: device descriptor read/64, error -71
+[ 4173.049294] usb 4-1: new full-speed USB device number 17 using xhci-hcd
+[ 4173.169326] usb 4-1: device descriptor read/64, error -71
+[ 4173.399320] usb 4-1: device descriptor read/64, error -71
+[ 4173.511392] usb usb4-port1: attempt power cycle
+[ 4173.891312] usb 4-1: new full-speed USB device number 18 using xhci-hcd
+[ 4173.891396] usb 4-1: Device not responding to setup address.
+[ 4174.095380] usb 4-1: Device not responding to setup address.
+[ 4174.303311] usb 4-1: device not accepting address 18, error -71
+[ 4174.309425] usb 4-1: WARN: invalid context state for evaluate context command.
+[ 4174.423315] usb 4-1: new full-speed USB device number 19 using xhci-hcd
+[ 4174.423400] usb 4-1: Device not responding to setup address.
+[ 4174.631384] usb 4-1: Device not responding to setup address.
+[ 4174.839314] usb 4-1: device not accepting address 19, error -71
+[ 4174.845359] usb 4-1: WARN: invalid context state for evaluate context command.
+[ 4174.845476] usb usb4-port1: unable to enumerate USB device
+[ 4175.881334] usb 4-1: new full-speed USB device number 20 using xhci-hcd
+[ 4176.001361] usb 4-1: device descriptor read/64, error -71
+[ 4176.231359] usb 4-1: device descriptor read/64, error -71
+[ 4176.459349] usb 4-1: new full-speed USB device number 21 using xhci-hcd
+[ 4176.579366] usb 4-1: device descriptor read/64, error -71
+[ 4176.807367] usb 4-1: device descriptor read/64, error -71
+[ 4176.919463] usb usb4-port1: attempt power cycle
+[ 4177.299349] usb 4-1: new full-speed USB device number 22 using xhci-hcd
+[ 4177.299442] usb 4-1: Device not responding to setup address.
+[ 4177.503455] usb 4-1: Device not responding to setup address.
+[ 4177.711366] usb 4-1: device not accepting address 22, error -71
+[ 4177.717423] usb 4-1: WARN: invalid context state for evaluate context command.
+[ 4177.831361] usb 4-1: new full-speed USB device number 23 using xhci-hcd
+[ 4177.831466] usb 4-1: Device not responding to setup address.
+[ 4178.039465] usb 4-1: Device not responding to setup address.
+[ 4178.247374] usb 4-1: device not accepting address 23, error -71
+[ 4178.253438] usb 4-1: WARN: invalid context state for evaluate context command.
+[ 4178.253545] usb usb4-port1: unable to enumerate USB device
+[ 4230.854043] usb 4-1: new full-speed USB device number 24 using xhci-hcd
+[ 4230.977090] usb 4-1: device descriptor read/64, error -71
+[ 4231.207094] usb 4-1: device descriptor read/64, error -71
+[ 4231.434059] usb 4-1: new full-speed USB device number 25 using xhci-hcd
+[ 4231.553087] usb 4-1: device descriptor read/64, error -71
+[ 4231.783090] usb 4-1: device descriptor read/64, error -71
+[ 4231.898021] usb usb4-port1: attempt power cycle
+[ 4232.284064] usb 4-1: new full-speed USB device number 26 using xhci-hcd
+[ 4232.284143] usb 4-1: Device not responding to setup address.
+[ 4232.488545] usb 4-1: Device not responding to setup address.
+[ 4232.696057] usb 4-1: device not accepting address 26, error -71
+[ 4232.702105] usb 4-1: WARN: invalid context state for evaluate context command.
+[ 4232.816071] usb 4-1: new full-speed USB device number 27 using xhci-hcd
+[ 4232.816154] usb 4-1: Device not responding to setup address.
+[ 4233.024144] usb 4-1: Device not responding to setup address.
+[ 4233.232071] usb 4-1: device not accepting address 27, error -71
+[ 4233.238224] usb 4-1: WARN: invalid context state for evaluate context command.
+[ 4233.238334] usb usb4-port1: unable to enumerate USB device
+[ 4244.010207] usb 4-1: new full-speed USB device number 28 using xhci-hcd
+[ 4244.129234] usb 4-1: device descriptor read/64, error -71
+[ 4244.359230] usb 4-1: device descriptor read/64, error -71
+[ 4244.586391] usb 4-1: new full-speed USB device number 29 using xhci-hcd
+[ 4244.705240] usb 4-1: device descriptor read/64, error -71
+[ 4244.935243] usb 4-1: device descriptor read/64, error -71
+[ 4245.048330] usb usb4-port1: attempt power cycle
+[ 4245.428229] usb 4-1: new full-speed USB device number 30 using xhci-hcd
+[ 4245.428314] usb 4-1: Device not responding to setup address.
+[ 4245.632295] usb 4-1: Device not responding to setup address.
+[ 4245.840241] usb 4-1: device not accepting address 30, error -71
+[ 4245.846297] usb 4-1: WARN: invalid context state for evaluate context command.
+[ 4245.960232] usb 4-1: new full-speed USB device number 31 using xhci-hcd
+[ 4245.960316] usb 4-1: Device not responding to setup address.
+[ 4246.168302] usb 4-1: Device not responding to setup address.
+[ 4246.376225] usb 4-1: device not accepting address 31, error -71
+[ 4246.382309] usb 4-1: WARN: invalid context state for evaluate context command.
+[ 4246.382426] usb usb4-port1: unable to enumerate USB device
+[ 4254.810334] usb 4-1: new high-speed USB device number 32 using xhci-hcd
+[ 4254.941581] usb 4-1: New USB device found, idVendor=03e7, idProduct=2485, bcdDevice= 0.01
+[ 4254.941593] usb 4-1: New USB device strings: Mfr=1, Product=2, SerialNumber=3
+[ 4254.941597] usb 4-1: Product: Movidius MyriadX
+[ 4254.941600] usb 4-1: Manufacturer: Movidius Ltd.
+[ 4254.941603] usb 4-1: SerialNumber: 03e72485
+[ 4254.986757] usb 4-1: USB disconnect, device number 32
