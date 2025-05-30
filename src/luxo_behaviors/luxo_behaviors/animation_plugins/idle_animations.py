@@ -57,7 +57,7 @@ class GentleSwayAnimation(AnimationPlugin):
         ]
         
         # Natural human-like timing with breath rhythm
-        durations = [0.6, 0.8, 0.7, 0.9, 0.5, 0.8, 1.4, 1.0, 0.9, 0.8, 0.6, 0.9, 1.5, 1.1, 0.7, 0.6, 0.5, 0.8]
+        durations = [0.6, 0.8, 0.7, 0.9, 0.5, 0.8, 1.4, 1.0, 0.9, 0.8, 0.6, 0.9, 1.5, 1.1, 0.7, 0.6, 0.8]
         
         return keyframes, durations
 
@@ -203,7 +203,7 @@ class AttentiveListeningAnimation(AnimationPlugin):
         ]
         
         # Conversational rhythm
-        durations = [0.6, 0.7, 0.7, 0.7, 0.7, 0.8, 0.6, 0.6, 0.7, 0.8, 0.6, 0.9, 0.7, 0.6, 0.8, 0.6, 0.8]
+        durations = [0.6, 0.7, 0.7, 0.7, 0.7, 0.8, 0.6, 0.6, 0.7, 0.8, 0.6, 0.9, 0.7, 0.6, 0.8, 0.8]
         
         return keyframes, durations
 
@@ -253,7 +253,7 @@ class PlayfulBobAnimation(AnimationPlugin):
         ]
         
         # Rhythmic, musical timing
-        durations = [0.7, 0.7, 0.6, 0.8, 0.7, 0.6, 0.6, 0.7, 0.8, 0.6, 0.7, 0.7, 0.8, 0.8, 0.6, 0.6, 0.8]
+        durations = [0.7, 0.7, 0.6, 0.8, 0.7, 0.6, 0.6, 0.7, 0.8, 0.6, 0.7, 0.7, 0.8, 0.8, 0.6, 0.8]
         
         return keyframes, durations
 
@@ -446,7 +446,7 @@ class NeckStretchAnimation(AnimationPlugin):
         ]
         
         # Slow stretching movements
-        durations = [0.6, 0.8, 1.0, 1.5, 1.2, 1.0, 1.5, 1.2, 1.3, 1.8, 0.6, 0.6, 0.6, 0.8, 0.7, 0.8]
+        durations = [0.6, 0.8, 1.0, 1.5, 1.2, 1.0, 1.5, 1.2, 1.3, 1.8, 0.6, 0.6, 0.6, 0.8, 0.8]
         
         return keyframes, durations
 

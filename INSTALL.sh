@@ -244,6 +244,7 @@ sudo ufw allow OpenSSH
 # Adafruit Library Installation
 sudo apt-get install -y i2c-tools libgpiod-dev python3-libgpiod python3-lgpio
 pip3 install --upgrade adafruit-blinka --break-system-packages
+cd ~
 git clone https://github.com/NickEngmann/Adafruit_CircuitPython_APDS9960.git
 cd Adafruit_CircuitPython_APDS9960
 pip3 install -e . --break-system-packages
