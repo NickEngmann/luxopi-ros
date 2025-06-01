@@ -560,11 +560,48 @@ class AnimationCommandActionServer(Node):
                 self.get_logger().warn("Cannot run topic-based animation while action is active")
                 return
         
+        # NEW: Clear any stuck animation flags at the start
+        self.animation_preempted = False
+        self.collision_preempted = False
+        self.is_animating = False  # Reset before setting true
+        
+        # NEW: Force clear collision avoidance stuck flags
+        if self.collision_avoidance:
+            self.get_logger().info("Clearing potential stuck flags before animation")
+            # Clear target override that might be blocking animation
+            if self.collision_avoidance.target_override_active:
+                self.get_logger().info(f"Clearing active target override: {self.collision_avoidance.target_override_reason}")
+                self.collision_avoidance.target_override_active = False
+                self.collision_avoidance.target_override_joints = None
+            
+            # Clear home position related flags
+            if self.collision_avoidance.is_returning_to_rest:
+                self.get_logger().info("Clearing is_returning_to_rest flag")
+                self.collision_avoidance.is_returning_to_rest = False
+            
+            # Clear persistent collision if it's been too long
+            if self.collision_avoidance.persistent_head_collision_active:
+                current_time = self.node.get_clock().now()
+                collision_duration = (current_time - self.collision_avoidance.persistent_head_collision_start).nanoseconds / 1e9
+                if collision_duration > 60.0:  # 1 minute timeout
+                    self.get_logger().info(f"Clearing persistent head collision after {collision_duration:.1f}s")
+                    self.collision_avoidance.persistent_head_collision_active = False
+        
         # Cancel any active return to home operation
         if self.state_machine and self.state_machine.is_in_state(LuxoState.RETURNING_HOME):
             self.get_logger().info("Cancelling return to home operation for animation")
+            # Force transition out of RETURNING_HOME
+            self.state_machine.transition_to(LuxoState.IDLE, force=True)
+            # Clear collision avoidance flags
             if self.collision_avoidance:
                 self.collision_avoidance.target_override_active = False
+                self.collision_avoidance.home_position_stage = 1
+        
+        # NEW: Force clear any stuck DEMA flags
+        if hasattr(self.node, 'enable_dynamic_adaptation') and self.node.enable_dynamic_adaptation:
+            if hasattr(self.node, 'dynamic_adaptation_pending_resume'):
+                self.node.dynamic_adaptation_pending_resume = False
+                self.get_logger().debug("Cleared DEMA pending resume flag")
         
         self.get_logger().info(f'Executing animation: {animation_name} with speed {speed}')
         
@@ -578,7 +615,12 @@ class AnimationCommandActionServer(Node):
             target_state = self._determine_animation_state(animation_name)
             if not self.state_machine.transition_to(target_state):
                 self.get_logger().warn(f"Failed to transition to {target_state.name} state")
-                return
+                # NEW: Force transition if normal transition failed
+                if self.state_machine.is_in_state(LuxoState.RETURNING_HOME) or self.state_machine.is_in_state(LuxoState.ESCAPE_MODE):
+                    self.get_logger().info("Force transitioning to animation state")
+                    self.state_machine.transition_to(target_state, force=True)
+                else:
+                    return
         
         # Set movement source
         self.movement_source = "animation"
@@ -604,6 +646,9 @@ class AnimationCommandActionServer(Node):
         self.speed_multiplier = speed
         self.start_animation(keyframes, durations, animation_name)
         
+        # NEW: Log debug information about animation state
+        self.get_logger().info(f"Animation {animation_name} started - is_animating: {self.is_animating}, state: {self.state_machine.current_state.name}")
+    
     def _transition_to_idle_after_simple_animation(self):
         """Transition to IDLE state after simple animation."""
         try:

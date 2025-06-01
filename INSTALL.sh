@@ -250,6 +250,7 @@ cd Adafruit_CircuitPython_APDS9960
 pip3 install -e . --break-system-packages
 pip3 install adafruit-circuitpython-vcnl4200 --break-system-packages
 pip3 install adafruit-circuitpython-vl53l4cd --break-system-packages
+pip3 install adafruit-circuitpython-ads7830 --break-system-packages
 pip3 install RPi.GPIO --break-system-packages
 
 # Install DepthAI lsusb | grep 03e7Camera Code
