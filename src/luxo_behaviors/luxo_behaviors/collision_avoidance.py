@@ -640,17 +640,34 @@ class CollisionAvoidance:
             # Get current time for this check cycle
             current_time = self.node.get_clock().now()
             
+            # NEW: Check if target override is stuck (not in RETURNING_HOME state)
+            if self.target_override_active and not self.state_machine.is_in_state(LuxoState.RETURNING_HOME):
+                override_duration = (current_time - self.target_override_time).nanoseconds / 1e9
+                if override_duration > 30.0:  # 30 second timeout
+                    self.node.get_logger().warn(f"Clearing stuck target override after {override_duration:.1f} seconds")
+                    self.target_override_active = False
+                    self.target_override_joints = None
+                    self.target_override_reason = "Cleared due to timeout"
+            
             # Check if we're currently trying to go home and handle timeouts
             if self.state_machine.is_in_state(LuxoState.RETURNING_HOME):
                 time_since_home_attempt = (current_time - self.returning_to_home_start_time).nanoseconds / 1e9
                 if time_since_home_attempt > self.idle_timeout:
                     self.node.get_logger().warn(f"Home position return timeout after {time_since_home_attempt:.1f}s - giving up")
+                    # Clear ALL home-related flags
+                    self.target_override_active = False
+                    self.target_override_joints = None
+                    self.home_position_stage = 1
+                    self.persistent_head_collision_active = False
+                    self.is_returning_to_rest = False
                     # Transition back to IDLE
                     self.state_machine.transition_to(LuxoState.IDLE)
                     # Reset other state variables for clean slate
-                    self.persistent_head_collision_active = False
-                    self.target_override_active = False
-                    return  # Skip other checks when returning to home
+                    self.escape_attempts = 0
+                    with self.collision_lock:
+                        for direction in self.collision_status:
+                            self.collision_status[direction]['consecutive_count'] = 0
+                    return  # Skip other checks when timing out
                 
                 # Check for home position stage transitions
                 if self.target_override_active and self.target_override_joints is not None:
@@ -706,11 +723,17 @@ class CollisionAvoidance:
                         
                         if self._at_home_position(self.current_joints, self.home_position_2, self.home_position_tolerance):
                             self.node.get_logger().info("Successfully reached final home position (stage 2)")
+                            # Clear all flags
+                            self.target_override_active = False
+                            self.target_override_joints = None
+                            self.persistent_head_collision_active = False
+                            self.is_returning_to_rest = False
                             # Transition back to IDLE
                             self.state_machine.transition_to(LuxoState.IDLE)
-                            self.persistent_head_collision_active = False
-                            # Reset idle timer
-                            self.last_activity_time = current_time
+                            # Reset collision counters
+                            with self.collision_lock:
+                                for direction in self.collision_status:
+                                    self.collision_status[direction]['consecutive_count'] = 0
                 
                 return  # Skip other checks when returning to home
             

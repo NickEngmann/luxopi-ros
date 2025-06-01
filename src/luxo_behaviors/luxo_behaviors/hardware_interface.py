@@ -749,10 +749,28 @@ class RoArmHardwareInterface(Node):
             # Update last movement time with ROS time
             self.last_command_time = self.get_clock().now()
             
-            # Skip processing if we're in RETURNING_HOME state
+            # Check if we're in RETURNING_HOME state - add timeout check
             if self.state_machine.is_in_state(LuxoState.RETURNING_HOME):
-                self.get_logger().debug("Skipping joint_states_target - currently returning to home position")
-                return
+                # Check for stuck RETURNING_HOME state
+                if hasattr(self.collision_avoidance, 'returning_to_home_start_time'):
+                    current_time = self.get_clock().now()
+                    time_in_returning_home = (current_time - self.collision_avoidance.returning_to_home_start_time).nanoseconds / 1e9
+                    
+                    # If stuck in RETURNING_HOME for more than 30 seconds, force clear
+                    if time_in_returning_home > 30.0:
+                        self.get_logger().warn(f"Stuck in RETURNING_HOME state for {time_in_returning_home:.1f}s - force clearing")
+                        # Force clear collision avoidance flags
+                        self.collision_avoidance.target_override_active = False
+                        self.collision_avoidance.target_override_joints = None
+                        self.collision_avoidance.home_position_stage = 1
+                        # Force transition to IDLE
+                        self.state_machine.transition_to(LuxoState.IDLE, force=True)
+                    else:
+                        self.get_logger().debug("Skipping joint_states_target - currently returning to home position")
+                        return
+                else:
+                    self.get_logger().debug("Skipping joint_states_target - currently returning to home position")
+                    return
             
             # Track recent command times to help collision avoidance detect animations
             if not hasattr(self, 'recent_command_times'):
@@ -785,6 +803,14 @@ class RoArmHardwareInterface(Node):
                     # Animation name is no longer passed via effort field
                     # Just notify collision avoidance that an animation is active
                     self.collision_avoidance.set_active_animation("unknown_animation")
+                    
+                    # IMPORTANT: Clear any stuck flags when animation starts
+                    if hasattr(self.collision_avoidance, 'target_override_active'):
+                        if self.collision_avoidance.target_override_active:
+                            self.get_logger().info("Clearing target override for animation start")
+                            self.collision_avoidance.target_override_active = False
+                            self.collision_avoidance.target_override_joints = None
+                    
                 elif encoded_source == 2:
                     movement_source = "collision"
                     # Should already be in COLLISION_AVOIDING state
