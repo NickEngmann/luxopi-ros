@@ -13,48 +13,58 @@
 
 import board
 import adafruit_vl53l4cd
+import argparse
+import time
+# Parse command line arguments
+parser = argparse.ArgumentParser(description='VL53L4CD Sensor Test')
+parser.add_argument('--sensor', choices=['left', 'right', 'both'], default='both',
+                    help='Which sensor(s) to run: left, right, or both (default: both)')
+args = parser.parse_args()
 
 i2c = board.I2C()  # uses board.SCL and board.SDA
 # i2c = board.STEMMA_I2C()  # For using the built-in STEMMA QT connector on a microcontroller
 
-# Create two sensor instances - left with custom address, right with default address
-vl53_right = adafruit_vl53l4cd.VL53L4CD(i2c, 0x29)  # using default address
-vl53_left = adafruit_vl53l4cd.VL53L4CD(i2c, 0x59)
+# Create sensor instances based on arguments
+sensors = {}
+if args.sensor in ['left', 'both']:
+    sensors['left'] = adafruit_vl53l4cd.VL53L4CD(i2c, 0x59)  # using custom address
+if args.sensor in ['right', 'both']:
+    sensors['right'] = adafruit_vl53l4cd.VL53L4CD(i2c, 0x29)  # using default address
 
-# Set the same configuration for both sensors
-for vl53 in (vl53_left, vl53_right):
-    vl53.inter_measurement = 0
-    vl53.timing_budget = 200
+# Set the same configuration for all active sensors
+for sensor in sensors.values():
+    sensor.inter_measurement = 50
+    sensor.timing_budget = 50
 
-print("VL53L4CD Dual Sensor Test.")
-print("-------------------------")
-# Display info for left sensor
-model_id, module_type = vl53_left.model_info
-print("Left Sensor (0x59) - Model ID: 0x{:0X}, Module Type: 0x{:0X}".format(model_id, module_type))
-print("Left Sensor - Timing Budget: {}, Inter-Measurement: {}".format(vl53_left.timing_budget, vl53_left.inter_measurement))
-
-# Display info for right sensor
-model_id, module_type = vl53_right.model_info
-print("Right Sensor (default) - Model ID: 0x{:0X}, Module Type: 0x{:0X}".format(model_id, module_type))
-print("Right Sensor - Timing Budget: {}, Inter-Measurement: {}".format(vl53_right.timing_budget, vl53_right.inter_measurement))
+print(f"VL53L4CD Sensor Test - Running: {args.sensor}")
 print("-------------------------")
 
-# Start ranging on both sensors
-vl53_left.start_ranging()
-vl53_right.start_ranging()
+# Display info for active sensors
+for name, sensor in sensors.items():
+    model_id, module_type = sensor.model_info
+    address = "0x59" if name == "left" else "default"
+    print(f"{name.capitalize()} Sensor ({address}) - Model ID: 0x{model_id:0X}, Module Type: 0x{module_type:0X}")
+    print(f"{name.capitalize()} Sensor - Timing Budget: {sensor.timing_budget}, Inter-Measurement: {sensor.inter_measurement}")
+
+print("-------------------------")
+
+# Start ranging on all active sensors
+for sensor in sensors.values():
+    sensor.start_ranging()
 
 while True:
-    # Wait for both sensors to have data
-    left_ready = False
-    right_ready = False
+    # Wait for all active sensors to have data
+    ready_sensors = {}
     
-    while not (left_ready and right_ready):
-        if not left_ready and vl53_left.data_ready:
-            left_ready = True
-            vl53_left.clear_interrupt()
-        if not right_ready and vl53_right.data_ready:
-            right_ready = True
-            vl53_right.clear_interrupt()
+    while len(ready_sensors) < len(sensors):
+        for name, sensor in sensors.items():
+            if name not in ready_sensors and sensor.data_ready:
+                ready_sensors[name] = True
+                sensor.clear_interrupt()
 
-    # Display distances from both sensors
-    print("Left Distance: {} cm, Right Distance: {} cm".format(vl53_left.distance, vl53_right.distance))
+    # Display distances from active sensors
+    distance_msgs = []
+    for name, sensor in sensors.items():
+        distance_msgs.append(f"{name.capitalize()} Distance: {sensor.distance} cm")
+    print(", ".join(distance_msgs))
+    time.sleep(0.5)

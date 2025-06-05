@@ -256,6 +256,17 @@ pip3 install RPi.GPIO --break-system-packages
 # Install DepthAI lsusb | grep 03e7Camera Code
 sudo wget -qO- https://docs.luxonis.com/install_depthai.sh | bash
 
+# Install Respeaker v2.0 requirements
+sudo apt-get update
+sudo apt install alsa-utils -y
+sudo apt install portaudio19-dev -y
+sudo pip install pyusb click pyaudio webrtcvad --break-system-packages
+cd ~/luxopi-ros/dev/
+git clone https://github.com/respeaker/usb_4_mic_array.git
+cd usb_4_mic_array
+git clone https://github.com/respeaker/mic_array.git
+echo 'SUBSYSTEM=="usb", MODE="0666"' | sudo tee -a /etc/udev/rules.d/60-usb.rules
+sudo udevadm control -R  # then re-plug the usb device
 
 # Install FBI and give it the correct permissions
 sudo apt install fbi -y

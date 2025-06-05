@@ -10,7 +10,7 @@ import queue
 i2c = board.I2C()  # uses board.SCL and board.SDA
 # i2c = board.STEMMA_I2C()  # For using the built-in STEMMA QT connector on a microcontroller
 
-apds = APDS9960(i2c)
+apds = APDS9960(i2c)  # Address is 0x49
 apds.enable_proximity = True
 apds.proximity_gain = 1
 apds.enable_gesture = True
@@ -56,8 +56,7 @@ while True:
         while not gesture_queue.empty():
             gesture = gesture_queue.get_nowait()
             print(f"Gesture detected: {gesture}")
-            
-        time.sleep(0.2)
+        time.sleep(1.0)
     except Exception as e:
         print(f"Main thread error: {e}")
         time.sleep(1)

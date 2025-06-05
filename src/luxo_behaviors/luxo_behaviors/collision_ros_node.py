@@ -205,12 +205,12 @@ class CollisionNode(Node):
             
             # Initialize VL53L4CD sensors
             self.vl53_right = adafruit_vl53l4cd.VL53L4CD(self.i2c, 0x59)  # Left sensor with custom address
-            self.vl53_left = adafruit_vl53l4cd.VL53L4CD(self.i2c)  # Right sensor with default address
+            self.vl53_left = adafruit_vl53l4cd.VL53L4CD(self.i2c, 0x29)  # Right sensor with default address
             
             # Configure VL53L4CD sensors
             for vl53 in (self.vl53_left, self.vl53_right):
-                vl53.inter_measurement = 0
-                vl53.timing_budget = 100
+                vl53.inter_measurement = 50
+                vl53.timing_budget = 50
                 vl53.start_ranging()
                 
             self.get_logger().info("All sensors initialized successfully")
