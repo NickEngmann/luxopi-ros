@@ -25,6 +25,9 @@ def generate_launch_description():
     # Add dynamic adaptation parameters - now defaults based on hardware
     enable_dynamic_adaptation = LaunchConfiguration('enable_dynamic_adaptation')
     
+    # Add gesture detection parameter
+    enable_gestures = LaunchConfiguration('enable_gestures')
+    
     # Main hardware/simulation mode selector
     declare_use_hardware = DeclareLaunchArgument(
         'use_hardware',
@@ -50,7 +53,14 @@ def generate_launch_description():
     declare_sense_collision = DeclareLaunchArgument(
         'sense_collision',
         default_value=PythonExpression(["'false' if '", use_hardware, "' == 'false' else 'true'"]),
-        description='Enable APDS9960 proximity sensor (default: true in hardware, false in simulation)'
+        description='Enable I2C proximity and distance sensors (default: true in hardware, false in simulation)'
+    )
+    
+    # Gesture detection argument
+    declare_enable_gestures = DeclareLaunchArgument(
+        'enable_gestures',
+        default_value='false',
+        description='Enable gesture detection with APDS9960 (default: false)'
     )
     
     # Depth collision argument with conditional default
@@ -123,7 +133,8 @@ def generate_launch_description():
                             "- Camera enabled: ", use_camera, "\n",
                             "- Emotion detection: ", LaunchConfiguration('enable_emotion_detection'), "\n",
                             "- Collision detection: ", enable_depth_collision, "\n",
-                            "- Using proximity sensor: ", sense_collision, "\n",
+                            "- Using I2C sensors: ", sense_collision, "\n",
+                            "- Gesture detection: ", enable_gestures, "\n",
                             ])
     
     # Hardware-specific info
@@ -131,7 +142,7 @@ def generate_launch_description():
         msg=["\n🔧 HARDWARE MODE DETAILS:\n",
              "- Serial port: /dev/ttyAMA0 (baud: 115200)\n",
              "- Test mode: ", test_mode, " (position=basic movements, animation=complex behaviors)\n",
-             "- Proximity sensing: ", PythonExpression(["'enabled' if '", sense_collision, "' == 'true' else 'disabled'"]), "\n",
+             "- I2C sensing: ", PythonExpression(["'enabled' if '", sense_collision, "' == 'true' else 'disabled'"]), "\n",
              "- Hardware joint states enabled\n"],
         condition=IfCondition(use_hardware)
     )
@@ -152,7 +163,8 @@ def generate_launch_description():
              "- Hardware mode: ros2 launch luxo_behaviors luxo_system.launch.py use_hardware:=true\n",
              "- Basic simulation: ros2 launch luxo_behaviors luxo_system.launch.py\n",
              "- Simulation with GUI: ros2 launch luxo_behaviors luxo_system.launch.py use_gui:=true\n",
-             "- Hardware with collision: ros2 launch luxo_behaviors luxo_system.launch.py use_hardware:=true enable_depth_collision:=true\n"],
+             "- Hardware with collision: ros2 launch luxo_behaviors luxo_system.launch.py use_hardware:=true enable_depth_collision:=true\n",
+             "- Hardware with gestures: ros2 launch luxo_behaviors luxo_system.launch.py use_hardware:=true enable_gestures:=true\n"],
         condition=IfCondition(verbose_output)
     )
     
@@ -166,12 +178,24 @@ def generate_launch_description():
         condition=IfCondition(use_camera)
     )
     
+    # I2C sensor info
+    i2c_info = LogInfo(
+        msg=["\n🔌 I2C SENSOR SUBSYSTEM:\n",
+             "- I2C Device Manager: ", PythonExpression(["'enabled' if '", sense_collision, "' == 'true' else 'disabled'"]), "\n",
+             "- APDS9960 proximity sensor: enabled\n",
+             "- VL53L4CD distance sensors (left/right): enabled\n",
+             "- Gesture detection: ", PythonExpression(["'enabled' if '", enable_gestures, "' == 'true' else 'disabled'"]), "\n",
+             "- Bus protection: active\n",
+             "- Auto-recovery: enabled\n"],
+        condition=IfCondition(PythonExpression(["'", use_hardware, "' == 'true' and '", sense_collision, "' == 'true'"]))
+    )
 
     # Troubleshooting tips
     troubleshooting_info = LogInfo(
         msg=["\n🔍 TROUBLESHOOTING TIPS:\n",
              "- If hardware not responding, check serial connection and permissions\n",
              "- For camera issues, verify USB connection and permissions\n",
+             "- For I2C sensor issues, check: ros2 topic echo /i2c/sensor_health\n",
              "- Package not found error? Install the package or disable the feature\n",
              "- View topics with: ros2 topic list\n",
              "- Check node status with: ros2 node list\n",
@@ -264,14 +288,34 @@ def generate_launch_description():
         condition=IfCondition(use_hardware)
     )
     
-    # APDS9960 proximity and gesture sensor node (hardware only)
-    apds9960_node = Node(
+    # I2C Device Manager node (hardware only, replaces direct APDS9960 node)
+    i2c_device_manager_node = Node(
         package='luxo_behaviors',
-        executable='collision_ros_node',
-        name='apds9960_node',
+        executable='i2c_device_manager',
+        name='i2c_device_manager',
         output='screen',
         parameters=[
-            {'proximity_threshold': 5}
+            {'enable_gestures': enable_gestures},
+            {'enable_apds9960': True},
+            {'enable_vl53_left': True},
+            {'enable_vl53_right': True},
+            {'publish_rate': 5.0}  # 5Hz update rate
+        ],
+        condition=IfCondition(PythonExpression(["'", use_hardware, "' == 'true' and '", sense_collision, "' == 'true'"]))
+    )
+    
+    # Collision detection logic node (hardware only, now uses I2C manager data)
+    collision_logic_node = Node(
+        package='luxo_behaviors',
+        executable='collision_ros_node',
+        name='collision_node',
+        output='screen',
+        parameters=[
+            {'proximity_threshold': 15},
+            {'side_distance_threshold': 8.0},
+            {'danger_threshold': 5.0},
+            {'warning_threshold': 15.0},
+            {'enable_gestures': enable_gestures}
         ],
         condition=IfCondition(PythonExpression(["'", use_hardware, "' == 'true' and '", sense_collision, "' == 'true'"]))
     )
@@ -315,7 +359,7 @@ def generate_launch_description():
         condition=UnlessCondition(use_hardware)
     )
 
-    # Collision detection node
+    # Collision detection node (depth-based)
     collision_detection_node = Node(
         package='luxo_behaviors',
         executable='collision_detection',
@@ -357,6 +401,7 @@ def generate_launch_description():
              "- Common commands: \n",
              "  • View topics: ros2 topic list\n",
              "  • View nodes: ros2 node list\n",
+             "  • Monitor I2C health: ros2 topic echo /i2c/sensor_health\n",
              "  • Stop system: Ctrl+C\n"]
     )
     
@@ -372,9 +417,11 @@ def generate_launch_description():
         declare_enable_depth_collision,
         declare_safety_distance,
         declare_sense_collision,
+        declare_enable_gestures,
         declare_verbose,
-        declare_camera_rotation,  # Add the camera rotation argument
+        declare_camera_rotation,
         declare_enable_dynamic_adaptation,
+        
         # Launch info and banners
         startup_banner,
         mode_info,
@@ -382,6 +429,7 @@ def generate_launch_description():
         simulation_info,
         quick_reference,
         camera_info,
+        i2c_info,
         troubleshooting_info,
         jsp_killer,
         
@@ -397,7 +445,8 @@ def generate_launch_description():
         hardware_animation_node,
         simulation_animation_node,
         collision_detection_node,
-        apds9960_node,
+        i2c_device_manager_node,
+        collision_logic_node,
         camera_interaction_node,
         
         # Final info
