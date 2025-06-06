@@ -9,9 +9,9 @@ from rclpy.action import ActionClient
 from luxo_interfaces.action import PlayAnimation
 import time
 from sensor_msgs.msg import JointState
-from std_msgs.msg import String
+from std_msgs.msg import String, Float32, Bool
 from luxo_behaviors.state_machine import LuxoState
-
+import numpy as np
 class CollisionAvoidance:
     """Class to handle collision avoidance logic for the RoArm hardware interface."""
     
@@ -167,6 +167,184 @@ class CollisionAvoidance:
             PlayAnimation,
             'play_animation'
         )
+
+        # Voice following parameters
+        self.node.declare_parameter('enable_voice_following', True)
+        self.node.declare_parameter('voice_follow_speed', 0.3)
+        self.node.declare_parameter('voice_follow_deadzone', 15.0)
+        self.node.declare_parameter('voice_follow_smoothing', 0.3)
+        
+        self.voice_follow_enabled = self.node.get_parameter('enable_voice_following').value
+        self.voice_follow_speed = self.node.get_parameter('voice_follow_speed').value
+        self.voice_follow_deadzone = self.node.get_parameter('voice_follow_deadzone').value
+        self.voice_follow_smoothing = self.node.get_parameter('voice_follow_smoothing').value
+        
+        # Voice tracking state
+        self.last_voice_direction = None
+        self.last_voice_time = None
+        self.voice_influence = 0.0
+        self.target_voice_angle = None
+        self.voice_active = False
+        
+        # Create subscribers for voice data
+        self.voice_direction_sub = self.node.create_subscription(
+            Float32,
+            '/voice/follow_direction',
+            self.voice_direction_callback,
+            10
+        )
+        
+        self.voice_active_sub = self.node.create_subscription(
+            Bool,
+            '/voice/active', 
+            self.voice_active_callback,
+            10
+        )
+        
+        self.node.get_logger().info(f"Voice following enabled: {self.voice_follow_enabled}")
+
+    def _send_voice_following_command(self):
+        """Actively send a command to follow voice direction"""
+        if not self.voice_follow_enabled or self.voice_influence < 0.1:
+            return
+            
+        if self.target_voice_angle is None:
+            return
+            
+        # Create a position based on current joints with voice adjustment
+        voice_position = self.current_joints.copy()
+        
+        # Calculate adjustment
+        current_base = voice_position[0]
+        angle_diff = self._normalize_angle(self.target_voice_angle - current_base)
+        
+        # Make the adjustment more aggressive for active following
+        adjustment = angle_diff * self.voice_influence * 0.5  # 50% of the difference
+        max_adjustment = 0.2  # Larger max adjustment for active following
+        adjustment = np.clip(adjustment, -max_adjustment, max_adjustment)
+        
+        # Apply adjustment
+        voice_position[0] += adjustment
+        
+        if abs(adjustment) > 0.01:  # Only send if meaningful adjustment
+            self.node.get_logger().info(
+                f"Sending voice following command: base adjustment {np.rad2deg(adjustment):.1f}° "
+                f"(target: {np.rad2deg(self.target_voice_angle):.1f}°, current: {np.rad2deg(current_base):.1f}°)"
+            )
+            
+            # Send the command
+            self.send_safe_joint_command(voice_position, "Voice following")
+            
+            # Update activity time
+            self.last_activity_time = self.node.get_clock().now()
+            
+    def voice_direction_callback(self, msg):
+        """Handle voice direction updates"""
+        if not self.voice_follow_enabled:
+            return
+            
+        # Only process if in appropriate state
+        if not self.state_machine.is_in_state(LuxoState.IDLE, LuxoState.ANIMATING, LuxoState.EMOTION_REACTING):
+            return
+        
+        # Update voice tracking
+        self.last_voice_direction = msg.data
+        self.last_voice_time = self.node.get_clock().now()
+        
+        # Update activity time to prevent idle timeout while human is speaking
+        self.last_activity_time = self.last_voice_time
+        
+        # Increase voice influence
+        self.voice_influence = min(1.0, self.voice_influence + 0.3)
+        
+        # Calculate target angle
+        current_base = self.current_joints[0] if self.current_joints else 0.0
+        voice_angle_rad = np.deg2rad(self.last_voice_direction)
+        
+        # Calculate shortest path rotation
+        angle_diff = self._normalize_angle(voice_angle_rad - current_base)
+        angle_diff_deg = np.rad2deg(abs(angle_diff))
+        
+        # Only update if outside deadzone
+        if angle_diff_deg > self.voice_follow_deadzone:
+            # Smooth the target angle update
+            if self.target_voice_angle is None:
+                self.target_voice_angle = current_base + angle_diff * self.voice_follow_smoothing
+            else:
+                # Blend with previous target for smoother motion
+                self.target_voice_angle = (
+                    self.target_voice_angle * 0.7 + 
+                    (current_base + angle_diff * self.voice_follow_smoothing) * 0.3
+                )
+            
+            self.node.get_logger().info(
+                f"Voice detected at {self.last_voice_direction:.1f}°, "
+                f"adjusting base rotation (influence: {self.voice_influence:.2f})"
+            )
+            
+            # ACTIVELY SEND THE COMMAND
+            self._send_voice_following_command()
+    
+    def voice_active_callback(self, msg):
+        """Handle voice activity status"""
+        self.voice_active = msg.data
+        if not msg.data:
+            # Start decay when voice stops
+            self.voice_influence *= 0.8
+    
+    def apply_voice_following(self, positions):
+        """Apply voice following to joint positions"""
+        if not self.voice_follow_enabled or self.voice_influence < 0.1:
+            return positions
+            
+        # Check if in escape mode or returning home - don't apply voice following
+        if self.state_machine.is_in_state(LuxoState.ESCAPE_MODE, LuxoState.RETURNING_HOME):
+            return positions
+            
+        # Check voice timeout
+        if self.last_voice_time:
+            current_time = self.node.get_clock().now()
+            time_since_voice = (current_time - self.last_voice_time).nanoseconds / 1e9
+            
+            if time_since_voice > 3.0:  # 3 second timeout
+                self.voice_influence = 0.0
+                self.target_voice_angle = None
+                return positions
+        
+        # Apply voice following
+        if self.target_voice_angle is not None:
+            adjusted_positions = positions.copy()
+            current_base = adjusted_positions[0]
+            
+            # Calculate adjustment with influence
+            angle_diff = self._normalize_angle(self.target_voice_angle - current_base)
+            adjustment = angle_diff * self.voice_influence * self.voice_follow_speed
+            
+            # Limit adjustment rate
+            max_adjustment = 0.05  # radians per update
+            adjustment = np.clip(adjustment, -max_adjustment, max_adjustment)
+            
+            # Apply to base joint
+            adjusted_positions[0] += adjustment
+            
+            # Natural decay of influence
+            self.voice_influence *= 0.98
+            
+            # Update target as we approach it
+            if abs(angle_diff) < 0.1:  # Close enough
+                self.target_voice_angle = None
+                
+            return adjusted_positions
+            
+        return positions
+    
+    def _normalize_angle(self, angle):
+        """Normalize angle to [-pi, pi]"""
+        while angle > np.pi:
+            angle -= 2 * np.pi
+        while angle < -np.pi:
+            angle += 2 * np.pi
+        return angle
 
     def reset_idle_timeout(self):
         """Reset idle timeout to a new random value between 45-90 seconds."""
@@ -631,7 +809,7 @@ class CollisionAvoidance:
             self.node.get_logger().error(f"Error in post-animation home callback: {e}")
     
     def safety_monitor_callback(self):
-        """Periodic callback to monitor safety and adjust motion if needed."""
+        """Periodic callback to monitor safety and adjust motion if needed"""
         if not self.enable_collision_avoidance:
             self.node.get_logger().debug(f"Collision avoidance disabled - skipping safety check")
             return
@@ -766,31 +944,46 @@ class CollisionAvoidance:
                 time_since_activity = (current_time - self.last_activity_time).nanoseconds / 1e9
                 time_since_last_animation = (current_time - self.last_idle_animation_time).nanoseconds / 1e9
                 
-                # Check if we're already at or very close to home positions
-                already_at_home2 = self._at_position(self.current_joints, self.home_position_2, self.home_position_tolerance)
-                
-                # If we've been idle for a while and enough time has passed since last animation
-                if (time_since_activity > self.min_idle_time_before_animation and 
-                    time_since_last_animation > self.idle_animation_interval and
-                    self.state_machine.is_in_state(LuxoState.IDLE) and
-                    getattr(self, 'idle_animations_enabled', True)):  # Check if enabled
+                # VOICE FOLLOWING ADDITION: Don't trigger idle animations if voice is active
+                if hasattr(self, 'voice_active') and self.voice_active:
+                    self.last_activity_time = current_time
+                    self.node.get_logger().debug("Voice active - resetting idle timer")
+                    # Don't proceed with idle animation checks
+                else:
+                    # Check if we're already at or very close to home positions
+                    already_at_home2 = self._at_position(self.current_joints, self.home_position_2, self.home_position_tolerance)
                     
-                    self.node.get_logger().info(f"Device idle for {time_since_activity:.1f}s - triggering idle animation")
-                    
-                    # Trigger a random idle animation
-                    self.trigger_idle_animation()
-                    
-                    # Update timers
-                    self.last_idle_animation_time = current_time
-                    self.idle_animation_interval = random.uniform(10.0, 60.0)  # Random interval for next animation
-                    
-                # Still check for extended idle to return home eventually
-                elif time_since_activity > 120.0 and not already_at_home2:  # 2 minutes
-                    self.node.get_logger().info(f"Extended idle timeout - returning to home position")
-                    self.state_machine.transition_to(LuxoState.RETURNING_HOME)
-                    self.returning_to_home_start_time = current_time
-                    self.go_to_home_position("Extended idle timeout")
-                    return
+                    # If we've been idle for a while and enough time has passed since last animation
+                    if (time_since_activity > self.min_idle_time_before_animation and 
+                        time_since_last_animation > self.idle_animation_interval and
+                        self.state_machine.is_in_state(LuxoState.IDLE) and
+                        getattr(self, 'idle_animations_enabled', True)):  # Check if enabled
+                        
+                        self.node.get_logger().info(f"Device idle for {time_since_activity:.1f}s - triggering idle animation")
+                        
+                        # Trigger a random idle animation
+                        self.trigger_idle_animation()
+                        
+                        # Update timers
+                        self.last_idle_animation_time = current_time
+                        self.idle_animation_interval = random.uniform(10.0, 60.0)  # Random interval for next animation
+                        
+                    # Still check for extended idle to return home eventually
+                    elif time_since_activity > 120.0 and not already_at_home2:  # 2 minutes
+                        self.node.get_logger().info(f"Extended idle timeout - returning to home position")
+                        self.state_machine.transition_to(LuxoState.RETURNING_HOME)
+                        self.returning_to_home_start_time = current_time
+                        self.go_to_home_position("Extended idle timeout")
+                        return
+            
+            # Check for active voice following
+            if self.voice_follow_enabled and self.voice_influence > 0.1 and self.target_voice_angle is not None:
+                # Check if we should send a voice following update
+                if self.last_voice_time:
+                    time_since_voice = (current_time - self.last_voice_time).nanoseconds / 1e9
+                    if time_since_voice < 1.0:  # Voice is recent
+                        # Send periodic voice following updates
+                        self._send_voice_following_command()
             
             # Fast path: Check if there are any active collisions or we're in escape mode
             with self.collision_lock:
@@ -1107,20 +1300,21 @@ class CollisionAvoidance:
                     # We've successfully reached the final home position
                     self.node.get_logger().debug("Successfully reached final home position (stage 2)")
                     # Transition back to IDLE will be handled in safety_monitor_callback
-                
             
             # Always return the override position when in home movement sequence
             return self.target_override_joints
         
         # Regular override handling
         if not self.target_override_active or self.target_override_joints is None:
-            return original_target
+            # VOICE FOLLOWING ADDITION: Apply voice following to the original target
+            return self.apply_voice_following(original_target)
         
         # Check if original target has changed significantly
         if self._at_position(original_target, self.target_joints, 0.05) == False:
             self.node.get_logger().info("Original target changed - clearing override")
             self.target_override_active = False
-            return original_target
+            # VOICE FOLLOWING ADDITION: Apply voice following to the original target
+            return self.apply_voice_following(original_target)
             
         # Check if collision has been clear for a while
         any_collision_active = any(self.collision_status[direction]['active'] for direction in self.collision_status)
@@ -1141,12 +1335,15 @@ class CollisionAvoidance:
             if blend_factor > 0.9:
                 self.node.get_logger().warn("Override expired - returning to original target")
                 self.target_override_active = False
-                return original_target
+                # VOICE FOLLOWING ADDITION: Apply voice following to the original target
+                return self.apply_voice_following(original_target)
                 
-            return blended_target
+            # VOICE FOLLOWING ADDITION: Apply voice following to the blended target
+            return self.apply_voice_following(blended_target)
             
         # If override is still active and needed, use it
-        return self.target_override_joints
+        # VOICE FOLLOWING ADDITION: Apply voice following to the override joints
+        return self.apply_voice_following(self.target_override_joints)
     
     def apply_safety_limits(self, positions):
         """Apply safety limits to joint positions based on collision status."""

@@ -103,6 +103,12 @@ def generate_launch_description():
         description='Enable verbose output and additional debugging information'
     )
     
+    declare_enable_voice = DeclareLaunchArgument(
+        'enable_voice',
+        default_value='true',
+        description='Enable voice direction detection and following'
+    )
+
     # Add a launch argument for camera rotation
     declare_camera_rotation = DeclareLaunchArgument(
         'camera_rotation',
@@ -259,6 +265,7 @@ def generate_launch_description():
         condition=UnlessCondition(use_hardware)
     )
     
+    
     # ==========================================================================
     # NODE DEFINITIONS
     # ==========================================================================
@@ -283,7 +290,11 @@ def generate_launch_description():
             {'dynamic_adaptation_hand_limit': 0},
             {'dynamic_adaptation_resume_delay': 10.0},
             {'enable_movement_source_integration': True},  # Explicitly enable movement source integration
-            {'ros__parameters': {'log_level': 'error'}}
+            {'ros__parameters': {'log_level': 'error'}},
+            {'enable_voice_following': LaunchConfiguration('enable_voice')},
+            {'voice_follow_speed': 0.3},
+            {'voice_follow_deadzone': 15.0},
+            {'voice_follow_smoothing': 0.3}
         ],
         condition=IfCondition(use_hardware)
     )
@@ -304,6 +315,24 @@ def generate_launch_description():
         condition=IfCondition(PythonExpression(["'", use_hardware, "' == 'true' and '", sense_collision, "' == 'true'"]))
     )
     
+    voice_direction_node = Node(
+        package='luxo_behaviors',
+        executable='voice_direction_node',
+        name='voice_direction_node',
+        output='screen',
+        parameters=[
+            {'sample_rate': 16000},
+            {'channels': 4},  # or 8 depending on your ReSpeaker model
+            {'vad_aggressiveness': 3},
+            {'confidence_threshold': 0.5},
+            {'enable_pixel_ring': True},
+            {'enable_voice_following': True},
+            {'direction_smoothing_window': 5},
+            {'min_report_interval': 0.5}
+        ],
+        condition=IfCondition(LaunchConfiguration('enable_voice'))
+    )
+
     # Collision detection logic node (hardware only, now uses I2C manager data)
     collision_logic_node = Node(
         package='luxo_behaviors',
@@ -414,6 +443,7 @@ def generate_launch_description():
         declare_use_gui,
         use_joint_state_publisher_arg,
         declare_test_mode,
+        declare_enable_voice,
         declare_enable_depth_collision,
         declare_safety_distance,
         declare_sense_collision,
@@ -432,7 +462,7 @@ def generate_launch_description():
         i2c_info,
         troubleshooting_info,
         jsp_killer,
-        
+        voice_direction_node,
         # Launch files
         roarm_launch,
         

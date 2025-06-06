@@ -26,6 +26,7 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
+            'voice_direction_node = luxo_behaviors.voice_direction_node:main',
             'i2c_device_manager = luxo_behaviors.i2c_device_manager:main',
             'collision_ros_node = luxo_behaviors.collision_ros_node:main',
             'animation_command = luxo_behaviors.animation_command:main',
