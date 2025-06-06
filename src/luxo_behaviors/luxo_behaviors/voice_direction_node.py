@@ -32,8 +32,10 @@ class VoiceDirectionNode(Node):
         self.declare_parameter('publish_rate', 10.0)  # Hz
         self.declare_parameter('enable_pixel_ring', True)
         self.declare_parameter('min_report_interval', 0.5)  # seconds
-        self.declare_parameter('direction_smoothing_window', 5)
+        self.declare_parameter('direction_smoothing_window', 10)  # Increased from 5
         self.declare_parameter('enable_voice_following', True)
+        self.declare_parameter('direction_stability_threshold', 30.0)  # degrees - new parameter
+        self.declare_parameter('min_consistent_samples', 3)  # new parameter
         
         # Get parameters
         self.rate = self.get_parameter('sample_rate').value
@@ -47,6 +49,8 @@ class VoiceDirectionNode(Node):
         self.min_report_interval = self.get_parameter('min_report_interval').value
         self.direction_smoothing_window = self.get_parameter('direction_smoothing_window').value
         self.enable_voice_following = self.get_parameter('enable_voice_following').value
+        self.direction_stability_threshold = self.get_parameter('direction_stability_threshold').value
+        self.min_consistent_samples = self.get_parameter('min_consistent_samples').value
         
         # Initialize VAD
         self.vad = webrtcvad.Vad(self.vad_aggressiveness)
@@ -55,15 +59,18 @@ class VoiceDirectionNode(Node):
         self.chunk_size = int(self.rate * self.vad_frames / 1000)
         self.doa_chunks = int(self.doa_frames / self.vad_frames)
         
-        # History for smoothing
+        # Enhanced history for better smoothing
         self.direction_history = deque(maxlen=self.direction_smoothing_window)
         self.voice_history = deque(maxlen=10)
+        self.raw_direction_buffer = deque(maxlen=20)  # Buffer for raw readings
         
         # State tracking
         self.last_direction = None
+        self.last_stable_direction = None  # Last stable direction reported
         self.last_report_time = self.get_clock().now()
         self.voice_active = False
         self.current_confidence = 0.0
+        self.consistent_direction_count = 0
         
         # Subscribe to robot state to only activate when appropriate
         self.state_subscriber = self.create_subscription(
@@ -126,6 +133,7 @@ class VoiceDirectionNode(Node):
         self.get_logger().info('Voice Direction Node initialized')
         self.get_logger().info(f'Sample rate: {self.rate} Hz, Channels: {self.channels}')
         self.get_logger().info(f'Voice following enabled: {self.enable_voice_following}')
+        self.get_logger().info(f'Direction stability threshold: {self.direction_stability_threshold}°')
         
         # Start audio processing
         self.start_audio_processing()
@@ -133,10 +141,6 @@ class VoiceDirectionNode(Node):
     def state_callback(self, msg):
         """Update current robot state"""
         self.current_state = msg.data
-        
-        # Log state changes
-        if msg.data != self.current_state:
-            self.get_logger().debug(f'Robot state changed to: {msg.data}')
     
     def animation_callback(self, msg):
         """Update current animation"""
@@ -148,11 +152,65 @@ class VoiceDirectionNode(Node):
         allowed_states = ['IDLE', 'ANIMATING', 'EMOTION_REACTING']
         return self.current_state in allowed_states
     
+    def get_stable_direction(self, new_direction):
+        """Enhanced direction stabilization with consistency checking"""
+        # Add to raw buffer
+        self.raw_direction_buffer.append(new_direction)
+        
+        if len(self.raw_direction_buffer) < 3:
+            return None  # Need more samples
+        
+        # Calculate circular statistics on recent samples
+        recent_samples = list(self.raw_direction_buffer)[-5:]  # Last 5 samples
+        angles_rad = np.array([d * np.pi / 180 for d in recent_samples])
+        
+        # Calculate circular mean
+        mean_sin = np.mean(np.sin(angles_rad))
+        mean_cos = np.mean(np.cos(angles_rad))
+        mean_direction = np.arctan2(mean_sin, mean_cos) * 180 / np.pi
+        
+        if mean_direction < 0:
+            mean_direction += 360
+        
+        # Calculate circular variance to check consistency
+        R = np.sqrt(mean_sin**2 + mean_cos**2)  # Resultant vector length
+        circular_variance = 1 - R
+        
+        # Convert to angular standard deviation (in degrees)
+        angular_std = np.sqrt(-2 * np.log(R)) * 180 / np.pi if R > 0 else 180
+        
+        # Check if directions are consistent enough
+        if angular_std < self.direction_stability_threshold:
+            # Directions are consistent
+            if self.last_stable_direction is None:
+                self.consistent_direction_count = 1
+            else:
+                # Check if this is consistent with last stable direction
+                angle_diff = abs(mean_direction - self.last_stable_direction)
+                if angle_diff > 180:
+                    angle_diff = 360 - angle_diff
+                
+                if angle_diff < self.direction_stability_threshold:
+                    self.consistent_direction_count += 1
+                else:
+                    self.consistent_direction_count = 1
+            
+            # Only update stable direction if we have enough consistent samples
+            if self.consistent_direction_count >= self.min_consistent_samples:
+                self.last_stable_direction = mean_direction
+                return int(mean_direction)
+        else:
+            # Reset consistency count if variance is too high
+            self.consistent_direction_count = 0
+        
+        # Return last stable direction if current samples are inconsistent
+        return self.last_stable_direction
+    
     def get_smoothed_direction(self, direction):
         """Apply circular mean to smooth direction readings"""
         self.direction_history.append(direction)
         
-        if len(self.direction_history) > 0:
+        if len(self.direction_history) >= 3:
             # Use circular mean for angle averaging
             angles_rad = np.array([d * np.pi / 180 for d in self.direction_history])
             mean_sin = np.mean(np.sin(angles_rad))
@@ -208,7 +266,7 @@ class VoiceDirectionNode(Node):
         
         # Publish detailed info
         info_msg = String()
-        info_msg.data = f"direction:{robot_angle:.1f},confidence:{confidence:.2f},state:{self.current_state}"
+        info_msg.data = f"direction:{robot_angle:.1f},confidence:{confidence:.2f},state:{self.current_state},stable:{self.consistent_direction_count}"
         self.voice_info_pub.publish(info_msg)
         
         # If voice following is enabled and we're in an appropriate state
@@ -220,7 +278,7 @@ class VoiceDirectionNode(Node):
             
             self.get_logger().info(
                 f'Voice detected at {direction}° (robot: {robot_angle}°) '
-                f'with confidence {confidence:.0%}'
+                f'with confidence {confidence:.0%}, consistency: {self.consistent_direction_count}'
             )
     
     def publish_voice_status(self):
@@ -238,6 +296,7 @@ class VoiceDirectionNode(Node):
         if time_since_last > 2.0:
             self.voice_active = False
             self.current_confidence = 0.0
+            self.consistent_direction_count = 0  # Reset consistency
             
             # Turn off pixel ring when voice inactive
             if self.enable_pixel_ring and not self.voice_active:
@@ -289,27 +348,31 @@ class VoiceDirectionNode(Node):
                             direction = mic.get_direction(frames)
                             
                             if direction is not None:
-                                # Smooth the direction
-                                smoothed_direction = self.get_smoothed_direction(direction)
+                                # Get stable direction with enhanced filtering
+                                stable_direction = self.get_stable_direction(direction)
                                 
-                                # Update pixel ring if enabled
-                                if self.enable_pixel_ring:
-                                    try:
-                                        pixel_ring.set_direction(smoothed_direction)
-                                    except:
-                                        pass
-                                
-                                # Check if we should report
-                                current_time = self.get_clock().now()
-                                time_since_last = (current_time - self.last_report_time).nanoseconds / 1e9
-                                
-                                if time_since_last >= self.min_report_interval:
-                                    self.voice_active = True
-                                    self.last_direction = smoothed_direction
-                                    self.last_report_time = current_time
+                                if stable_direction is not None:
+                                    # Apply additional smoothing
+                                    smoothed_direction = self.get_smoothed_direction(stable_direction)
                                     
-                                    # Publish the direction
-                                    self.publish_voice_direction(smoothed_direction, confidence)
+                                    # Update pixel ring if enabled
+                                    if self.enable_pixel_ring:
+                                        try:
+                                            pixel_ring.set_direction(smoothed_direction)
+                                        except:
+                                            pass
+                                    
+                                    # Check if we should report
+                                    current_time = self.get_clock().now()
+                                    time_since_last = (current_time - self.last_report_time).nanoseconds / 1e9
+                                    
+                                    if time_since_last >= self.min_report_interval:
+                                        self.voice_active = True
+                                        self.last_direction = smoothed_direction
+                                        self.last_report_time = current_time
+                                        
+                                        # Publish the direction
+                                        self.publish_voice_direction(smoothed_direction, confidence)
                         
                         # Reset for next window
                         speech_count = 0

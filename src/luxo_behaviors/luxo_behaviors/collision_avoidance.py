@@ -203,91 +203,6 @@ class CollisionAvoidance:
         
         self.node.get_logger().info(f"Voice following enabled: {self.voice_follow_enabled}")
 
-    def _send_voice_following_command(self):
-        """Actively send a command to follow voice direction with rotation limit handling"""
-        if not self.voice_follow_enabled or self.voice_influence < 0.1:
-            return
-            
-        if self.target_voice_angle is None:
-            return
-            
-        # Create a position based on current joints with voice adjustment
-        voice_position = self.current_joints.copy()
-        
-        # Calculate adjustment
-        current_base = voice_position[0]
-        
-        # Get joint limits for base (you may need to adjust these based on your robot)
-        base_min_limit = -3.14  # -180 degrees
-        base_max_limit = 3.14   # +180 degrees
-        
-        # Check if we're near a limit
-        at_min_limit = abs(current_base - base_min_limit) < 0.1
-        at_max_limit = abs(current_base - base_max_limit) < 0.1
-        
-        # Calculate the direct path difference
-        direct_diff = self._normalize_angle(self.target_voice_angle - current_base)
-        
-        # If we're at a limit and trying to go further in that direction, go the other way
-        if (at_max_limit and direct_diff > 0) or (at_min_limit and direct_diff < 0):
-            # We're at a limit and can't go the direct way
-            # Calculate the opposite direction
-            if direct_diff > 0:
-                # We want to go positive but we're at max, so go negative instead
-                opposite_diff = direct_diff - 2 * np.pi
-            else:
-                # We want to go negative but we're at min, so go positive instead
-                opposite_diff = direct_diff + 2 * np.pi
-                
-            self.node.get_logger().info(
-                f"At rotation limit! Reversing direction. Direct: {np.rad2deg(direct_diff):.1f}°, "
-                f"Using opposite: {np.rad2deg(opposite_diff):.1f}°"
-            )
-            
-            angle_diff = opposite_diff
-        else:
-            # Use the direct path
-            angle_diff = direct_diff
-        
-        # Make the adjustment more aggressive for active following
-        adjustment = angle_diff * self.voice_influence * 0.5  # 50% of the difference
-        max_adjustment = 0.2  # Larger max adjustment for active following
-        adjustment = np.clip(adjustment, -max_adjustment, max_adjustment)
-        
-        # Apply adjustment but respect limits
-        new_base = current_base + adjustment
-        
-        # Clamp to limits
-        new_base = np.clip(new_base, base_min_limit, base_max_limit)
-        
-        # Check if we're making progress
-        if abs(new_base - current_base) < 0.01:
-            # We're stuck at a limit
-            self.node.get_logger().debug(
-                f"Stuck at rotation limit. Current: {np.rad2deg(current_base):.1f}°, "
-                f"Target: {np.rad2deg(self.target_voice_angle):.1f}°"
-            )
-            
-            # Try to initiate a wrap-around if beneficial
-            if self._should_wrap_around(current_base, self.target_voice_angle):
-                self._initiate_wrap_around()
-            return
-        
-        # Apply the new position
-        voice_position[0] = new_base
-        
-        if abs(adjustment) > 0.01:  # Only send if meaningful adjustment
-            self.node.get_logger().info(
-                f"Sending voice following command: base adjustment {np.rad2deg(adjustment):.1f}° "
-                f"(target: {np.rad2deg(self.target_voice_angle):.1f}°, current: {np.rad2deg(current_base):.1f}°, "
-                f"new: {np.rad2deg(new_base):.1f}°)"
-            )
-            
-            # Send the command
-            self.send_safe_joint_command(voice_position, "Voice following")
-            
-            # Update activity time
-            self.last_activity_time = self.node.get_clock().now()
 
     def _should_wrap_around(self, current_angle, target_angle):
         """Check if wrapping around would be more efficient"""
@@ -328,59 +243,148 @@ class CollisionAvoidance:
         # Update activity time
         self.last_activity_time = self.node.get_clock().now()
             
-    def voice_direction_callback(self, msg):
-        """Handle voice direction updates"""
-        if not self.voice_follow_enabled:
-            return
-            
-        # Only process if in appropriate state
-        if not self.state_machine.is_in_state(LuxoState.IDLE, LuxoState.ANIMATING, LuxoState.EMOTION_REACTING):
-            return
-        
-        # Update voice tracking
-        self.last_voice_direction = msg.data
-        self.last_voice_time = self.node.get_clock().now()
-        
-        # Update activity time to prevent idle timeout while human is speaking
-        self.last_activity_time = self.last_voice_time
-        
-        # Increase voice influence
-        self.voice_influence = min(1.0, self.voice_influence + 0.3)
-        
-        # Calculate target angle
-        current_base = self.current_joints[0] if self.current_joints else 0.0
-        voice_angle_rad = np.deg2rad(self.last_voice_direction)
-        
-        # Calculate shortest path rotation
-        angle_diff = self._normalize_angle(voice_angle_rad - current_base)
-        angle_diff_deg = np.rad2deg(abs(angle_diff))
-        
-        # Only update if outside deadzone
-        if angle_diff_deg > self.voice_follow_deadzone:
-            # Smooth the target angle update
-            if self.target_voice_angle is None:
-                self.target_voice_angle = current_base + angle_diff * self.voice_follow_smoothing
-            else:
-                # Blend with previous target for smoother motion
-                self.target_voice_angle = (
-                    self.target_voice_angle * 0.7 + 
-                    (current_base + angle_diff * self.voice_follow_smoothing) * 0.3
-                )
-            
-            self.node.get_logger().info(
-                f"Voice detected at {self.last_voice_direction:.1f}°, "
-                f"adjusting base rotation (influence: {self.voice_influence:.2f})"
-            )
-            
-            # ACTIVELY SEND THE COMMAND
-            self._send_voice_following_command()
-    
+
     def voice_active_callback(self, msg):
         """Handle voice activity status"""
         self.voice_active = msg.data
         if not msg.data:
             # Start decay when voice stops
             self.voice_influence *= 0.8
+    
+    def voice_direction_callback(self, msg):
+            """Handle voice direction updates"""
+            if not self.voice_follow_enabled:
+                return
+                
+            # Only process if in appropriate state
+            if not self.state_machine.is_in_state(LuxoState.IDLE, LuxoState.ANIMATING, LuxoState.EMOTION_REACTING):
+                return
+            
+            # Update voice tracking
+            self.last_voice_direction = msg.data
+            self.last_voice_time = self.node.get_clock().now()
+            
+            # Update activity time to prevent idle timeout while human is speaking
+            self.last_activity_time = self.last_voice_time
+            
+            # Increase voice influence more aggressively
+            self.voice_influence = min(1.0, self.voice_influence + 0.5)  # Increased from 0.3
+            
+            # Calculate target angle
+            current_base = self.current_joints[0] if self.current_joints else 0.0
+            voice_angle_rad = np.deg2rad(self.last_voice_direction)
+            
+            # Calculate shortest path rotation
+            angle_diff = self._normalize_angle(voice_angle_rad - current_base)
+            angle_diff_deg = np.rad2deg(abs(angle_diff))
+            
+            # Lower the deadzone for more responsive following
+            if angle_diff_deg > 10.0:  # Reduced from 15.0
+                # Set target directly to voice direction for more aggressive following
+                self.target_voice_angle = voice_angle_rad  # Changed from blended target
+                
+                self.node.get_logger().info(
+                    f"Voice detected at {self.last_voice_direction:.1f}°, "
+                    f"current base: {np.rad2deg(current_base):.1f}°, "
+                    f"target: {np.rad2deg(self.target_voice_angle):.1f}°, "
+                    f"adjusting base rotation (influence: {self.voice_influence:.2f})"
+                )
+                
+                # ACTIVELY SEND THE COMMAND IMMEDIATELY
+                self._send_voice_following_command()
+    
+    def _send_voice_following_command(self):
+        """Actively send a command to follow voice direction with rotation limit handling"""
+        if not self.voice_follow_enabled or self.voice_influence < 0.1:
+            return
+            
+        if self.target_voice_angle is None:
+            return
+            
+        # Create a position based on current joints with voice adjustment
+        voice_position = self.current_joints.copy()
+        
+        # Calculate adjustment
+        current_base = voice_position[0]
+        
+        # Get joint limits for base
+        base_min_limit = -3.14  # -180 degrees
+        base_max_limit = 3.14   # +180 degrees
+        
+        # Check if we're near a limit
+        at_min_limit = abs(current_base - base_min_limit) < 0.1
+        at_max_limit = abs(current_base - base_max_limit) < 0.1
+        
+        # Calculate the direct path difference
+        direct_diff = self._normalize_angle(self.target_voice_angle - current_base)
+        
+        # If we're at a limit and trying to go further in that direction, go the other way
+        if (at_max_limit and direct_diff > 0) or (at_min_limit and direct_diff < 0):
+            # We're at a limit and can't go the direct way
+            # Calculate the opposite direction
+            if direct_diff > 0:
+                # We want to go positive but we're at max, so go negative instead
+                opposite_diff = direct_diff - 2 * np.pi
+            else:
+                # We want to go negative but we're at min, so go positive instead
+                opposite_diff = direct_diff + 2 * np.pi
+                
+            self.node.get_logger().info(
+                f"At rotation limit! Reversing direction. Direct: {np.rad2deg(direct_diff):.1f}°, "
+                f"Using opposite: {np.rad2deg(opposite_diff):.1f}°"
+            )
+            
+            angle_diff = opposite_diff
+        else:
+            # Use the direct path
+            angle_diff = direct_diff
+        
+        # Make the adjustment MUCH more aggressive for active following
+        adjustment = angle_diff * self.voice_influence * 0.8  # Increased from 0.5 to 80% of the difference
+        max_adjustment = 0.5  # Increased from 0.2 (about 28.6 degrees per update)
+        adjustment = np.clip(adjustment, -max_adjustment, max_adjustment)
+        
+        # Apply adjustment but respect limits
+        new_base = current_base + adjustment
+        
+        # Clamp to limits
+        new_base = np.clip(new_base, base_min_limit, base_max_limit)
+        
+        # Check if we're making progress
+        if abs(new_base - current_base) < 0.01:
+            # We're stuck at a limit
+            self.node.get_logger().debug(
+                f"Stuck at rotation limit. Current: {np.rad2deg(current_base):.1f}°, "
+                f"Target: {np.rad2deg(self.target_voice_angle):.1f}°"
+            )
+            
+            # Try to initiate a wrap-around if beneficial
+            if self._should_wrap_around(current_base, self.target_voice_angle):
+                self._initiate_wrap_around()
+            return
+        
+        # Apply the new position
+        voice_position[0] = new_base
+        
+        if abs(adjustment) > 0.01:  # Only send if meaningful adjustment
+            self.node.get_logger().info(
+                f"Sending voice following command: base adjustment {np.rad2deg(adjustment):.1f}° "
+                f"(target: {np.rad2deg(self.target_voice_angle):.1f}°, current: {np.rad2deg(current_base):.1f}°, "
+                f"new: {np.rad2deg(new_base):.1f}°)"
+            )
+            
+            # Send the command with high priority
+            self.send_safe_joint_command(voice_position, "Voice following")
+            
+            # Set this as a target override to prevent other systems from interfering
+            self.target_override_active = True
+            self.target_override_time = self.node.get_clock().now()
+            self.target_override_joints = voice_position.copy()
+            self.target_override_reason = "Voice following"
+            self.target_override_timeout = 2.0  # Short timeout for voice following
+            
+            # Update activity time
+            self.last_activity_time = self.node.get_clock().now()
     
     def apply_voice_following(self, positions):
         """Apply voice following to joint positions"""
@@ -408,26 +412,26 @@ class CollisionAvoidance:
             
             # Calculate adjustment with influence
             angle_diff = self._normalize_angle(self.target_voice_angle - current_base)
-            adjustment = angle_diff * self.voice_influence * self.voice_follow_speed
+            adjustment = angle_diff * self.voice_influence * 0.8  # Increased from speed * influence
             
-            # Limit adjustment rate
-            max_adjustment = 0.05  # radians per update
+            # Increased limit adjustment rate
+            max_adjustment = 0.3  # Increased from 0.05 radians per update
             adjustment = np.clip(adjustment, -max_adjustment, max_adjustment)
             
             # Apply to base joint
             adjusted_positions[0] += adjustment
             
-            # Natural decay of influence
-            self.voice_influence *= 0.98
+            # Slower decay of influence to maintain following
+            self.voice_influence *= 0.99  # Changed from 0.98
             
             # Update target as we approach it
-            if abs(angle_diff) < 0.1:  # Close enough
+            if abs(angle_diff) < 0.05:  # Tighter threshold
                 self.target_voice_angle = None
+                self.voice_influence = 0.0  # Reset influence when reached
                 
             return adjusted_positions
             
         return positions
-    
     def _normalize_angle(self, angle):
         """Normalize angle to [-pi, pi]"""
         while angle > np.pi:
@@ -908,14 +912,27 @@ class CollisionAvoidance:
             # Get current time for this check cycle
             current_time = self.node.get_clock().now()
             
+            # PRIORITY: Check for active voice following FIRST
+            if self.voice_follow_enabled and self.voice_influence > 0.1 and self.target_voice_angle is not None:
+                # Check if we should send a voice following update
+                if self.last_voice_time:
+                    time_since_voice = (current_time - self.last_voice_time).nanoseconds / 1e9
+                    if time_since_voice < 1.0:  # Voice is recent
+                        # Send periodic voice following updates with high priority
+                        self._send_voice_following_command()
+                        # Skip other checks if actively following voice
+                        return
+            
             # NEW: Check if target override is stuck (not in RETURNING_HOME state)
             if self.target_override_active and not self.state_machine.is_in_state(LuxoState.RETURNING_HOME):
-                override_duration = (current_time - self.target_override_time).nanoseconds / 1e9
-                if override_duration > 30.0:  # 30 second timeout
-                    self.node.get_logger().warn(f"Clearing stuck target override after {override_duration:.1f} seconds")
-                    self.target_override_active = False
-                    self.target_override_joints = None
-                    self.target_override_reason = "Cleared due to timeout"
+                # Don't clear voice following overrides too quickly
+                if self.target_override_reason != "Voice following":
+                    override_duration = (current_time - self.target_override_time).nanoseconds / 1e9
+                    if override_duration > 30.0:  # 30 second timeout
+                        self.node.get_logger().warn(f"Clearing stuck target override after {override_duration:.1f} seconds")
+                        self.target_override_active = False
+                        self.target_override_joints = None
+                        self.target_override_reason = "Cleared due to timeout"
             
             # Check if we're currently trying to go home and handle timeouts
             if self.state_machine.is_in_state(LuxoState.RETURNING_HOME):
@@ -1034,10 +1051,10 @@ class CollisionAvoidance:
                 time_since_activity = (current_time - self.last_activity_time).nanoseconds / 1e9
                 time_since_last_animation = (current_time - self.last_idle_animation_time).nanoseconds / 1e9
                 
-                # VOICE FOLLOWING ADDITION: Don't trigger idle animations if voice is active
-                if hasattr(self, 'voice_active') and self.voice_active:
+                # VOICE FOLLOWING ADDITION: Don't trigger idle animations if voice is active or we're following voice
+                if (hasattr(self, 'voice_active') and self.voice_active) or (self.voice_influence > 0.1):
                     self.last_activity_time = current_time
-                    self.node.get_logger().debug("Voice active - resetting idle timer")
+                    self.node.get_logger().debug("Voice active or following - resetting idle timer")
                     # Don't proceed with idle animation checks
                 else:
                     # Check if we're already at or very close to home positions
@@ -1065,15 +1082,6 @@ class CollisionAvoidance:
                         self.returning_to_home_start_time = current_time
                         self.go_to_home_position("Extended idle timeout")
                         return
-            
-            # Check for active voice following
-            if self.voice_follow_enabled and self.voice_influence > 0.1 and self.target_voice_angle is not None:
-                # Check if we should send a voice following update
-                if self.last_voice_time:
-                    time_since_voice = (current_time - self.last_voice_time).nanoseconds / 1e9
-                    if time_since_voice < 1.0:  # Voice is recent
-                        # Send periodic voice following updates
-                        self._send_voice_following_command()
             
             # Fast path: Check if there are any active collisions or we're in escape mode
             with self.collision_lock:
