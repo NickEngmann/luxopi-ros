@@ -204,7 +204,7 @@ class CollisionAvoidance:
         self.node.get_logger().info(f"Voice following enabled: {self.voice_follow_enabled}")
 
     def _send_voice_following_command(self):
-        """Actively send a command to follow voice direction"""
+        """Actively send a command to follow voice direction with rotation limit handling"""
         if not self.voice_follow_enabled or self.voice_influence < 0.1:
             return
             
@@ -216,20 +216,71 @@ class CollisionAvoidance:
         
         # Calculate adjustment
         current_base = voice_position[0]
-        angle_diff = self._normalize_angle(self.target_voice_angle - current_base)
+        
+        # Get joint limits for base (you may need to adjust these based on your robot)
+        base_min_limit = -3.14  # -180 degrees
+        base_max_limit = 3.14   # +180 degrees
+        
+        # Check if we're near a limit
+        at_min_limit = abs(current_base - base_min_limit) < 0.1
+        at_max_limit = abs(current_base - base_max_limit) < 0.1
+        
+        # Calculate the direct path difference
+        direct_diff = self._normalize_angle(self.target_voice_angle - current_base)
+        
+        # If we're at a limit and trying to go further in that direction, go the other way
+        if (at_max_limit and direct_diff > 0) or (at_min_limit and direct_diff < 0):
+            # We're at a limit and can't go the direct way
+            # Calculate the opposite direction
+            if direct_diff > 0:
+                # We want to go positive but we're at max, so go negative instead
+                opposite_diff = direct_diff - 2 * np.pi
+            else:
+                # We want to go negative but we're at min, so go positive instead
+                opposite_diff = direct_diff + 2 * np.pi
+                
+            self.node.get_logger().info(
+                f"At rotation limit! Reversing direction. Direct: {np.rad2deg(direct_diff):.1f}°, "
+                f"Using opposite: {np.rad2deg(opposite_diff):.1f}°"
+            )
+            
+            angle_diff = opposite_diff
+        else:
+            # Use the direct path
+            angle_diff = direct_diff
         
         # Make the adjustment more aggressive for active following
         adjustment = angle_diff * self.voice_influence * 0.5  # 50% of the difference
         max_adjustment = 0.2  # Larger max adjustment for active following
         adjustment = np.clip(adjustment, -max_adjustment, max_adjustment)
         
-        # Apply adjustment
-        voice_position[0] += adjustment
+        # Apply adjustment but respect limits
+        new_base = current_base + adjustment
+        
+        # Clamp to limits
+        new_base = np.clip(new_base, base_min_limit, base_max_limit)
+        
+        # Check if we're making progress
+        if abs(new_base - current_base) < 0.01:
+            # We're stuck at a limit
+            self.node.get_logger().debug(
+                f"Stuck at rotation limit. Current: {np.rad2deg(current_base):.1f}°, "
+                f"Target: {np.rad2deg(self.target_voice_angle):.1f}°"
+            )
+            
+            # Try to initiate a wrap-around if beneficial
+            if self._should_wrap_around(current_base, self.target_voice_angle):
+                self._initiate_wrap_around()
+            return
+        
+        # Apply the new position
+        voice_position[0] = new_base
         
         if abs(adjustment) > 0.01:  # Only send if meaningful adjustment
             self.node.get_logger().info(
                 f"Sending voice following command: base adjustment {np.rad2deg(adjustment):.1f}° "
-                f"(target: {np.rad2deg(self.target_voice_angle):.1f}°, current: {np.rad2deg(current_base):.1f}°)"
+                f"(target: {np.rad2deg(self.target_voice_angle):.1f}°, current: {np.rad2deg(current_base):.1f}°, "
+                f"new: {np.rad2deg(new_base):.1f}°)"
             )
             
             # Send the command
@@ -237,6 +288,45 @@ class CollisionAvoidance:
             
             # Update activity time
             self.last_activity_time = self.node.get_clock().now()
+
+    def _should_wrap_around(self, current_angle, target_angle):
+        """Check if wrapping around would be more efficient"""
+        # Calculate both paths
+        direct_path = abs(self._normalize_angle(target_angle - current_angle))
+        wrap_path = 2 * np.pi - direct_path
+        
+        # If wrap path is significantly shorter and we're at a limit
+        if wrap_path < direct_path * 0.7:  # 30% shorter
+            return True
+        return False
+
+    def _initiate_wrap_around(self):
+        """Initiate a wrap-around movement to reach target from opposite direction"""
+        current_base = self.current_joints[0]
+        
+        # Determine which direction to start wrapping
+        if current_base > 0:
+            # We're on the positive side, start moving negative
+            intermediate_target = current_base - 0.5  # Move away from limit
+        else:
+            # We're on the negative side, start moving positive
+            intermediate_target = current_base + 0.5  # Move away from limit
+        
+        self.node.get_logger().info(
+            f"Initiating wrap-around movement. Current: {np.rad2deg(current_base):.1f}°, "
+            f"Intermediate: {np.rad2deg(intermediate_target):.1f}°, "
+            f"Final target: {np.rad2deg(self.target_voice_angle):.1f}°"
+        )
+        
+        # Create intermediate position
+        wrap_position = self.current_joints.copy()
+        wrap_position[0] = intermediate_target
+        
+        # Send the wrap-around command
+        self.send_safe_joint_command(wrap_position, "Voice following wrap-around")
+        
+        # Update activity time
+        self.last_activity_time = self.node.get_clock().now()
             
     def voice_direction_callback(self, msg):
         """Handle voice direction updates"""
@@ -1079,7 +1169,7 @@ class CollisionAvoidance:
             self.node.get_logger().error(f"Stack trace: {traceback.format_exc()}")
     
     def perform_collision_avoidance(self, direction, distance, emergency=False):
-        """Perform collision avoidance with more significant adjustments for emergency cases."""
+        """Perform collision avoidance with rotation limit awareness."""
         # Update activity time when performing collision avoidance
         current_time = self.node.get_clock().now()
         self.last_activity_time = current_time
@@ -1109,13 +1199,10 @@ class CollisionAvoidance:
             consecutive_count = self.collision_status[direction]['consecutive_count']
             
             # Determine adjustment magnitude based on consecutive count
-            # The more persistent the collision, the stronger the response
             if consecutive_count > 8:
-                # Very persistent collision - make a dramatic move
-                magnitude = 2.5  # Much stronger than normal emergency
+                magnitude = 2.5
                 self.node.get_logger().warn(f"DRAMATIC avoidance for persistent {direction} collision (count: {consecutive_count})")
             elif consecutive_count > 5:
-                # Persistent collision - stronger than emergency
                 magnitude = 2.0
                 self.node.get_logger().warn(f"Strong avoidance for persistent {direction} collision (count: {consecutive_count})")
             elif emergency:
@@ -1127,30 +1214,61 @@ class CollisionAvoidance:
             variation = random.uniform(0.9, 1.1)
             magnitude *= variation
             
+            # Get joint limits
+            base_min_limit = -3.14  # -180 degrees
+            base_max_limit = 3.14   # +180 degrees
+            current_base = new_position[0]
+            
+            # Check if we're at a limit
+            at_min_limit = abs(current_base - base_min_limit) < 0.1
+            at_max_limit = abs(current_base - base_max_limit) < 0.1
+            
             if direction == 'front':
                 # Pull back shoulder and elbow
                 new_position[1] -= 0.6 * magnitude  # Shoulder back
                 new_position[2] += 0.4 * magnitude  # Elbow fold
                 
                 # Add a random rotation to help escape
-                # For persistent collisions, make rotation more decisive
                 if consecutive_count > 5:
-                    # Choose a consistent rotation direction rather than random
-                    rotation = 0.5 * magnitude if consecutive_count % 2 == 0 else -0.5 * magnitude
+                    # For persistent collisions, use smarter rotation
+                    if at_max_limit:
+                        # At max limit, only rotate negative
+                        rotation = -0.5 * magnitude
+                    elif at_min_limit:
+                        # At min limit, only rotate positive
+                        rotation = 0.5 * magnitude
+                    else:
+                        # Not at limit, use consistent rotation direction
+                        rotation = 0.5 * magnitude if consecutive_count % 2 == 0 else -0.5 * magnitude
                 else:
                     rotation = random.uniform(-0.7, 0.7) * magnitude
                     
                 new_position[0] += rotation
                 
             elif direction == 'left':
-                # REVERSED: Rotate to the LEFT (negative adjustment)
-                new_position[0] -= 0.4 * magnitude
+                # Check if we can rotate right (negative adjustment)
+                if at_min_limit:
+                    # Can't rotate left more, try rotating right instead
+                    self.node.get_logger().info("At min rotation limit for left collision, rotating RIGHT instead")
+                    new_position[0] += 0.6 * magnitude  # Rotate right more aggressively
+                else:
+                    # Normal left collision response - rotate left
+                    new_position[0] -= 0.4 * magnitude
                 new_position[1] += 0.1 * magnitude  # Slight shoulder back
                 
             elif direction == 'right':
-                # REVERSED: Rotate to the RIGHT (positive adjustment)
-                new_position[0] += 0.4 * magnitude
+                # Check if we can rotate left (positive adjustment)
+                if at_max_limit:
+                    # Can't rotate right more, try rotating left instead
+                    self.node.get_logger().info("At max rotation limit for right collision, rotating LEFT instead")
+                    new_position[0] -= 0.6 * magnitude  # Rotate left more aggressively
+                else:
+                    # Normal right collision response - rotate right
+                    new_position[0] += 0.4 * magnitude
                 new_position[1] += 0.1 * magnitude  # Slight shoulder back
+            
+            # Clamp base position to limits
+            new_position[0] = np.clip(new_position[0], base_min_limit, base_max_limit)
             
             # Send command with high priority
             self.send_safe_joint_command(new_position, f"Collision avoidance (count: {consecutive_count})")
@@ -1718,14 +1836,7 @@ class CollisionAvoidance:
             return False
     
     def go_to_home_position(self, description="Home position reset"):
-        """Move to home position using a two-stage sequence.
-        
-        First moves to home_position_1, and once it's within tolerance of that position,
-        transitions to home_position_2. If already close to home_position_2, skips
-        directly to that position.
-
-        Preserves the current base rotation (joint 0) regardless of what's in the home positions.
-        """
+        """Move to home position using a two-stage sequence with rotation limit awareness"""
         try:
             # Transition to RETURNING_HOME state
             self.state_machine.transition_to(LuxoState.RETURNING_HOME)
@@ -1742,12 +1853,29 @@ class CollisionAvoidance:
             current_time = self.node.get_clock().now()
             current_base_position = self.current_joints[0]
             
-            # Create modified home positions that preserve the current base rotation
+            # Check if base is near its limits
+            base_min_limit = -3.14  # -180 degrees
+            base_max_limit = 3.14   # +180 degrees
+            
+            # If we're near a limit, reset base to center (0) during home position
+            if abs(current_base_position - base_max_limit) < 0.5 or abs(current_base_position - base_min_limit) < 0.5:
+                self.node.get_logger().info(
+                    f"Base near rotation limit ({np.rad2deg(current_base_position):.1f}°), "
+                    f"resetting to center during home position"
+                )
+                reset_base_position = 0.0
+            else:
+                reset_base_position = current_base_position
+            
+            # Create modified home positions
             mod_home_position_1 = self.home_position_1.copy()
-            mod_home_position_1[0] = current_base_position
+            mod_home_position_1[0] = reset_base_position
             
             mod_home_position_2 = self.home_position_2.copy()
-            mod_home_position_2[0] = current_base_position
+            mod_home_position_2[0] = reset_base_position
+            
+            # Continue with rest of home position logic...
+            # (Rest of the original go_to_home_position code follows here)
             
             # IMPROVED: Check if we're already at or near home_position_2 - use a more relaxed tolerance
             # Skip checking joint 0 (base) when determining if we're at home
@@ -1758,7 +1886,6 @@ class CollisionAvoidance:
             if already_at_home2:
                 self.home_position_stage = 2
                 self.node.get_logger().debug(f"Already at final home position (diffs: {[round(d, 2) for d in hp2_diffs]})")
-                # return True
             else:
                 # Also check if we're close to home_position_1, ignoring base position
                 hp1_diffs = [abs(curr - target) if i > 0 else 0.0 
@@ -1776,12 +1903,12 @@ class CollisionAvoidance:
             noise_range = 0.05
             if self.home_position_stage == 1:
                 home_with_variation = [
-                    current_base_position if i == 0 else pos + random.uniform(-noise_range, noise_range) 
+                    reset_base_position if i == 0 else pos + random.uniform(-noise_range, noise_range) 
                     for i, pos in enumerate(mod_home_position_1)
                 ]
             else:
                 home_with_variation = [
-                    current_base_position if i == 0 else pos + random.uniform(-noise_range, noise_range) 
+                    reset_base_position if i == 0 else pos + random.uniform(-noise_range, noise_range) 
                     for i, pos in enumerate(mod_home_position_2)
                 ]
             
@@ -1807,8 +1934,6 @@ class CollisionAvoidance:
             if success:
                 # The arm is moving to home
                 self.escape_attempts = 0
-                # Don't reset persistent_head_collision_active here since we want to 
-                # keep tracking it until we reach home or the collision naturally clears
                 with self.collision_lock:
                     for direction in self.collision_status:
                         self.collision_status[direction]['consecutive_count'] = 0

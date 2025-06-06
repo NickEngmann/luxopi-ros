@@ -1,17 +1,17 @@
-# LuxoPi Project Todo List
-[] Make joint_states_target be roarm/target
+[] If I get nonstop voice activity or collision detection, the robot can get in a weird stuck state
+[] I see the target and current adjustment with the voice activity, but it never reaches target. It just does micro movements
+[] Sometimes it doesn't react to the camera/actions (more of a delay in between actions)
+[] React to Camera Faster!
+[] Simplify Launch Files
+[] When the camera closes also close the framebuffer (show a specific closing state)
 [] Continue fine tuning the different animation commands
 
+# Later Priorities
 ## High Priority
-- [ ] Consolidate duplicate functionality - merge the two `at_position` functions into one consistent implementation
 - [ ] Fix dynamic adaptation mode (DEMA) - increase torque limit for better operation
-- [ ] Implement proper error handling in SerialManager class
 - [ ] Fix animation system to handle interruptions from collision avoidance more gracefully
 
 ## Code Quality Improvements 
-- [ ] Reduce code duplication in collision callbacks (left/right/front have nearly identical logic)
-- [ ] Add type hints to all Python functions for better code clarity
-- [ ] Improve comment quality, especially for complex collision avoidance logic
 - [ ] Add unit tests for critical components
 - [ ] Create integration tests for full system behavior
 
@@ -19,6 +19,8 @@
 - [ ] Implement smoother transition between animations when interrupted by collisions
 - [ ] Add more sophisticated emotion detection response (consider context/history)
 - [ ] Improve proactive collision avoidance to avoid obstacles more naturally
+- [ ] Convert to lifecycle nodes
+- [ ] Add parameter namespacing
 
 ## Documentation
 - [ ] Document all available ROS parameters with descriptions and default values
@@ -36,3 +38,4 @@
 - [ ] Extract configuration from hardcoded values to parameter files
 - [ ] Review and fix thread safety issues in all multi-threaded components
 - [ ] Implement proper ROS2 lifecycle nodes for better state management
+- [ ] Split large nodes into smaller, focused components
