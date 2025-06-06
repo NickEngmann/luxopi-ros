@@ -206,6 +206,9 @@ class CameraInteraction(Node):
             self.get_logger().info('Camera initialized successfully')
         else:
             self.get_logger().warn(f'Camera not found. Will retry every {self.camera_retry_interval} seconds...')
+            # Show camera not found message on framebuffer
+            if self.enable_framebuffer_display and hasattr(self, 'framebuffer_display'):
+                self._show_camera_not_found_message()
             # Create retry timer
             self.create_camera_retry_timer()
 
@@ -277,8 +280,15 @@ class CameraInteraction(Node):
         self.camera_retry_attempts += 1
         self.get_logger().info(f'Retrying camera connection (attempt {self.camera_retry_attempts})...')
         
+        # Show attempting connection message
+        if self.enable_framebuffer_display and hasattr(self, 'framebuffer_display'):
+            self._show_camera_attempting_connection()
+        
         if self.initialize_camera():
             self.get_logger().info('Camera reconnection successful!')
+            # Show success message briefly
+            if self.enable_framebuffer_display and hasattr(self, 'framebuffer_display'):
+                self._show_camera_reconnected_message()
             # Cancel the retry timer
             self.camera_retry_timer.cancel()
             self.camera_retry_timer = None
@@ -530,7 +540,7 @@ class CameraInteraction(Node):
                 # Clear face bboxes if no detections
                 if not detections:
                     self.last_face_bboxes = []
-                    # Update framebuffer display even with no faces
+                    # Update framebuffer display even with no faces - show "No faces detected" overlay
                     if self.enable_framebuffer_display and frame is not None:
                         self._update_framebuffer_display(frame)
                     # Reset error counter on successful processing (even with no detections)
@@ -635,6 +645,10 @@ class CameraInteraction(Node):
         # Mark camera as disconnected
         self.camera_connected = False
         
+        # Show disconnection message on framebuffer if enabled
+        if self.enable_framebuffer_display and hasattr(self, 'framebuffer_display'):
+            self._show_camera_disconnected_message()
+        
         # Clean up the device
         if self.device is not None:
             try:
@@ -658,6 +672,227 @@ class CameraInteraction(Node):
             self.create_camera_retry_timer()
         else:
             self.get_logger().debug("Camera retry timer already active")
+    
+    def _show_camera_not_found_message(self):
+        """Show camera not found message on framebuffer during initial startup"""
+        if not self.enable_framebuffer_display or not hasattr(self, 'framebuffer_display'):
+            return
+            
+        try:
+            # Create a black frame
+            frame = np.zeros((240, 320, 3), dtype=np.uint8)  # Default size
+            
+            # Try to get actual display size
+            if hasattr(self.framebuffer_display, 'display') and hasattr(self.framebuffer_display.display, 'height'):
+                height = self.framebuffer_display.display.height
+                width = self.framebuffer_display.display.width
+                frame = np.zeros((height, width, 3), dtype=np.uint8)
+            
+            font = cv2.FONT_HERSHEY_SIMPLEX
+            
+            # Main message
+            text = "CAMERA NOT FOUND"
+            font_scale = 1.5
+            thickness = 2
+            text_size = cv2.getTextSize(text, font, font_scale, thickness)[0]
+            
+            # Center the text
+            x = (frame.shape[1] - text_size[0]) // 2
+            y = (frame.shape[0] + text_size[1]) // 2 - 40
+            
+            # Draw text with border
+            cv2.putText(frame, text, (x, y), font, font_scale, (0, 0, 0), thickness + 2)  # Black border
+            cv2.putText(frame, text, (x, y), font, font_scale, (255, 165, 0), thickness)  # Orange text
+            
+            # Add info about retry
+            retry_text = "Searching for camera..."
+            font_scale_sub = 0.8
+            thickness_sub = 1
+            text_size_sub = cv2.getTextSize(retry_text, font, font_scale_sub, thickness_sub)[0]
+            x_sub = (frame.shape[1] - text_size_sub[0]) // 2
+            y_sub = y + 50
+            
+            cv2.putText(frame, retry_text, (x_sub, y_sub), font, font_scale_sub, (200, 200, 200), thickness_sub)
+            
+            # Add retry interval info
+            interval_text = f"Retry every {self.camera_retry_interval}s"
+            text_size_int = cv2.getTextSize(interval_text, font, font_scale_sub, thickness_sub)[0]
+            x_int = (frame.shape[1] - text_size_int[0]) // 2
+            y_int = y_sub + 30
+            
+            cv2.putText(frame, interval_text, (x_int, y_int), font, font_scale_sub, (150, 150, 150), thickness_sub)
+            
+            # Display the frame directly
+            if hasattr(self.framebuffer_display, 'display') and self.framebuffer_display.display:
+                self.framebuffer_display.display.display_frame(frame)
+            
+        except Exception as e:
+            self.get_logger().error(f"Error showing camera not found message: {e}")
+    
+    def _show_camera_disconnected_message(self):
+        """Show camera disconnected message on framebuffer"""
+        if not self.enable_framebuffer_display or not hasattr(self, 'framebuffer_display'):
+            return
+            
+        try:
+            # Create a black frame
+            frame = np.zeros((240, 320, 3), dtype=np.uint8)  # Default size
+            
+            # Try to get actual display size
+            if hasattr(self.framebuffer_display, 'display') and hasattr(self.framebuffer_display.display, 'height'):
+                height = self.framebuffer_display.display.height
+                width = self.framebuffer_display.display.width
+                frame = np.zeros((height, width, 3), dtype=np.uint8)
+            
+            font = cv2.FONT_HERSHEY_SIMPLEX
+            
+            # Main message
+            text = "CAMERA DISCONNECTED"
+            font_scale = 1.5
+            thickness = 2
+            text_size = cv2.getTextSize(text, font, font_scale, thickness)[0]
+            
+            # Center the text
+            x = (frame.shape[1] - text_size[0]) // 2
+            y = (frame.shape[0] + text_size[1]) // 2 - 40
+            
+            # Draw text with border
+            cv2.putText(frame, text, (x, y), font, font_scale, (0, 0, 0), thickness + 2)  # Black border
+            cv2.putText(frame, text, (x, y), font, font_scale, (0, 0, 255), thickness)  # Red text
+            
+            # Add retry info
+            retry_text = f"Retrying in {self.camera_retry_interval}s..."
+            font_scale_sub = 0.8
+            thickness_sub = 1
+            text_size_sub = cv2.getTextSize(retry_text, font, font_scale_sub, thickness_sub)[0]
+            x_sub = (frame.shape[1] - text_size_sub[0]) // 2
+            y_sub = y + 50
+            
+            cv2.putText(frame, retry_text, (x_sub, y_sub), font, font_scale_sub, (200, 200, 200), thickness_sub)
+            
+            # Add attempt counter if available
+            if hasattr(self, 'camera_retry_attempts') and self.camera_retry_attempts > 0:
+                attempt_text = f"Attempt: {self.camera_retry_attempts}"
+                text_size_att = cv2.getTextSize(attempt_text, font, font_scale_sub, thickness_sub)[0]
+                x_att = (frame.shape[1] - text_size_att[0]) // 2
+                y_att = y_sub + 30
+                cv2.putText(frame, attempt_text, (x_att, y_att), font, font_scale_sub, (150, 150, 150), thickness_sub)
+            
+            # Display the frame directly
+            if hasattr(self.framebuffer_display, 'display') and self.framebuffer_display.display:
+                self.framebuffer_display.display.display_frame(frame)
+            
+        except Exception as e:
+            self.get_logger().error(f"Error showing camera disconnected message: {e}")
+    
+    def _show_camera_reconnected_message(self):
+        """Show camera reconnected success message on framebuffer"""
+        if not self.enable_framebuffer_display or not hasattr(self, 'framebuffer_display'):
+            return
+            
+        try:
+            # Create a black frame
+            frame = np.zeros((240, 320, 3), dtype=np.uint8)  # Default size
+            
+            # Try to get actual display size
+            if hasattr(self.framebuffer_display, 'display') and hasattr(self.framebuffer_display.display, 'height'):
+                height = self.framebuffer_display.display.height
+                width = self.framebuffer_display.display.width
+                frame = np.zeros((height, width, 3), dtype=np.uint8)
+            
+            font = cv2.FONT_HERSHEY_SIMPLEX
+            
+            # Main message
+            text = "CAMERA CONNECTED"
+            font_scale = 1.5
+            thickness = 2
+            text_size = cv2.getTextSize(text, font, font_scale, thickness)[0]
+            
+            # Center the text
+            x = (frame.shape[1] - text_size[0]) // 2
+            y = (frame.shape[0] + text_size[1]) // 2 - 20
+            
+            # Draw text with border
+            cv2.putText(frame, text, (x, y), font, font_scale, (0, 0, 0), thickness + 2)  # Black border
+            cv2.putText(frame, text, (x, y), font, font_scale, (0, 255, 0), thickness)  # Green text
+            
+            # Add success message
+            success_text = "Resuming operation..."
+            font_scale_sub = 0.8
+            thickness_sub = 1
+            text_size_sub = cv2.getTextSize(success_text, font, font_scale_sub, thickness_sub)[0]
+            x_sub = (frame.shape[1] - text_size_sub[0]) // 2
+            y_sub = y + 40
+            
+            cv2.putText(frame, success_text, (x_sub, y_sub), font, font_scale_sub, (200, 200, 200), thickness_sub)
+            
+            # Display the frame directly
+            if hasattr(self.framebuffer_display, 'display') and self.framebuffer_display.display:
+                self.framebuffer_display.display.display_frame(frame)
+            
+            # Show briefly then it will be replaced by camera feed
+            import time
+            time.sleep(1.0)
+            
+        except Exception as e:
+            self.get_logger().error(f"Error showing camera reconnected message: {e}")
+    
+    def _show_camera_attempting_connection(self):
+        """Show attempting connection message on framebuffer"""
+        if not self.enable_framebuffer_display or not hasattr(self, 'framebuffer_display'):
+            return
+            
+        try:
+            # Create a black frame
+            frame = np.zeros((240, 320, 3), dtype=np.uint8)  # Default size
+            
+            # Try to get actual display size
+            if hasattr(self.framebuffer_display, 'display') and hasattr(self.framebuffer_display.display, 'height'):
+                height = self.framebuffer_display.display.height
+                width = self.framebuffer_display.display.width
+                frame = np.zeros((height, width, 3), dtype=np.uint8)
+            
+            font = cv2.FONT_HERSHEY_SIMPLEX
+            
+            # Main message
+            text = "CONNECTING..."
+            font_scale = 1.8
+            thickness = 2
+            text_size = cv2.getTextSize(text, font, font_scale, thickness)[0]
+            
+            # Center the text
+            x = (frame.shape[1] - text_size[0]) // 2
+            y = (frame.shape[0] + text_size[1]) // 2 - 30
+            
+            # Draw text with border
+            cv2.putText(frame, text, (x, y), font, font_scale, (0, 0, 0), thickness + 2)  # Black border
+            cv2.putText(frame, text, (x, y), font, font_scale, (255, 255, 0), thickness)  # Yellow text
+            
+            # Add attempt info
+            attempt_text = f"Attempt #{self.camera_retry_attempts}"
+            font_scale_sub = 0.9
+            thickness_sub = 1
+            text_size_sub = cv2.getTextSize(attempt_text, font, font_scale_sub, thickness_sub)[0]
+            x_sub = (frame.shape[1] - text_size_sub[0]) // 2
+            y_sub = y + 50
+            
+            cv2.putText(frame, attempt_text, (x_sub, y_sub), font, font_scale_sub, (200, 200, 200), thickness_sub)
+            
+            # Add a simple loading animation (dots)
+            dots = "." * ((self.camera_retry_attempts % 4))
+            dots_text = f"Please wait{dots}"
+            text_size_dots = cv2.getTextSize(dots_text, font, font_scale_sub, thickness_sub)[0]
+            x_dots = (frame.shape[1] - text_size_dots[0]) // 2
+            y_dots = y_sub + 30
+            
+            cv2.putText(frame, dots_text, (x_dots, y_dots), font, font_scale_sub, (150, 150, 150), thickness_sub)
+            
+            # Display the frame directly
+            if hasattr(self.framebuffer_display, 'display') and self.framebuffer_display.display:
+                self.framebuffer_display.display.display_frame(frame)
+            
+        except Exception as e:
+            self.get_logger().error(f"Error showing attempting connection message: {e}")
     
     def process_emotion_buffer(self):
         """Process the emotion buffer and trigger an animation if conditions are met"""
@@ -887,8 +1122,9 @@ class CameraInteraction(Node):
     
     def destroy_node(self):
         """Clean up resources when the node is shut down"""
-        # Clean up framebuffer display
+        # Show shutdown message on framebuffer before cleanup
         if self.enable_framebuffer_display and hasattr(self, 'framebuffer_display'):
+            self.get_logger().info("Displaying shutdown message on framebuffer")
             self.framebuffer_display.cleanup()
         
         if hasattr(self, 'camera_retry_timer') and self.camera_retry_timer is not None:
