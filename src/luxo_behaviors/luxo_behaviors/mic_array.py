@@ -110,6 +110,38 @@ class MicArray(object):
                 best_guess = (180 - theta[min_index])
 
             best_guess = (best_guess + 120 + min_index * 60) % 360
+            
+        elif self.channels == 6:
+            # Use the 4 raw microphones (channels 1-4)
+            # Create a 4-channel buffer from the 6-channel input
+            buf_4ch = np.zeros(len(buf) // 6 * 4, dtype=buf.dtype)
+            for i in range(4):
+                buf_4ch[i::4] = buf[(i+1)::6]  # Extract channels 1-4
+            
+            # Use the 4-mic algorithm with the extracted channels
+            MIC_GROUP_N = 2
+            MIC_GROUP = [[0, 2], [1, 3]]
+
+            tau = [0] * MIC_GROUP_N
+            theta = [0] * MIC_GROUP_N
+            for i, v in enumerate(MIC_GROUP):
+                tau[i], _ = gcc_phat(buf_4ch[v[0]::4], buf_4ch[v[1]::4], fs=self.sample_rate, max_tau=MAX_TDOA_4, interp=1)
+                theta[i] = math.asin(tau[i] / MAX_TDOA_4) * 180 / math.pi
+
+            if np.abs(theta[0]) < np.abs(theta[1]):
+                if theta[1] > 0:
+                    best_guess = (theta[0] + 360) % 360
+                else:
+                    best_guess = (180 - theta[0])
+            else:
+                if theta[0] < 0:
+                    best_guess = (theta[1] + 360) % 360
+                else:
+                    best_guess = (180 - theta[1])
+
+                best_guess = (best_guess + 90 + 180) % 360
+
+            best_guess = (-best_guess + 120) % 360
         elif self.channels == 4:
             MIC_GROUP_N = 2
             MIC_GROUP = [[0, 2], [1, 3]]

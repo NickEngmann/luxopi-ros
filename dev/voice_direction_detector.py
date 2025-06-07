@@ -102,9 +102,12 @@ class VoiceDirectionDetector:
             
             with MicArray(self.rate, self.channels, self.chunk_size) as mic:
                 for chunk in mic.read_chunks():
-                    # Use single channel audio for VAD (channel 0)
-                    mono_audio = chunk[0::self.channels].tobytes()
-                    
+                    if self.channels == 6:
+                        # Use raw microphone data (channel 1) instead of processed (channel 0)
+                        mono_audio = chunk[1::self.channels].tobytes()
+                    else:
+                        # Use channel 0 for other configurations
+                        mono_audio = chunk[0::self.channels].tobytes()
                     # Check if speech is detected
                     is_speech = self.vad.is_speech(mono_audio, self.rate)
                     self.voice_history.append(is_speech)
