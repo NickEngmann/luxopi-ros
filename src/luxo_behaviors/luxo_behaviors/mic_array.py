@@ -88,7 +88,6 @@ class MicArray(object):
 
     def get_direction(self, buf):
         best_guess = None
-        # Check if buffer has sufficient energy
         if np.max(np.abs(buf)) < 100:  # Threshold for minimum signal level
             return None  # Signal too weak
         if self.channels == 8:

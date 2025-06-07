@@ -12,6 +12,8 @@ import webrtcvad
 from collections import deque
 from mic_array import MicArray
 from pixel_ring import pixel_ring
+from scipy import signal
+from scipy.fft import fft
 
 class VoiceDirectionDetector:
     """Main class for detecting voice direction"""
@@ -42,16 +44,145 @@ class VoiceDirectionDetector:
         self.chunk_size = int(rate * vad_frames / 1000)
         self.doa_chunks = int(doa_frames / vad_frames)
         
+        # Voice-specific frequency analysis parameters
+        self.speech_low_freq = 300   # Hz - Lower bound of speech
+        self.speech_high_freq = 3400 # Hz - Upper bound of speech
+        self.voice_energy_threshold = 0.4  # Minimum energy in speech band
+        self.spectral_centroid_range = (500, 2000)  # Expected range for voice
+        
         # History for smoothing
         self.direction_history = deque(maxlen=5)
         self.voice_history = deque(maxlen=10)
+        self.spectral_history = deque(maxlen=5)
+        
+        # Precompute frequency bins for efficiency
+        self.freq_bins = np.fft.fftfreq(self.chunk_size, 1/self.rate)
+        self.speech_mask = (self.freq_bins >= self.speech_low_freq) & (self.freq_bins <= self.speech_high_freq)
         
         print("[OK] Voice Direction Detector initialized")
         print(f"    Sample rate: {rate} Hz")
         print(f"    Channels: {channels}")
         print(f"    VAD frame: {vad_frames} ms")
         print(f"    DOA window: {doa_frames} ms")
+        print(f"    Speech band: {self.speech_low_freq}-{self.speech_high_freq} Hz")
         
+    def analyze_speech_characteristics(self, audio_data):
+        """
+        Analyze audio for speech-specific characteristics
+        
+        Returns:
+            dict: Analysis results with voice probability
+        """
+        # Convert to float for analysis
+        audio_float = audio_data.astype(np.float32) / 32768.0
+        
+        # Remove DC component
+        audio_float = audio_float - np.mean(audio_float)
+        
+        # Apply window to reduce spectral leakage
+        windowed = audio_float * np.hanning(len(audio_float))
+        
+        # Compute FFT
+        fft_data = np.abs(fft(windowed))
+        fft_data = fft_data[:len(fft_data)//2]  # Keep only positive frequencies
+        
+        # Calculate total energy
+        total_energy = np.sum(fft_data**2)
+        if total_energy < 1e-10:  # Silence
+            return {'is_voice': False, 'confidence': 0.0, 'reason': 'silence'}
+        
+        # Energy in speech frequency band
+        speech_energy = np.sum(fft_data[self.speech_mask[:len(fft_data)]]**2)
+        speech_ratio = speech_energy / total_energy if total_energy > 0 else 0
+        
+        # Spectral centroid (brightness measure)
+        freqs = self.freq_bins[:len(fft_data)]
+        spectral_centroid = np.sum(freqs * fft_data**2) / np.sum(fft_data**2) if np.sum(fft_data**2) > 0 else 0
+        
+        # Spectral rolloff (frequency below which 85% of energy is contained)
+        cumulative_energy = np.cumsum(fft_data**2)
+        rolloff_threshold = 0.85 * total_energy
+        rolloff_idx = np.where(cumulative_energy >= rolloff_threshold)[0]
+        spectral_rolloff = freqs[rolloff_idx[0]] if len(rolloff_idx) > 0 else self.rate/2
+        
+        # Zero crossing rate (indicates voiced vs unvoiced)
+        zero_crossings = np.sum(np.diff(np.sign(audio_float)) != 0)
+        zcr = zero_crossings / len(audio_float)
+        
+        # Voice classification criteria
+        criteria = {
+            'speech_energy': speech_ratio >= self.voice_energy_threshold,
+            'spectral_centroid': self.spectral_centroid_range[0] <= spectral_centroid <= self.spectral_centroid_range[1],
+            'spectral_rolloff': spectral_rolloff <= 4000,  # Voice typically rolls off before 4kHz
+            'zero_crossing': 0.01 <= zcr <= 0.3,  # Voice has moderate ZCR
+            'energy_level': total_energy > 1e-6,  # Minimum energy threshold
+        }
+        
+        # Calculate voice confidence
+        passed_criteria = sum(criteria.values())
+        voice_confidence = passed_criteria / len(criteria)
+        
+        # Additional noise rejection
+        # High frequency noise detection
+        high_freq_mask = freqs > 4000
+        if len(high_freq_mask) > 0:
+            high_freq_energy = np.sum(fft_data[high_freq_mask]**2)
+            high_freq_ratio = high_freq_energy / total_energy if total_energy > 0 else 0
+            
+            # If too much high frequency content, likely noise
+            if high_freq_ratio > 0.3:
+                voice_confidence *= 0.5
+        
+        # Sudden energy spikes (like paper crumpling) have different characteristics
+        if spectral_rolloff > 6000 and zcr > 0.5:
+            voice_confidence *= 0.2  # Likely broadband noise
+        
+        is_voice = voice_confidence >= 0.6  # Require 60% confidence
+        
+        return {
+            'is_voice': is_voice,
+            'confidence': voice_confidence,
+            'speech_ratio': speech_ratio,
+            'spectral_centroid': spectral_centroid,
+            'spectral_rolloff': spectral_rolloff,
+            'zcr': zcr,
+            'criteria': criteria
+        }
+    
+    def is_speech_detected(self, mono_audio, chunk_data):
+        """
+        Enhanced speech detection combining VAD and spectral analysis
+        
+        Args:
+            mono_audio: Raw audio bytes for VAD
+            chunk_data: Numpy array for spectral analysis
+            
+        Returns:
+            bool: True if speech is detected
+        """
+        # Basic VAD check
+        vad_result = self.vad.is_speech(mono_audio, self.rate)
+        
+        # If VAD says no speech, trust it (high precision, lower recall)
+        if not vad_result:
+            return False
+        
+        # If VAD detects something, verify it's actually voice
+        if self.channels == 6:
+            audio_for_analysis = chunk_data[1::self.channels]  # Channel 1
+        else:
+            audio_for_analysis = chunk_data[0::self.channels]  # Channel 0
+        
+        # Perform spectral analysis
+        speech_analysis = self.analyze_speech_characteristics(audio_for_analysis)
+        self.spectral_history.append(speech_analysis['confidence'])
+        
+        # Use both VAD and spectral analysis
+        spectral_confidence = np.mean(list(self.spectral_history)) if self.spectral_history else 0
+        
+        # Require both VAD detection AND good spectral characteristics
+        return speech_analysis['is_voice'] and spectral_confidence > 0.5
+
     def get_smoothed_direction(self, direction):
         """Apply circular mean to smooth direction readings"""
         self.direction_history.append(direction)
@@ -108,17 +239,18 @@ class VoiceDirectionDetector:
                     else:
                         # Use channel 0 for other configurations
                         mono_audio = chunk[0::self.channels].tobytes()
-                    # Check if speech is detected
-                    is_speech = self.vad.is_speech(mono_audio, self.rate)
+                    
+                    # Enhanced speech detection
+                    is_speech = self.is_speech_detected(mono_audio, chunk)
                     self.voice_history.append(is_speech)
                     
                     if is_speech:
                         speech_count += 1
                         if debug:
-                            sys.stdout.write('1')
+                            sys.stdout.write('V')  # V for Voice
                     else:
                         if debug:
-                            sys.stdout.write('0')
+                            sys.stdout.write('.')  # . for no voice
                     
                     if debug:
                         sys.stdout.flush()
@@ -130,8 +262,8 @@ class VoiceDirectionDetector:
                         confidence = self.get_voice_confidence()
                         current_time = time.time()
                         
-                        # If enough speech was detected
-                        if speech_count > (self.doa_chunks / 2):
+                        # Require higher threshold for direction detection
+                        if speech_count > (self.doa_chunks * 0.6):  # 60% of chunks must be voice
                             # Calculate DOA from accumulated audio
                             frames = np.concatenate(chunks)
                             direction = mic.get_direction(frames)
@@ -140,7 +272,7 @@ class VoiceDirectionDetector:
                                 # Smooth the direction
                                 smoothed_direction = self.get_smoothed_direction(direction)
                                 
-                                # Update pixel ring - offset now handled in pixel_ring module
+                                # Update pixel ring
                                 pixel_ring.set_direction(smoothed_direction)
                                 
                                 # Report if significant change or timeout
@@ -152,13 +284,15 @@ class VoiceDirectionDetector:
                                 
                                 if direction_changed:
                                     compass = self.get_compass_visual(smoothed_direction)
+                                    spectral_conf = np.mean(list(self.spectral_history)) if self.spectral_history else 0
                                     
                                     if not debug:
                                         print(f"\r[VOICE] Detected at {smoothed_direction:3d}° {compass} "
-                                              f"(confidence: {confidence:.0%})    ", end='', flush=True)
+                                              f"(VAD: {confidence:.0%}, Spectral: {spectral_conf:.0%})    ", 
+                                              end='', flush=True)
                                     else:
                                         print(f"\n[VOICE] Direction: {smoothed_direction:3d}° {compass} "
-                                              f"(confidence: {confidence:.0%})")
+                                              f"(VAD: {confidence:.0%}, Spectral: {spectral_conf:.0%})")
                                     
                                     if callback:
                                         callback(smoothed_direction, confidence)
@@ -168,7 +302,8 @@ class VoiceDirectionDetector:
                         else:
                             # No voice detected
                             if not debug:
-                                print(f"\r[IDLE] No voice detected (confidence: {confidence:.0%})    ", 
+                                spectral_conf = np.mean(list(self.spectral_history)) if self.spectral_history else 0
+                                print(f"\r[IDLE] No voice detected (VAD: {confidence:.0%}, Spectral: {spectral_conf:.0%})    ", 
                                       end='', flush=True)
                             
                             # Turn off pixel ring when no voice
@@ -241,34 +376,6 @@ def example_callback(direction, confidence):
     print(f"\n[{timestamp}] Voice Event - Direction: {direction}° (confidence: {confidence:.0%})")
 
 
-def test_dependencies():
-    """Test that all required dependencies are available"""
-    print("[TEST] Checking dependencies...")
-    
-    try:
-        import pyaudio
-        print("[OK] PyAudio is installed")
-    except ImportError:
-        print("[ERROR] PyAudio is not installed. Run: pip install pyaudio")
-        return False
-    
-    try:
-        import webrtcvad
-        print("[OK] webrtcvad is installed")
-    except ImportError:
-        print("[ERROR] webrtcvad is not installed. Run: pip install webrtcvad")
-        return False
-    
-    try:
-        from gcc_phat import gcc_phat
-        print("[OK] gcc_phat is available")
-    except ImportError:
-        print("[ERROR] gcc_phat.py is not found in the current directory")
-        return False
-    
-    return True
-
-
 def main():
     """Main function"""
     import argparse
@@ -281,7 +388,7 @@ def main():
     parser.add_argument('--channels', type=int, default=4,
                         help='Number of channels (default: 4)')
     parser.add_argument('--vad-frames', type=int, default=20,
-                        help='VAD frame duration in ms (default: 10)')
+                        help='VAD frame duration in ms (default: 20)')
     parser.add_argument('--doa-frames', type=int, default=200,
                         help='DOA window duration in ms (default: 200)')
     parser.add_argument('--vad-level', type=int, default=3, choices=[0, 1, 2, 3],

@@ -1,6 +1,7 @@
 """
  Estimate time delay using GCC-PHAT 
  Copyright (c) 2017 Yihui Xiong
+ Additional motifications by The Garage Agency, LLC
 
  Licensed under the Apache License, Version 2.0 (the "License");
  you may not use this file except in compliance with the License.
@@ -36,7 +37,7 @@ def gcc_phat(sig, refsig, fs=1, max_tau=None, interp=16):
     epsilon = 1e-10
     R_magnitude = np.abs(R)
     R_magnitude = np.maximum(R_magnitude, epsilon)
-
+    
     # Normalize by magnitude (GCC-PHAT weighting)
     cc = np.fft.irfft(R / R_magnitude, n=(interp * n))
 
@@ -66,7 +67,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-
-
