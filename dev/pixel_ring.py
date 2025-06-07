@@ -1,81 +1,118 @@
-"""
- To control the pixel ring of the ReSpeaker microphone array
- Copyright (c) 2016-2017 Seeed Technology Limited.
-
- Licensed under the Apache License, Version 2.0 (the "License");
- you may not use this file except in compliance with the License.
- You may obtain a copy of the License at
-
-     http://www.apache.org/licenses/LICENSE-2.0
-
- Unless required by applicable law or agreed to in writing, software
- distributed under the License is distributed on an "AS IS" BASIS,
- WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- See the License for the specific language governing permissions and
- limitations under the License.
-"""
-
 import usb.core
 import usb.util
-# pixel_ring.py
 
-class HID:
-    """
-    This class provides basic functions to access
-    a USB HID device to write an endpoint
-    """
 
-    def __init__(self):
-        self.dev = None
-        self.ep_in = None
-        self.ep_out = None
+class PixelRing:
+    TIMEOUT = 8000
 
-    @staticmethod
-    def find(vid=0x2886, pid=0x0007):
-        dev = usb.core.find(idVendor=vid, idProduct=pid)
-        if not dev:
+    def __init__(self, dev):
+        self.dev = dev
+
+    def trace(self):
+        self.write(0)
+
+    def mono(self, color):
+        self.write(1, [(color >> 16) & 0xFF, (color >> 8) & 0xFF, color & 0xFF, 0])
+    
+    def set_color(self, rgb=None, r=0, g=0, b=0):
+        if rgb:
+            self.mono(rgb)
+        else:
+            self.write(1, [r, g, b, 0])
+
+    def off(self):
+        self.mono(0)
+
+    def listen(self, direction=None):
+        self.write(2)
+
+    wakeup = listen
+
+    def speak(self):
+        self.write(3)
+
+    def think(self):
+        self.write(4)
+    
+
+    wait = think
+
+    def spin(self):
+        self.write(5)
+
+    def show(self, data):
+        self.write(6, data)
+
+    customize = show
+        
+    def set_brightness(self, brightness):
+        self.write(0x20, [brightness])
+    
+    def set_color_palette(self, a, b):
+        self.write(0x21, [(a >> 16) & 0xFF, (a >> 8) & 0xFF, a & 0xFF, 0, (b >> 16) & 0xFF, (b >> 8) & 0xFF, b & 0xFF, 0])
+
+    def set_vad_led(self, state):
+        self.write(0x22, [state])
+
+    def set_volume(self, volume):
+        self.write(0x23, [volume])
+
+    def arc(self, level):
+        """
+        Show an arc of LEDs to represent signal strength
+        level: 1-12 representing how many LEDs to light up
+        """
+        # Create a simple arc pattern using the show method
+        # Assuming 12 LEDs in a circle, light up 'level' number of them
+        if level <= 0:
+            self.off()
             return
-
-        # get active config
-        config = dev.get_active_configuration()
-
-        # iterate on all interfaces:
-        #    - if we found a HID interface
-        interface_number = None
-        for interface in config:
-            if interface.bInterfaceClass == 0x03:
-                interface_number = interface.bInterfaceNumber
-                break
-
-        try:
-            if dev.is_kernel_driver_active(interface_number):
-                dev.detach_kernel_driver(interface_number)
-        except Exception as e:
-            print(e.message)
-
-        ep_in, ep_out = None, None
-        for ep in interface:
-            if ep.bEndpointAddress & 0x80:
-                ep_in = ep
+        
+        # Create data for 12 LEDs (4 bytes per LED: R, G, B, W)
+        data = []
+        for i in range(12):
+            if i < level:
+                # Green color for active LEDs
+                data.extend([0, 255, 0, 0])  # R, G, B, W
             else:
-                ep_out = ep
+                # Off for inactive LEDs
+                data.extend([0, 0, 0, 0])
+        
+        self.show(data)
 
-        if ep_in and ep_out:
-            hid = HID()
-            hid.dev = dev
-            hid.ep_in = ep_in
-            hid.ep_out = ep_out
-
-            return hid
-
-    def write(self, data):
+    def set_direction(self, angle):
         """
-        write data on the OUT endpoint associated to the HID interface
+        Show direction by lighting up LEDs pointing in that direction
+        angle: 0-359 degrees
         """
-        self.ep_out.write(data)
+        # Convert angle to LED position (assuming 12 LEDs around circle)
+        # Adjust for physical LED layout - add 60° offset here instead of in caller
+        # 0° should point to LED that represents "front" direction
+        adjusted_angle = (angle + 60) % 360
+        led_position = int((adjusted_angle + 15) / 30) % 12  # 30° per LED with rounding
+        
+        # Create data for 12 LEDs
+        data = []
+        for i in range(12):
+            if i == led_position:
+                # Bright blue for direction
+                data.extend([0, 0, 255, 0])  # R, G, B, W
+            elif abs(i - led_position) <= 1 or abs(i - led_position) >= 11:
+                # Dimmer blue for adjacent LEDs (wrap around)
+                data.extend([0, 0, 128, 0])  # R, G, B, W
+            else:
+                # Off for other LEDs
+                data.extend([0, 0, 0, 0])
+        
+        self.show(data)
 
-    def read(self):
-        return self.ep_in.read(self.ep_in.wMaxPacketSize, -1)
+    def change_pattern(self, pattern=None):
+        print('Not support to change pattern')
+
+    def write(self, cmd, data=[0]):
+        self.dev.ctrl_transfer(
+            usb.util.CTRL_OUT | usb.util.CTRL_TYPE_VENDOR | usb.util.CTRL_RECIPIENT_DEVICE,
+            0, cmd, 0x1C, data, self.TIMEOUT)
 
     def close(self):
         """
@@ -84,101 +121,66 @@ class HID:
         usb.util.dispose_resources(self.dev)
 
 
-class PixelRing:
-    PIXELS_N = 12
+def find(vid=0x2886, pid=0x0018):
+    dev = usb.core.find(idVendor=vid, idProduct=pid)
+    if not dev:
+        return None
 
-    MONO = 1
-    SPIN = 3
-    ARC  = 5
-    CUSTOM = 6
+    # configuration = dev.get_active_configuration()
 
-    def __init__(self):
-        self.hid = HID.find()
-        if not self.hid:
-            print('No USB device found')
+    # interface_number = None
+    # for interface in configuration:
+    #     interface_number = interface.bInterfaceNumber
 
-        colors = [0] * 4 * self.PIXELS_N
-        colors[0] = 0x4
-        colors[1] = 0x40
-        colors[2] = 0x4
+    #     if dev.is_kernel_driver_active(interface_number):
+    #         dev.detach_kernel_driver(interface_number)
 
-        colors[4 + 1] = 0x8
-        colors[4 * 11 + 1] = 0x8
-
-        self.direction_template = colors
-
-    def off(self):
-        self.set_color(rgb=0)
-
-    def set_color(self, rgb=None, r=0, g=0, b=0):
-        if rgb:
-            self.write(0, [self.MONO, rgb & 0xFF, (rgb >> 8) & 0xFF, (rgb >> 16) & 0xFF])
-        else:
-            self.write(0, [self.MONO, b, g, r])
-
-    def spin(self):
-        self.write(0, [self.SPIN, 0, 0, 0])
-
-    def arc(self, pixels):
-        self.write(0, [self.ARC, 0, 0, pixels])
-
-    def set_direction(self, angel):
-        if angel < 0 or angel > 360:
-            return
-
-        position = int((angel + 15) % 360 / 30) % self.PIXELS_N
-        colors = self.direction_template[-position*4:] + self.direction_template[:-position*4]
-
-        self.write(0, [self.CUSTOM, 0, 0, 0])
-        self.write(3, colors)
-
-        return position
-
-    @staticmethod
-    def to_bytearray(data):
-        if type(data) is int:
-            array = bytearray([data & 0xFF])
-        elif type(data) is bytearray:
-            array = data
-        elif type(data) is str or type(data) is bytes:
-            array = bytearray(data)
-        elif type(data) is list:
-            array = bytearray(data)
-        else:
-            raise TypeError('%s is not supported' % type(data))
-
-        return array
-
-    def write(self, address, data):
-        data = self.to_bytearray(data)
-        length = len(data)
-        if self.hid:
-            packet = bytearray([address & 0xFF, (address >> 8) & 0xFF, length & 0xFF, (length >> 8) & 0xFF]) + data
-            self.hid.write(packet)
-
-    def close(self):
-        if self.hid:
-            self.hid.close()
+    return PixelRing(dev)
 
 
-pixel_ring = PixelRing()
-
+# Create a module-level instance for easy importing
+pixel_ring = find()
 
 if __name__ == '__main__':
     import time
 
-    pixel_ring.spin()
-    time.sleep(3)
-    for level in range(4, 8):
-        pixel_ring.arc(level)
-        time.sleep(1)
+    if not pixel_ring:
+        print("PixelRing device not found")
+        exit(1)
 
-    angel = 0
     while True:
         try:
-            pixel_ring.set_direction(angel)
-            angel = (angel + 30) % 360
+            print("Demo: Wakeup")
+            pixel_ring.wakeup(180)
+            time.sleep(2)
+            
+            print("Demo: Listen")
+            pixel_ring.listen()
+            time.sleep(2)
+            
+            print("Demo: Think")
+            pixel_ring.think()
+            time.sleep(2)
+            
+            print("Demo: Arc levels 1-12")
+            for level in range(1, 13):
+                pixel_ring.arc(level)
+                time.sleep(0.3)
             time.sleep(1)
+            
+            print("Demo: Direction sweep (0-360°)")
+            for angle in range(0, 360, 30):
+                pixel_ring.set_direction(angle)
+                time.sleep(0.5)
+            time.sleep(1)
+            
+            print("Demo: Volume")
+            pixel_ring.set_volume(8)
+            time.sleep(2)
+            
+            print("Demo: Off")
+            pixel_ring.off()
+            time.sleep(3)
         except KeyboardInterrupt:
             break
 

@@ -16,7 +16,7 @@ from pixel_ring import pixel_ring
 class VoiceDirectionDetector:
     """Main class for detecting voice direction"""
     
-    def __init__(self, rate=16000, channels=4, vad_frames=10, doa_frames=200, 
+    def __init__(self, rate=16000, channels=4, vad_frames=20, doa_frames=200, 
                  vad_aggressiveness=3, confidence_threshold=0.5):
         """
         Initialize the voice direction detector
@@ -137,7 +137,7 @@ class VoiceDirectionDetector:
                                 # Smooth the direction
                                 smoothed_direction = self.get_smoothed_direction(direction)
                                 
-                                # Update pixel ring
+                                # Update pixel ring - offset now handled in pixel_ring module
                                 pixel_ring.set_direction(smoothed_direction)
                                 
                                 # Report if significant change or timeout
@@ -277,7 +277,7 @@ def main():
                         help='Sample rate in Hz (default: 16000)')
     parser.add_argument('--channels', type=int, default=4,
                         help='Number of channels (default: 4)')
-    parser.add_argument('--vad-frames', type=int, default=10,
+    parser.add_argument('--vad-frames', type=int, default=20,
                         help='VAD frame duration in ms (default: 10)')
     parser.add_argument('--doa-frames', type=int, default=200,
                         help='DOA window duration in ms (default: 200)')
@@ -289,48 +289,28 @@ def main():
                         help='Enable callback example')
     parser.add_argument('--debug', action='store_true',
                         help='Show debug information')
-    parser.add_argument('--test', action='store_true',
-                        help='Test dependencies only')
     
     args = parser.parse_args()
     
-    try:
-        if args.test:
-            # Just test dependencies
-            test_dependencies()
+    try:  
+        # Create detector
+        detector = VoiceDirectionDetector(
+            rate=args.rate,
+            channels=args.channels,
+            vad_frames=args.vad_frames,
+            doa_frames=args.doa_frames,
+            vad_aggressiveness=args.vad_level,
+            confidence_threshold=args.threshold
+        )
+        
+        # Run detection
+        if args.callback:
+            detector.run(callback=example_callback, debug=args.debug)
         else:
-            # Check dependencies first
-            if not test_dependencies():
-                print("\n[ERROR] Missing dependencies. Please install them and try again.")
-                sys.exit(1)
-            
-            # Create detector
-            detector = VoiceDirectionDetector(
-                rate=args.rate,
-                channels=args.channels,
-                vad_frames=args.vad_frames,
-                doa_frames=args.doa_frames,
-                vad_aggressiveness=args.vad_level,
-                confidence_threshold=args.threshold
-            )
-            
-            # Run detection
-            if args.callback:
-                detector.run(callback=example_callback, debug=args.debug)
-            else:
-                detector.run(debug=args.debug)
+            detector.run(debug=args.debug)
             
     except Exception as e:
         print(f"\n[ERROR] {e}")
-        print("\nPlease make sure:")
-        print("1. ReSpeaker Mic Array v2.0 is connected")
-        print("2. You have proper permissions (try running with sudo)")
-        print("3. Required files are in the current directory:")
-        print("   - mic_array.py")
-        print("   - pixel_ring.py")
-        print("   - gcc_phat.py")
-        print("4. Required dependencies are installed:")
-        print("   pip install pyaudio webrtcvad numpy")
         sys.exit(1)
 
 
