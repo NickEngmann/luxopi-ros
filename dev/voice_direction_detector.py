@@ -15,6 +15,7 @@ from pixel_ring import pixel_ring
 from scipy import signal
 from scipy.fft import fft
 
+
 class VoiceDirectionDetector:
     """Main class for detecting voice direction"""
     
@@ -272,8 +273,8 @@ class VoiceDirectionDetector:
                                 # Smooth the direction
                                 smoothed_direction = self.get_smoothed_direction(direction)
                                 
-                                # Update pixel ring
-                                pixel_ring.set_direction(smoothed_direction)
+                                # Update pixel ring with channel information for proper calibration
+                                pixel_ring.set_direction(smoothed_direction, self.channels)
                                 
                                 # Report if significant change or timeout
                                 direction_changed = (

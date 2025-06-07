@@ -15,6 +15,7 @@ from collections import deque
 from .mic_array import MicArray
 from .pixel_ring import pixel_ring
 import webrtcvad
+from scipy.fft import fft
 
 
 class VoiceDirectionNode(Node):
@@ -24,7 +25,7 @@ class VoiceDirectionNode(Node):
         # Declare parameters
         self.declare_parameter('sample_rate', 16000)
         self.declare_parameter('channels', 4)
-        self.declare_parameter('vad_frames', 10)
+        self.declare_parameter('vad_frames', 20)
         self.declare_parameter('doa_frames', 200)
         self.declare_parameter('vad_aggressiveness', 3)
         self.declare_parameter('confidence_threshold', 0.5)
@@ -53,7 +54,13 @@ class VoiceDirectionNode(Node):
         self.direction_stability_threshold = self.get_parameter('direction_stability_threshold').value
         self.min_consistent_samples = self.get_parameter('min_consistent_samples').value
         self.bypass_state_check = self.get_parameter('bypass_state_check').value
-        self.debug_mode = False
+        self.debug_mode = True
+        
+        # Enhanced speech analysis parameters
+        self.speech_low_freq = 300
+        self.speech_high_freq = 3400
+        self.voice_energy_threshold = 0.4
+        self.spectral_centroid_range = (500, 2000)
         
         # Initialize VAD
         self.vad = webrtcvad.Vad(self.vad_aggressiveness)
@@ -65,7 +72,12 @@ class VoiceDirectionNode(Node):
         # Enhanced history for better smoothing
         self.direction_history = deque(maxlen=self.direction_smoothing_window)
         self.voice_history = deque(maxlen=10)
+        self.spectral_history = deque(maxlen=5)
         self.raw_direction_buffer = deque(maxlen=10)
+        
+        # Precompute frequency bins for efficiency
+        self.freq_bins = np.fft.fftfreq(self.chunk_size, 1/self.rate)
+        self.speech_mask = (self.freq_bins >= self.speech_low_freq) & (self.freq_bins <= self.speech_high_freq)
         
         # State tracking
         self.last_direction = None
@@ -82,6 +94,7 @@ class VoiceDirectionNode(Node):
         self.speech_detections = 0
         self.direction_calculations = 0
         self.messages_published = 0
+        self.spectral_confidence = 0.0
         
         # Subscribe to robot state
         self.state_subscriber = self.create_subscription(
@@ -137,6 +150,13 @@ class VoiceDirectionNode(Node):
             10
         )
         
+        # Add spectral confidence publisher
+        self.spectral_confidence_pub = self.create_publisher(
+            Float32,
+            '/voice/spectral_confidence',
+            10
+        )
+        
         # Thread control
         self.running = False
         self.audio_thread = None
@@ -148,7 +168,7 @@ class VoiceDirectionNode(Node):
         if self.debug_mode:
             self.debug_timer = self.create_timer(2.0, self.publish_debug_info)
         
-        self.get_logger().info('Voice Direction Node initialized (DEBUG MODE)')
+        self.get_logger().info('Voice Direction Node initialized (DEBUG MODE with Enhanced Speech Analysis)')
         self.get_logger().info(f'Sample rate: {self.rate} Hz, Channels: {self.channels}')
         self.get_logger().info(f'Voice following enabled: {self.enable_voice_following}')
         self.get_logger().info(f'Direction stability threshold: {self.direction_stability_threshold}°')
@@ -158,6 +178,107 @@ class VoiceDirectionNode(Node):
         # Start audio processing
         self.start_audio_processing()
     
+    def analyze_speech_characteristics(self, audio_data):
+        """Analyze audio for speech-specific characteristics"""
+        # Convert to float for analysis
+        audio_float = audio_data.astype(np.float32) / 32768.0
+        
+        # Remove DC component
+        audio_float = audio_float - np.mean(audio_float)
+        
+        # Apply window to reduce spectral leakage
+        windowed = audio_float * np.hanning(len(audio_float))
+        
+        # Compute FFT
+        fft_data = np.abs(fft(windowed))
+        fft_data = fft_data[:len(fft_data)//2]
+        
+        # Calculate total energy
+        total_energy = np.sum(fft_data**2)
+        if total_energy < 1e-10:
+            return {'is_voice': False, 'confidence': 0.0, 'reason': 'silence'}
+        
+        # Energy in speech frequency band
+        speech_energy = np.sum(fft_data[self.speech_mask[:len(fft_data)]]**2)
+        speech_ratio = speech_energy / total_energy if total_energy > 0 else 0
+        
+        # Spectral centroid (brightness measure)
+        freqs = self.freq_bins[:len(fft_data)]
+        spectral_centroid = np.sum(freqs * fft_data**2) / np.sum(fft_data**2) if np.sum(fft_data**2) > 0 else 0
+        
+        # Spectral rolloff (frequency below which 85% of energy is contained)
+        cumulative_energy = np.cumsum(fft_data**2)
+        rolloff_threshold = 0.85 * total_energy
+        rolloff_idx = np.where(cumulative_energy >= rolloff_threshold)[0]
+        spectral_rolloff = freqs[rolloff_idx[0]] if len(rolloff_idx) > 0 else self.rate/2
+        
+        # Zero crossing rate
+        zero_crossings = np.sum(np.diff(np.sign(audio_float)) != 0)
+        zcr = zero_crossings / len(audio_float)
+        
+        # Voice classification criteria
+        criteria = {
+            'speech_energy': speech_ratio >= self.voice_energy_threshold,
+            'spectral_centroid': self.spectral_centroid_range[0] <= spectral_centroid <= self.spectral_centroid_range[1],
+            'spectral_rolloff': spectral_rolloff <= 4000,
+            'zero_crossing': 0.01 <= zcr <= 0.3,
+            'energy_level': total_energy > 1e-6,
+        }
+        
+        # Calculate voice confidence
+        passed_criteria = sum(criteria.values())
+        voice_confidence = passed_criteria / len(criteria)
+        
+        # Additional noise rejection
+        high_freq_mask = freqs > 4000
+        if len(high_freq_mask) > 0:
+            high_freq_energy = np.sum(fft_data[high_freq_mask]**2)
+            high_freq_ratio = high_freq_energy / total_energy if total_energy > 0 else 0
+            
+            if high_freq_ratio > 0.3:
+                voice_confidence *= 0.5
+        
+        # Broadband noise detection
+        if spectral_rolloff > 6000 and zcr > 0.5:
+            voice_confidence *= 0.2
+        
+        is_voice = voice_confidence >= 0.6
+        
+        return {
+            'is_voice': is_voice,
+            'confidence': voice_confidence,
+            'speech_ratio': speech_ratio,
+            'spectral_centroid': spectral_centroid,
+            'spectral_rolloff': spectral_rolloff,
+            'zcr': zcr,
+            'criteria': criteria
+        }
+    
+    def is_speech_detected(self, mono_audio, chunk_data):
+        """Enhanced speech detection combining VAD and spectral analysis"""
+        # Basic VAD check
+        vad_result = self.vad.is_speech(mono_audio, self.rate)
+        
+        # If VAD says no speech, trust it
+        if not vad_result:
+            return False
+        
+        # If VAD detects something, verify it's actually voice
+        if self.channels == 6:
+            audio_for_analysis = chunk_data[1::self.channels]  # Channel 1
+        else:
+            audio_for_analysis = chunk_data[0::self.channels]  # Channel 0
+        
+        # Perform spectral analysis
+        speech_analysis = self.analyze_speech_characteristics(audio_for_analysis)
+        self.spectral_history.append(speech_analysis['confidence'])
+        
+        # Update spectral confidence for publishing
+        self.spectral_confidence = np.mean(list(self.spectral_history)) if self.spectral_history else 0
+        
+        # Use both VAD and spectral analysis
+        return speech_analysis['is_voice'] and self.spectral_confidence > 0.5
+
     def publish_debug_info(self):
         """Publish debug information periodically"""
         debug_msg = String()
@@ -167,10 +288,16 @@ class VoiceDirectionNode(Node):
             f"directions:{self.direction_calculations}, "
             f"published:{self.messages_published}, "
             f"state:{self.current_state}, "
-            f"confidence:{self.current_confidence:.2f}, "
+            f"vad_confidence:{self.current_confidence:.2f}, "
+            f"spectral_confidence:{self.spectral_confidence:.2f}, "
             f"active:{self.voice_active}"
         )
         self.debug_pub.publish(debug_msg)
+        
+        # Publish spectral confidence
+        spec_msg = Float32()
+        spec_msg.data = self.spectral_confidence
+        self.spectral_confidence_pub.publish(spec_msg)
         
         if self.debug_mode:
             self.get_logger().info(f"[DEBUG] {debug_msg.data}")
@@ -289,11 +416,19 @@ class VoiceDirectionNode(Node):
         The mic array may be mounted differently than the robot's forward direction.
         Adjust this method based on your hardware setup.
         """
-        # Assuming mic 0° is robot forward, adjust as needed
-        # You might need to add an offset here based on how the mic is mounted
-        robot_angle = mic_angle
+        # Apply correction for the observed 45-degree overshoot
+        # This suggests the microphone array coordinate system is rotated
+        # relative to the robot's coordinate system
+        corrected_angle = mic_angle + 45.0  # Subtract 45 degrees to compensate
+        
+        # Normalize to 0-360 range first
+        while corrected_angle < 0:
+            corrected_angle += 360
+        while corrected_angle >= 360:
+            corrected_angle -= 360
         
         # Convert to -180 to 180 range for robot base
+        robot_angle = corrected_angle
         if robot_angle > 180:
             robot_angle -= 360
             
@@ -316,10 +451,11 @@ class VoiceDirectionNode(Node):
         conf_msg.data = confidence
         self.voice_confidence_pub.publish(conf_msg)
         
-        # Publish detailed info
+        # Publish detailed info with spectral data
         info_msg = String()
         info_msg.data = (
-            f"direction:{robot_angle:.1f},confidence:{confidence:.2f},"
+            f"direction:{robot_angle:.1f},vad_confidence:{confidence:.2f},"
+            f"spectral_confidence:{self.spectral_confidence:.2f},"
             f"state:{self.current_state},stable:{self.consistent_direction_count}"
         )
         self.voice_info_pub.publish(info_msg)
@@ -332,7 +468,8 @@ class VoiceDirectionNode(Node):
             
             self.get_logger().info(
                 f'[VOICE DETECTED] Direction: {direction}° (robot: {robot_angle}°) '
-                f'confidence: {confidence:.0%}, consistency: {self.consistent_direction_count}'
+                f'VAD: {confidence:.0%}, Spectral: {self.spectral_confidence:.0%}, '
+                f'consistency: {self.consistent_direction_count}'
             )
         
         self.messages_published += 1
@@ -381,17 +518,20 @@ class VoiceDirectionNode(Node):
                     if self.debug_mode and self.audio_chunks_received % 100 == 0:
                         self.get_logger().info(f"Received {self.audio_chunks_received} audio chunks")
                     
-                    # Check if we should process (with bypass option)
+                    # Check if we should process
                     if not self.should_process_voice():
                         if self.debug_mode and self.audio_chunks_received % 100 == 0:
                             self.get_logger().info(f"Skipping processing - state: {self.current_state}")
                         continue
                     
-                    # Use single channel audio for VAD
-                    mono_audio = chunk[0::self.channels].tobytes()
+                    # Enhanced speech detection
+                    if self.channels == 6:
+                        mono_audio = chunk[1::self.channels].tobytes()  # Channel 1
+                    else:
+                        mono_audio = chunk[0::self.channels].tobytes()  # Channel 0
                     
-                    # Check if speech is detected
-                    is_speech = self.vad.is_speech(mono_audio, self.rate)
+                    # Use enhanced speech detection
+                    is_speech = self.is_speech_detected(mono_audio, chunk)
                     self.voice_history.append(is_speech)
                     
                     if is_speech:
@@ -405,15 +545,16 @@ class VoiceDirectionNode(Node):
                         confidence = self.get_voice_confidence()
                         self.current_confidence = confidence
                         
-                        # Log VAD window results
+                        # Log VAD window results with spectral info
                         if self.debug_mode:
                             self.get_logger().info(
                                 f"VAD window complete: speech_count={speech_count}/{self.doa_chunks}, "
-                                f"confidence={confidence:.2f}, threshold={self.confidence_threshold}"
+                                f"vad_confidence={confidence:.2f}, spectral_confidence={self.spectral_confidence:.2f}, "
+                                f"threshold={self.confidence_threshold}"
                             )
                         
-                        # Lower the speech detection requirement for debugging
-                        min_speech_chunks = self.doa_chunks / 4  # Was / 2
+                        # Require higher threshold for direction detection (60% of chunks must be voice)
+                        min_speech_chunks = self.doa_chunks * 0.6
                         
                         if speech_count > min_speech_chunks and confidence >= self.confidence_threshold:
                             frames = np.concatenate(chunks)
@@ -428,17 +569,15 @@ class VoiceDirectionNode(Node):
                                         f"(calculation #{self.direction_calculations})"
                                     )
                                 
-                                # Try with relaxed stability for debugging
                                 stable_direction = self.get_stable_direction(direction)
                                 
                                 if stable_direction is not None:
-                                    # Apply additional smoothing
                                     smoothed_direction = self.get_smoothed_direction(stable_direction)
                                     
-                                    # Update pixel ring if enabled
+                                    # Update pixel ring with channel information
                                     if self.enable_pixel_ring:
                                         try:
-                                            pixel_ring.set_direction(smoothed_direction)
+                                            pixel_ring.set_direction(smoothed_direction, self.channels)
                                         except:
                                             pass
                                     
@@ -446,13 +585,11 @@ class VoiceDirectionNode(Node):
                                     current_time = self.get_clock().now()
                                     time_since_last = (current_time - self.last_report_time).nanoseconds / 1e9
                                     
-                                    # Always publish in debug mode
                                     if self.debug_mode or time_since_last >= self.min_report_interval:
                                         self.voice_active = True
                                         self.last_direction = smoothed_direction
                                         self.last_report_time = current_time
                                         
-                                        # Publish the direction
                                         self.publish_voice_direction(smoothed_direction, confidence)
                                 else:
                                     if self.debug_mode:
@@ -460,6 +597,14 @@ class VoiceDirectionNode(Node):
                                             f"Direction not stable yet: {self.consistent_direction_count}/"
                                             f"{self.min_consistent_samples} samples"
                                         )
+                        else:
+                            # Turn off pixel ring when no voice
+                            if confidence < 0.2:
+                                if self.enable_pixel_ring:
+                                    try:
+                                        pixel_ring.off()
+                                    except:
+                                        pass
                         
                         # Reset for next window
                         speech_count = 0

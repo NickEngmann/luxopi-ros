@@ -34,7 +34,6 @@ class PixelRing:
     def think(self):
         self.write(4)
     
-
     wait = think
 
     def spin(self):
@@ -80,15 +79,20 @@ class PixelRing:
         
         self.show(data)
 
-    def set_direction(self, angle):
+    def set_direction(self, angle, channels=4):
         """
         Show direction by lighting up LEDs pointing in that direction
         angle: 0-359 degrees
+        channels: Number of audio channels (affects calibration offset)
         """
         # Convert angle to LED position (assuming 12 LEDs around circle)
-        # Adjust for physical LED layout - add 60° offset here instead of in caller
-        # 0° should point to LED that represents "front" direction
-        adjusted_angle = (angle + 60) % 360
+        # Apply dynamic offset based on channel configuration
+        if channels == 6:
+            offset = 120  # 120° offset for 6-channel configuration
+        else:
+            offset = 60   # 60° offset for 4-channel configuration (default)
+        
+        adjusted_angle = (angle + offset) % 360
         led_position = int((adjusted_angle + 15) / 30) % 12  # 30° per LED with rounding
         
         # Create data for 12 LEDs

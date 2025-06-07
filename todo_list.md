@@ -7,6 +7,9 @@
 [] Continue fine tuning the different animation commands
 [] Faster Acceleration when moving away from collisions
 [] Move acceleration to msg.velocity and move source to its own message
+[] Identify your voice and act differently for different people depending on the voice
+[] Fix the 6 channel implementation
+
 # Later Priorities
 ## High Priority
 - [ ] Fix dynamic adaptation mode (DEMA) - increase torque limit for better operation
