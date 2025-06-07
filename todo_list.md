@@ -5,6 +5,7 @@
 [] Simplify Launch Files
 [-] When the camera closes also close the framebuffer (show a specific closing state)
 [] Continue fine tuning the different animation commands
+[] Faster Acceleration when moving away from collisions
 [] Move acceleration to msg.velocity and move source to its own message
 # Later Priorities
 ## High Priority
