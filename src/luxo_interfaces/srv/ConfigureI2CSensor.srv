@@ -1,0 +1,6 @@
+string sensor_name
+string config_type
+float64 config_value
+---
+bool success
+string message

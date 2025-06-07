@@ -1,0 +1,15 @@
+[Unit]
+Description=LuxoPi ROS2 Service
+After=network.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/luxopi-ros
+ExecStart=/bin/bash /home/pi/luxopi-ros/start_luxopi.sh
+ExecStop=/bin/bash /home/pi/luxopi-ros/stop_luxopi.sh
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target
