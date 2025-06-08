@@ -2,11 +2,13 @@
 
 import rclpy
 from rclpy.node import Node
-from std_msgs.msg import String, Bool, Int16, Float32
+from std_msgs.msg import String, Bool, Int16, Float32, UInt8
 from luxo_interfaces.srv import ConfigureI2CSensor
 import board
 from adafruit_apds9960.apds9960 import APDS9960
 import adafruit_vl53l4cd
+import adafruit_ads7830.ads7830 as ADC
+from adafruit_ads7830.analog_in import AnalogIn
 import threading
 import time
 import queue
@@ -17,6 +19,7 @@ class SensorType(Enum):
     """Enum for supported sensor types"""
     APDS9960 = auto()
     VL53L4CD = auto()
+    ADS7830 = auto()
     # Add more sensor types here as needed
 
 class I2CSensor:
@@ -164,6 +167,70 @@ class VL53L4CDSensor(I2CSensor):
         except Exception as e:
             raise Exception(f"Failed to read VL53L4CD: {e}")
 
+class ADS7830Sensor(I2CSensor):
+    """ADS7830 8-channel ADC for FSR pressure sensors"""
+    def __init__(self, name: str = "ads7830", address: int = 0x38):
+        super().__init__(name, address, SensorType.ADS7830)
+        self.channels = []
+        self.channel_mapping = {
+            0: "top_forward",
+            1: "top_back", 
+            2: "collision_left",
+            3: "collision_bottom",
+            4: "collision_right"
+        }
+        
+    def initialize(self, i2c_bus):
+        """Initialize ADS7830"""
+        try:
+            self.device = ADC.ADS7830(i2c_bus, self.address)
+            
+            # Create analog input objects for channels 0-4
+            self.channels = []
+            for i in range(5):  # Only use A0-A4
+                self.channels.append(AnalogIn(self.device, i))
+                
+            self.active = True
+            return True
+        except Exception as e:
+            raise Exception(f"Failed to initialize ADS7830 at {hex(self.address)}: {e}")
+            
+    def read(self):
+        """Read all FSR sensor values"""
+        if not self.active or not self.device or not self.channels:
+            return None
+            
+        try:
+            sensor_data = {}
+            for i in range(5):  # Read channels 0-4
+                value = self.channels[i].value
+                channel_name = self.channel_mapping[i]
+                sensor_data[channel_name] = value
+                
+            return sensor_data
+        except Exception as e:
+            raise Exception(f"Failed to read ADS7830: {e}")
+            
+    def get_pressure_state(self, value):
+        """
+        Map ADC value to pressure state
+        Returns: (state_number, state_name, state_symbol)
+        """
+        if value >= 64000:  # Not pressed (allowing for some noise)
+            return (0, "Not Pressed", "-")
+        elif value >= 50000:  # Very light touch
+            return (1, "Light Touch", "1")
+        elif value >= 30000:  # Light press
+            return (2, "Light Press", "2")
+        elif value >= 15000:  # Medium press
+            return (3, "Medium Press", "3")
+        elif value >= 8000:   # Hard press
+            return (4, "Hard Press", "4")
+        elif value >= 4000:   # Very hard press
+            return (5, "Very Hard", "5")
+        else:                 # Maximum press
+            return (6, "Maximum", "!")
+
 class I2CDeviceManager(Node):
     """Centralized I2C device manager to prevent bus contention"""
     
@@ -192,6 +259,8 @@ class I2CDeviceManager(Node):
         self.declare_parameter('enable_apds9960', True)
         self.declare_parameter('enable_vl53_left', True)
         self.declare_parameter('enable_vl53_right', True)
+        self.declare_parameter('enable_ads7830', True)
+        self.declare_parameter('ads7830_address', 0x38)
         self.declare_parameter('publish_rate', 5.0)  # Hz
         self.declare_parameter('recovery_interval', 3.0)  # seconds
         self.declare_parameter('max_init_attempts', 10)
@@ -201,6 +270,8 @@ class I2CDeviceManager(Node):
         self.enable_apds9960 = self.get_parameter('enable_apds9960').value
         self.enable_vl53_left = self.get_parameter('enable_vl53_left').value
         self.enable_vl53_right = self.get_parameter('enable_vl53_right').value
+        self.enable_ads7830 = self.get_parameter('enable_ads7830').value
+        self.ads7830_address = self.get_parameter('ads7830_address').value
         publish_rate = self.get_parameter('publish_rate').value
         self.recovery_interval = self.get_parameter('recovery_interval').value
         self.max_init_attempts = self.get_parameter('max_init_attempts').value
@@ -210,6 +281,13 @@ class I2CDeviceManager(Node):
         self.gesture_pub = self.create_publisher(String, '/i2c/apds9960/gesture', 10)
         self.left_distance_pub = self.create_publisher(Float32, '/i2c/vl53_left/distance', 10)
         self.right_distance_pub = self.create_publisher(Float32, '/i2c/vl53_right/distance', 10)
+        
+        # Touch sensor publishers - Changed to UInt8 for pressure states (0-6)
+        self.touch_top_forward_pub = self.create_publisher(UInt8, '/touch_sensors/top_forward', 10)
+        self.touch_top_back_pub = self.create_publisher(UInt8, '/touch_sensors/top_back', 10)
+        self.touch_collision_left_pub = self.create_publisher(UInt8, '/touch_sensors/collision_left', 10)
+        self.touch_collision_bottom_pub = self.create_publisher(UInt8, '/touch_sensors/collision_bottom', 10)
+        self.touch_collision_right_pub = self.create_publisher(UInt8, '/touch_sensors/collision_right', 10)
         
         # Status publishers
         self.status_pub = self.create_publisher(String, '/i2c/status', 10)
@@ -259,6 +337,10 @@ class I2CDeviceManager(Node):
         if self.enable_vl53_right:
             vl53_right = VL53L4CDSensor('vl53_right', 0x59)
             self.pending_sensors['vl53_right'] = vl53_right
+            
+        if self.enable_ads7830:
+            ads7830 = ADS7830Sensor('ads7830', self.ads7830_address)
+            self.pending_sensors['ads7830'] = ads7830
         
         # Try to initialize all pending sensors
         self._initialize_pending_sensors()
@@ -354,6 +436,38 @@ class I2CDeviceManager(Node):
                         msg = Float32()
                         msg.data = data['distance']
                         self.right_distance_pub.publish(msg)
+                        
+                    elif sensor_name == 'ads7830':
+                        # Publish touch sensor data as pressure states (0-6)
+                        if 'top_forward' in data:
+                            state_num, _, _ = sensor.get_pressure_state(data['top_forward'])
+                            msg = UInt8()
+                            msg.data = state_num
+                            self.touch_top_forward_pub.publish(msg)
+                            
+                        if 'top_back' in data:
+                            state_num, _, _ = sensor.get_pressure_state(data['top_back'])
+                            msg = UInt8()
+                            msg.data = state_num
+                            self.touch_top_back_pub.publish(msg)
+                            
+                        if 'collision_left' in data:
+                            state_num, _, _ = sensor.get_pressure_state(data['collision_left'])
+                            msg = UInt8()
+                            msg.data = state_num
+                            self.touch_collision_left_pub.publish(msg)
+                            
+                        if 'collision_bottom' in data:
+                            state_num, _, _ = sensor.get_pressure_state(data['collision_bottom'])
+                            msg = UInt8()
+                            msg.data = state_num
+                            self.touch_collision_bottom_pub.publish(msg)
+                            
+                        if 'collision_right' in data:
+                            state_num, _, _ = sensor.get_pressure_state(data['collision_right'])
+                            msg = UInt8()
+                            msg.data = state_num
+                            self.touch_collision_right_pub.publish(msg)
                         
             except Exception as e:
                 sensor.error_count += 1

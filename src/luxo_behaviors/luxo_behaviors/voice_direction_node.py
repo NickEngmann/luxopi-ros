@@ -231,7 +231,7 @@ class VoiceDirectionNode(Node):
         
         # Debug timer
         if self.debug_mode:
-            self.debug_timer = self.create_timer(2.0, self.publish_debug_info)
+            self.debug_timer = self.create_timer(15.0, self.publish_debug_info)
         
         self.get_logger().info('Voice Direction Node initialized (DEBUG MODE with Enhanced Speech Analysis)')
         self.get_logger().info(f'Sample rate: {self.rate} Hz, Channels: {self.channels}')
