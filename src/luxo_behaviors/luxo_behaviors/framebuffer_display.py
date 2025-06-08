@@ -263,12 +263,94 @@ class CameraFramebufferDisplay:
         except Exception as e:
             self.node.get_logger().error(f"Error updating framebuffer display: {e}")
     
-    def clear(self):
-        """Clear the display"""
+    def show_shutdown_message(self):
+        """Display a shutdown message before cleanup"""
+        if not self.enabled:
+            return
+            
+        try:
+            # Create a black frame
+            frame = np.zeros((self.display.height, self.display.width, 3), dtype=np.uint8)
+            
+            # Add shutdown message
+            font = cv2.FONT_HERSHEY_SIMPLEX
+            
+            # Main message
+            text = "CAMERA STOPPED"
+            font_scale = 2.0
+            thickness = 3
+            text_size = cv2.getTextSize(text, font, font_scale, thickness)[0]
+            
+            # Center the text
+            x = (frame.shape[1] - text_size[0]) // 2
+            y = (frame.shape[0] + text_size[1]) // 2 - 50
+            
+            # Draw text with border for visibility
+            cv2.putText(frame, text, (x, y), font, font_scale, (0, 0, 0), thickness + 2)  # Black border
+            cv2.putText(frame, text, (x, y), font, font_scale, (255, 255, 255), thickness)  # White text
+            
+            # Add smaller subtitle
+            subtitle = "System Shutdown"
+            font_scale_sub = 1.0
+            thickness_sub = 2
+            text_size_sub = cv2.getTextSize(subtitle, font, font_scale_sub, thickness_sub)[0]
+            x_sub = (frame.shape[1] - text_size_sub[0]) // 2
+            y_sub = y + 60
+            
+            cv2.putText(frame, subtitle, (x_sub, y_sub), font, font_scale_sub, (128, 128, 128), thickness_sub)
+            
+            # Add timestamp
+            import datetime
+            timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            font_scale_ts = 0.7
+            thickness_ts = 1
+            text_size_ts = cv2.getTextSize(timestamp, font, font_scale_ts, thickness_ts)[0]
+            x_ts = (frame.shape[1] - text_size_ts[0]) // 2
+            y_ts = y_sub + 40
+            
+            cv2.putText(frame, timestamp, (x_ts, y_ts), font, font_scale_ts, (100, 100, 100), thickness_ts)
+            
+            # Display the frame
+            self.display.display_frame(frame)
+            
+            # Keep the message visible for a moment
+            import time
+            time.sleep(1.0)
+            
+        except Exception as e:
+            self.node.get_logger().error(f"Error displaying shutdown message: {e}")
+    
+    def clear(self, color=(0, 0, 0)):
+        """Clear the display with a solid color or message"""
         if self.enabled:
-            self.display.clear()
+            try:
+                # Create a black frame
+                frame = np.full((self.display.height, self.display.width, 3), color, dtype=np.uint8)
+                
+                # Add a "No Signal" message
+                font = cv2.FONT_HERSHEY_SIMPLEX
+                text = "NO SIGNAL"
+                font_scale = 1.5
+                thickness = 2
+                text_size = cv2.getTextSize(text, font, font_scale, thickness)[0]
+                
+                # Center the text
+                x = (frame.shape[1] - text_size[0]) // 2
+                y = (frame.shape[0] + text_size[1]) // 2
+                
+                # Draw text
+                cv2.putText(frame, text, (x, y), font, font_scale, (64, 64, 64), thickness)
+                
+                self.display.display_frame(frame)
+            except Exception as e:
+                self.node.get_logger().error(f"Error clearing display: {e}")
+                # Fallback to simple clear
+                self.display.clear(color)
     
     def cleanup(self):
         """Clean up resources"""
         if self.enabled:
+            # Show shutdown message first
+            self.show_shutdown_message()
+            # Then cleanup
             self.display.cleanup()
