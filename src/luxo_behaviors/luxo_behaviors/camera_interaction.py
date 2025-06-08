@@ -13,7 +13,7 @@ import cv2
 import subprocess
 import os
 import threading
-from std_msgs.msg import String, Float32
+from std_msgs.msg import String, Float32, Bool
 from sensor_msgs.msg import Image
 from cv_bridge import CvBridge
 from collections import deque
@@ -182,6 +182,14 @@ class CameraInteraction(Node):
         # Store face bounding boxes for display
         self.last_face_bboxes = []  # List of (x1, y1, x2, y2) tuples
         
+        # Voice parameters for debugging
+        self.voice_active = False
+        self.voice_direction = None
+        self.voice_confidence = 0.0
+        self.voice_spectral_confidence = 0.0
+        self.voice_snr = 0.0
+        self.voice_last_detection_time = None
+        
         # Subscribe to animation name and state topics
         self.current_animation_name = None
         self.current_state = "UNKNOWN"
@@ -201,6 +209,42 @@ class CameraInteraction(Node):
             self.state_status_callback,
             10
         )
+        
+        # Subscribe to voice topics for debugging
+        self.voice_active_sub = self.create_subscription(
+            Bool,
+            '/voice/active',
+            self.voice_active_callback,
+            10
+        )
+        
+        self.voice_direction_sub = self.create_subscription(
+            Float32,
+            '/voice/direction',
+            self.voice_direction_callback,
+            10
+        )
+        
+        self.voice_confidence_sub = self.create_subscription(
+            Float32,
+            '/voice/confidence',
+            self.voice_confidence_callback,
+            10
+        )
+        
+        self.voice_spectral_confidence_sub = self.create_subscription(
+            Float32,
+            '/voice/spectral_confidence',
+            self.voice_spectral_confidence_callback,
+            10
+        )
+        
+        self.voice_snr_sub = self.create_subscription(
+            Float32,
+            '/voice/snr',
+            self.voice_snr_callback,
+            10
+        )
 
         if self.initialize_camera():
             self.get_logger().info('Camera initialized successfully')
@@ -211,6 +255,28 @@ class CameraInteraction(Node):
                 self._show_camera_not_found_message()
             # Create retry timer
             self.create_camera_retry_timer()
+
+    def voice_active_callback(self, msg):
+        """Update voice active status."""
+        self.voice_active = msg.data
+        if self.voice_active:
+            self.voice_last_detection_time = self.get_clock().now()
+
+    def voice_direction_callback(self, msg):
+        """Update voice direction."""
+        self.voice_direction = msg.data
+
+    def voice_confidence_callback(self, msg):
+        """Update voice confidence."""
+        self.voice_confidence = msg.data
+
+    def voice_spectral_confidence_callback(self, msg):
+        """Update voice spectral confidence."""
+        self.voice_spectral_confidence = msg.data
+
+    def voice_snr_callback(self, msg):
+        """Update voice SNR."""
+        self.voice_snr = msg.data
 
     def animation_status_callback(self, msg):
         """Update current animation name."""
@@ -250,6 +316,16 @@ class CameraInteraction(Node):
             animation_name = self.current_animation_name
             state = self.current_state
             
+            # Collect voice debug info
+            voice_info = {
+                'active': self.voice_active,
+                'direction': self.voice_direction,
+                'confidence': self.voice_confidence,
+                'spectral_confidence': self.voice_spectral_confidence,
+                'snr': self.voice_snr,
+                'last_detection_time': self.voice_last_detection_time
+            }
+            
             # Update display with all debug info
             self.framebuffer_display.update_display(
                 frame, 
@@ -257,7 +333,8 @@ class CameraInteraction(Node):
                 distance=distance,
                 face_bboxes=face_bboxes,
                 animation_name=animation_name,
-                state=state
+                state=state,
+                voice_info=voice_info
             )
             
             self.last_framebuffer_update = current_time

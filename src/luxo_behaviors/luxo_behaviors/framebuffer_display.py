@@ -174,7 +174,7 @@ class CameraFramebufferDisplay:
         if not self.enabled:
             self.node.get_logger().warn("Framebuffer display could not be initialized")
     
-    def update_display(self, frame, emotion=None, distance=None, face_bboxes=None, animation_name=None, state=None):
+    def update_display(self, frame, emotion=None, distance=None, face_bboxes=None, animation_name=None, state=None, voice_info=None):
         """Update framebuffer with camera frame and overlays including debug info"""
         if not self.enabled:
             return
@@ -199,7 +199,7 @@ class CameraFramebufferDisplay:
             font_scale = 1.2
             thickness = 2
             
-            # Y position for text
+            # Y position for text (left side)
             y_pos = 40
             line_height = 45
             
@@ -234,6 +234,86 @@ class CameraFramebufferDisplay:
                 text = f"Distance: {distance:.2f}m"
                 cv2.putText(display_frame, text, (30, y_pos), font, 
                            font_scale, (0, 255, 0), thickness)
+            
+            # Voice debugging section (right side)
+            if voice_info:
+                voice_x = display_frame.shape[1] - 400  # Right side positioning
+                voice_y = 40
+                voice_font_scale = 0.9
+                voice_thickness = 2
+                voice_line_height = 35
+                
+                # Voice section header
+                cv2.putText(display_frame, "VOICE DEBUG", (voice_x, voice_y), font, 
+                           voice_font_scale, (255, 255, 255), voice_thickness)
+                voice_y += voice_line_height + 10
+                
+                # Voice active status
+                active_text = f"Active: {'YES' if voice_info.get('active', False) else 'NO'}"
+                active_color = (0, 255, 0) if voice_info.get('active', False) else (128, 128, 128)
+                cv2.putText(display_frame, active_text, (voice_x, voice_y), font, 
+                           voice_font_scale, active_color, voice_thickness)
+                voice_y += voice_line_height
+                
+                # Voice direction
+                direction = voice_info.get('direction')
+                if direction is not None:
+                    dir_text = f"Direction: {direction:.1f}°"
+                    cv2.putText(display_frame, dir_text, (voice_x, voice_y), font, 
+                               voice_font_scale, (255, 165, 0), voice_thickness)  # Orange
+                else:
+                    cv2.putText(display_frame, "Direction: N/A", (voice_x, voice_y), font, 
+                               voice_font_scale, (128, 128, 128), voice_thickness)
+                voice_y += voice_line_height
+                
+                # VAD Confidence
+                vad_conf = voice_info.get('confidence', 0.0)
+                conf_text = f"VAD Conf: {vad_conf:.2f}"
+                conf_color = (0, 255, 0) if vad_conf > 0.5 else (255, 255, 0) if vad_conf > 0.3 else (255, 0, 0)
+                cv2.putText(display_frame, conf_text, (voice_x, voice_y), font, 
+                           voice_font_scale, conf_color, voice_thickness)
+                voice_y += voice_line_height
+                
+                # Spectral Confidence
+                spec_conf = voice_info.get('spectral_confidence', 0.0)
+                spec_text = f"Spec Conf: {spec_conf:.2f}"
+                spec_color = (0, 255, 0) if spec_conf > 0.5 else (255, 255, 0) if spec_conf > 0.3 else (255, 0, 0)
+                cv2.putText(display_frame, spec_text, (voice_x, voice_y), font, 
+                           voice_font_scale, spec_color, voice_thickness)
+                voice_y += voice_line_height
+                
+                # SNR
+                snr = voice_info.get('snr', 0.0)
+                if snr == float('inf'):
+                    snr_text = "SNR: INF"
+                elif snr == -float('inf'):
+                    snr_text = "SNR: -INF"
+                else:
+                    snr_text = f"SNR: {snr:.1f}dB"
+                snr_color = (0, 255, 0) if snr > 6.0 else (255, 255, 0) if snr > 0.0 else (255, 0, 0)
+                cv2.putText(display_frame, snr_text, (voice_x, voice_y), font, 
+                           voice_font_scale, snr_color, voice_thickness)
+                voice_y += voice_line_height
+                
+                # Time since last detection
+                last_detection = voice_info.get('last_detection_time')
+                if last_detection is not None:
+                    # Calculate time since last detection
+                    import datetime
+                    current_time = self.node.get_clock().now()
+                    time_diff = (current_time - last_detection).nanoseconds / 1e9
+                    
+                    if time_diff < 60:
+                        time_text = f"Last: {time_diff:.1f}s ago"
+                    else:
+                        time_text = "Last: >60s ago"
+                    
+                    time_color = (0, 255, 0) if time_diff < 2.0 else (255, 255, 0) if time_diff < 5.0 else (128, 128, 128)
+                    cv2.putText(display_frame, time_text, (voice_x, voice_y), font, 
+                               voice_font_scale, time_color, voice_thickness)
+                else:
+                    cv2.putText(display_frame, "Last: Never", (voice_x, voice_y), font, 
+                               voice_font_scale, (128, 128, 128), voice_thickness)
             
             # Add timestamp in bottom right corner
             import datetime
