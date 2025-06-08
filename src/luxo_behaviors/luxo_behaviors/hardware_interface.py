@@ -950,12 +950,13 @@ class RoArmHardwareInterface(Node):
             # Add stack trace for better debugging
             import traceback
             self.get_logger().error(traceback.format_exc())
+
     def send_safe_joint_command(self, positions, description=""):
         """Send a joint command with safety checks applied"""
         if not self.is_connected():
             return False
         
-        time.sleep(0.1)  # delay between commands
+        time.sleep(0.05)  # delay between commands
 
         # Apply safety limits based on collision status
         if self.enable_collision_avoidance:

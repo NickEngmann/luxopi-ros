@@ -1177,9 +1177,9 @@ class CollisionAvoidance:
             # Add stack trace for better debugging
             import traceback
             self.node.get_logger().error(f"Stack trace: {traceback.format_exc()}")
-    
+
     def perform_collision_avoidance(self, direction, distance, emergency=False):
-        """Perform collision avoidance with rotation limit awareness."""
+        """Perform collision avoidance with rotation limit awareness and dynamic acceleration."""
         # Update activity time when performing collision avoidance
         current_time = self.node.get_clock().now()
         self.last_activity_time = current_time
@@ -1207,6 +1207,27 @@ class CollisionAvoidance:
             
             # Get the consecutive count for this direction
             consecutive_count = self.collision_status[direction]['consecutive_count']
+            severity = self.collision_status[direction]['severity']
+            
+            # Determine acceleration based on severity and emergency status
+            if emergency or severity == 'danger':
+                # Maximum acceleration for emergency situations
+                acceleration = 22.5
+                self.node.get_logger().warn(f"Using maximum acceleration (22.5) for emergency {direction} collision")
+            elif severity == 'warning':
+                # Higher minimum acceleration for warnings
+                acceleration = 16.0
+                self.node.get_logger().info(f"Using warning acceleration (16.0) for {direction} collision")
+            else:
+                # Default acceleration for other cases
+                acceleration = 12.0
+                self.node.get_logger().debug(f"Using default acceleration (12.0) for {direction} collision")
+            
+            # Further increase acceleration for persistent collisions
+            if consecutive_count > 5:
+                # Add extra acceleration for persistent collisions, but cap at maximum
+                acceleration = min(22.5, acceleration + (consecutive_count - 5) * 1.0)
+                self.node.get_logger().warn(f"Increased acceleration to {acceleration} for persistent collision (count: {consecutive_count})")
             
             # Determine adjustment magnitude based on consecutive count
             if consecutive_count > 8:
@@ -1280,14 +1301,17 @@ class CollisionAvoidance:
             # Clamp base position to limits
             new_position[0] = np.clip(new_position[0], base_min_limit, base_max_limit)
             
-            # Send command with high priority
-            self.send_safe_joint_command(new_position, f"Collision avoidance (count: {consecutive_count})")
+            # Add acceleration to the position array for the command
+            new_position_with_acceleration = new_position.copy() + [acceleration]
             
-            # Set this as our target override position
+            # Send command with high priority and dynamic acceleration
+            self.send_safe_joint_command(new_position_with_acceleration, f"Collision avoidance (count: {consecutive_count}, accel: {acceleration})")
+            
+            # Set this as our target override position (without acceleration for internal tracking)
             self.target_override_active = True
             self.target_override_time = self.node.get_clock().now()
             self.target_override_joints = new_position.copy()
-            self.target_override_reason = f"Collision avoidance for {direction} at {distance:.1f}cm"
+            self.target_override_reason = f"Collision avoidance for {direction} at {distance:.1f}cm (accel: {acceleration})"
             self.node.get_logger().info(f"Created target override: {self.target_override_reason}")
             
             # If emergency and avoidance doesn't work after multiple attempts,
@@ -1301,11 +1325,11 @@ class CollisionAvoidance:
                     for direction in self.collision_status:
                         self.collision_status[direction]['consecutive_count'] = 0
             
-            self.node.get_logger().warn(f"Collision avoidance COMPLETED for {direction} at {distance:.1f}cm")
+            self.node.get_logger().warn(f"Collision avoidance COMPLETED for {direction} at {distance:.1f}cm with acceleration {acceleration}")
             
         except Exception as e:
             self.node.get_logger().error(f"Error in collision avoidance: {e}")
-    
+
     def _at_position(self, position1, position2=None, tolerance=0.05):
         """Check if two positions are the same within tolerance."""
         if position2 is None:

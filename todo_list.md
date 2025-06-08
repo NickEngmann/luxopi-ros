@@ -1,6 +1,4 @@
-[] Add Voice parameters to Overall framebuffer UI
 [] If I get nonstop voice activity or collision detection, the robot can get in a weird stuck state
-[] Faster Acceleration when moving away from collisions
 [] Touch Circuit
 [] Touch Capabilities - Animations
 [] Touch Capabilities - Collision Detection
