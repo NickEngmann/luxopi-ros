@@ -99,11 +99,11 @@ class PixelRing:
         data = []
         for i in range(12):
             if i == led_position:
-                # Bright blue for direction
-                data.extend([0, 0, 255, 0])  # R, G, B, W
+                # Bright white for direction
+                data.extend([255, 255, 255, 0])  # R, G, B, W
             elif abs(i - led_position) <= 1 or abs(i - led_position) >= 11:
                 # Dimmer blue for adjacent LEDs (wrap around)
-                data.extend([0, 0, 128, 0])  # R, G, B, W
+                data.extend([0, 0, 255, 0])  # R, G, B, W
             else:
                 # Off for other LEDs
                 data.extend([0, 0, 0, 0])
