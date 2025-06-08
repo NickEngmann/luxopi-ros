@@ -82,6 +82,30 @@ class VoiceDirectionDetector:
         self.led_update_interval = 0.1  # Update LEDs at most every 100ms
         self.current_led_direction = None
         
+        # Enhanced adaptive noise floor with recovery
+        self.calibration_quality_threshold = 0.6  # Max allowed voice ratio during calibration
+        self.contaminated_calibration = False
+        self.recalibration_trigger_count = 0
+        self.recalibration_threshold = 50  # Trigger recalibration after N suspicious samples
+        self.min_quiet_samples_for_recalibration = 100  # Need N quiet samples to recalibrate
+        self.quiet_samples_buffer = deque(maxlen=self.min_quiet_samples_for_recalibration)
+        
+        # Multiple noise floor estimates for robustness
+        self.primary_noise_floor = None
+        self.secondary_noise_floor = None
+        self.tertiary_noise_floor = None
+        self.noise_floor_history = deque(maxlen=200)  # Store history for analysis
+        
+        # Adaptive parameters that change based on environment
+        self.adaptive_rate_fast = 0.1    # Fast adaptation when recovering
+        self.adaptive_rate_normal = 0.02  # Normal adaptation rate
+        self.adaptive_rate_slow = 0.005   # Slow adaptation in stable conditions
+        self.current_adaptive_rate = self.adaptive_rate_normal
+        
+        # Calibration validation variables
+        self.calibration_voice_detections = 0
+        self.calibration_total_samples = 0
+        
         print("[OK] Voice Direction Detector initialized")
         print(f"    Sample rate: {rate} Hz")
         print(f"    Channels: {channels}")
@@ -92,62 +116,6 @@ class VoiceDirectionDetector:
         print(f"    SNR threshold: {self.snr_threshold} dB")
         print(f"    LED persistence: {self.led_persistence_time} seconds")
 
-    def calibrate_background_noise(self, mic):
-        """
-        Perform initial background noise calibration
-        
-        Args:
-            mic: MicArray instance
-        """
-        print(f"\n[CALIBRATION] Measuring background noise for {self.calibration_time} seconds...")
-        print("Please remain quiet during calibration...")
-        
-        calibration_chunks_needed = int(self.calibration_time * 1000 / self.vad_frames)
-        calibration_samples = []
-        
-        pixel_ring.set_color(r=255, g=255, b=0)  # Yellow during calibration
-        
-        for i, chunk in enumerate(mic.read_chunks()):
-            if i >= calibration_chunks_needed:
-                break
-            
-            # Extract audio for analysis
-            if self.channels == 6:
-                audio_for_analysis = chunk[1::self.channels]
-            else:
-                audio_for_analysis = chunk[0::self.channels]
-            
-            calibration_samples.append(audio_for_analysis)
-            
-            # Progress indicator
-            progress = (i + 1) / calibration_chunks_needed
-            print(f"\rCalibration progress: {progress:.0%}", end='', flush=True)
-        
-        # Calculate background noise characteristics
-        all_samples = np.concatenate(calibration_samples)
-        self.background_noise_energy = np.var(all_samples.astype(np.float32))
-        
-        # Calculate background noise spectrum
-        audio_float = all_samples.astype(np.float32) / 32768.0
-        audio_float = audio_float - np.mean(audio_float)
-        windowed = audio_float * np.hanning(len(audio_float))
-        fft_data = np.abs(fft(windowed))
-        self.background_noise_spectrum = fft_data[:len(fft_data)//2]
-        
-        # Set dynamic thresholds based on background noise
-        self.dynamic_energy_threshold = max(
-            self.voice_energy_threshold,
-            self.background_noise_energy * self.noise_floor_multiplier
-        )
-        
-        self.is_calibrated = True
-        pixel_ring.off()
-        
-        print(f"\n[CALIBRATION] Complete!")
-        print(f"    Background noise energy: {self.background_noise_energy:.2e}")
-        print(f"    Dynamic energy threshold: {self.dynamic_energy_threshold:.2e}")
-        print(f"    Background spectrum peak: {np.max(self.background_noise_spectrum):.2e}")
-        
     def calculate_snr(self, signal_spectrum):
         """
         Calculate Signal-to-Noise Ratio
@@ -173,35 +141,241 @@ class VoiceDirectionDetector:
         snr_db = 10 * np.log10(snr_linear) if snr_linear > 0 else -float('inf')
         
         return snr_db
-    
+
+    def validate_calibration_quality(self):
+        """
+        Check if initial calibration was contaminated with voice
+        
+        Returns:
+            bool: True if calibration appears to be good quality
+        """
+        if self.calibration_total_samples == 0:
+            return True
+            
+        voice_ratio = self.calibration_voice_detections / self.calibration_total_samples
+        
+        if voice_ratio > self.calibration_quality_threshold:
+            self.contaminated_calibration = True
+            print(f"\n[WARNING] Calibration may be contaminated!")
+            print(f"    Voice detected in {voice_ratio:.1%} of calibration samples")
+            print(f"    Threshold: {self.calibration_quality_threshold:.1%}")
+            print(f"    Will use adaptive recovery mode")
+            return False
+        else:
+            print(f"\n[OK] Calibration quality good ({voice_ratio:.1%} voice content)")
+            return True
+
+    def calibrate_background_noise(self, mic):
+        """
+        Enhanced background noise calibration with quality validation
+        
+        Args:
+            mic: MicArray instance
+        """
+        print(f"\n[CALIBRATION] Measuring background noise for {self.calibration_time} seconds...")
+        print("Please remain quiet during calibration...")
+        
+        calibration_chunks_needed = int(self.calibration_time * 1000 / self.vad_frames)
+        calibration_samples = []
+        
+        pixel_ring.set_color(r=255, g=255, b=0)  # Yellow during calibration
+        
+        self.calibration_voice_detections = 0
+        self.calibration_total_samples = 0
+        
+        for i, chunk in enumerate(mic.read_chunks()):
+            if i >= calibration_chunks_needed:
+                break
+            
+            # Extract audio for analysis
+            if self.channels == 6:
+                audio_for_analysis = chunk[1::self.channels]
+                mono_audio = chunk[1::self.channels].tobytes()
+            else:
+                audio_for_analysis = chunk[0::self.channels]
+                mono_audio = chunk[0::self.channels].tobytes()
+            
+            # Check for voice contamination during calibration
+            try:
+                vad_result = self.vad.is_speech(mono_audio, self.rate)
+                if vad_result:
+                    self.calibration_voice_detections += 1
+            except:
+                pass  # If VAD fails, continue without voice detection
+            
+            self.calibration_total_samples += 1
+            calibration_samples.append(audio_for_analysis)
+            
+            # Progress indicator
+            progress = (i + 1) / calibration_chunks_needed
+            print(f"\rCalibration progress: {progress:.0%}", end='', flush=True)
+        
+        # Calculate background noise characteristics
+        all_samples = np.concatenate(calibration_samples)
+        self.background_noise_energy = np.var(all_samples.astype(np.float32))
+        
+        # Calculate background noise spectrum
+        audio_float = all_samples.astype(np.float32) / 32768.0
+        audio_float = audio_float - np.mean(audio_float)
+        windowed = audio_float * np.hanning(len(audio_float))
+        fft_data = np.abs(fft(windowed))
+        self.background_noise_spectrum = fft_data[:len(fft_data)//2]
+        
+        # Initialize multiple noise floor estimates
+        self.primary_noise_floor = self.background_noise_energy
+        self.secondary_noise_floor = self.background_noise_energy * 1.2
+        self.tertiary_noise_floor = self.background_noise_energy * 0.8
+        
+        # Set dynamic thresholds based on background noise
+        self.dynamic_energy_threshold = max(
+            self.voice_energy_threshold,
+            self.background_noise_energy * self.noise_floor_multiplier
+        )
+        
+        # Validate calibration quality
+        calibration_good = self.validate_calibration_quality()
+        
+        if not calibration_good:
+            # Start with more conservative thresholds and faster adaptation
+            self.dynamic_energy_threshold *= 1.5  # More conservative
+            self.current_adaptive_rate = self.adaptive_rate_fast
+            print(f"    Using recovery mode with faster adaptation")
+        
+        self.is_calibrated = True
+        pixel_ring.off()
+        
+        print(f"\n[CALIBRATION] Complete!")
+        print(f"    Background noise energy: {self.background_noise_energy:.2e}")
+        print(f"    Dynamic energy threshold: {self.dynamic_energy_threshold:.2e}")
+        print(f"    Adaptive rate: {self.current_adaptive_rate}")
+        if calibration_good:
+            print(f"    Status: Good quality")
+        else:
+            print(f"    Status: Contaminated - using recovery mode")
+
+    def detect_noise_floor_drift(self):
+        """
+        Detect if the noise floor has drifted significantly and needs adjustment
+        
+        Returns:
+            bool: True if recalibration is recommended
+        """
+        if len(self.noise_floor_history) < 50:
+            return False
+        
+        recent_samples = list(self.noise_floor_history)[-50:]
+        median_recent = np.median(recent_samples)
+        
+        # Check if recent noise floor is significantly different from calibrated
+        drift_ratio = median_recent / self.background_noise_energy
+        
+        # Significant drift detected
+        if drift_ratio > 3.0 or drift_ratio < 0.3:
+            self.recalibration_trigger_count += 1
+            
+            if self.recalibration_trigger_count >= self.recalibration_threshold:
+                return True
+        else:
+            # Reset trigger count if drift is normal
+            self.recalibration_trigger_count = max(0, self.recalibration_trigger_count - 1)
+        
+        return False
+
+    def perform_quiet_recalibration(self):
+        """
+        Recalibrate noise floor using accumulated quiet samples
+        """
+        if len(self.quiet_samples_buffer) < self.min_quiet_samples_for_recalibration:
+            return False
+        
+        print(f"\n[RECALIBRATION] Using {len(self.quiet_samples_buffer)} quiet samples...")
+        
+        # Calculate new noise floor from quiet samples
+        quiet_energies = list(self.quiet_samples_buffer)
+        new_noise_floor = np.median(quiet_energies)
+        
+        # Validate the new noise floor (shouldn't be too different unless environment changed)
+        if self.background_noise_energy is not None:
+            ratio = new_noise_floor / self.background_noise_energy
+            if 0.1 <= ratio <= 10.0:  # Reasonable range
+                # Update noise floor with weighted average
+                self.background_noise_energy = (
+                    0.7 * self.background_noise_energy + 
+                    0.3 * new_noise_floor
+                )
+                
+                # Update thresholds
+                self.dynamic_energy_threshold = max(
+                    self.voice_energy_threshold,
+                    self.background_noise_energy * self.noise_floor_multiplier
+                )
+                
+                # Reset contamination flag if we've successfully recalibrated
+                if self.contaminated_calibration:
+                    self.contaminated_calibration = False
+                    self.current_adaptive_rate = self.adaptive_rate_normal
+                    print(f"    Recovered from contaminated calibration")
+                
+                self.recalibration_trigger_count = 0
+                self.quiet_samples_buffer.clear()
+                
+                print(f"    New noise floor: {self.background_noise_energy:.2e}")
+                print(f"    New threshold: {self.dynamic_energy_threshold:.2e}")
+                return True
+        
+        return False
+
     def update_adaptive_background(self, audio_data, is_voice):
         """
-        Update background noise model with non-voice samples
+        Enhanced adaptive background updating with recovery mechanisms
         
         Args:
             audio_data: Current audio chunk
             is_voice: Whether current chunk is classified as voice
         """
+        current_energy = np.var(audio_data.astype(np.float32))
+        self.noise_floor_history.append(current_energy)
+        
         if not is_voice and self.is_calibrated:
-            # Calculate energy of current non-voice sample
-            current_energy = np.var(audio_data.astype(np.float32))
+            # Add to quiet samples buffer for potential recalibration
             self.adaptive_background_history.append(current_energy)
+            self.quiet_samples_buffer.append(current_energy)
             
-            # Update background noise energy with exponential moving average
+            # Update background noise energy with current adaptive rate
             if len(self.adaptive_background_history) >= 10:
                 recent_background = np.median(list(self.adaptive_background_history))
                 
-                # Slowly adapt background noise estimate
+                # Adaptive rate changes based on stability
+                if self.contaminated_calibration:
+                    # Faster adaptation during recovery
+                    adaptation_rate = self.adaptive_rate_fast
+                else:
+                    # Normal or slow adaptation
+                    adaptation_rate = self.current_adaptive_rate
+                
+                # Update with exponential moving average
                 self.background_noise_energy = (
-                    (1 - self.adaptive_update_rate) * self.background_noise_energy +
-                    self.adaptive_update_rate * recent_background
+                    (1 - adaptation_rate) * self.background_noise_energy +
+                    adaptation_rate * recent_background
                 )
+                
+                # Update multiple noise floor estimates
+                self.primary_noise_floor = self.background_noise_energy
+                self.secondary_noise_floor = recent_background
                 
                 # Update dynamic threshold
                 self.dynamic_energy_threshold = max(
                     self.voice_energy_threshold,
                     self.background_noise_energy * self.noise_floor_multiplier
                 )
+        
+        # Check for drift and potential recalibration
+        if self.detect_noise_floor_drift():
+            print(f"\n[ADAPTIVE] Significant noise floor drift detected")
+            if len(self.quiet_samples_buffer) >= self.min_quiet_samples_for_recalibration:
+                self.perform_quiet_recalibration()
+            else:
+                print(f"    Need {self.min_quiet_samples_for_recalibration - len(self.quiet_samples_buffer)} more quiet samples for recalibration")
 
     def analyze_speech_characteristics(self, audio_data):
         """

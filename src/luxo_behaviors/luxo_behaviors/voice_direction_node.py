@@ -38,6 +38,8 @@ class VoiceDirectionNode(Node):
         self.declare_parameter('min_consistent_samples', 1)
         self.declare_parameter('debug_mode', True)  # Add debug parameter
         self.declare_parameter('bypass_state_check', True)  # Bypass state checking for debugging
+        self.declare_parameter('calibration_time', 3.0)  # Background noise calibration time
+        self.declare_parameter('snr_threshold', 2.0)  # SNR threshold in dB
         
         # Get parameters
         self.rate = self.get_parameter('sample_rate').value
@@ -54,6 +56,8 @@ class VoiceDirectionNode(Node):
         self.direction_stability_threshold = self.get_parameter('direction_stability_threshold').value
         self.min_consistent_samples = self.get_parameter('min_consistent_samples').value
         self.bypass_state_check = self.get_parameter('bypass_state_check').value
+        self.calibration_time = self.get_parameter('calibration_time').value
+        self.snr_threshold = self.get_parameter('snr_threshold').value
         self.debug_mode = True
         
         # Enhanced speech analysis parameters
@@ -61,6 +65,25 @@ class VoiceDirectionNode(Node):
         self.speech_high_freq = 3400
         self.voice_energy_threshold = 0.4
         self.spectral_centroid_range = (500, 2000)
+        
+        # Background noise calibration
+        self.background_noise_energy = None
+        self.background_noise_spectrum = None
+        self.is_calibrated = False
+        self.calibration_samples = []
+        self.adaptive_background_history = deque(maxlen=50)
+        self.noise_floor_multiplier = 1.5
+        self.adaptive_update_rate = 0.05
+        
+        # Dynamic thresholds
+        self.dynamic_energy_threshold = self.voice_energy_threshold
+        
+        # LED persistence
+        self.led_persistence_time = 1.5
+        self.last_voice_time = 0
+        self.last_led_update_time = 0
+        self.led_update_interval = 0.1
+        self.current_led_direction = None
         
         # Initialize VAD
         self.vad = webrtcvad.Vad(self.vad_aggressiveness)
@@ -71,8 +94,8 @@ class VoiceDirectionNode(Node):
         
         # Enhanced history for better smoothing
         self.direction_history = deque(maxlen=self.direction_smoothing_window)
-        self.voice_history = deque(maxlen=10)
-        self.spectral_history = deque(maxlen=5)
+        self.voice_history = deque(maxlen=15)  # Increased from 10
+        self.spectral_history = deque(maxlen=8)  # Increased from 5
         self.raw_direction_buffer = deque(maxlen=10)
         
         # Precompute frequency bins for efficiency
@@ -95,6 +118,7 @@ class VoiceDirectionNode(Node):
         self.direction_calculations = 0
         self.messages_published = 0
         self.spectral_confidence = 0.0
+        self.current_snr = 0.0
         
         # Subscribe to robot state
         self.state_subscriber = self.create_subscription(
@@ -157,6 +181,13 @@ class VoiceDirectionNode(Node):
             10
         )
         
+        # Add SNR publisher
+        self.snr_pub = self.create_publisher(
+            Float32,
+            '/voice/snr',
+            10
+        )
+        
         # Thread control
         self.running = False
         self.audio_thread = None
@@ -174,12 +205,292 @@ class VoiceDirectionNode(Node):
         self.get_logger().info(f'Direction stability threshold: {self.direction_stability_threshold}°')
         self.get_logger().info(f'Bypass state check: {self.bypass_state_check}')
         self.get_logger().info(f'Debug mode: {self.debug_mode}')
+        self.get_logger().info(f'Calibration time: {self.calibration_time} seconds')
+        self.get_logger().info(f'SNR threshold: {self.snr_threshold} dB')
         
         # Start audio processing
         self.start_audio_processing()
     
+        # Enhanced adaptive noise floor with recovery
+        self.calibration_quality_threshold = 0.6  # Max allowed voice ratio during calibration
+        self.contaminated_calibration = False
+        self.recalibration_trigger_count = 0
+        self.recalibration_threshold = 50  # Trigger recalibration after N suspicious samples
+        self.min_quiet_samples_for_recalibration = 100  # Need N quiet samples to recalibrate
+        self.quiet_samples_buffer = deque(maxlen=self.min_quiet_samples_for_recalibration)
+        
+        # Multiple noise floor estimates for robustness
+        self.primary_noise_floor = None
+        self.secondary_noise_floor = None
+        self.tertiary_noise_floor = None
+        self.noise_floor_history = deque(maxlen=200)  # Store history for analysis
+        
+        # Adaptive parameters that change based on environment
+        self.adaptive_rate_fast = 0.1    # Fast adaptation when recovering
+        self.adaptive_rate_normal = 0.02  # Normal adaptation rate
+        self.adaptive_rate_slow = 0.005   # Slow adaptation in stable conditions
+        self.current_adaptive_rate = self.adaptive_rate_normal
+        
+        # Calibration validation variables
+        self.calibration_voice_detections = 0
+        self.calibration_total_samples = 0
+        
+        # Add SNR tracking for compatibility
+        self._last_snr = 0.0
+        
+    def validate_calibration_quality(self):
+        """Check if initial calibration was contaminated with voice"""
+        if self.calibration_total_samples == 0:
+            return True
+            
+        voice_ratio = self.calibration_voice_detections / self.calibration_total_samples
+        
+        if voice_ratio > self.calibration_quality_threshold:
+            self.contaminated_calibration = True
+            self.get_logger().warning(f"Calibration may be contaminated! "
+                                     f"Voice detected in {voice_ratio:.1%} of calibration samples "
+                                     f"(threshold: {self.calibration_quality_threshold:.1%}). "
+                                     f"Will use adaptive recovery mode")
+            return False
+        else:
+            self.get_logger().info(f"Calibration quality good ({voice_ratio:.1%} voice content)")
+            return True
+
+    def calibrate_background_noise(self, mic):
+        """Enhanced background noise calibration with quality validation"""
+        self.get_logger().info(f'Measuring background noise for {self.calibration_time} seconds...')
+        self.get_logger().info('Please remain quiet during calibration...')
+        
+        calibration_chunks_needed = int(self.calibration_time * 1000 / self.vad_frames)
+        calibration_samples = []
+        
+        if self.enable_pixel_ring:
+            try:
+                pixel_ring.set_color(r=255, g=255, b=0)  # Yellow during calibration
+            except:
+                pass
+        
+        self.calibration_voice_detections = 0
+        self.calibration_total_samples = 0
+        
+        chunk_count = 0
+        for chunk in mic.read_chunks():
+            if chunk_count >= calibration_chunks_needed:
+                break
+            
+            # Extract audio for analysis
+            if self.channels == 6:
+                audio_for_analysis = chunk[1::self.channels]
+                mono_audio = chunk[1::self.channels].tobytes()
+            else:
+                audio_for_analysis = chunk[0::self.channels]
+                mono_audio = chunk[0::self.channels].tobytes()
+            
+            # Check for voice contamination during calibration
+            try:
+                vad_result = self.vad.is_speech(mono_audio, self.rate)
+                if vad_result:
+                    self.calibration_voice_detections += 1
+            except:
+                pass  # If VAD fails, continue without voice detection
+            
+            self.calibration_total_samples += 1
+            calibration_samples.append(audio_for_analysis)
+            chunk_count += 1
+            
+            # Progress indicator
+            if chunk_count % 10 == 0:
+                progress = chunk_count / calibration_chunks_needed
+                self.get_logger().info(f'Calibration progress: {progress:.0%}')
+        
+        # Calculate background noise characteristics
+        all_samples = np.concatenate(calibration_samples)
+        self.background_noise_energy = np.var(all_samples.astype(np.float32))
+        
+        # Calculate background noise spectrum
+        audio_float = all_samples.astype(np.float32) / 32768.0
+        audio_float = audio_float - np.mean(audio_float)
+        windowed = audio_float * np.hanning(len(audio_float))
+        fft_data = np.abs(fft(windowed))
+        self.background_noise_spectrum = fft_data[:len(fft_data)//2]
+        
+        # Initialize multiple noise floor estimates
+        self.primary_noise_floor = self.background_noise_energy
+        self.secondary_noise_floor = self.background_noise_energy * 1.2
+        self.tertiary_noise_floor = self.background_noise_energy * 0.8
+        
+        # Set dynamic thresholds based on background noise
+        self.dynamic_energy_threshold = max(
+            self.voice_energy_threshold,
+            self.background_noise_energy * self.noise_floor_multiplier
+        )
+        
+        # Validate calibration quality
+        calibration_good = self.validate_calibration_quality()
+        
+        if not calibration_good:
+            # Start with more conservative thresholds and faster adaptation
+            self.dynamic_energy_threshold *= 1.5  # More conservative
+            self.current_adaptive_rate = self.adaptive_rate_fast
+            self.get_logger().info("Using recovery mode with faster adaptation")
+        
+        self.is_calibrated = True
+        
+        if self.enable_pixel_ring:
+            try:
+                pixel_ring.off()
+            except:
+                pass
+        
+        self.get_logger().info('Background noise calibration complete!')
+        self.get_logger().info(f'Background noise energy: {self.background_noise_energy:.2e}')
+        self.get_logger().info(f'Dynamic energy threshold: {self.dynamic_energy_threshold:.2e}')
+        self.get_logger().info(f'Adaptive rate: {self.current_adaptive_rate}')
+        if calibration_good:
+            self.get_logger().info('Status: Good quality')
+        else:
+            self.get_logger().info('Status: Contaminated - using recovery mode')
+
+    def detect_noise_floor_drift(self):
+        """Detect if the noise floor has drifted significantly and needs adjustment"""
+        if len(self.noise_floor_history) < 50:
+            return False
+        
+        recent_samples = list(self.noise_floor_history)[-50:]
+        median_recent = np.median(recent_samples)
+        
+        # Check if recent noise floor is significantly different from calibrated
+        drift_ratio = median_recent / self.background_noise_energy
+        
+        # Significant drift detected
+        if drift_ratio > 3.0 or drift_ratio < 0.3:
+            self.recalibration_trigger_count += 1
+            
+            if self.recalibration_trigger_count >= self.recalibration_threshold:
+                return True
+        else:
+            # Reset trigger count if drift is normal
+            self.recalibration_trigger_count = max(0, self.recalibration_trigger_count - 1)
+        
+        return False
+
+    def perform_quiet_recalibration(self):
+        """Recalibrate noise floor using accumulated quiet samples"""
+        if len(self.quiet_samples_buffer) < self.min_quiet_samples_for_recalibration:
+            return False
+        
+        self.get_logger().info(f"[RECALIBRATION] Using {len(self.quiet_samples_buffer)} quiet samples...")
+        
+        # Calculate new noise floor from quiet samples
+        quiet_energies = list(self.quiet_samples_buffer)
+        new_noise_floor = np.median(quiet_energies)
+        
+        # Validate the new noise floor (shouldn't be too different unless environment changed)
+        if self.background_noise_energy is not None:
+            ratio = new_noise_floor / self.background_noise_energy
+            if 0.1 <= ratio <= 10.0:  # Reasonable range
+                # Update noise floor with weighted average
+                self.background_noise_energy = (
+                    0.7 * self.background_noise_energy + 
+                    0.3 * new_noise_floor
+                )
+                
+                # Update thresholds
+                self.dynamic_energy_threshold = max(
+                    self.voice_energy_threshold,
+                    self.background_noise_energy * self.noise_floor_multiplier
+                )
+                
+                # Reset contamination flag if we've successfully recalibrated
+                if self.contaminated_calibration:
+                    self.contaminated_calibration = False
+                    self.current_adaptive_rate = self.adaptive_rate_normal
+                    self.get_logger().info("Recovered from contaminated calibration")
+                
+                self.recalibration_trigger_count = 0
+                self.quiet_samples_buffer.clear()
+                
+                self.get_logger().info(f"New noise floor: {self.background_noise_energy:.2e}")
+                self.get_logger().info(f"New threshold: {self.dynamic_energy_threshold:.2e}")
+                return True
+        
+        return False
+
+    def update_adaptive_background(self, audio_data, is_voice):
+        """Enhanced adaptive background updating with recovery mechanisms"""
+        current_energy = np.var(audio_data.astype(np.float32))
+        self.noise_floor_history.append(current_energy)
+        
+        if not is_voice and self.is_calibrated:
+            # Add to quiet samples buffer for potential recalibration
+            self.adaptive_background_history.append(current_energy)
+            self.quiet_samples_buffer.append(current_energy)
+            
+            # Update background noise energy with current adaptive rate
+            if len(self.adaptive_background_history) >= 10:
+                recent_background = np.median(list(self.adaptive_background_history))
+                
+                # Adaptive rate changes based on stability
+                if self.contaminated_calibration:
+                    # Faster adaptation during recovery
+                    adaptation_rate = self.adaptive_rate_fast
+                else:
+                    # Normal or slow adaptation
+                    adaptation_rate = self.current_adaptive_rate
+                
+                # Update with exponential moving average
+                self.background_noise_energy = (
+                    (1 - adaptation_rate) * self.background_noise_energy +
+                    adaptation_rate * recent_background
+                )
+                
+                # Update multiple noise floor estimates
+                self.primary_noise_floor = self.background_noise_energy
+                self.secondary_noise_floor = recent_background
+                
+                # Update dynamic threshold
+                self.dynamic_energy_threshold = max(
+                    self.voice_energy_threshold,
+                    self.background_noise_energy * self.noise_floor_multiplier
+                )
+        
+        # Check for drift and potential recalibration
+        if self.detect_noise_floor_drift():
+            self.get_logger().info("[ADAPTIVE] Significant noise floor drift detected")
+            if len(self.quiet_samples_buffer) >= self.min_quiet_samples_for_recalibration:
+                self.perform_quiet_recalibration()
+            else:
+                needed = self.min_quiet_samples_for_recalibration - len(self.quiet_samples_buffer)
+                self.get_logger().info(f"Need {needed} more quiet samples for recalibration")
+
+    def calculate_snr(self, signal_spectrum):
+        """
+        Calculate Signal-to-Noise Ratio
+        
+        Args:
+            signal_spectrum: FFT magnitude spectrum of current audio
+            
+        Returns:
+            float: SNR in dB
+        """
+        if self.background_noise_spectrum is None:
+            return float('inf')  # No background reference
+        
+        # Ensure same length
+        min_len = min(len(signal_spectrum), len(self.background_noise_spectrum))
+        signal_power = np.mean(signal_spectrum[:min_len]**2)
+        noise_power = np.mean(self.background_noise_spectrum[:min_len]**2)
+        
+        if noise_power == 0:
+            return float('inf')
+        
+        snr_linear = signal_power / noise_power
+        snr_db = 10 * np.log10(snr_linear) if snr_linear > 0 else -float('inf')
+        
+        return snr_db
+
     def analyze_speech_characteristics(self, audio_data):
-        """Analyze audio for speech-specific characteristics"""
+        """Analyze audio for speech-specific characteristics with background noise consideration"""
         # Convert to float for analysis
         audio_float = audio_data.astype(np.float32) / 32768.0
         
@@ -195,12 +506,27 @@ class VoiceDirectionNode(Node):
         
         # Calculate total energy
         total_energy = np.sum(fft_data**2)
+        current_energy = np.var(audio_float)
+        
         if total_energy < 1e-10:
-            return {'is_voice': False, 'confidence': 0.0, 'reason': 'silence'}
+            return {'is_voice': False, 'confidence': 0.0, 'reason': 'silence', 'snr_db': -float('inf')}
+        
+        # Calculate SNR
+        snr_db = self.calculate_snr(fft_data)
+        self.current_snr = snr_db
+        self._last_snr = snr_db  # Track for debug output
         
         # Energy in speech frequency band
         speech_energy = np.sum(fft_data[self.speech_mask[:len(fft_data)]]**2)
         speech_ratio = speech_energy / total_energy if total_energy > 0 else 0
+        
+        # Energy-based noise rejection using calibrated background
+        if self.is_calibrated:
+            energy_above_background = current_energy > (self.background_noise_energy * self.noise_floor_multiplier)
+            snr_sufficient = snr_db >= self.snr_threshold
+        else:
+            energy_above_background = True
+            snr_sufficient = True
         
         # Spectral centroid (brightness measure)
         freqs = self.freq_bins[:len(fft_data)]
@@ -216,33 +542,43 @@ class VoiceDirectionNode(Node):
         zero_crossings = np.sum(np.diff(np.sign(audio_float)) != 0)
         zcr = zero_crossings / len(audio_float)
         
-        # Voice classification criteria
+        # Voice classification criteria (more lenient)
         criteria = {
             'speech_energy': speech_ratio >= self.voice_energy_threshold,
             'spectral_centroid': self.spectral_centroid_range[0] <= spectral_centroid <= self.spectral_centroid_range[1],
-            'spectral_rolloff': spectral_rolloff <= 4000,
+            'spectral_rolloff': spectral_rolloff <= 4500,  # Increased from 4000
             'zero_crossing': 0.01 <= zcr <= 0.3,
             'energy_level': total_energy > 1e-6,
         }
         
+        # Add noise criteria as bonus, not requirements
+        if energy_above_background:
+            criteria['energy_above_background'] = True
+        if snr_sufficient:
+            criteria['snr_sufficient'] = True
+        
         # Calculate voice confidence
         passed_criteria = sum(criteria.values())
-        voice_confidence = passed_criteria / len(criteria)
+        total_criteria = len(criteria)
+        voice_confidence = passed_criteria / total_criteria
         
-        # Additional noise rejection
-        high_freq_mask = freqs > 4000
-        if len(high_freq_mask) > 0:
-            high_freq_energy = np.sum(fft_data[high_freq_mask]**2)
-            high_freq_ratio = high_freq_energy / total_energy if total_energy > 0 else 0
-            
-            if high_freq_ratio > 0.3:
-                voice_confidence *= 0.5
+        # Boost confidence if SNR is very high
+        if snr_db > 12.0:
+            voice_confidence = min(1.0, voice_confidence * 1.2)
+        elif snr_db < 3.0:
+            voice_confidence *= 0.5
         
-        # Broadband noise detection
-        if spectral_rolloff > 6000 and zcr > 0.5:
-            voice_confidence *= 0.2
+        # More lenient final decision
+        base_voice_detection = voice_confidence >= 0.6
         
-        is_voice = voice_confidence >= 0.6
+        # Only apply strict noise filtering if we have very poor SNR or energy
+        if self.is_calibrated:
+            if snr_db < 0:
+                base_voice_detection = False
+            elif not energy_above_background and current_energy < (self.background_noise_energy * 0.8):
+                base_voice_detection = False
+        
+        is_voice = base_voice_detection
         
         return {
             'is_voice': is_voice,
@@ -251,33 +587,71 @@ class VoiceDirectionNode(Node):
             'spectral_centroid': spectral_centroid,
             'spectral_rolloff': spectral_rolloff,
             'zcr': zcr,
+            'snr_db': snr_db,
             'criteria': criteria
         }
     
     def is_speech_detected(self, mono_audio, chunk_data):
-        """Enhanced speech detection combining VAD and spectral analysis"""
+        """Enhanced speech detection combining VAD, spectral analysis, and background noise calibration"""
         # Basic VAD check
         vad_result = self.vad.is_speech(mono_audio, self.rate)
         
-        # If VAD says no speech, trust it
-        if not vad_result:
-            return False
-        
-        # If VAD detects something, verify it's actually voice
+        # Extract audio for analysis
         if self.channels == 6:
-            audio_for_analysis = chunk_data[1::self.channels]  # Channel 1
+            audio_for_analysis = chunk_data[1::self.channels]
         else:
-            audio_for_analysis = chunk_data[0::self.channels]  # Channel 0
+            audio_for_analysis = chunk_data[0::self.channels]
         
         # Perform spectral analysis
         speech_analysis = self.analyze_speech_characteristics(audio_for_analysis)
         self.spectral_history.append(speech_analysis['confidence'])
         
-        # Update spectral confidence for publishing
-        self.spectral_confidence = np.mean(list(self.spectral_history)) if self.spectral_history else 0
+        # Update adaptive background
+        preliminary_voice_detection = speech_analysis['is_voice']
+        self.update_adaptive_background(audio_for_analysis, preliminary_voice_detection)
         
-        # Use both VAD and spectral analysis
-        return speech_analysis['is_voice'] and self.spectral_confidence > 0.5
+        # If VAD says no speech, only override if spectral analysis is very confident
+        if not vad_result:
+            return speech_analysis['confidence'] > 0.8
+        
+        # Combine VAD and spectral with more weight on VAD
+        spectral_confidence = np.mean(list(self.spectral_history)) if self.spectral_history else 0
+        
+        # Update spectral confidence for publishing
+        self.spectral_confidence = spectral_confidence
+        
+        # Trust VAD more, use spectral as confirmation
+        return vad_result and (speech_analysis['is_voice'] or spectral_confidence > 0.4)
+    
+    def update_leds(self, direction, force_update=False):
+        """Update LEDs with rate limiting and persistence"""
+        current_time = time.time()
+        
+        # Rate limit LED updates to prevent flickering
+        if not force_update and (current_time - self.last_led_update_time) < self.led_update_interval:
+            return
+        
+        if direction is not None:
+            # Voice detected - update LEDs and record time
+            if self.enable_pixel_ring:
+                try:
+                    pixel_ring.set_direction(direction, self.channels)
+                except:
+                    pass
+            self.current_led_direction = direction
+            self.last_voice_time = current_time
+        else:
+            # No voice - check if we should keep LEDs on due to persistence
+            time_since_voice = current_time - self.last_voice_time
+            if time_since_voice > self.led_persistence_time:
+                if self.enable_pixel_ring:
+                    try:
+                        pixel_ring.off()
+                    except:
+                        pass
+                self.current_led_direction = None
+        
+        self.last_led_update_time = current_time
 
     def publish_debug_info(self):
         """Publish debug information periodically"""
@@ -290,6 +664,7 @@ class VoiceDirectionNode(Node):
             f"state:{self.current_state}, "
             f"vad_confidence:{self.current_confidence:.2f}, "
             f"spectral_confidence:{self.spectral_confidence:.2f}, "
+            f"snr:{self.current_snr:.1f}dB, "
             f"active:{self.voice_active}"
         )
         self.debug_pub.publish(debug_msg)
@@ -299,6 +674,11 @@ class VoiceDirectionNode(Node):
         spec_msg.data = self.spectral_confidence
         self.spectral_confidence_pub.publish(spec_msg)
         
+        # Publish SNR
+        snr_msg = Float32()
+        snr_msg.data = self.current_snr
+        self.snr_pub.publish(snr_msg)
+        
         if self.debug_mode:
             self.get_logger().info(f"[DEBUG] {debug_msg.data}")
     
@@ -306,7 +686,7 @@ class VoiceDirectionNode(Node):
         """Update current robot state"""
         self.current_state = msg.data
         if self.debug_mode:
-            self.get_logger().info(f"Robot state updated: {self.current_state}")
+            self.get_logger().debug(f"Robot state updated: {self.current_state}")
     
     def animation_callback(self, msg):
         """Update current animation"""
@@ -508,6 +888,10 @@ class VoiceDirectionNode(Node):
             with MicArray(self.rate, self.channels, self.chunk_size) as mic:
                 self.get_logger().info('Microphone array initialized successfully')
                 
+                # Perform background noise calibration
+                if not self.is_calibrated:
+                    self.calibrate_background_noise(mic)
+                
                 for chunk in mic.read_chunks():
                     if not self.running:
                         break
@@ -516,19 +900,19 @@ class VoiceDirectionNode(Node):
                     
                     # Log every 100th chunk in debug mode
                     if self.debug_mode and self.audio_chunks_received % 100 == 0:
-                        self.get_logger().info(f"Received {self.audio_chunks_received} audio chunks")
+                        self.get_logger().debug(f"Received {self.audio_chunks_received} audio chunks")
                     
                     # Check if we should process
                     if not self.should_process_voice():
                         if self.debug_mode and self.audio_chunks_received % 100 == 0:
-                            self.get_logger().info(f"Skipping processing - state: {self.current_state}")
+                            self.get_logger().debug(f"Skipping processing - state: {self.current_state}")
                         continue
                     
                     # Enhanced speech detection
                     if self.channels == 6:
-                        mono_audio = chunk[1::self.channels].tobytes()  # Channel 1
+                        mono_audio = chunk[1::self.channels].tobytes()
                     else:
-                        mono_audio = chunk[0::self.channels].tobytes()  # Channel 0
+                        mono_audio = chunk[0::self.channels].tobytes()
                     
                     # Use enhanced speech detection
                     is_speech = self.is_speech_detected(mono_audio, chunk)
@@ -545,16 +929,8 @@ class VoiceDirectionNode(Node):
                         confidence = self.get_voice_confidence()
                         self.current_confidence = confidence
                         
-                        # Log VAD window results with spectral info
-                        if self.debug_mode:
-                            self.get_logger().info(
-                                f"VAD window complete: speech_count={speech_count}/{self.doa_chunks}, "
-                                f"vad_confidence={confidence:.2f}, spectral_confidence={self.spectral_confidence:.2f}, "
-                                f"threshold={self.confidence_threshold}"
-                            )
-                        
-                        # Require higher threshold for direction detection (60% of chunks must be voice)
-                        min_speech_chunks = self.doa_chunks * 0.6
+                        # Lower threshold for direction detection (40% of chunks must be voice)
+                        min_speech_chunks = self.doa_chunks * 0.4
                         
                         if speech_count > min_speech_chunks and confidence >= self.confidence_threshold:
                             frames = np.concatenate(chunks)
@@ -574,12 +950,8 @@ class VoiceDirectionNode(Node):
                                 if stable_direction is not None:
                                     smoothed_direction = self.get_smoothed_direction(stable_direction)
                                     
-                                    # Update pixel ring with channel information
-                                    if self.enable_pixel_ring:
-                                        try:
-                                            pixel_ring.set_direction(smoothed_direction, self.channels)
-                                        except:
-                                            pass
+                                    # Update LEDs with persistence
+                                    self.update_leds(smoothed_direction)
                                     
                                     # Check if we should report
                                     current_time = self.get_clock().now()
@@ -598,13 +970,8 @@ class VoiceDirectionNode(Node):
                                             f"{self.min_consistent_samples} samples"
                                         )
                         else:
-                            # Turn off pixel ring when no voice
-                            if confidence < 0.2:
-                                if self.enable_pixel_ring:
-                                    try:
-                                        pixel_ring.off()
-                                    except:
-                                        pass
+                            # No voice detected - use LED persistence
+                            self.update_leds(None)
                         
                         # Reset for next window
                         speech_count = 0

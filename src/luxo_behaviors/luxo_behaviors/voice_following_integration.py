@@ -7,6 +7,7 @@ Enhanced with spectral analysis support and improved voice detection
 import numpy as np
 import time
 from std_msgs.msg import Float32, Bool, String
+from collections import deque
 
 class VoiceFollowingBehavior:
     """Enhanced mixin class for voice following behavior with spectral analysis"""
@@ -20,10 +21,11 @@ class VoiceFollowingBehavior:
         self.voice_influence_decay = 0.95  # How quickly voice influence fades
         self.voice_timeout = 2.0  # seconds before considering voice inactive
         
-        # Enhanced thresholds for better voice detection
-        self.min_vad_confidence = 0.5  # Minimum VAD confidence
-        self.min_spectral_confidence = 0.6  # Minimum spectral confidence
-        self.combined_confidence_threshold = 0.7  # Combined threshold for strong voice detection
+        # Enhanced thresholds for better voice detection (more lenient)
+        self.min_vad_confidence = 0.3  # Reduced from 0.4
+        self.min_spectral_confidence = 0.4  # Reduced from 0.5
+        self.combined_confidence_threshold = 0.5  # Reduced from 0.6
+        self.min_snr_threshold = -3.0  # More lenient SNR (was 0.0)
         
         # Voice tracking state
         self.last_voice_direction = None
@@ -35,9 +37,11 @@ class VoiceFollowingBehavior:
         self.current_vad_confidence = 0.0
         self.current_spectral_confidence = 0.0
         self.combined_confidence = 0.0
+        self.current_snr = 0.0
         
         # Voice quality tracking for better filtering
         self.voice_quality_history = []
+        self.snr_history = deque(maxlen=10)  # Track SNR over time
         self.max_quality_history = 10
         
         # Create subscribers for voice data
@@ -78,9 +82,18 @@ class VoiceFollowingBehavior:
             10
         )
         
+        # Subscribe to SNR
+        self.snr_sub = self.node.create_subscription(
+            Float32,
+            '/voice/snr',
+            self.snr_callback,
+            10
+        )
+        
         self.node.get_logger().info("Enhanced voice following behavior initialized")
         self.node.get_logger().info(f"VAD threshold: {self.min_vad_confidence}, "
-                                    f"Spectral threshold: {self.min_spectral_confidence}")
+                                    f"Spectral threshold: {self.min_spectral_confidence}, "
+                                    f"SNR threshold: {self.min_snr_threshold} dB")
     
     def voice_confidence_callback(self, msg):
         """Handle VAD confidence updates"""
@@ -92,13 +105,35 @@ class VoiceFollowingBehavior:
         self.current_spectral_confidence = msg.data
         self._update_combined_confidence()
     
+    def snr_callback(self, msg):
+        """Handle SNR updates"""
+        self.current_snr = msg.data
+        self.snr_history.append(self.current_snr)
+    
+    def get_average_snr(self):
+        """Get smoothed SNR over recent history"""
+        if not self.snr_history:
+            return 0.0
+        return np.mean(list(self.snr_history))
+    
     def _update_combined_confidence(self):
-        """Update combined confidence from VAD and spectral analysis"""
+        """Update combined confidence from VAD, spectral analysis, and SNR"""
         # Weight spectral confidence more heavily as it's more reliable for voice
-        self.combined_confidence = (
+        base_confidence = (
             0.3 * self.current_vad_confidence + 
             0.7 * self.current_spectral_confidence
         )
+        
+        # Apply SNR bonus/penalty (more lenient)
+        avg_snr = self.get_average_snr()
+        if avg_snr > 6.0:  # Good SNR
+            snr_multiplier = min(1.2, 1.0 + (avg_snr - 6.0) / 20.0)
+        elif avg_snr < self.min_snr_threshold:  # Poor SNR
+            snr_multiplier = max(0.7, 1.0 + (avg_snr - self.min_snr_threshold) / 10.0)
+        else:  # Acceptable SNR
+            snr_multiplier = 1.0
+        
+        self.combined_confidence = base_confidence * snr_multiplier
         
         # Track voice quality over time
         if len(self.voice_quality_history) >= self.max_quality_history:
@@ -137,29 +172,39 @@ class VoiceFollowingBehavior:
         if not self.state_machine.is_in_state(LuxoState.IDLE, LuxoState.ANIMATING, LuxoState.EMOTION_REACTING):
             return
         
-        # Enhanced quality check - require good combined confidence
+        # More lenient quality check - require good combined confidence
         if self.combined_confidence < self.combined_confidence_threshold:
             self.node.get_logger().debug(
                 f"Voice direction ignored - low combined confidence: {self.combined_confidence:.2f} "
-                f"(VAD: {self.current_vad_confidence:.2f}, Spectral: {self.current_spectral_confidence:.2f})"
+                f"(VAD: {self.current_vad_confidence:.2f}, Spectral: {self.current_spectral_confidence:.2f}, "
+                f"SNR: {self.current_snr:.1f}dB)"
             )
             return
         
-        # Additional quality gate - require consistent quality
+        # Additional quality gate - require consistent quality (more lenient)
         avg_quality = self.get_voice_quality_score()
-        if avg_quality < 0.5:
+        if avg_quality < 0.3:  # Reduced from 0.4
             self.node.get_logger().debug(
                 f"Voice direction ignored - poor average quality: {avg_quality:.2f}"
             )
             return
         
+        # SNR check (more lenient)
+        avg_snr = self.get_average_snr()
+        if avg_snr < self.min_snr_threshold:
+            self.node.get_logger().debug(
+                f"Voice direction ignored - poor SNR: {avg_snr:.1f}dB < {self.min_snr_threshold}dB"
+            )
+            return
+        
         # Update voice tracking
-        self.last_voice_direction = msg.data  # Already in robot angle (-180 to 180)
+        self.last_voice_direction = msg.data
         self.last_voice_time = self.node.get_clock().now()
         
-        # Increase voice influence based on quality
+        # Increase voice influence based on quality and SNR (more lenient)
         quality_multiplier = min(1.0, self.combined_confidence / self.combined_confidence_threshold)
-        influence_increase = 0.2 * quality_multiplier
+        snr_multiplier = min(1.0, max(0.3, (avg_snr + 9.0) / 15.0))  # More lenient SNR normalization
+        influence_increase = 0.25 * quality_multiplier * snr_multiplier  # Slightly higher increase
         self.voice_influence = min(1.0, self.voice_influence + influence_increase)
         
         # Calculate target angle for base joint
@@ -178,6 +223,7 @@ class VoiceFollowingBehavior:
             self.node.get_logger().debug(
                 f"High-quality voice detected at {self.last_voice_direction}°, "
                 f"combined confidence: {self.combined_confidence:.2f}, "
+                f"SNR: {avg_snr:.1f}dB, "
                 f"current base: {np.rad2deg(current_base):.1f}°, "
                 f"target: {np.rad2deg(self.target_voice_angle):.1f}°"
             )
@@ -190,12 +236,15 @@ class VoiceFollowingBehavior:
         """Handle voice activity status with enhanced decay"""
         if not msg.data:
             # Voice is not active, apply faster decay if quality was poor
-            decay_rate = 0.9 if self.get_voice_quality_score() > 0.6 else 0.7
+            quality_score = self.get_voice_quality_score()
+            snr_score = max(0.3, min(1.0, (self.get_average_snr() + 3.0) / 9.0))  # Normalize SNR
+            decay_rate = 0.9 if (quality_score > 0.5 and snr_score > 0.5) else 0.7
             self.voice_influence *= decay_rate
             
             # Clear quality history when voice becomes inactive
             if self.voice_influence < 0.1:
                 self.voice_quality_history.clear()
+                self.snr_history.clear()
     
     def apply_voice_following(self, target_positions):
         """Apply enhanced voice following influence to target positions"""
@@ -216,12 +265,12 @@ class VoiceFollowingBehavior:
             self.voice_quality_history.clear()
             return target_positions
         else:
-            # Natural decay with quality consideration
-            quality_factor = max(0.5, self.get_voice_quality_score())
+            # Natural decay with quality consideration (more lenient)
+            quality_factor = max(0.3, self.get_voice_quality_score())  # Reduced from 0.5
             self.voice_influence *= self.voice_influence_decay * quality_factor
         
         # Apply voice following if we have a target and sufficient influence
-        min_influence = 0.15  # Slightly higher threshold for better reliability
+        min_influence = 0.1  # Reduced from 0.15 for better responsiveness
         if self.target_voice_angle is not None and self.voice_influence > min_influence:
             # Make a copy to avoid modifying original
             adjusted_positions = target_positions.copy()
@@ -232,7 +281,7 @@ class VoiceFollowingBehavior:
             
             # Scale by influence and quality, limit maximum adjustment
             quality_factor = min(1.0, self.get_voice_quality_score() * 2)  # Boost quality factor
-            adjustment = angle_diff * self.voice_influence * quality_factor * 0.3
+            adjustment = angle_diff * self.voice_influence * quality_factor * 0.35  # Slightly more responsive
             adjustment = np.clip(adjustment, -self.voice_follow_max_adjustment, self.voice_follow_max_adjustment)
             
             # Apply adjustment to base joint
@@ -249,7 +298,7 @@ class VoiceFollowingBehavior:
             return adjusted_positions
         
         return target_positions
-    
+
     def _normalize_angle(self, angle):
         """Normalize angle to [-pi, pi]"""
         while angle > np.pi:
@@ -260,13 +309,14 @@ class VoiceFollowingBehavior:
     
     def should_interrupt_for_voice(self):
         """Check if voice following should interrupt current behavior with enhanced criteria"""
-        # More stringent requirements for interruption
+        avg_snr = self.get_average_snr()
         return (
-            self.voice_influence > 0.8 and  # Higher influence threshold
-            self.combined_confidence > 0.8 and  # High combined confidence
-            self.get_voice_quality_score() > 0.7 and  # Good sustained quality
+            self.voice_influence > 0.6 and  # Slightly lower influence threshold
+            self.combined_confidence > 0.65 and  # Slightly lower confidence threshold
+            self.get_voice_quality_score() > 0.5 and  # Slightly lower quality threshold
+            avg_snr > 0.0 and  # More lenient SNR requirement
             self.last_voice_time is not None and
-            (self.node.get_clock().now() - self.last_voice_time).nanoseconds / 1e9 < 0.3  # Very recent
+            (self.node.get_clock().now() - self.last_voice_time).nanoseconds / 1e9 < 0.4
         )
     
     def get_voice_following_status(self):
@@ -278,6 +328,8 @@ class VoiceFollowingBehavior:
             'spectral_confidence': self.current_spectral_confidence,
             'combined_confidence': self.combined_confidence,
             'quality_score': self.get_voice_quality_score(),
+            'snr': self.current_snr,
+            'avg_snr': self.get_average_snr(),
             'last_direction': self.last_voice_direction,
             'target_angle': self.target_voice_angle,
             'time_since_voice': (
