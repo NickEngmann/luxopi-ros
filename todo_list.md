@@ -1,14 +1,16 @@
+[] Add Voice parameters to Overall framebuffer UI
 [] If I get nonstop voice activity or collision detection, the robot can get in a weird stuck state
-[] I see the target and current adjustment with the voice activity, but it never reaches target. It just does micro movements
-[] Sometimes it doesn't react to the camera/actions (more of a delay in between actions)
-[] React to Camera Faster!
-[] Simplify Launch Files
-[-] When the camera closes also close the framebuffer (show a specific closing state)
-[] Continue fine tuning the different animation commands
 [] Faster Acceleration when moving away from collisions
+[] Touch Circuit
+[] Touch Capabilities - Animations
+[] Touch Capabilities - Collision Detection
+[] Fix DEMA Adaptation Mode and Integrate with Touch
+
 [] Move acceleration to msg.velocity and move source to its own message
 [] Identify your voice and act differently for different people depending on the voice
 [] Fix the 6 channel implementation
+[] Simplify Launch Files
+[] Continue fine tuning the different animation commands
 
 # Later Priorities
 ## High Priority
