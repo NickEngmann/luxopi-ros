@@ -75,6 +75,9 @@ class VoiceDirectionDetector:
         self.dynamic_energy_threshold = self.voice_energy_threshold
         self.adaptive_update_rate = 0.05  # Slower adaptation (was 0.05)
         
+        # Default background noise energy for when calibration is skipped
+        self.default_background_noise_energy = 1e-6  # Conservative default
+        
         # LED persistence to prevent blinking
         self.led_persistence_time = 1.5  # Keep LEDs on for 1.5 seconds after voice stops
         self.last_voice_time = 0
@@ -336,6 +339,10 @@ class VoiceDirectionDetector:
         current_energy = np.var(audio_data.astype(np.float32))
         self.noise_floor_history.append(current_energy)
         
+        # Initialize background noise energy if not set
+        if self.background_noise_energy is None:
+            self.background_noise_energy = self.default_background_noise_energy
+        
         if not is_voice and self.is_calibrated:
             # Add to quiet samples buffer for potential recalibration
             self.adaptive_background_history.append(current_energy)
@@ -412,11 +419,11 @@ class VoiceDirectionDetector:
         speech_ratio = speech_energy / total_energy if total_energy > 0 else 0
         
         # Energy-based noise rejection using calibrated background (made more lenient)
-        if self.is_calibrated:
+        if self.is_calibrated and self.background_noise_energy is not None:
             energy_above_background = current_energy > (self.background_noise_energy * self.noise_floor_multiplier)
             snr_sufficient = snr_db >= self.snr_threshold
         else:
-            # Fallback to original thresholds if not calibrated
+            # Fallback to original thresholds if not calibrated or background_noise_energy is None
             energy_above_background = True
             snr_sufficient = True
         
@@ -479,7 +486,7 @@ class VoiceDirectionDetector:
         base_voice_detection = voice_confidence >= 0.6
         
         # Only apply strict noise filtering if we have very poor SNR or energy
-        if self.is_calibrated:
+        if self.is_calibrated and self.background_noise_energy is not None:
             # Allow voice if basic criteria pass, even with moderate noise
             if snr_db < 0:  # Very poor SNR (was 3.0)
                 base_voice_detection = False
@@ -622,6 +629,15 @@ class VoiceDirectionDetector:
                 # Perform background noise calibration
                 if not self.is_calibrated:
                     self.calibrate_background_noise(mic)
+                else:
+                    # If calibration is skipped, initialize with default values
+                    if self.background_noise_energy is None:
+                        self.background_noise_energy = self.default_background_noise_energy
+                        self.dynamic_energy_threshold = max(
+                            self.voice_energy_threshold,
+                            self.background_noise_energy * self.noise_floor_multiplier
+                        )
+                        print(f"[INFO] Using default background noise energy: {self.background_noise_energy:.2e}")
                 
                 print("\nListening for voice... (Press Ctrl+C to stop)")
                 print("=" * 50)
@@ -710,11 +726,11 @@ class VoiceDirectionDetector:
                             
                             if not debug:
                                 spectral_conf = np.mean(list(self.spectral_history)) if self.spectral_history else 0
-                                bg_energy = f"{self.background_noise_energy:.1e}" if self.is_calibrated else "N/A"
+                                bg_energy = f"{self.background_noise_energy:.1e}" if self.background_noise_energy is not None else "N/A"
                                 led_status = "ON" if self.current_led_direction is not None else "OFF"
                                 print(f"\r[IDLE] No voice (VAD: {confidence:.0%}, Spectral: {spectral_conf:.0%}, BG: {bg_energy}, LED: {led_status})    ", 
                                       end='', flush=True)
-                            
+                
                             # Only clear last_direction if LEDs are actually off
                             if self.current_led_direction is None:
                                 last_direction = None
@@ -808,8 +824,8 @@ def main():
                         help='Show debug information')
     parser.add_argument('--calibration-time', type=float, default=3.0,
                         help='Background noise calibration time in seconds (default: 3.0)')
-    parser.add_argument('--snr-threshold', type=float, default=6.0,
-                        help='Minimum SNR threshold in dB (default: 6.0)')
+    parser.add_argument('--snr-threshold', type=float, default=2.0,
+                        help='Minimum SNR threshold in dB (default: 2.0)')
     parser.add_argument('--skip-calibration', action='store_true',
                         help='Skip initial background noise calibration')
     

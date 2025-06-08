@@ -40,6 +40,9 @@ class VoiceDirectionNode(Node):
         self.declare_parameter('bypass_state_check', True)  # Bypass state checking for debugging
         self.declare_parameter('calibration_time', 3.0)  # Background noise calibration time
         self.declare_parameter('snr_threshold', 2.0)  # SNR threshold in dB
+        self.declare_parameter('skip_calibration', False)  # Skip calibration option
+        self.declare_parameter('mic_orientation_offset', 180.0)  # Offset to align mic with robot front
+        self.declare_parameter('mic_mounting_correction', 45.0)  # Additional mounting correction
         
         # Get parameters
         self.rate = self.get_parameter('sample_rate').value
@@ -58,6 +61,9 @@ class VoiceDirectionNode(Node):
         self.bypass_state_check = self.get_parameter('bypass_state_check').value
         self.calibration_time = self.get_parameter('calibration_time').value
         self.snr_threshold = self.get_parameter('snr_threshold').value
+        self.skip_calibration = self.get_parameter('skip_calibration').value
+        self.mic_orientation_offset = self.get_parameter('mic_orientation_offset').value
+        self.mic_mounting_correction = self.get_parameter('mic_mounting_correction').value
         self.debug_mode = True
         
         # Enhanced speech analysis parameters
@@ -74,6 +80,7 @@ class VoiceDirectionNode(Node):
         self.adaptive_background_history = deque(maxlen=50)
         self.noise_floor_multiplier = 1.5
         self.adaptive_update_rate = 0.05
+        self.default_background_noise_energy = 1e-6  # Default value
         
         # Dynamic thresholds
         self.dynamic_energy_threshold = self.voice_energy_threshold
@@ -92,10 +99,10 @@ class VoiceDirectionNode(Node):
         self.chunk_size = int(self.rate * self.vad_frames / 1000)
         self.doa_chunks = int(self.doa_frames / self.vad_frames)
         
-        # Enhanced history for better smoothing
+        # Enhanced history for better smoothing - matching standalone script
         self.direction_history = deque(maxlen=self.direction_smoothing_window)
-        self.voice_history = deque(maxlen=15)  # Increased from 10
-        self.spectral_history = deque(maxlen=8)  # Increased from 5
+        self.voice_history = deque(maxlen=15)  # Match standalone
+        self.spectral_history = deque(maxlen=8)  # Match standalone
         self.raw_direction_buffer = deque(maxlen=10)
         
         # Precompute frequency bins for efficiency
@@ -119,6 +126,33 @@ class VoiceDirectionNode(Node):
         self.messages_published = 0
         self.spectral_confidence = 0.0
         self.current_snr = 0.0
+        
+        # Enhanced adaptive noise floor with recovery - matching standalone
+        self.calibration_quality_threshold = 0.6
+        self.contaminated_calibration = False
+        self.recalibration_trigger_count = 0
+        self.recalibration_threshold = 50
+        self.min_quiet_samples_for_recalibration = 100
+        self.quiet_samples_buffer = deque(maxlen=self.min_quiet_samples_for_recalibration)
+        
+        # Multiple noise floor estimates for robustness
+        self.primary_noise_floor = None
+        self.secondary_noise_floor = None
+        self.tertiary_noise_floor = None
+        self.noise_floor_history = deque(maxlen=200)
+        
+        # Adaptive parameters that change based on environment
+        self.adaptive_rate_fast = 0.1
+        self.adaptive_rate_normal = 0.02
+        self.adaptive_rate_slow = 0.005
+        self.current_adaptive_rate = self.adaptive_rate_normal
+        
+        # Calibration validation variables
+        self.calibration_voice_detections = 0
+        self.calibration_total_samples = 0
+        
+        # Add SNR tracking for compatibility
+        self._last_snr = 0.0
         
         # Subscribe to robot state
         self.state_subscriber = self.create_subscription(
@@ -207,37 +241,13 @@ class VoiceDirectionNode(Node):
         self.get_logger().info(f'Debug mode: {self.debug_mode}')
         self.get_logger().info(f'Calibration time: {self.calibration_time} seconds')
         self.get_logger().info(f'SNR threshold: {self.snr_threshold} dB')
+        self.get_logger().info(f'Mic orientation offset: {self.mic_orientation_offset}° (base rotation)')
+        self.get_logger().info(f'Mic mounting correction: {self.mic_mounting_correction}° (fine tuning)')
+        self.get_logger().info('Tip: If robot faces away from voice, try mic_orientation_offset:=0.0 or mic_orientation_offset:=180.0')
         
         # Start audio processing
         self.start_audio_processing()
-    
-        # Enhanced adaptive noise floor with recovery
-        self.calibration_quality_threshold = 0.6  # Max allowed voice ratio during calibration
-        self.contaminated_calibration = False
-        self.recalibration_trigger_count = 0
-        self.recalibration_threshold = 50  # Trigger recalibration after N suspicious samples
-        self.min_quiet_samples_for_recalibration = 100  # Need N quiet samples to recalibrate
-        self.quiet_samples_buffer = deque(maxlen=self.min_quiet_samples_for_recalibration)
-        
-        # Multiple noise floor estimates for robustness
-        self.primary_noise_floor = None
-        self.secondary_noise_floor = None
-        self.tertiary_noise_floor = None
-        self.noise_floor_history = deque(maxlen=200)  # Store history for analysis
-        
-        # Adaptive parameters that change based on environment
-        self.adaptive_rate_fast = 0.1    # Fast adaptation when recovering
-        self.adaptive_rate_normal = 0.02  # Normal adaptation rate
-        self.adaptive_rate_slow = 0.005   # Slow adaptation in stable conditions
-        self.current_adaptive_rate = self.adaptive_rate_normal
-        
-        # Calibration validation variables
-        self.calibration_voice_detections = 0
-        self.calibration_total_samples = 0
-        
-        # Add SNR tracking for compatibility
-        self._last_snr = 0.0
-        
+
     def validate_calibration_quality(self):
         """Check if initial calibration was contaminated with voice"""
         if self.calibration_total_samples == 0:
@@ -421,6 +431,10 @@ class VoiceDirectionNode(Node):
         current_energy = np.var(audio_data.astype(np.float32))
         self.noise_floor_history.append(current_energy)
         
+        # Initialize background noise energy if not set
+        if self.background_noise_energy is None:
+            self.background_noise_energy = self.default_background_noise_energy
+        
         if not is_voice and self.is_calibrated:
             # Add to quiet samples buffer for potential recalibration
             self.adaptive_background_history.append(current_energy)
@@ -520,11 +534,12 @@ class VoiceDirectionNode(Node):
         speech_energy = np.sum(fft_data[self.speech_mask[:len(fft_data)]]**2)
         speech_ratio = speech_energy / total_energy if total_energy > 0 else 0
         
-        # Energy-based noise rejection using calibrated background
-        if self.is_calibrated:
+        # Energy-based noise rejection using calibrated background (made more lenient)
+        if self.is_calibrated and self.background_noise_energy is not None:
             energy_above_background = current_energy > (self.background_noise_energy * self.noise_floor_multiplier)
             snr_sufficient = snr_db >= self.snr_threshold
         else:
+            # Fallback to original thresholds if not calibrated or background_noise_energy is None
             energy_above_background = True
             snr_sufficient = True
         
@@ -542,11 +557,11 @@ class VoiceDirectionNode(Node):
         zero_crossings = np.sum(np.diff(np.sign(audio_float)) != 0)
         zcr = zero_crossings / len(audio_float)
         
-        # Voice classification criteria (more lenient)
+        # Voice classification criteria (more lenient - matching standalone)
         criteria = {
             'speech_energy': speech_ratio >= self.voice_energy_threshold,
             'spectral_centroid': self.spectral_centroid_range[0] <= spectral_centroid <= self.spectral_centroid_range[1],
-            'spectral_rolloff': spectral_rolloff <= 4500,  # Increased from 4000
+            'spectral_rolloff': spectral_rolloff <= 4500,
             'zero_crossing': 0.01 <= zcr <= 0.3,
             'energy_level': total_energy > 1e-6,
         }
@@ -562,20 +577,37 @@ class VoiceDirectionNode(Node):
         total_criteria = len(criteria)
         voice_confidence = passed_criteria / total_criteria
         
+        # Additional noise rejection (more lenient)
+        # High frequency noise detection
+        high_freq_mask = freqs > 4000
+        if len(high_freq_mask) > 0:
+            high_freq_energy = np.sum(fft_data[high_freq_mask]**2)
+            high_freq_ratio = high_freq_energy / total_energy if total_energy > 0 else 0
+            
+            # If too much high frequency content, likely noise
+            if high_freq_ratio > 0.3:
+                voice_confidence *= 0.5
+        
+        # Sudden energy spikes (like paper crumpling) have different characteristics
+        if spectral_rolloff > 6000 and zcr > 0.5:
+            voice_confidence *= 0.2  # Likely broadband noise
+        
         # Boost confidence if SNR is very high
-        if snr_db > 12.0:
+        if snr_db > 12.0:  # Very clear signal
             voice_confidence = min(1.0, voice_confidence * 1.2)
-        elif snr_db < 3.0:
+        elif snr_db < 3.0:  # Very poor signal
             voice_confidence *= 0.5
         
-        # More lenient final decision
+        # More lenient final decision - matching standalone
         base_voice_detection = voice_confidence >= 0.6
         
         # Only apply strict noise filtering if we have very poor SNR or energy
-        if self.is_calibrated:
-            if snr_db < 0:
+        if self.is_calibrated and self.background_noise_energy is not None:
+            # Allow voice if basic criteria pass, even with moderate noise
+            if snr_db < 0:  # Very poor SNR
                 base_voice_detection = False
             elif not energy_above_background and current_energy < (self.background_noise_energy * 0.8):
+                # Only reject if significantly below background
                 base_voice_detection = False
         
         is_voice = base_voice_detection
@@ -620,7 +652,7 @@ class VoiceDirectionNode(Node):
         # Update spectral confidence for publishing
         self.spectral_confidence = spectral_confidence
         
-        # Trust VAD more, use spectral as confirmation
+        # Trust VAD more, use spectral as confirmation - matching standalone
         return vad_result and (speech_analysis['is_voice'] or spectral_confidence > 0.4)
     
     def update_leds(self, direction, force_update=False):
@@ -700,83 +732,18 @@ class VoiceDirectionNode(Node):
         allowed_states = ['IDLE', 'ANIMATING', 'EMOTION_REACTING']
         return self.current_state in allowed_states
     
-    
-    def get_stable_direction(self, new_direction):
-        """Simple direction stabilization that filters large jumps"""
-        self.raw_direction_buffer.append(new_direction)
-        
-        # Need at least one sample to start
-        if len(self.raw_direction_buffer) < 1:
-            return None
-        
-        # If this is our first direction, accept it
-        if self.last_stable_direction is None:
-            self.last_stable_direction = new_direction
-            self.consistent_direction_count = 1
-            if self.debug_mode:
-                self.get_logger().info(f"Initial direction: {new_direction}°")
-            return None  # Still need more samples
-        
-        # Calculate angular difference from last stable direction
-        angle_diff = abs(new_direction - self.last_stable_direction)
-        if angle_diff > 180:
-            angle_diff = 360 - angle_diff
-        
-        # If direction is consistent (within threshold)
-        if angle_diff < self.direction_stability_threshold:
-            self.consistent_direction_count += 1
-            
-            # Update stable direction with smoothing
-            alpha = 0.3  # Smoothing factor (0.3 = 30% new, 70% old)
-            
-            # Circular interpolation
-            old_rad = self.last_stable_direction * np.pi / 180
-            new_rad = new_direction * np.pi / 180
-            
-            # Handle wrap-around
-            if angle_diff > 90:  # Large enough that we need circular interp
-                x = (1 - alpha) * np.cos(old_rad) + alpha * np.cos(new_rad)
-                y = (1 - alpha) * np.sin(old_rad) + alpha * np.sin(new_rad)
-                smoothed = np.arctan2(y, x) * 180 / np.pi
-                if smoothed < 0:
-                    smoothed += 360
-                self.last_stable_direction = smoothed
-            else:
-                # Small difference, simple interpolation is fine
-                self.last_stable_direction = (1 - alpha) * self.last_stable_direction + alpha * new_direction
-            
-            if self.debug_mode:
-                self.get_logger().debug(
-                    f"Direction {new_direction}° consistent (diff: {angle_diff:.1f}°, "
-                    f"count: {self.consistent_direction_count}, stable: {self.last_stable_direction:.1f}°)"
-                )
-            
-            # Return stable direction if we have enough samples
-            if self.consistent_direction_count >= self.min_consistent_samples:
-                return int(self.last_stable_direction)
-        else:
-            # Large jump detected
-            if self.debug_mode:
-                self.get_logger().debug(
-                    f"Direction jump: {self.last_stable_direction:.1f}° -> {new_direction}° "
-                    f"(diff: {angle_diff:.1f}°), ignoring"
-                )
-            
-            # Don't reset count to 0, just don't increment
-            # This allows recovery from occasional bad readings
-        
-        return None
-    
     def get_smoothed_direction(self, direction):
-        """Apply circular mean to smooth direction readings"""
+        """Apply circular mean to smooth direction readings - matching standalone"""
         self.direction_history.append(direction)
         
-        if len(self.direction_history) >= 2:
+        if len(self.direction_history) > 0:
+            # Use circular mean for angle averaging
             angles_rad = np.array([d * np.pi / 180 for d in self.direction_history])
             mean_sin = np.mean(np.sin(angles_rad))
             mean_cos = np.mean(np.cos(angles_rad))
             mean_direction = np.arctan2(mean_sin, mean_cos) * 180 / np.pi
             
+            # Convert back to 0-359 range
             if mean_direction < 0:
                 mean_direction += 360
                 
@@ -796,10 +763,12 @@ class VoiceDirectionNode(Node):
         The mic array may be mounted differently than the robot's forward direction.
         Adjust this method based on your hardware setup.
         """
-        # Apply correction for the observed 45-degree overshoot
-        # This suggests the microphone array coordinate system is rotated
-        # relative to the robot's coordinate system
-        corrected_angle = mic_angle + 45.0  # Subtract 45 degrees to compensate
+        # Apply orientation offset to align mic coordinates with robot coordinates
+        # Default 180° means mic's 0° is at robot's back
+        corrected_angle = mic_angle + self.mic_orientation_offset
+        
+        # Apply additional correction for any mounting offset
+        corrected_angle += self.mic_mounting_correction
         
         # Normalize to 0-360 range first
         while corrected_angle < 0:
@@ -836,7 +805,7 @@ class VoiceDirectionNode(Node):
         info_msg.data = (
             f"direction:{robot_angle:.1f},vad_confidence:{confidence:.2f},"
             f"spectral_confidence:{self.spectral_confidence:.2f},"
-            f"state:{self.current_state},stable:{self.consistent_direction_count}"
+            f"state:{self.current_state}"
         )
         self.voice_info_pub.publish(info_msg)
         
@@ -847,9 +816,9 @@ class VoiceDirectionNode(Node):
             self.voice_follow_pub.publish(follow_msg)
             
             self.get_logger().info(
-                f'[VOICE DETECTED] Direction: {direction}° (robot: {robot_angle}°) '
+                f'[VOICE DETECTED] Mic: {direction}° → Robot: {robot_angle}° '
                 f'VAD: {confidence:.0%}, Spectral: {self.spectral_confidence:.0%}, '
-                f'consistency: {self.consistent_direction_count}'
+                f'SNR: {self.current_snr:.1f}dB'
             )
         
         self.messages_published += 1
@@ -868,7 +837,6 @@ class VoiceDirectionNode(Node):
         if time_since_last > 2.0:
             self.voice_active = False
             self.current_confidence = 0.0
-            self.consistent_direction_count = 0  # Reset consistency
             
             # Turn off pixel ring when voice inactive
             if self.enable_pixel_ring and not self.voice_active:
@@ -878,7 +846,7 @@ class VoiceDirectionNode(Node):
                     pass
     
     def audio_processing_thread(self):
-        """Main audio processing thread"""
+        """Main audio processing thread - matching standalone logic"""
         self.get_logger().info('Starting audio processing thread')
         
         speech_count = 0
@@ -889,8 +857,17 @@ class VoiceDirectionNode(Node):
                 self.get_logger().info('Microphone array initialized successfully')
                 
                 # Perform background noise calibration
-                if not self.is_calibrated:
+                if not self.skip_calibration and not self.is_calibrated:
                     self.calibrate_background_noise(mic)
+                else:
+                    # If calibration is skipped, initialize with default values
+                    if self.background_noise_energy is None:
+                        self.background_noise_energy = self.default_background_noise_energy
+                        self.dynamic_energy_threshold = max(
+                            self.voice_energy_threshold,
+                            self.background_noise_energy * self.noise_floor_multiplier
+                        )
+                        self.get_logger().info(f"Using default background noise energy: {self.background_noise_energy:.2e}")
                 
                 for chunk in mic.read_chunks():
                     if not self.running:
@@ -928,50 +905,45 @@ class VoiceDirectionNode(Node):
                     if len(chunks) == self.doa_chunks:
                         confidence = self.get_voice_confidence()
                         self.current_confidence = confidence
+                        current_time = self.get_clock().now()
                         
-                        # Lower threshold for direction detection (40% of chunks must be voice)
-                        min_speech_chunks = self.doa_chunks * 0.4
-                        
-                        if speech_count > min_speech_chunks and confidence >= self.confidence_threshold:
+                        # MATCH STANDALONE: Only use speech count threshold (40%)
+                        # Remove the additional confidence threshold check
+                        if speech_count > (self.doa_chunks * 0.4):  # 40% of chunks must be voice
                             frames = np.concatenate(chunks)
                             direction = mic.get_direction(frames)
                             
                             if direction is not None:
                                 self.direction_calculations += 1
                                 
-                                if self.debug_mode:
-                                    self.get_logger().info(
-                                        f"[RAW DIRECTION] {direction}° "
-                                        f"(calculation #{self.direction_calculations})"
-                                    )
+                                # Smooth the direction - remove stable direction filtering
+                                smoothed_direction = self.get_smoothed_direction(direction)
                                 
-                                stable_direction = self.get_stable_direction(direction)
+                                # Update LEDs with persistence
+                                self.update_leds(smoothed_direction)
                                 
-                                if stable_direction is not None:
-                                    smoothed_direction = self.get_smoothed_direction(stable_direction)
+                                # Report if significant change or timeout
+                                direction_changed = (
+                                    self.last_direction is None or 
+                                    abs(smoothed_direction - self.last_direction) > 15 or
+                                    (current_time - self.last_report_time).nanoseconds / 1e9 > self.min_report_interval
+                                )
+                                
+                                if direction_changed:
+                                    self.voice_active = True
+                                    self.last_direction = smoothed_direction
+                                    self.last_report_time = current_time
                                     
-                                    # Update LEDs with persistence
-                                    self.update_leds(smoothed_direction)
-                                    
-                                    # Check if we should report
-                                    current_time = self.get_clock().now()
-                                    time_since_last = (current_time - self.last_report_time).nanoseconds / 1e9
-                                    
-                                    if self.debug_mode or time_since_last >= self.min_report_interval:
-                                        self.voice_active = True
-                                        self.last_direction = smoothed_direction
-                                        self.last_report_time = current_time
-                                        
-                                        self.publish_voice_direction(smoothed_direction, confidence)
-                                else:
-                                    if self.debug_mode:
-                                        self.get_logger().info(
-                                            f"Direction not stable yet: {self.consistent_direction_count}/"
-                                            f"{self.min_consistent_samples} samples"
-                                        )
+                                    self.publish_voice_direction(smoothed_direction, confidence)
                         else:
                             # No voice detected - use LED persistence
                             self.update_leds(None)
+                            
+                            if self.debug_mode:
+                                self.get_logger().debug(
+                                    f"Not enough speech: {speech_count}/{self.doa_chunks} chunks "
+                                    f"(need {int(self.doa_chunks * 0.4)})"
+                                )
                         
                         # Reset for next window
                         speech_count = 0
