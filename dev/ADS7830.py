@@ -74,4 +74,4 @@ while True:
         print("\n".join(details))
         print()  # Extra line for readability
     
-    time.sleep(1.0)
+    time.sleep(0.25)

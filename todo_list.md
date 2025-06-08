@@ -1,6 +1,5 @@
-[] Touch Circuit
-[] Touch Capabilities - Animations
-[] Touch Capabilities - Collision Detection
+[] Collision Avoiding needs to rotate different directions depending on state of device. Specifically the third joint if its above a certain angle, rotate the other way
+[] Touch Capabilities - Animations (Petting state)
 [] Fix DEMA Adaptation Mode and Integrate with Touch
 [] Continue fine tuning the different animation commands
 

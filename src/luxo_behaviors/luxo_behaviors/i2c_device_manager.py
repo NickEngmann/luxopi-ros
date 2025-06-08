@@ -173,22 +173,22 @@ class ADS7830Sensor(I2CSensor):
         super().__init__(name, address, SensorType.ADS7830)
         self.channels = []
         self.channel_mapping = {
-            0: "top_forward",
-            1: "top_back", 
-            2: "collision_left",
-            3: "collision_bottom",
-            4: "collision_right"
+            0: "head_top",
+            1: "head_left", 
+            2: "head_bottom",
+            3: "head_right"
         }
+        self.active_channels = list(self.channel_mapping.keys())  # Only use mapped channels
         
     def initialize(self, i2c_bus):
         """Initialize ADS7830"""
         try:
             self.device = ADC.ADS7830(i2c_bus, self.address)
             
-            # Create analog input objects for channels 0-4
-            self.channels = []
-            for i in range(5):  # Only use A0-A4
-                self.channels.append(AnalogIn(self.device, i))
+            # Create analog input objects only for active channels
+            self.channels = {}
+            for channel_num in self.active_channels:
+                self.channels[channel_num] = AnalogIn(self.device, channel_num)
                 
             self.active = True
             return True
@@ -202,12 +202,18 @@ class ADS7830Sensor(I2CSensor):
             
         try:
             sensor_data = {}
-            for i in range(5):  # Read channels 0-4
-                value = self.channels[i].value
-                channel_name = self.channel_mapping[i]
-                sensor_data[channel_name] = value
+            for channel_num in self.active_channels:
+                try:
+                    value = self.channels[channel_num].value
+                    channel_name = self.channel_mapping[channel_num]
+                    sensor_data[channel_name] = value
+                except Exception as channel_error:
+                    # Log channel-specific error but continue with other channels
+                    self.get_logger().debug(f"Failed to read ADS7830 channel {channel_num}: {channel_error}")
+                    continue
                 
-            return sensor_data
+            # Return data even if some channels failed, as long as we got something
+            return sensor_data if sensor_data else None
         except Exception as e:
             raise Exception(f"Failed to read ADS7830: {e}")
             
@@ -283,11 +289,10 @@ class I2CDeviceManager(Node):
         self.right_distance_pub = self.create_publisher(Float32, '/i2c/vl53_right/distance', 10)
         
         # Touch sensor publishers - Changed to UInt8 for pressure states (0-6)
-        self.touch_top_forward_pub = self.create_publisher(UInt8, '/touch_sensors/top_forward', 10)
-        self.touch_top_back_pub = self.create_publisher(UInt8, '/touch_sensors/top_back', 10)
-        self.touch_collision_left_pub = self.create_publisher(UInt8, '/touch_sensors/collision_left', 10)
-        self.touch_collision_bottom_pub = self.create_publisher(UInt8, '/touch_sensors/collision_bottom', 10)
-        self.touch_collision_right_pub = self.create_publisher(UInt8, '/touch_sensors/collision_right', 10)
+        self.touch_head_top_pub = self.create_publisher(UInt8, '/touch_sensors/head_top', 10)
+        self.touch_head_left_pub = self.create_publisher(UInt8, '/touch_sensors/head_left', 10)
+        self.touch_head_bottom_pub = self.create_publisher(UInt8, '/touch_sensors/head_bottom', 10)
+        self.touch_head_right_pub = self.create_publisher(UInt8, '/touch_sensors/head_right', 10)
         
         # Status publishers
         self.status_pub = self.create_publisher(String, '/i2c/status', 10)
@@ -439,35 +444,30 @@ class I2CDeviceManager(Node):
                         
                     elif sensor_name == 'ads7830':
                         # Publish touch sensor data as pressure states (0-6)
-                        if 'top_forward' in data:
-                            state_num, _, _ = sensor.get_pressure_state(data['top_forward'])
+                        if 'head_top' in data:
+                            state_num, _, _ = sensor.get_pressure_state(data['head_top'])
                             msg = UInt8()
                             msg.data = state_num
-                            self.touch_top_forward_pub.publish(msg)
+                            self.touch_head_top_pub.publish(msg)
                             
-                        if 'top_back' in data:
-                            state_num, _, _ = sensor.get_pressure_state(data['top_back'])
-                            msg = UInt8()
-                            msg.data = state_num
-                            self.touch_top_back_pub.publish(msg)
                             
-                        if 'collision_left' in data:
-                            state_num, _, _ = sensor.get_pressure_state(data['collision_left'])
+                        if 'head_left' in data:
+                            state_num, _, _ = sensor.get_pressure_state(data['head_left'])
                             msg = UInt8()
                             msg.data = state_num
-                            self.touch_collision_left_pub.publish(msg)
+                            self.touch_head_left_pub.publish(msg)
                             
-                        if 'collision_bottom' in data:
-                            state_num, _, _ = sensor.get_pressure_state(data['collision_bottom'])
+                        if 'head_bottom' in data:
+                            state_num, _, _ = sensor.get_pressure_state(data['head_bottom'])
                             msg = UInt8()
                             msg.data = state_num
-                            self.touch_collision_bottom_pub.publish(msg)
+                            self.touch_head_bottom_pub.publish(msg)
                             
-                        if 'collision_right' in data:
-                            state_num, _, _ = sensor.get_pressure_state(data['collision_right'])
+                        if 'head_right' in data:
+                            state_num, _, _ = sensor.get_pressure_state(data['head_right'])
                             msg = UInt8()
                             msg.data = state_num
-                            self.touch_collision_right_pub.publish(msg)
+                            self.touch_head_right_pub.publish(msg)
                         
             except Exception as e:
                 sensor.error_count += 1
