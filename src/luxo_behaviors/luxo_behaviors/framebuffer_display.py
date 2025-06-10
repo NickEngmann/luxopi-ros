@@ -515,7 +515,7 @@ class CameraFramebufferDisplay:
                 
                 # Voice direction if available
                 if voice_info.get('direction') is not None:
-                    direction_text = f"DIR: {voice_info['direction']:.0f}°"
+                    direction_text = f"DIR: {voice_info['direction']:.0f}"
                     cv2.putText(display_frame, direction_text, (30, audio_y + 45), cv2.FONT_HERSHEY_SIMPLEX, 0.35, self.colors['pink'], 1)
                 else:
                     cv2.putText(display_frame, "DIR: ---", (30, audio_y + 45), cv2.FONT_HERSHEY_SIMPLEX, 0.35, self.colors['gray'], 1)
@@ -609,13 +609,13 @@ class CameraFramebufferDisplay:
                 for joint_name, display_name in joint_mapping.items():
                     if joint_name in joint_states:
                         angle = joint_states[joint_name]
-                        available_joints.append((display_name, f"{angle:.1f}°"))
+                        available_joints.append((display_name, f"{angle:.1f}"))
                 
                 # If no mapped joints found, show all available joints
                 if not available_joints:
                     for joint_name, angle in list(joint_states.items())[:5]:  # Limit to first 5
                         display_name = joint_name.replace('_', ' ').title()
-                        available_joints.append((display_name, f"{angle:.1f}°"))
+                        available_joints.append((display_name, f"{angle:.1f}"))
                 
                 # Display the joints
                 joint_y = panel_top + 35
