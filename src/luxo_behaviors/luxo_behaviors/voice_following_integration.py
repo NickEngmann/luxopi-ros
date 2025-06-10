@@ -164,7 +164,7 @@ class VoiceFollowingBehavior:
         return np.mean(self.voice_quality_history)
     
     def voice_direction_callback(self, msg):
-        """Handle voice direction updates with enhanced quality checking"""
+        """Handle voice direction updates with direct angle targeting - no complex wraparound logic"""
         if not self.voice_follow_enabled:
             return
             
@@ -172,9 +172,6 @@ class VoiceFollowingBehavior:
         if not self.state_machine.is_in_state(LuxoState.IDLE, LuxoState.ANIMATING, LuxoState.EMOTION_REACTING):
             return
         
-        # MATCH STANDALONE: Very lenient quality check
-        # The standalone script publishes direction whenever 40% of chunks have voice
-        # So we should accept almost any direction that gets published
         if self.combined_confidence < self.combined_confidence_threshold:
             # Still log but with lower frequency
             if hasattr(self, '_last_low_confidence_log') and time.time() - self._last_low_confidence_log < 1.0:
@@ -188,43 +185,26 @@ class VoiceFollowingBehavior:
                 )
             return
         
-        # MATCH STANDALONE: Remove quality gate - accept any published direction
-        # The voice_direction_node already does the filtering
-        
         # Update voice tracking
         self.last_voice_direction = msg.data
         self.last_voice_time = self.node.get_clock().now()
         
-        # Increase voice influence based on quality (more generous)
-        quality_multiplier = 1.0  # Always full influence if we got this far
-        influence_increase = 0.3  # Higher increase for better responsiveness
-        self.voice_influence = min(1.0, self.voice_influence + influence_increase)
+        # Full influence - we want aggressive following
+        self.voice_influence = 1.0
         
-        # Calculate target angle for base joint
-        current_base = self.current_joints[0] if self.current_joints else 0.0
-        
-        # Convert voice direction to radians
+        # Convert voice direction DIRECTLY to target angle
         voice_angle_rad = np.deg2rad(self.last_voice_direction)
         
-        # Calculate the difference
-        angle_diff = self._normalize_angle(voice_angle_rad - current_base)
-        angle_diff_deg = np.rad2deg(abs(angle_diff))
+        # Normalize to robot's coordinate system [-pi, pi]
+        self.target_voice_angle = self._normalize_angle(voice_angle_rad)
         
-        # Only update if outside deadzone
-        if angle_diff_deg > self.voice_follow_deadzone:
-            self.target_voice_angle = current_base + angle_diff
-            self.node.get_logger().debug(
-                f"Voice detected at {self.last_voice_direction}°, "
-                f"combined confidence: {self.combined_confidence:.2f}, "
-                f"SNR: {self.get_average_snr():.1f}dB, "
-                f"current base: {np.rad2deg(current_base):.1f}°, "
-                f"target: {np.rad2deg(self.target_voice_angle):.1f}°"
-            )
-        else:
-            self.node.get_logger().debug(
-                f"Voice within deadzone: {angle_diff_deg:.1f}° < {self.voice_follow_deadzone}°"
-            )
-    
+        self.node.get_logger().info(
+            f"Voice detected at {self.last_voice_direction}°, "
+            f"setting DIRECT target: {np.rad2deg(self.target_voice_angle):.1f}°, "
+            f"combined confidence: {self.combined_confidence:.2f}, "
+            f"SNR: {self.get_average_snr():.1f}dB"
+        )
+
     def voice_active_callback(self, msg):
         """Handle voice activity status with enhanced decay"""
         if not msg.data:
@@ -237,7 +217,7 @@ class VoiceFollowingBehavior:
                 self.snr_history.clear()
     
     def apply_voice_following(self, target_positions):
-        """Apply enhanced voice following influence to target positions"""
+        """Apply DIRECT voice following influence to target positions"""
         if not self.voice_follow_enabled:
             return target_positions
             
@@ -248,52 +228,38 @@ class VoiceFollowingBehavior:
         current_time = self.node.get_clock().now()
         time_since_voice = (current_time - self.last_voice_time).nanoseconds / 1e9
         
-        # Enhanced decay over time
+        # Voice timeout
         if time_since_voice > self.voice_timeout:
             self.voice_influence = 0.0
             self.target_voice_angle = None
             self.voice_quality_history.clear()
             return target_positions
-        else:
-            # Natural decay (slower for smoother behavior)
-            self.voice_influence *= self.voice_influence_decay
         
-        # Apply voice following if we have a target and sufficient influence
-        min_influence = 0.05  # Very low threshold for responsiveness
-        if self.target_voice_angle is not None and self.voice_influence > min_influence:
+        # Apply DIRECT voice following if we have a target
+        if self.target_voice_angle is not None and self.voice_influence > 0.5:
             # Make a copy to avoid modifying original
             adjusted_positions = target_positions.copy()
             
-            # Calculate adjustment
-            current_base = adjusted_positions[0]
-            angle_diff = self._normalize_angle(self.target_voice_angle - current_base)
+            # Set base joint DIRECTLY to target angle - no gradual adjustment
+            adjusted_positions[0] = self.target_voice_angle
             
-            # Scale by influence, limit maximum adjustment
-            adjustment = angle_diff * self.voice_influence * 0.4  # More responsive
-            adjustment = np.clip(adjustment, -self.voice_follow_max_adjustment, self.voice_follow_max_adjustment)
-            
-            # Apply adjustment to base joint
-            adjusted_positions[0] += adjustment
-            
-            # Log significant adjustments
-            if abs(adjustment) > 0.05:
-                self.node.get_logger().debug(
-                    f"Voice following: adjusting base by {np.rad2deg(adjustment):.1f}° "
-                    f"(influence: {self.voice_influence:.2f})"
-                )
+            self.node.get_logger().info(
+                f"Voice following: setting base DIRECTLY to {np.rad2deg(self.target_voice_angle):.1f}° "
+                f"(influence: {self.voice_influence:.2f})"
+            )
             
             return adjusted_positions
         
         return target_positions
 
     def _normalize_angle(self, angle):
-        """Normalize angle to [-pi, pi]"""
+        """Normalize angle to [-pi, pi] range consistently"""
         while angle > np.pi:
             angle -= 2 * np.pi
-        while angle < -np.pi:
+        while angle <= -np.pi:
             angle += 2 * np.pi
         return angle
-    
+
     def should_interrupt_for_voice(self):
         """Check if voice following should interrupt current behavior with enhanced criteria"""
         # MATCH STANDALONE: Less strict interruption criteria

@@ -25,8 +25,8 @@ class VoiceDirectionNode(Node):
         # Declare parameters
         self.declare_parameter('sample_rate', 16000)
         self.declare_parameter('channels', 4)
-        self.declare_parameter('vad_frames', 20)
-        self.declare_parameter('doa_frames', 200)
+        self.declare_parameter('vad_frames', 30)
+        self.declare_parameter('doa_frames', 1600)
         self.declare_parameter('vad_aggressiveness', 3)
         self.declare_parameter('confidence_threshold', 0.5)
         self.declare_parameter('publish_rate', 10.0)  # Hz
@@ -42,7 +42,7 @@ class VoiceDirectionNode(Node):
         self.declare_parameter('snr_threshold', 2.0)  # SNR threshold in dB
         self.declare_parameter('skip_calibration', False)  # Skip calibration option
         self.declare_parameter('mic_orientation_offset', 180.0)  # Offset to align mic with robot front
-        self.declare_parameter('mic_mounting_correction', 45.0)  # Additional mounting correction
+        self.declare_parameter('mic_mounting_correction', 75.0)  # Additional mounting correction
         
         # Get parameters
         self.rate = self.get_parameter('sample_rate').value
@@ -758,28 +758,35 @@ class VoiceDirectionNode(Node):
         return 0
     
     def convert_mic_to_robot_angle(self, mic_angle):
-        """Convert microphone array angle to robot base angle
+        """Convert microphone array angle to robot base angle with proper coordinate transformation"""
         
-        The mic array may be mounted differently than the robot's forward direction.
-        Adjust this method based on your hardware setup.
-        """
-        # Apply orientation offset to align mic coordinates with robot coordinates
-        # Default 180° means mic's 0° is at robot's back
-        corrected_angle = mic_angle + self.mic_orientation_offset
+        robot_angle = -mic_angle
+           
+        # Apply mounting offsets
+        robot_angle += self.mic_orientation_offset + self.mic_mounting_correction
         
-        # Apply additional correction for any mounting offset
-        corrected_angle += self.mic_mounting_correction
+        # Account for 5cm physical offset (more precise calculation)
+        # Assume typical conversation distance of 1.5m for correction
+        typical_distance = 1.5  # meters
+        offset_distance = 0.05  # 5cm in meters
+        angular_offset_rad = np.arctan2(offset_distance, typical_distance)
+        angular_offset_deg = np.rad2deg(angular_offset_rad)
         
-        # Normalize to 0-360 range first
-        while corrected_angle < 0:
-            corrected_angle += 360
-        while corrected_angle >= 360:
-            corrected_angle -= 360
+        # Apply offset correction based on angle quadrant
+        if 0 <= mic_angle <= 90:      # Front-right quadrant
+            robot_angle -= angular_offset_deg
+        elif 90 < mic_angle <= 180:   # Back-right quadrant  
+            robot_angle -= angular_offset_deg
+        elif -180 <= mic_angle <= -90: # Back-left quadrant
+            robot_angle += angular_offset_deg
+        elif -90 < mic_angle < 0:     # Front-left quadrant
+            robot_angle += angular_offset_deg
         
-        # Convert to -180 to 180 range for robot base
-        robot_angle = corrected_angle
-        if robot_angle > 180:
+        # Normalize to -180 to 180 range
+        while robot_angle > 180:
             robot_angle -= 360
+        while robot_angle <= -180:
+            robot_angle += 360
             
         return robot_angle
     
