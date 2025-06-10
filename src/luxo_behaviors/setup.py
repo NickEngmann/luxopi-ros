@@ -30,6 +30,7 @@ setup(
             'i2c_device_manager = luxo_behaviors.i2c_device_manager:main',
             'collision_ros_node = luxo_behaviors.collision_ros_node:main',
             'animation_command = luxo_behaviors.animation_command:main',
+            'system_monitor = luxo_behaviors.system_monitor:main',
             'camera_interaction = luxo_behaviors.camera_interaction:main',
             'demo_mode = luxo_behaviors.demo_mode:main',
             'hardware_interface = luxo_behaviors.hardware_interface:main',

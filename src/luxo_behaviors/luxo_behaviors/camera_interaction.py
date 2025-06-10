@@ -13,7 +13,7 @@ import cv2
 import subprocess
 import os
 import threading
-from std_msgs.msg import String, Float32, Bool
+from std_msgs.msg import String, Float32, Bool, UInt8, Int16
 from sensor_msgs.msg import Image
 from cv_bridge import CvBridge
 from collections import deque
@@ -246,6 +246,75 @@ class CameraInteraction(Node):
             10
         )
 
+        # Subscribe to system metrics for display
+        self.system_metrics = {
+            'cpu_usage': 0.0,
+            'ram_usage': 0.0,
+            'temperature': 0.0
+        }
+        
+        # Subscribe to system monitor topics
+        self.cpu_usage_sub = self.create_subscription(
+            Float32, '/system/cpu_usage',
+            lambda msg: self.update_system_metric('cpu_usage', msg.data), 10
+        )
+        self.ram_usage_sub = self.create_subscription(
+            Float32, '/system/ram_usage', 
+            lambda msg: self.update_system_metric('ram_usage', msg.data), 10
+        )
+        self.temperature_sub = self.create_subscription(
+            Float32, '/system/temperature',
+            lambda msg: self.update_system_metric('temperature', msg.data), 10
+        )
+        
+        # Subscribe to I2C sensor data for touch and collision
+        self.touch_sensors = {
+            'head_top': 0,
+            'head_left': 0,
+            'head_bottom': 0,
+            'head_right': 0
+        }
+        
+        self.collision_sensors = {
+            'left': False,
+            'right': False,
+            'head': False
+        }
+        
+        # Touch sensor subscribers
+        self.touch_head_top_sub = self.create_subscription(
+            UInt8, '/touch_sensors/head_top', 
+            lambda msg: self.update_touch_sensor('head_top', msg.data), 10
+        )
+        self.touch_head_left_sub = self.create_subscription(
+            UInt8, '/touch_sensors/head_left',
+            lambda msg: self.update_touch_sensor('head_left', msg.data), 10
+        )
+        self.touch_head_bottom_sub = self.create_subscription(
+            UInt8, '/touch_sensors/head_bottom',
+            lambda msg: self.update_touch_sensor('head_bottom', msg.data), 10
+        )
+        self.touch_head_right_sub = self.create_subscription(
+            UInt8, '/touch_sensors/head_right',
+            lambda msg: self.update_touch_sensor('head_right', msg.data), 10
+        )
+        
+        # Distance sensors for collision detection
+        self.distance_left_sub = self.create_subscription(
+            Float32, '/i2c/vl53_left/distance',
+            lambda msg: self.update_collision_sensor('left', msg.data), 10
+        )
+        self.distance_right_sub = self.create_subscription(
+            Float32, '/i2c/vl53_right/distance',
+            lambda msg: self.update_collision_sensor('right', msg.data), 10
+        )
+        
+        # Proximity sensor for head collision
+        self.proximity_sub = self.create_subscription(
+            Int16, '/i2c/apds9960/proximity',
+            lambda msg: self.update_collision_sensor('head', msg.data), 10
+        )
+
         if self.initialize_camera():
             self.get_logger().info('Camera initialized successfully')
         else:
@@ -255,6 +324,23 @@ class CameraInteraction(Node):
                 self._show_camera_not_found_message()
             # Create retry timer
             self.create_camera_retry_timer()
+
+    def update_system_metric(self, metric_name, value):
+        """Update system metrics for display"""
+        self.system_metrics[metric_name] = value
+
+    def update_touch_sensor(self, sensor_name, value):
+        """Update touch sensor values"""
+        self.touch_sensors[sensor_name] = value
+
+    def update_collision_sensor(self, sensor_name, value):
+        """Update collision sensor values"""
+        if sensor_name in ['left', 'right']:
+            # For distance sensors, collision if distance < 10cm
+            self.collision_sensors[sensor_name] = value < 0.1
+        elif sensor_name == 'head':
+            # For proximity sensor, collision if value > threshold
+            self.collision_sensors[sensor_name] = value > 200
 
     def voice_active_callback(self, msg):
         """Update voice active status."""
@@ -326,7 +412,7 @@ class CameraInteraction(Node):
                 'last_detection_time': self.voice_last_detection_time
             }
             
-            # Update display with all debug info
+            # Update display with all info including new sensor data
             self.framebuffer_display.update_display(
                 frame, 
                 emotion=emotion, 
@@ -334,7 +420,10 @@ class CameraInteraction(Node):
                 face_bboxes=face_bboxes,
                 animation_name=animation_name,
                 state=state,
-                voice_info=voice_info
+                voice_info=voice_info,
+                system_metrics=self.system_metrics,
+                touch_sensors=self.touch_sensors,
+                collision_sensors=self.collision_sensors
             )
             
             self.last_framebuffer_update = current_time

@@ -123,6 +123,11 @@ def generate_launch_description():
         description='Enable dynamic adaptation mode (default: same as use_hardware)'
     )
     
+    declare_system_monitor = DeclareLaunchArgument(
+        'enable_system_monitor',
+        default_value='true',
+        description='Enable system monitoring (CPU, RAM, temperature)'
+    )
     # ==========================================================================
     # LOGGING ACTIONS
     # ==========================================================================
@@ -348,6 +353,19 @@ def generate_launch_description():
         ],
         condition=IfCondition(PythonExpression(["'", use_hardware, "' == 'true' and '", sense_collision, "' == 'true'"]))
     )
+
+    system_monitor_node = Node(
+        package='luxo_behaviors',
+        executable='system_monitor',
+        name='system_monitor',
+        output='screen',
+        parameters=[
+            {'publish_rate': 2.0},
+            {'temperature_source': '/sys/class/thermal/thermal_zone0/temp'},
+            {'cpu_average_window': 5.0}
+        ],
+        condition=IfCondition(LaunchConfiguration('enable_system_monitor'))
+    )
     
     # Position test node - basic movement patterns (hardware only)
     position_test_node = Node(
@@ -451,6 +469,7 @@ def generate_launch_description():
         declare_verbose,
         declare_camera_rotation,
         declare_enable_dynamic_adaptation,
+        declare_system_monitor,
         
         # Launch info and banners
         startup_banner,
@@ -473,6 +492,7 @@ def generate_launch_description():
         hardware_interface_node,
         position_test_node,
         hardware_animation_node,
+        system_monitor_node,
         simulation_animation_node,
         collision_detection_node,
         i2c_device_manager_node,
