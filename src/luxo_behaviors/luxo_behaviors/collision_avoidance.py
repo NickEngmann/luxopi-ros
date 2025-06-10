@@ -266,8 +266,14 @@ class CollisionAvoidance:
         self.last_voice_direction = msg.data
         self.last_voice_time = self.node.get_clock().now()
         
-        # Update activity time to prevent idle timeout while human is speaking
-        self.last_activity_time = self.last_voice_time
+        # IMPORTANT: Don't update activity time for voice following
+        # Voice following should not prevent idle animations from triggering
+        # Only update if we haven't had activity in a very long time (> 60 seconds)
+        current_time = self.last_voice_time
+        time_since_activity = (current_time - self.last_activity_time).nanoseconds / 1e9
+        if time_since_activity > 60.0:  # Only reset if idle for more than 1 minute
+            self.last_activity_time = current_time
+            self.node.get_logger().debug("Voice detected after long idle period - updating activity timestamp")
         
         # Increase voice influence more aggressively
         self.voice_influence = min(1.0, self.voice_influence + 0.8)  # Very aggressive following
@@ -309,8 +315,8 @@ class CollisionAvoidance:
         if len(voice_position) > 5:
             voice_position = voice_position[:5]  # Truncate to 5 joints
         
-        # Add acceleration as the 6th element (not appending to existing array)
-        voice_position_with_accel = voice_position + [10.0]
+        # Add acceleration as the 6th element
+        voice_position_with_accel = voice_position + [7.0]
         
         self.node.get_logger().info(
             f"Sending DIRECT voice command: base from {np.rad2deg(self.current_joints[0]):.1f}° "

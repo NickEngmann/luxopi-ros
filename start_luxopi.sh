@@ -18,7 +18,7 @@ ros2 launch luxo_behaviors luxo_system.launch.py \
   use_hardware:=true \
   use_camera:=false \
   enable_emotion_detection:=true \
-  enable_voice:=false \
+  enable_voice:=true \
   enable_ads7830:=false \
   verbose:=true \
   enable_idle_animations:=true \
