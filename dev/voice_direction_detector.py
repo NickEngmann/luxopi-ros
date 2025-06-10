@@ -27,12 +27,17 @@ class VoiceDirectionDetector:
         Args:
             rate: Sample rate (Hz)
             channels: Number of audio channels
-            vad_frames: VAD frame duration in ms
+            vad_frames: VAD frame duration in ms (must be 10, 20, or 30)
             doa_frames: DOA calculation window in ms
             vad_aggressiveness: WebRTC VAD aggressiveness (0-3)
             confidence_threshold: Minimum ratio of voice detections to report direction
             calibration_time: Background noise calibration time in seconds
         """
+        # Validate VAD frame duration
+        valid_vad_frames = [10, 20, 30]
+        if vad_frames not in valid_vad_frames:
+            raise ValueError(f"VAD frame duration must be one of {valid_vad_frames}ms, got {vad_frames}ms")
+        
         self.rate = rate
         self.channels = channels
         self.vad_frames = vad_frames
@@ -43,8 +48,14 @@ class VoiceDirectionDetector:
         # Initialize VAD
         self.vad = webrtcvad.Vad(vad_aggressiveness)
         
-        # Calculate chunk size
+        # Calculate chunk size - ensure it matches VAD requirements exactly
         self.chunk_size = int(rate * vad_frames / 1000)
+        
+        # Validate chunk size for VAD compatibility
+        expected_bytes = self.chunk_size * 2  # 16-bit samples = 2 bytes each
+        if expected_bytes % 2 != 0:
+            raise ValueError(f"Invalid chunk size for VAD: {self.chunk_size} samples = {expected_bytes} bytes")
+        
         self.doa_chunks = int(doa_frames / vad_frames)
         
         # Voice-specific frequency analysis parameters
@@ -112,7 +123,7 @@ class VoiceDirectionDetector:
         print("[OK] Voice Direction Detector initialized")
         print(f"    Sample rate: {rate} Hz")
         print(f"    Channels: {channels}")
-        print(f"    VAD frame: {vad_frames} ms")
+        print(f"    VAD frame: {vad_frames} ms ({self.chunk_size} samples, {expected_bytes} bytes)")
         print(f"    DOA window: {doa_frames} ms")
         print(f"    Speech band: {self.speech_low_freq}-{self.speech_high_freq} Hz")
         print(f"    Calibration time: {calibration_time} seconds")
@@ -518,8 +529,23 @@ class VoiceDirectionDetector:
         Returns:
             bool: True if speech is detected
         """
-        # Basic VAD check
-        vad_result = self.vad.is_speech(mono_audio, self.rate)
+        try:
+            # Validate audio length for VAD
+            expected_bytes = self.chunk_size * 2  # 16-bit samples
+            if len(mono_audio) != expected_bytes:
+                print(f"[WARNING] Audio length mismatch: got {len(mono_audio)} bytes, expected {expected_bytes}")
+                # Pad or truncate to correct size
+                if len(mono_audio) < expected_bytes:
+                    mono_audio = mono_audio + b'\x00' * (expected_bytes - len(mono_audio))
+                else:
+                    mono_audio = mono_audio[:expected_bytes]
+            
+            # Basic VAD check
+            vad_result = self.vad.is_speech(mono_audio, self.rate)
+        except Exception as e:
+            print(f"[WARNING] VAD error: {e}")
+            # Fall back to spectral analysis only if VAD fails
+            vad_result = False
         
         # If VAD says no speech and we're being conservative, trust it more
         if not vad_result:
@@ -678,8 +704,8 @@ class VoiceDirectionDetector:
                         confidence = self.get_voice_confidence()
                         current_time = time.time()
                         
-                        # Lower threshold for direction detection (was 0.6, now 0.4)
-                        if speech_count > (self.doa_chunks * 0.4):  # 40% of chunks must be voice
+                        # Use the configured confidence threshold instead of hardcoded 0.4
+                        if confidence >= self.confidence_threshold:
                             # Calculate DOA from accumulated audio
                             frames = np.concatenate(chunks)
                             direction = mic.get_direction(frames)
@@ -810,10 +836,10 @@ def main():
                         help='Sample rate in Hz (default: 16000)')
     parser.add_argument('--channels', type=int, default=4,
                         help='Number of channels (default: 4)')
-    parser.add_argument('--vad-frames', type=int, default=20,
-                        help='VAD frame duration in ms (default: 20)')
-    parser.add_argument('--doa-frames', type=int, default=200,
-                        help='DOA window duration in ms (default: 200)')
+    parser.add_argument('--vad-frames', type=int, default=30, choices=[10, 20, 30],
+                        help='VAD frame duration in ms - must be 10, 20, or 30 (default: 20)')
+    parser.add_argument('--doa-frames', type=int, default=1200,
+                        help='DOA window duration in ms (default: 1200)')
     parser.add_argument('--vad-level', type=int, default=3, choices=[0, 1, 2, 3],
                         help='VAD aggressiveness level 0-3 (default: 3)')
     parser.add_argument('--threshold', type=float, default=0.5,
