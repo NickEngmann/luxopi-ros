@@ -9,6 +9,7 @@ class LuxoState(Enum):
     """Define all possible states for the Luxo robot."""
     IDLE = auto()
     ANIMATING = auto()
+    VOICE_FOLLOWING = auto()  # Voice following as its own state
     COLLISION_AVOIDING = auto()
     RETURNING_HOME = auto()
     ESCAPE_MODE = auto()
@@ -74,6 +75,7 @@ class LuxoStateMachine:
         
         # From IDLE
         self.add_transition(LuxoState.IDLE, LuxoState.ANIMATING)
+        self.add_transition(LuxoState.IDLE, LuxoState.VOICE_FOLLOWING)  # New: Can follow voice from idle
         self.add_transition(LuxoState.IDLE, LuxoState.COLLISION_AVOIDING)
         self.add_transition(LuxoState.IDLE, LuxoState.USER_CONTROL)
         self.add_transition(LuxoState.IDLE, LuxoState.EMOTION_REACTING)
@@ -81,14 +83,23 @@ class LuxoStateMachine:
         
         # From ANIMATING
         self.add_transition(LuxoState.ANIMATING, LuxoState.IDLE)
+        self.add_transition(LuxoState.ANIMATING, LuxoState.VOICE_FOLLOWING)  # New: Can follow voice during animation
         self.add_transition(LuxoState.ANIMATING, LuxoState.COLLISION_AVOIDING)
         self.add_transition(LuxoState.ANIMATING, LuxoState.ESCAPE_MODE)
         self.add_transition(LuxoState.ANIMATING, LuxoState.RETURNING_HOME) 
+        
+        # New: From VOICE_FOLLOWING
+        self.add_transition(LuxoState.VOICE_FOLLOWING, LuxoState.IDLE)
+        self.add_transition(LuxoState.VOICE_FOLLOWING, LuxoState.ANIMATING)
+        self.add_transition(LuxoState.VOICE_FOLLOWING, LuxoState.COLLISION_AVOIDING)  # Voice following can be interrupted by collision
+        self.add_transition(LuxoState.VOICE_FOLLOWING, LuxoState.ESCAPE_MODE)
+        self.add_transition(LuxoState.VOICE_FOLLOWING, LuxoState.RETURNING_HOME)
         
         # From COLLISION_AVOIDING
         self.add_transition(LuxoState.COLLISION_AVOIDING, LuxoState.IDLE)
         self.add_transition(LuxoState.COLLISION_AVOIDING, LuxoState.ESCAPE_MODE)
         self.add_transition(LuxoState.COLLISION_AVOIDING, LuxoState.RETURNING_HOME)
+        # Note: NO transition from COLLISION_AVOIDING to VOICE_FOLLOWING
         
         # From ESCAPE_MODE
         self.add_transition(LuxoState.ESCAPE_MODE, LuxoState.IDLE)
@@ -105,6 +116,7 @@ class LuxoStateMachine:
         
         # From EMOTION_REACTING
         self.add_transition(LuxoState.EMOTION_REACTING, LuxoState.IDLE)
+        self.add_transition(LuxoState.EMOTION_REACTING, LuxoState.VOICE_FOLLOWING)  # New: Can follow voice during emotion
         self.add_transition(LuxoState.EMOTION_REACTING, LuxoState.COLLISION_AVOIDING)
         
         # From ERROR - can transition to most states for recovery

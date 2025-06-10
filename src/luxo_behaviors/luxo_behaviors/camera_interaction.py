@@ -11,10 +11,11 @@ import time
 import sys
 import cv2
 import subprocess
+import math
 import os
 import threading
 from std_msgs.msg import String, Float32, Bool, UInt8, Int16
-from sensor_msgs.msg import Image
+from sensor_msgs.msg import Image, JointState
 from cv_bridge import CvBridge
 from collections import deque
 from luxo_interfaces.action import PlayAnimation
@@ -267,6 +268,15 @@ class CameraInteraction(Node):
             lambda msg: self.update_system_metric('temperature', msg.data), 10
         )
         
+        # Subscribe to joint states for real-time joint display
+        self.joint_states = {}
+        self.joint_states_sub = self.create_subscription(
+            JointState,
+            '/joint_states',
+            self.joint_states_callback,
+            10
+        )
+        
         # Subscribe to I2C sensor data for touch and collision
         self.touch_sensors = {
             'head_top': 0,
@@ -372,6 +382,15 @@ class CameraInteraction(Node):
         """Update current state machine state."""
         self.current_state = msg.data
     
+    def joint_states_callback(self, msg):
+        """Update joint states for display"""
+        # Convert joint state message to a dictionary for easy access
+        for i, name in enumerate(msg.name):
+            if i < len(msg.position):
+                # Convert radians to degrees for display
+                angle_deg = math.degrees(msg.position[i])
+                self.joint_states[name] = angle_deg
+
     def _update_framebuffer_display(self, frame):
         """Update the framebuffer display with the latest frame"""
         if not self.enable_framebuffer_display:
@@ -412,7 +431,7 @@ class CameraInteraction(Node):
                 'last_detection_time': self.voice_last_detection_time
             }
             
-            # Update display with all info including new sensor data
+            # Update display with all info including joint states
             self.framebuffer_display.update_display(
                 frame, 
                 emotion=emotion, 
@@ -423,7 +442,8 @@ class CameraInteraction(Node):
                 voice_info=voice_info,
                 system_metrics=self.system_metrics,
                 touch_sensors=self.touch_sensors,
-                collision_sensors=self.collision_sensors
+                collision_sensors=self.collision_sensors,
+                joint_states=self.joint_states
             )
             
             self.last_framebuffer_update = current_time

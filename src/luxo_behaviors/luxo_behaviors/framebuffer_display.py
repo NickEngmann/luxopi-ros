@@ -342,7 +342,7 @@ class CameraFramebufferDisplay:
         
         # Position collision sensors in top-right area
         base_x = frame.shape[1] - 100
-        base_y = 80
+        base_y = 150
         
         # Head sensor (top)
         head_color = self.colors['orange'] if collision_sensors.get('head', False) else self.colors['gray']
@@ -396,7 +396,8 @@ class CameraFramebufferDisplay:
 
     def update_display(self, frame, emotion=None, distance=None, face_bboxes=None, 
                       animation_name=None, state=None, voice_info=None, 
-                      system_metrics=None, touch_sensors=None, collision_sensors=None):
+                      system_metrics=None, touch_sensors=None, collision_sensors=None,
+                      joint_states=None):
         """Update framebuffer with Lux robot UI design"""
         if not self.enabled:
             return
@@ -548,10 +549,6 @@ class CameraFramebufferDisplay:
             
             # Position info (simulated for now)
             position_y = panel_top + 40
-            cv2.putText(display_frame, "X: 0.450m", (panel_left + 10, position_y), cv2.FONT_HERSHEY_SIMPLEX, 0.4, self.colors['blue'], 1)
-            cv2.putText(display_frame, "Y: 0.230m", (panel_left + 10, position_y + 15), cv2.FONT_HERSHEY_SIMPLEX, 0.4, self.colors['blue'], 1)
-            cv2.putText(display_frame, "Z: 0.680m", (panel_left + 10, position_y + 30), cv2.FONT_HERSHEY_SIMPLEX, 0.4, self.colors['blue'], 1)
-            
             # Lamp status
             lamp_status = "[LAMP ON]" if (int(self.animation_time) % 3) < 2 else "[LAMP OFF]"  # Simulate lamp control
             lamp_bg_color = self.colors['lux_gold'] if "ON" in lamp_status else self.colors['gray']
@@ -566,20 +563,59 @@ class CameraFramebufferDisplay:
             
             cv2.putText(display_frame, "[LAMP JOINTS]", (joint_panel_left + 10, panel_top + 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, self.colors['purple'], 1)
             
-            # Joint angles (simulated)
-            joints = [
-                ("Base Rot", "12.5°"),
-                ("Lower Arm", "-45.2°"), 
-                ("Upper Arm", "78.1°"),
-                ("Head Tilt", "-12.0°"),
-                ("Head Pan", "5.5°")
-            ]
-            
-            joint_y = panel_top + 35
-            for i, (joint_name, angle) in enumerate(joints):
-                y_pos = joint_y + i * 12
-                cv2.putText(display_frame, joint_name, (joint_panel_left + 10, y_pos), cv2.FONT_HERSHEY_SIMPLEX, 0.35, self.colors['purple'], 1)
-                cv2.putText(display_frame, angle, (joint_panel_left + 100, y_pos), cv2.FONT_HERSHEY_SIMPLEX, 0.35, self.colors['lux_gold'], 1)
+            # Display real joint angles if available, otherwise show offline message
+            if joint_states and len(joint_states) > 0:
+                # Define expected joint names and their display names
+                joint_mapping = {
+                    'base_joint': 'Base Rot',
+                    'shoulder_joint': 'Shoulder', 
+                    'elbow_joint': 'Elbow',
+                    'wrist_joint': 'Wrist',
+                    'head_pan_joint': 'Head Pan',
+                    'head_tilt_joint': 'Head Tilt',
+                    'lower_arm_joint': 'Lower Arm',
+                    'upper_arm_joint': 'Upper Arm'
+                }
+                
+                # Get available joints from joint_states
+                available_joints = []
+                for joint_name, display_name in joint_mapping.items():
+                    if joint_name in joint_states:
+                        angle = joint_states[joint_name]
+                        available_joints.append((display_name, f"{angle:.1f}°"))
+                
+                # If no mapped joints found, show all available joints
+                if not available_joints:
+                    for joint_name, angle in list(joint_states.items())[:5]:  # Limit to first 5
+                        display_name = joint_name.replace('_', ' ').title()
+                        available_joints.append((display_name, f"{angle:.1f}°"))
+                
+                # Display the joints
+                joint_y = panel_top + 35
+                for i, (joint_name, angle) in enumerate(available_joints[:5]):  # Max 5 joints
+                    y_pos = joint_y + i * 12
+                    # Truncate long joint names
+                    if len(joint_name) > 12:
+                        joint_name = joint_name[:12] + "..."
+                    
+                    cv2.putText(display_frame, joint_name, (joint_panel_left + 10, y_pos), cv2.FONT_HERSHEY_SIMPLEX, 0.35, self.colors['purple'], 1)
+                    cv2.putText(display_frame, angle, (joint_panel_left + 120, y_pos), cv2.FONT_HERSHEY_SIMPLEX, 0.35, self.colors['lux_gold'], 1)
+                
+                # Show joint count if we have more than 5
+                if len(joint_states) > 5:
+                    extra_count = len(joint_states) - 5
+                    cv2.putText(display_frame, f"+ {extra_count} more", (joint_panel_left + 10, joint_y + 5 * 12), 
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.3, self.colors['gray'], 1)
+            else:
+                # Show offline message when no joint data available
+                offline_text = "JOINTS OFFLINE"
+                cv2.putText(display_frame, offline_text, (joint_panel_left + 10, panel_top + 40), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.5, self.colors['gray'], 1)
+                
+                # Show waiting message
+                waiting_text = "Waiting for /joint_states..."
+                cv2.putText(display_frame, waiting_text, (joint_panel_left + 10, panel_top + 60), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.35, self.colors['gray'], 1)
             
             # === CENTRAL CROSSHAIR ===
             # Draw friendly crosshair in center
