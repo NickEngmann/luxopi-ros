@@ -1,11 +1,11 @@
-[] There is such a thing as too much input from both the voice sensors as well as the FSR.
-- Stop either of them from triggering movement for approximately 30 seconds on the start
-- Make voice a lot more sensitive
-- Make voice its own state? or not a state at all?
-[] Collision Avoiding needs to rotate different directions depending on state of device. Specifically the third joint if its above a certain angle, rotate the other way
+[] What is calling the constant right collision? Figure out that
+[] Transition state from Initialization to Home State before Going to Idle State
+[] Move Voice Stuff into its own state instead of being inside Collision Avoidance
 [] Touch Capabilities - Animations (Petting state)
 [] Fix DEMA Adaptation Mode and Integrate with Touch
 [] Continue fine tuning the different animation commands
+[] Collision Avoiding needs to rotate different directions depending on state of device. Specifically the third joint if its above a certain angle, rotate the other way
+
 
 # Later Priorities
 ## High Priority

@@ -854,17 +854,6 @@ class CollisionAvoidance:
             # Get current time for this check cycle
             current_time = self.node.get_clock().now()
             
-            # PRIORITY: Check for active voice following FIRST
-            if self.voice_follow_enabled and self.voice_influence > 0.1 and self.target_voice_angle is not None:
-                # Check if we should send a voice following update
-                if self.last_voice_time:
-                    time_since_voice = (current_time - self.last_voice_time).nanoseconds / 1e9
-                    if time_since_voice < 1.0:  # Voice is recent
-                        # Send periodic voice following updates with high priority
-                        self._send_voice_following_command()
-                        # Skip other checks if actively following voice
-                        return
-            
             # NEW: Check if target override is stuck (not in RETURNING_HOME state)
             if self.target_override_active and not self.state_machine.is_in_state(LuxoState.RETURNING_HOME):
                 # Don't clear voice following overrides too quickly

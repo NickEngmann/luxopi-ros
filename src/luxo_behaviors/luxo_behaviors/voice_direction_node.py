@@ -135,11 +135,20 @@ class VoiceDirectionNode(Node):
         self.min_quiet_samples_for_recalibration = 100
         self.quiet_samples_buffer = deque(maxlen=self.min_quiet_samples_for_recalibration)
         
+        # Rate limiting for recalibration
+        self.last_recalibration_time = 0
+        self.min_recalibration_interval = 5.0  # Minimum 5 seconds between recalibrations
+        self.last_drift_log_time = 0
+        self.drift_log_interval = 10.0  # Only log drift detection every 10 seconds
+        self.last_recalibration_log_time = 0
+        self.recalibration_log_interval = 5.0  # Only log recalibration every 5 seconds
+        
         # Multiple noise floor estimates for robustness
         self.primary_noise_floor = None
         self.secondary_noise_floor = None
         self.tertiary_noise_floor = None
         self.noise_floor_history = deque(maxlen=200)
+        self.drift_baseline = None  # Track baseline for drift detection
         
         # Adaptive parameters that change based on environment
         self.adaptive_rate_fast = 0.1
@@ -317,6 +326,9 @@ class VoiceDirectionNode(Node):
         all_samples = np.concatenate(calibration_samples)
         self.background_noise_energy = np.var(all_samples.astype(np.float32))
         
+        # Set drift baseline to initial calibration
+        self.drift_baseline = self.background_noise_energy
+        
         # Calculate background noise spectrum
         audio_float = all_samples.astype(np.float32) / 32768.0
         audio_float = audio_float - np.mean(audio_float)
@@ -366,21 +378,39 @@ class VoiceDirectionNode(Node):
         if len(self.noise_floor_history) < 50:
             return False
         
+        # Rate limit drift detection attempts
+        current_time = time.time()
+        if current_time - self.last_recalibration_time < self.min_recalibration_interval:
+            return False
+        
         recent_samples = list(self.noise_floor_history)[-50:]
         median_recent = np.median(recent_samples)
         
-        # Check if recent noise floor is significantly different from calibrated
-        drift_ratio = median_recent / self.background_noise_energy
+        # Use drift baseline if available, otherwise use background_noise_energy
+        baseline = self.drift_baseline if self.drift_baseline is not None else self.background_noise_energy
         
-        # Significant drift detected
-        if drift_ratio > 3.0 or drift_ratio < 0.3:
+        if baseline is None or baseline == 0:
+            return False
+        
+        # Check if recent noise floor is significantly different from baseline
+        drift_ratio = median_recent / baseline
+        
+        # More conservative drift thresholds to reduce false positives
+        significant_drift = drift_ratio > 5.0 or drift_ratio < 0.2
+        
+        if significant_drift:
             self.recalibration_trigger_count += 1
+            
+            # Log drift detection less frequently
+            if current_time - self.last_drift_log_time > self.drift_log_interval:
+                self.get_logger().info(f"[ADAPTIVE] Noise floor drift detected: {drift_ratio:.2f}x baseline")
+                self.last_drift_log_time = current_time
             
             if self.recalibration_trigger_count >= self.recalibration_threshold:
                 return True
         else:
             # Reset trigger count if drift is normal
-            self.recalibration_trigger_count = max(0, self.recalibration_trigger_count - 1)
+            self.recalibration_trigger_count = max(0, self.recalibration_trigger_count - 2)
         
         return False
 
@@ -389,7 +419,16 @@ class VoiceDirectionNode(Node):
         if len(self.quiet_samples_buffer) < self.min_quiet_samples_for_recalibration:
             return False
         
-        self.get_logger().info(f"[RECALIBRATION] Using {len(self.quiet_samples_buffer)} quiet samples...")
+        current_time = time.time()
+        
+        # Rate limit recalibration attempts
+        if current_time - self.last_recalibration_time < self.min_recalibration_interval:
+            return False
+        
+        # Rate limit recalibration logging
+        if current_time - self.last_recalibration_log_time > self.recalibration_log_interval:
+            self.get_logger().info(f"[RECALIBRATION] Using {len(self.quiet_samples_buffer)} quiet samples...")
+            self.last_recalibration_log_time = current_time
         
         # Calculate new noise floor from quiet samples
         quiet_energies = list(self.quiet_samples_buffer)
@@ -398,12 +437,16 @@ class VoiceDirectionNode(Node):
         # Validate the new noise floor (shouldn't be too different unless environment changed)
         if self.background_noise_energy is not None:
             ratio = new_noise_floor / self.background_noise_energy
-            if 0.1 <= ratio <= 10.0:  # Reasonable range
+            if 0.05 <= ratio <= 10.0:  # More permissive range
                 # Update noise floor with weighted average
+                old_energy = self.background_noise_energy
                 self.background_noise_energy = (
                     0.7 * self.background_noise_energy + 
                     0.3 * new_noise_floor
                 )
+                
+                # Update drift baseline to new level
+                self.drift_baseline = self.background_noise_energy
                 
                 # Update thresholds
                 self.dynamic_energy_threshold = max(
@@ -415,13 +458,16 @@ class VoiceDirectionNode(Node):
                 if self.contaminated_calibration:
                     self.contaminated_calibration = False
                     self.current_adaptive_rate = self.adaptive_rate_normal
-                    self.get_logger().info("Recovered from contaminated calibration")
+                    if current_time - self.last_recalibration_log_time <= self.recalibration_log_interval:
+                        self.get_logger().info("Recovered from contaminated calibration")
                 
                 self.recalibration_trigger_count = 0
                 self.quiet_samples_buffer.clear()
+                self.last_recalibration_time = current_time
                 
-                self.get_logger().info(f"New noise floor: {self.background_noise_energy:.2e}")
-                self.get_logger().info(f"New threshold: {self.dynamic_energy_threshold:.2e}")
+                # Only log the completion if we logged the start
+                if current_time - self.last_recalibration_log_time <= self.recalibration_log_interval:
+                    self.get_logger().info(f"Recalibration complete: {old_energy:.2e} → {self.background_noise_energy:.2e}")
                 return True
         
         return False
@@ -468,14 +514,21 @@ class VoiceDirectionNode(Node):
                     self.background_noise_energy * self.noise_floor_multiplier
                 )
         
-        # Check for drift and potential recalibration
+        # Check for drift and potential recalibration (with rate limiting)
         if self.detect_noise_floor_drift():
-            self.get_logger().info("[ADAPTIVE] Significant noise floor drift detected")
+            # Rate limit this log message too
+            current_time = time.time()
+            if current_time - self.last_drift_log_time > self.drift_log_interval:
+                self.get_logger().info("[ADAPTIVE] Significant noise floor drift detected")
+                self.last_drift_log_time = current_time
+            
             if len(self.quiet_samples_buffer) >= self.min_quiet_samples_for_recalibration:
                 self.perform_quiet_recalibration()
             else:
-                needed = self.min_quiet_samples_for_recalibration - len(self.quiet_samples_buffer)
-                self.get_logger().info(f"Need {needed} more quiet samples for recalibration")
+                # Only log the "need more samples" message occasionally too
+                if current_time - self.last_drift_log_time <= self.drift_log_interval:
+                    needed = self.min_quiet_samples_for_recalibration - len(self.quiet_samples_buffer)
+                    self.get_logger().info(f"Need {needed} more quiet samples for recalibration")
 
     def calculate_snr(self, signal_spectrum):
         """
