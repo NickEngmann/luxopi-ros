@@ -43,6 +43,9 @@ class LuxoStateMachine:
         self._state_history = []  # Track state transitions
         self._max_history = 100
         
+        # Add timing support for automatic transitions
+        self._automatic_transitions = {}  # Dict[LuxoState, Dict] for timed transitions
+        
         # Transitions
         self._transitions: Dict[LuxoState, List[StateTransition]] = {
             state: [] for state in LuxoState
@@ -121,6 +124,26 @@ class LuxoStateMachine:
         transition = StateTransition(from_state, to_state, condition, action)
         self._transitions[from_state].append(transition)
     
+    def add_automatic_transition(self, from_state: LuxoState, to_state: LuxoState, 
+                               delay_seconds: float, condition: Optional[Callable] = None):
+        """
+        Add an automatic transition that occurs after a specified time.
+        
+        Args:
+            from_state: State to transition from
+            to_state: State to transition to
+            delay_seconds: Time to wait before transitioning
+            condition: Optional condition that must be true for transition
+        """
+        if from_state not in self._automatic_transitions:
+            self._automatic_transitions[from_state] = []
+        
+        self._automatic_transitions[from_state].append({
+            'to_state': to_state,
+            'delay': delay_seconds,
+            'condition': condition
+        })
+
     def register_on_enter(self, state: LuxoState, callback: Callable):
         """Register a callback to be called when entering a state."""
         self._on_enter_callbacks[state].append(callback)
@@ -263,9 +286,19 @@ class LuxoStateMachine:
                 self.node.get_logger().error(f"Error in enter callback for {state.name}: {e}")
     
     def update(self):
-        """Call this periodically to execute state callbacks."""
+        """Call this periodically to execute state callbacks and check automatic transitions."""
         with self._state_lock:
             current = self._current_state
+            current_duration = self.get_state_duration()
+        
+        # Check for automatic transitions
+        if current in self._automatic_transitions:
+            for auto_transition in self._automatic_transitions[current]:
+                if current_duration >= auto_transition['delay']:
+                    # Check condition if specified
+                    if auto_transition['condition'] is None or auto_transition['condition']():
+                        self.transition_to(auto_transition['to_state'])
+                        break  # Only execute first valid automatic transition
         
         # Execute callbacks for current state
         for callback in self._on_state_callbacks[current]:

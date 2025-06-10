@@ -63,6 +63,9 @@ class RoArmHardwareInterface(Node):
         self.declare_parameter('use_hardware_position_on_init', True)  # Whether to read actual position from hardware
         self.declare_parameter('init_position_timeout', 10.0)  # Timeout for getting initial position
         
+        # Add initialization duration parameter
+        self.declare_parameter('initialization_duration', 20.0)  # How long to stay in INITIALIZING state
+        
         # Idle animation parameters
         self.declare_parameter('enable_idle_animations', True)
         self.declare_parameter('idle_animation_min_interval', 10.0)
@@ -96,6 +99,12 @@ class RoArmHardwareInterface(Node):
         # Get initialization parameters
         self.use_hardware_position_on_init = self.get_parameter('use_hardware_position_on_init').value
         self.init_position_timeout = self.get_parameter('init_position_timeout').value
+        
+        # Get initialization duration
+        self.initialization_duration = self.get_parameter('initialization_duration').value
+        
+        # Initialize timing variables for state machine
+        self.initialization_start_time = self.get_clock().now()
         
         # Initialize the state machine
         self.state_machine = LuxoStateMachine(self, LuxoState.INITIALIZING)
@@ -363,13 +372,9 @@ class RoArmHardwareInterface(Node):
             # Timer for state machine updates
             self.state_update_timer = self.create_timer(0.1, self._update_state_machine)
             
-            # Transition to IDLE state after initialization
-            self.state_machine.transition_to(LuxoState.IDLE)
-            
         else:
             self.get_logger().error("Failed to initialize hardware interface")
             self.state_machine.transition_to(LuxoState.ERROR)
-    # Add this method to the class:
     def publish_current_state(self):
         """Publish the current state machine state."""
         if self.state_machine:
@@ -417,12 +422,24 @@ class RoArmHardwareInterface(Node):
     
     def _update_state_machine(self):
         """Periodically update the state machine."""
+        # Check for automatic transition from INITIALIZING to IDLE
+        if self.state_machine.is_in_state(LuxoState.INITIALIZING):
+            current_time = self.get_clock().now()
+            time_in_init = (current_time - self.initialization_start_time).nanoseconds / 1e9
+            
+            if time_in_init >= self.initialization_duration:
+                self.get_logger().info(f"Initialization period complete ({time_in_init:.1f}s) - transitioning to IDLE")
+                self.state_machine.transition_to(LuxoState.IDLE)
+        
         self.state_machine.update()
-    
+
     # State callback implementations
     def _on_enter_initializing(self):
         """Called when entering INITIALIZING state."""
-        self.get_logger().info("Entering INITIALIZING state")
+        self.get_logger().info(f"Entering INITIALIZING state - will remain for {self.initialization_duration} seconds")
+        self.get_logger().info("Collision avoidance disabled during initialization")
+        # Reset the initialization start time
+        self.initialization_start_time = self.get_clock().now()
     
     def _on_enter_idle(self):
         """Called when entering IDLE state."""
@@ -574,34 +591,69 @@ class RoArmHardwareInterface(Node):
 
     # Collision detection callbacks - delegate to collision_avoidance system
     def right_collision_callback(self, msg):
+        # Don't process collisions during initialization
+        if self.state_machine.is_in_state(LuxoState.INITIALIZING):
+            self.get_logger().debug("Ignoring collision during initialization phase")
+            return
         self.collision_avoidance.handle_collision('right', msg.data)
 
     def left_collision_callback(self, msg):
+        # Don't process collisions during initialization
+        if self.state_machine.is_in_state(LuxoState.INITIALIZING):
+            self.get_logger().debug("Ignoring collision during initialization phase")
+            return
         self.collision_avoidance.handle_collision('left', msg.data)
 
     def front_collision_callback(self, msg):
+        # Don't process collisions during initialization
+        if self.state_machine.is_in_state(LuxoState.INITIALIZING):
+            self.get_logger().debug("Ignoring collision during initialization phase")
+            return
         self.collision_avoidance.handle_collision('front', msg.data)
     
     def front_proximity_callback(self, msg):
+        # Don't process proximity during initialization
+        if self.state_machine.is_in_state(LuxoState.INITIALIZING):
+            return
         self.collision_avoidance.update_distance('front', msg.data, is_proximity=True)
 
     def left_distance_callback(self, msg):
+        # Don't process distance during initialization
+        if self.state_machine.is_in_state(LuxoState.INITIALIZING):
+            return
         self.collision_avoidance.update_distance('left', msg.data)
     
     def right_distance_callback(self, msg):
+        # Don't process distance during initialization
+        if self.state_machine.is_in_state(LuxoState.INITIALIZING):
+            return
         self.collision_avoidance.update_distance('right', msg.data)
     
     def front_severity_callback(self, msg):
+        # Don't process severity during initialization
+        if self.state_machine.is_in_state(LuxoState.INITIALIZING):
+            return
         self.collision_avoidance.update_severity('front', msg.data)
     
     def left_severity_callback(self, msg):
+        # Don't process severity during initialization
+        if self.state_machine.is_in_state(LuxoState.INITIALIZING):
+            return
         self.collision_avoidance.update_severity('left', msg.data)
     
     def right_severity_callback(self, msg):
+        # Don't process severity during initialization
+        if self.state_machine.is_in_state(LuxoState.INITIALIZING):
+            return
         self.collision_avoidance.update_severity('right', msg.data)
 
     def safety_monitor_callback(self):
         """Periodic callback to monitor safety and adjust motion if needed"""
+        # Don't run safety monitoring during initialization
+        if self.state_machine.is_in_state(LuxoState.INITIALIZING):
+            self.get_logger().debug("Skipping safety monitoring during initialization")
+            return
+            
         # Update the last check time at the beginning to track timer operation
         self.last_safety_check_time = self.get_clock().now()
         
@@ -744,6 +796,50 @@ class RoArmHardwareInterface(Node):
         """Handle joint states and send to hardware with collision avoidance."""
         if not self.is_connected():
             return
+        
+        # Allow basic joint commands during initialization but skip collision avoidance
+        if self.state_machine.is_in_state(LuxoState.INITIALIZING):
+            self.get_logger().debug("Processing joint command during initialization (collision avoidance disabled)")
+            # Process the command but skip collision avoidance entirely
+            try:
+                # Extract joint positions (in radians)
+                names = msg.name
+                positions = msg.position
+                
+                # Find indices for our joints (RoArm naming convention)
+                indices = {}
+                for i, name in enumerate(names):
+                    if name in self.get_joint_mappings().keys():
+                        indices[self.get_joint_mappings()[name]] = i
+                
+                # Make sure we have at least the main joints
+                required_joints = ['base', 'shoulder', 'elbow', 'hand']
+                if not all(joint in indices for joint in required_joints):
+                    missing = [j for j in required_joints if j not in indices]
+                    self.get_logger().warn(f"Missing required joints: {missing}")
+                    return
+                
+                # Create target joint positions
+                target_positions = [
+                    positions[indices['base']],
+                    positions[indices['shoulder']],
+                    positions[indices['elbow']],
+                    positions[indices['wrist']] if 'wrist' in indices else 0.0,
+                    positions[indices['hand']] if 'hand' in indices else 0.0
+                ]
+                
+                # Check if we have acceleration value (6th position)
+                if len(positions) > 5:
+                    target_positions.append(positions[5])
+                
+                # Send command directly without collision avoidance during initialization
+                self.send_safe_joint_command(target_positions, "Joint control (initialization)")
+                
+                return
+                
+            except Exception as e:
+                self.get_logger().error(f"Error in joint_states_callback during initialization: {e}")
+                return
         
         try:
             # Update last movement time with ROS time
