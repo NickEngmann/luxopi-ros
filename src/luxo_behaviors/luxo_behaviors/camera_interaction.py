@@ -294,6 +294,14 @@ class CameraInteraction(Node):
             lambda msg: self.update_system_metric('temperature', msg.data), 10
         )
         
+        # Subscribe to lamp status for display
+        self.lamp_status = False
+        self.lamp_status_update_time = time.time()
+        self.lamp_status_sub = self.create_subscription(
+            Bool, '/luxo/light_status',
+            self.lamp_status_callback, 10
+        )
+        
         # Subscribe to joint states for real-time joint display
         self.joint_states = {}
         self.joint_states_sub = self.create_subscription(
@@ -445,7 +453,13 @@ class CameraInteraction(Node):
                 'last_detection_time': self.voice_last_detection_time
             }
             
-            # Update display with all info including joint states
+            # Create lamp status info for display
+            lamp_info = {
+                'status': self.lamp_status,
+                'last_update': getattr(self, 'lamp_status_update_time', time.time())
+            }
+            
+            # Update display with all info including joint states and lamp status
             self.framebuffer_display.update_display(
                 frame, 
                 emotion=emotion, 
@@ -457,11 +471,12 @@ class CameraInteraction(Node):
                 system_metrics=self.system_metrics,
                 touch_sensors=self.touch_sensors,
                 collision_sensors=self.collision_sensors,
-                joint_states=self.joint_states
+                joint_states=self.joint_states,
+                lamp_info=lamp_info
             )
             
             if self.verbose:
-                self.get_logger().debug("Updated framebuffer display with debug info")
+                self.get_logger().debug("Updated framebuffer display with debug info including lamp status")
                 
         except Exception as e:
             self.get_logger().error(f"Error updating framebuffer display: {e}")
@@ -504,6 +519,11 @@ class CameraInteraction(Node):
     def voice_snr_callback(self, msg):
         """Update voice SNR."""
         self.voice_snr = msg.data
+
+    def lamp_status_callback(self, msg):
+        """Update lamp status for display."""
+        self.lamp_status = msg.data
+        self.lamp_status_update_time = time.time()
 
     def animation_status_callback(self, msg):
         """Update current animation name."""

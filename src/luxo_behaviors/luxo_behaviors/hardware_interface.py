@@ -116,6 +116,19 @@ class RoArmHardwareInterface(Node):
             10
         )
         
+        # Publisher for light status
+        self.light_status_publisher = self.create_publisher(
+            Bool,
+            '/luxo/light_status',
+            10
+        )
+        
+        # Track actual light status
+        self.current_light_status = False
+        
+        # Timer to publish light status periodically
+        self.light_status_timer = self.create_timer(1.0, self.publish_light_status)
+        
         # Timer to publish state periodically
         self.state_publish_timer = self.create_timer(0.5, self.publish_current_state)
         
@@ -1339,6 +1352,9 @@ class RoArmHardwareInterface(Node):
         if hasattr(self, 'state_publish_timer'):
             self.state_publish_timer.cancel()
 
+        if hasattr(self, 'light_status_timer'):
+            self.light_status_timer.cancel()
+
         # Transition to shutdown state
         self.state_machine.transition_to(LuxoState.SHUTDOWN, force=True)
         
@@ -1476,8 +1492,13 @@ class RoArmHardwareInterface(Node):
             success = self.serial_manager.control_light(brightness)
             
             if success:
+                # Update our tracked status on successful command
+                self.current_light_status = msg.data
                 state = "ON" if msg.data else "OFF"
                 self.get_logger().info(f"Light turned {state}")
+                
+                # Immediately publish the status change
+                self.publish_light_status()
             else:
                 self.get_logger().error("Failed to control light")
         except Exception as e:
@@ -1491,7 +1512,12 @@ class RoArmHardwareInterface(Node):
             success = self.serial_manager.control_light(255)  # Full brightness
             
             if success:
+                # Update our tracked status on successful command
+                self.current_light_status = True
                 self.get_logger().info("Light turned ON automatically")
+                
+                # Immediately publish the status change
+                self.publish_light_status()
             else:
                 self.get_logger().error("Failed to turn on light automatically")
                 
@@ -1500,6 +1526,15 @@ class RoArmHardwareInterface(Node):
             
         except Exception as e:
             self.get_logger().error(f"Error in delayed light control: {e}")
+
+    def publish_light_status(self):
+        """Publish the current light status."""
+        try:
+            status_msg = Bool()
+            status_msg.data = self.current_light_status
+            self.light_status_publisher.publish(status_msg)
+        except Exception as e:
+            self.get_logger().error(f"Error publishing light status: {e}")
 
     def position_feedback_callback(self, msg):
         """Process joint position feedback from hardware and update position tracking"""

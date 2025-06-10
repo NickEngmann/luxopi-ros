@@ -13,6 +13,7 @@ import fcntl
 import threading
 import time
 import math
+from std_msgs.msg import Bool
 
 class FramebufferDisplay:
     """Direct framebuffer display without using external tools"""
@@ -394,10 +395,11 @@ class CameraFramebufferDisplay:
         status_text = "LISTENING" if active else "QUIET"
         cv2.putText(frame, status_text, (bar_x + 40, bar_y + 5), cv2.FONT_HERSHEY_SIMPLEX, 0.3, self.colors['pink'], 1)
 
+
     def update_display(self, frame, emotion=None, distance=None, face_bboxes=None, 
                       animation_name=None, state=None, voice_info=None, 
                       system_metrics=None, touch_sensors=None, collision_sensors=None,
-                      joint_states=None):
+                      joint_states=None, lamp_info=None):
         """Update framebuffer with Lux robot UI design"""
         if not self.enabled:
             return
@@ -427,11 +429,18 @@ class CameraFramebufferDisplay:
             
             # Robot name with lamp indicator (top left)
             lamp_color = self.colors['lux_gold']
-            # Animate lamp glow
-            glow_intensity = int(100 + 50 * math.sin(self.animation_time * 2))
-            lamp_glow_color = (min(255, lamp_color[0] + glow_intensity//4), 
-                              min(255, lamp_color[1] + glow_intensity//4), 
-                              min(255, lamp_color[2] + glow_intensity//4))
+            # Use lamp_info if provided, otherwise default to off
+            current_lamp_status = lamp_info.get('status', False) if lamp_info else False
+            # Animate lamp glow only if lamp is actually on
+            if current_lamp_status:
+                glow_intensity = int(100 + 50 * math.sin(self.animation_time * 2))
+                lamp_glow_color = (min(255, lamp_color[0] + glow_intensity//4), 
+                                  min(255, lamp_color[1] + glow_intensity//4), 
+                                  min(255, lamp_color[2] + glow_intensity//4))
+            else:
+                # Dim lamp indicator when off
+                lamp_glow_color = self.colors['gray']
+                lamp_color = self.colors['gray']
             
             # Draw lamp indicator circle
             cv2.circle(display_frame, (60, 40), 8, lamp_glow_color, -1)
@@ -537,7 +546,7 @@ class CameraFramebufferDisplay:
             
             # === BOTTOM PANELS ===
             
-            # End Effector Panel (bottom right)
+            # End Effector Panel (bottom right) - now shows actual lamp status
             panel_bottom = display_frame.shape[0] - 20
             panel_top = panel_bottom - 100
             panel_right = display_frame.shape[1] - 20
@@ -549,11 +558,29 @@ class CameraFramebufferDisplay:
             
             # Position info (simulated for now)
             position_y = panel_top + 40
-            # Lamp status
-            lamp_status = "[LAMP ON]" if (int(self.animation_time) % 3) < 2 else "[LAMP OFF]"  # Simulate lamp control
-            lamp_bg_color = self.colors['lux_gold'] if "ON" in lamp_status else self.colors['gray']
+            
+            # Show actual lamp status from hardware (use lamp_info if available)
+            lamp_status = "[LAMP ON]" if current_lamp_status else "[LAMP OFF]"
+            lamp_bg_color = self.colors['lux_gold'] if current_lamp_status else self.colors['gray']
+            lamp_text_color = self.colors['black'] if current_lamp_status else self.colors['white']
+            
+            # Check if lamp status is stale (no updates for more than 5 seconds)
+            # Only check staleness if lamp_info provides an update timestamp
+            if lamp_info and 'last_update' in lamp_info:
+                time_since_update = current_time - lamp_info['last_update']
+                if time_since_update > 5.0:
+                    lamp_status = "[LAMP ???]"
+                    lamp_bg_color = self.colors['orange']
+                    lamp_text_color = self.colors['black']
+                    
+                # Add lamp status timestamp for debugging (small text)
+                if time_since_update < 60.0:  # Only show if recent
+                    timestamp_text = f"Updated {time_since_update:.0f}s ago"
+                    cv2.putText(display_frame, timestamp_text, (panel_left + 10, panel_top + 35), cv2.FONT_HERSHEY_SIMPLEX, 0.25, self.colors['gray'], 1)
+            
+            # Draw lamp status background and text
             cv2.rectangle(display_frame, (panel_left + 10, panel_bottom - 25), (panel_right - 10, panel_bottom - 5), lamp_bg_color, -1)
-            cv2.putText(display_frame, lamp_status, (panel_left + 15, panel_bottom - 12), cv2.FONT_HERSHEY_SIMPLEX, 0.4, self.colors['black'], 1)
+            cv2.putText(display_frame, lamp_status, (panel_left + 15, panel_bottom - 12), cv2.FONT_HERSHEY_SIMPLEX, 0.4, lamp_text_color, 1)
             
             # Joint Status Panel (bottom left)
             joint_panel_right = display_frame.shape[1] - 200
