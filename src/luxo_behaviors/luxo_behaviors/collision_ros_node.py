@@ -351,7 +351,7 @@ class CollisionNode(Node):
         """Process touch sensor data and trigger appropriate collision responses"""
         # Check for simultaneous left and right touches (likely false positive)
         if touch_location in ['head_left', 'head_right']:
-            if self.touch_sensors['head_left'] > 0 and self.touch_sensors['head_right'] > 0:
+            if self.touch_sensors['head_left'] > 1 and self.touch_sensors['head_right'] > 1:
                 self.get_logger().info(
                     f"Simultaneous left ({self.touch_sensors['head_left']}) and "
                     f"right ({self.touch_sensors['head_right']}) touch detected - "
@@ -359,8 +359,8 @@ class CollisionNode(Node):
                 )
                 return
         
-        # Determine if this is a collision (any pressure state > 0)
-        is_collision = pressure_state > 0
+        # Determine if this is a collision (any pressure state > 1)
+        is_collision = pressure_state > 1
         
         # Map touch locations to collision directions
         collision_direction = None
