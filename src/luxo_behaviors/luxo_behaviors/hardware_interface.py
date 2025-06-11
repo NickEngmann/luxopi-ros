@@ -8,6 +8,7 @@ import json
 import threading
 import time
 import random
+import numpy as np
 from luxo_behaviors.serial_manager import SerialManager
 from luxo_behaviors.collision_avoidance import CollisionAvoidance
 from luxo_behaviors.state_machine import LuxoStateMachine, LuxoState
@@ -46,6 +47,12 @@ class RoArmHardwareInterface(Node):
         self.declare_parameter('rest_variation_range', 0.15)  # Range for position variation        
         self.declare_parameter('use_hardware_joint_names', False)
         
+        # Base joint limit parameters (in degrees, converted to radians internally)
+        self.declare_parameter('base_min_limit_deg', -260.0)  # Minimum base rotation in degrees
+        self.declare_parameter('base_max_limit_deg', 115.0)   # Maximum base rotation in degrees
+        self.declare_parameter('base_limit_buffer_deg', 10.0) # Buffer zone before hard limit in degrees
+        self.declare_parameter('enable_base_wraparound', True) # Enable wraparound for collision avoidance
+        
         # Add parameters for dynamic adaptation/external force control
         self.declare_parameter('enable_dynamic_adaptation', False)  # Default to disabled
         self.declare_parameter('dynamic_adaptation_base_limit', 1)  # Default torque limits
@@ -78,6 +85,20 @@ class RoArmHardwareInterface(Node):
         self.enable_torque_on_start = self.get_parameter('enable_torque').value
         self.read_throttle = self.get_parameter('read_throttle').value
         self.enable_collision_avoidance = self.get_parameter('enable_collision_avoidance').value
+        
+        # Get base joint limit parameters and convert to radians
+        self.base_min_limit = np.deg2rad(self.get_parameter('base_min_limit_deg').value)
+        self.base_max_limit = np.deg2rad(self.get_parameter('base_max_limit_deg').value) 
+        self.base_limit_buffer = np.deg2rad(self.get_parameter('base_limit_buffer_deg').value)
+        self.enable_base_wraparound = self.get_parameter('enable_base_wraparound').value
+        
+        # Calculate soft limit zones
+        self.base_soft_min = self.base_min_limit + self.base_limit_buffer
+        self.base_soft_max = self.base_max_limit - self.base_limit_buffer
+        
+        self.get_logger().info(f"Base joint limits: {np.rad2deg(self.base_min_limit):.1f}° to {np.rad2deg(self.base_max_limit):.1f}°")
+        self.get_logger().info(f"Base soft limits: {np.rad2deg(self.base_soft_min):.1f}° to {np.rad2deg(self.base_soft_max):.1f}°")
+        self.get_logger().info(f"Base wraparound enabled: {self.enable_base_wraparound}")
         
         # Get parameters for rest position
         self.enable_rest_position = self.get_parameter('enable_rest_position').value
@@ -1060,6 +1081,133 @@ class RoArmHardwareInterface(Node):
             import traceback
             self.get_logger().error(traceback.format_exc())
 
+    def enforce_base_joint_limits(self, positions, context="general"):
+        """
+        Enforce base joint limits with wraparound support.
+        
+        Args:
+            positions: List of joint positions [base, shoulder, elbow, wrist, hand, ...]
+            context: Context for decision making ("collision", "animation", "general", "voice")
+            
+        Returns:
+            Tuple of (safe_positions, wraparound_needed, limit_reached)
+        """
+        if len(positions) == 0:
+            return positions, False, False
+            
+        safe_positions = positions.copy()
+        base_position = safe_positions[0]
+        wraparound_needed = False
+        limit_reached = False
+        
+        # Check if we're at or beyond hard limits
+        if base_position <= self.base_min_limit:
+            limit_reached = True
+            if context == "collision" and self.enable_base_wraparound:
+                # For collision avoidance, try wraparound to the other side
+                wraparound_target = self.base_max_limit - 0.2  # Start near max limit
+                self.get_logger().warn(f"Base at min limit ({np.rad2deg(base_position):.1f}°) - wraparound to {np.rad2deg(wraparound_target):.1f}°")
+                safe_positions[0] = wraparound_target
+                wraparound_needed = True
+            else:
+                # Hard stop at minimum limit
+                safe_positions[0] = self.base_min_limit + 0.01  # Small buffer
+                self.get_logger().warn(f"Base position clamped to min limit: {np.rad2deg(safe_positions[0]):.1f}°")
+                
+        elif base_position >= self.base_max_limit:
+            limit_reached = True
+            if context == "collision" and self.enable_base_wraparound:
+                # For collision avoidance, try wraparound to the other side
+                wraparound_target = self.base_min_limit + 0.2  # Start near min limit
+                self.get_logger().warn(f"Base at max limit ({np.rad2deg(base_position):.1f}°) - wraparound to {np.rad2deg(wraparound_target):.1f}°")
+                safe_positions[0] = wraparound_target
+                wraparound_needed = True
+            else:
+                # Hard stop at maximum limit
+                safe_positions[0] = self.base_max_limit - 0.01  # Small buffer
+                self.get_logger().warn(f"Base position clamped to max limit: {np.rad2deg(safe_positions[0]):.1f}°")
+                
+        # Check soft limits for warnings
+        elif base_position <= self.base_soft_min:
+            self.get_logger().debug(f"Base approaching min limit: {np.rad2deg(base_position):.1f}°")
+            if context == "animation":
+                # For animations, be more conservative and stay within soft limits
+                safe_positions[0] = self.base_soft_min
+                
+        elif base_position >= self.base_soft_max:
+            self.get_logger().debug(f"Base approaching max limit: {np.rad2deg(base_position):.1f}°")
+            if context == "animation":
+                # For animations, be more conservative and stay within soft limits
+                safe_positions[0] = self.base_soft_max
+        
+        return safe_positions, wraparound_needed, limit_reached
+    
+    def is_base_near_limit(self, threshold_deg=20.0):
+        """
+        Check if base is near any limit.
+        
+        Args:
+            threshold_deg: Threshold in degrees to consider "near"
+            
+        Returns:
+            Tuple of (near_min, near_max, distance_to_closest_limit_deg)
+        """
+        if not hasattr(self, 'current_joints') or len(self.current_joints) == 0:
+            return False, False, float('inf')
+            
+        current_base = self.current_joints[0]
+        threshold_rad = np.deg2rad(threshold_deg)
+        
+        dist_to_min = current_base - self.base_min_limit
+        dist_to_max = self.base_max_limit - current_base
+        
+        near_min = dist_to_min <= threshold_rad
+        near_max = dist_to_max <= threshold_rad
+        
+        closest_dist_deg = np.rad2deg(min(dist_to_min, dist_to_max))
+        
+        return near_min, near_max, closest_dist_deg
+    
+    def calculate_wraparound_path(self, current_base, target_base):
+        """
+        Calculate if wraparound would be more efficient and safe.
+        
+        Returns:
+            Tuple of (use_wraparound, intermediate_positions)
+        """
+        if not self.enable_base_wraparound:
+            return False, []
+            
+        # Calculate direct path
+        direct_distance = abs(target_base - current_base)
+        
+        # Calculate wraparound distances
+        if current_base > 0:  # Near max limit
+            wraparound_distance = (self.base_max_limit - current_base) + (target_base - self.base_min_limit)
+        else:  # Near min limit  
+            wraparound_distance = (current_base - self.base_min_limit) + (self.base_max_limit - target_base)
+        
+        # Use wraparound if it's significantly shorter and we're near a limit
+        near_min, near_max, _ = self.is_base_near_limit(30.0)  # 30 degree threshold
+        
+        if (near_min or near_max) and wraparound_distance < direct_distance * 0.7:
+            # Generate intermediate positions for smooth wraparound
+            if current_base > 0:  # Wraparound via min limit
+                intermediate = [
+                    current_base + 0.3,  # Move slightly away from limit first
+                    self.base_min_limit + 0.2,  # Jump to other side
+                    target_base
+                ]
+            else:  # Wraparound via max limit
+                intermediate = [
+                    current_base - 0.3,  # Move slightly away from limit first
+                    self.base_max_limit - 0.2,  # Jump to other side
+                    target_base
+                ]
+            return True, intermediate
+            
+        return False, []
+
     def send_safe_joint_command(self, positions, description=""):
         """Send a joint command with safety checks applied"""
         if not self.is_connected():
@@ -1067,12 +1215,27 @@ class RoArmHardwareInterface(Node):
         
         time.sleep(0.05)  # delay between commands
 
-        # Apply safety limits based on collision status
-        if self.enable_collision_avoidance:
-            safe_positions = self.collision_avoidance.apply_safety_limits(positions)
-        else:
-            safe_positions = positions
+        # Apply base joint limits first
+        context = "general"
+        if "collision" in description.lower():
+            context = "collision"
+        elif "animation" in description.lower():
+            context = "animation"
+        elif "voice" in description.lower():
+            context = "voice"
             
+        safe_positions, wraparound_needed, limit_reached = self.enforce_base_joint_limits(positions, context)
+        
+        if limit_reached and not wraparound_needed:
+            self.get_logger().warn(f"Base joint limit reached for: {description}")
+            
+        if wraparound_needed:
+            self.get_logger().info(f"Executing base wraparound for: {description}")
+
+        # Apply collision avoidance safety limits
+        if self.enable_collision_avoidance:
+            safe_positions = self.collision_avoidance.apply_safety_limits(safe_positions)
+        
         try:
             # Only disable DEMA if it's active and the command is something other than regular joint control
             if self.enable_dynamic_adaptation and self.dynamic_adaptation_active and description != "Joint control":
@@ -1098,7 +1261,7 @@ class RoArmHardwareInterface(Node):
                     roll_value = -1.5  # Set to safe default if out of bounds
             else:
                 roll_value = -1.5  # Default safe position
-            
+
             if len(safe_positions) > 5:
                 acc_val = safe_positions[5]
                 # Check if acc_value is within safe boundaries (-2.5 to -0.5)
@@ -1550,6 +1713,7 @@ class RoArmHardwareInterface(Node):
                 # Extract the current positions
                 positions = [
                     feedback_data.get('base', 0.0),
+
                     feedback_data.get('shoulder', 0.0),
                     feedback_data.get('elbow', 0.0),
                     feedback_data.get('wrist', 0.0),

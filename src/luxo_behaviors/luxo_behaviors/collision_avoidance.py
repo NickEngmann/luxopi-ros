@@ -51,6 +51,21 @@ class CollisionAvoidance:
         self.base_rest_position = node.get_parameter('base_rest_position').value
         self.rest_variation_range = node.get_parameter('rest_variation_range').value
         
+        # Get base joint limits from the hardware interface node
+        if hasattr(node, 'base_min_limit'):
+            self.base_min_limit = node.base_min_limit
+            self.base_max_limit = node.base_max_limit
+            self.base_soft_min = node.base_soft_min
+            self.base_soft_max = node.base_soft_max
+            self.enable_base_wraparound = node.enable_base_wraparound
+        else:
+            # Fallback values if not available
+            self.base_min_limit = np.deg2rad(-260.0)
+            self.base_max_limit = np.deg2rad(115.0)
+            self.base_soft_min = self.base_min_limit + np.deg2rad(10.0)
+            self.base_soft_max = self.base_max_limit - np.deg2rad(10.0)
+            self.enable_base_wraparound = True
+        
         # Collision tracking with ROS time
         self.collision_status = {
             'front': {'active': False, 'distance': float('inf'), 'severity': 'safe', 'consecutive_count': 0},
@@ -854,7 +869,7 @@ class CollisionAvoidance:
             # Get current time for this check cycle
             current_time = self.node.get_clock().now()
             
-            # NEW: Check if target override is stuck (not in RETURNING_HOME state)
+            # Check if target override is stuck (not in RETURNING_HOME state)
             if self.target_override_active and not self.state_machine.is_in_state(LuxoState.RETURNING_HOME):
                 # Don't clear voice following overrides too quickly
                 if self.target_override_reason != "Voice following":
@@ -1174,61 +1189,89 @@ class CollisionAvoidance:
             variation = random.uniform(0.9, 1.1)
             magnitude *= variation
             
-            # Get joint limits
-            base_min_limit = -3.14  # -180 degrees
-            base_max_limit = 3.14   # +180 degrees
+            # Get current base position and check limits
             current_base = new_position[0]
-            
-            # Check if we're at a limit
-            at_min_limit = abs(current_base - base_min_limit) < 0.1
-            at_max_limit = abs(current_base - base_max_limit) < 0.1
+            near_min_limit = abs(current_base - self.base_min_limit) < np.deg2rad(20.0)
+            near_max_limit = abs(current_base - self.base_max_limit) < np.deg2rad(20.0)
+            at_min_limit = abs(current_base - self.base_min_limit) < np.deg2rad(5.0)
+            at_max_limit = abs(current_base - self.base_max_limit) < np.deg2rad(5.0)
             
             if direction == 'front':
                 # Pull back shoulder and elbow
                 new_position[1] -= 0.6 * magnitude  # Shoulder back
                 new_position[2] += 0.4 * magnitude  # Elbow fold
                 
-                # Add a random rotation to help escape
+                # Add rotation with limit awareness
                 if consecutive_count > 5:
-                    # For persistent collisions, use smarter rotation
-                    if at_max_limit:
-                        # At max limit, only rotate negative
+                    # For persistent collisions, use smarter rotation with wraparound support
+                    if at_max_limit and self.enable_base_wraparound:
+                        # At max limit, try wraparound to min side
+                        rotation = -(abs(current_base - self.base_min_limit) * 0.8)  # Jump toward min limit
+                        self.node.get_logger().warn(f"Front collision at max limit - attempting wraparound")
+                    elif at_min_limit and self.enable_base_wraparound:
+                        # At min limit, try wraparound to max side  
+                        rotation = (abs(current_base - self.base_max_limit) * 0.8)  # Jump toward max limit
+                        self.node.get_logger().warn(f"Front collision at min limit - attempting wraparound")
+                    elif near_max_limit:
+                        # Near max limit, rotate toward min
                         rotation = -0.5 * magnitude
-                    elif at_min_limit:
-                        # At min limit, only rotate positive
+                    elif near_min_limit:
+                        # Near min limit, rotate toward max
                         rotation = 0.5 * magnitude
                     else:
-                        # Not at limit, use consistent rotation direction
+                        # Not near limit, use consistent rotation direction
                         rotation = 0.5 * magnitude if consecutive_count % 2 == 0 else -0.5 * magnitude
                 else:
-                    rotation = random.uniform(-0.7, 0.7) * magnitude
+                    # Normal rotation for non-persistent collisions
+                    if near_max_limit:
+                        rotation = -random.uniform(0.3, 0.7) * magnitude  # Bias toward min
+                    elif near_min_limit:
+                        rotation = random.uniform(0.3, 0.7) * magnitude   # Bias toward max
+                    else:
+                        rotation = random.uniform(-0.7, 0.7) * magnitude
                     
                 new_position[0] += rotation
                 
             elif direction == 'left':
-                # Check if we can rotate right (negative adjustment)
+                # Check base limits before rotating
                 if at_min_limit:
-                    # Can't rotate left more, try rotating right instead
-                    self.node.get_logger().info("At min rotation limit for left collision, rotating RIGHT instead")
-                    new_position[0] += 0.6 * magnitude  # Rotate right more aggressively
+                    if self.enable_base_wraparound:
+                        # Wraparound to max side
+                        new_position[0] = self.base_max_limit - 0.2
+                        self.node.get_logger().info("Left collision at min limit - wraparound to max side")
+                    else:
+                        # Can't rotate left more, try rotating right instead
+                        new_position[0] += 0.6 * magnitude  # Rotate right more aggressively
+                        self.node.get_logger().info("Left collision at min limit - rotating RIGHT instead")
+                elif near_min_limit:
+                    # Near min limit, be more conservative
+                    new_position[0] -= 0.2 * magnitude  # Smaller left rotation
                 else:
                     # Normal left collision response - rotate left
                     new_position[0] -= 0.4 * magnitude
                 new_position[1] += 0.1 * magnitude  # Slight shoulder back
                 
             elif direction == 'right':
-                # Check if we can rotate left (positive adjustment)
+                # Check base limits before rotating
                 if at_max_limit:
-                    # Can't rotate right more, try rotating left instead
-                    self.node.get_logger().info("At max rotation limit for right collision, rotating LEFT instead")
-                    new_position[0] -= 0.6 * magnitude  # Rotate left more aggressively
+                    if self.enable_base_wraparound:
+                        # Wraparound to min side
+                        new_position[0] = self.base_min_limit + 0.2
+                        self.node.get_logger().info("Right collision at max limit - wraparound to min side")
+                    else:
+                        # Can't rotate right more, try rotating left instead
+                        new_position[0] -= 0.6 * magnitude  # Rotate left more aggressively
+                        self.node.get_logger().info("Right collision at max limit - rotating LEFT instead")
+                elif near_max_limit:
+                    # Near max limit, be more conservative
+                    new_position[0] += 0.2 * magnitude  # Smaller right rotation
                 else:
                     # Normal right collision response - rotate right
                     new_position[0] += 0.4 * magnitude
                 new_position[1] += 0.1 * magnitude  # Slight shoulder back
             
-            # Clamp base position to limits
-            new_position[0] = np.clip(new_position[0], base_min_limit, base_max_limit)
+            # Final safety check - ensure base position is within hard limits
+            new_position[0] = np.clip(new_position[0], self.base_min_limit, self.base_max_limit)
             
             # Add acceleration to the position array for the command
             new_position_with_acceleration = new_position.copy() + [acceleration]
@@ -2041,27 +2084,52 @@ class CollisionAvoidance:
         # Make the escape movement more dramatic than regular avoidance
         escape_magnitude = min(2.0, 1.0 + (self.escape_attempts * 0.3))
         
+        # Get current base position and check limits
+        current_base = new_position[0]
+        at_min_limit = abs(current_base - self.base_min_limit) < np.deg2rad(5.0)
+        at_max_limit = abs(current_base - self.base_max_limit) < np.deg2rad(5.0)
+        
         if direction == 'front':
             # Pull back arm dramatically
             new_position[1] -= 0.6 * escape_magnitude  # Shoulder back
             new_position[2] += 0.4 * escape_magnitude  # Elbow fold
             
-            # Add rotation to move out of the way
-            # Use consistent rotation based on attempt # to avoid oscillation
-            if self.escape_attempts % 2 == 0:
-                new_position[0] += 0.8 * escape_magnitude  # Rotate right
+            # Add rotation with wraparound support
+            if at_max_limit and self.enable_base_wraparound:
+                # Wraparound to the other side
+                new_position[0] = self.base_min_limit + 0.5
+                self.node.get_logger().warn("Escape: wraparound from max to min limit")
+            elif at_min_limit and self.enable_base_wraparound:
+                # Wraparound to the other side
+                new_position[0] = self.base_max_limit - 0.5
+                self.node.get_logger().warn("Escape: wraparound from min to max limit")
             else:
-                new_position[0] -= 0.8 * escape_magnitude  # Rotate left
+                # Use consistent rotation based on attempt # to avoid oscillation
+                if self.escape_attempts % 2 == 0:
+                    new_position[0] += 0.8 * escape_magnitude  # Rotate right
+                else:
+                    new_position[0] -= 0.8 * escape_magnitude  # Rotate left
                 
         elif direction == 'left':
-            # REVERSED: Escape to the RIGHT (positive rotation)
-            new_position[0] += 0.8 * escape_magnitude
+            # Escape to the RIGHT (positive rotation) with limit awareness
+            if at_min_limit and self.enable_base_wraparound:
+                new_position[0] = self.base_max_limit - 0.3
+                self.node.get_logger().warn("Left escape: wraparound to max limit")
+            else:
+                new_position[0] += 0.8 * escape_magnitude
             new_position[1] += 0.3 * escape_magnitude  # Pull back
             
         elif direction == 'right':
-            # REVERSED: Escape to the LEFT (negative rotation)
-            new_position[0] -= 0.8 * escape_magnitude
+            # Escape to the LEFT (negative rotation) with limit awareness
+            if at_max_limit and self.enable_base_wraparound:
+                new_position[0] = self.base_min_limit + 0.3
+                self.node.get_logger().warn("Right escape: wraparound to min limit")
+            else:
+                new_position[0] -= 0.8 * escape_magnitude
             new_position[1] += 0.3 * escape_magnitude  # Pull back
+        
+        # Ensure we stay within hard limits
+        new_position[0] = np.clip(new_position[0], self.base_min_limit, self.base_max_limit)
         
         # Send the escape command with high priority
         self.send_safe_joint_command(new_position, f"Escape maneuver ({direction}, attempt {self.escape_attempts})")
