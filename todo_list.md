@@ -1,4 +1,3 @@
-[] What is calling the constant right collision? Figure out that
 [] Transition state from Initialization to Home State before Going to Idle State
 [] Move Voice Stuff into its own state instead of being inside Collision Avoidance
 [] Touch Capabilities - Animations (Petting state)
