@@ -219,7 +219,7 @@ class CameraFramebufferDisplay:
             'sad': (':(', 'SENSING SADNESS'),
             'surprise': (':O', 'FEELING SURPRISE'),
             'anger': ('>:(', 'READING TENSION'),
-            'neutral': (':|', 'CALM PRESENCE'),
+            'neutral': (':3', 'CALM PRESENCE'),
             None: ('?', 'NO FACE DETECTED')
         }
         
@@ -249,16 +249,16 @@ class CameraFramebufferDisplay:
         """Draw a circular gauge with modern styling"""
         x, y = center
         
-        # Background circle
-        cv2.circle(frame, center, radius, self.colors['dark_gray'], 2)
+        # Background circle (larger)
+        cv2.circle(frame, center, radius, self.colors['dark_gray'], 3)
         
         # Calculate angle for progress (0 to 270 degrees)
         angle = int((value / max_value) * 270)
         
         # Draw progress arc
         if angle > 0:
-            # Create arc points
-            arc_thickness = 3
+            # Create arc points (thicker)
+            arc_thickness = 6
             start_angle = -90  # Start from top
             end_angle = start_angle + angle
             
@@ -272,20 +272,20 @@ class CameraFramebufferDisplay:
                 x2 = int(x + radius * math.cos(current_angle))
                 y2 = int(y + radius * math.sin(current_angle))
                 
-                cv2.line(frame, (x1, y1), (x2, y2), color, 2)
+                cv2.line(frame, (x1, y1), (x2, y2), color, 3)
         
-        # Label above gauge
-        label_size = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.4, 1)[0]
+        # Label above gauge (larger font)
+        label_size = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.8, 2)[0]
         label_x = x - label_size[0] // 2
-        label_y = y - radius - 10
-        cv2.putText(frame, label, (label_x, label_y), cv2.FONT_HERSHEY_SIMPLEX, 0.4, self.colors['white'], 1)
+        label_y = y - radius - 20
+        cv2.putText(frame, label, (label_x, label_y), cv2.FONT_HERSHEY_SIMPLEX, 0.8, self.colors['white'], 2)
         
-        # Value in center
+        # Value in center (larger font)
         value_text = f"{int(value)}{unit}"
-        value_size = cv2.getTextSize(value_text, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)[0]
+        value_size = cv2.getTextSize(value_text, cv2.FONT_HERSHEY_SIMPLEX, 1.0, 2)[0]
         value_x = x - value_size[0] // 2
         value_y = y + value_size[1] // 2
-        cv2.putText(frame, value_text, (value_x, value_y), cv2.FONT_HERSHEY_SIMPLEX, 0.5, self.colors['white'], 1)
+        cv2.putText(frame, value_text, (value_x, value_y), cv2.FONT_HERSHEY_SIMPLEX, 1.0, self.colors['white'], 2)
     
     def draw_rounded_panel(self, frame, top_left, bottom_right, color, alpha=0.7):
         """Draw a rounded panel with transparency effect"""
@@ -301,8 +301,8 @@ class CameraFramebufferDisplay:
         # Apply transparency
         cv2.addWeighted(overlay, alpha, frame, 1 - alpha, 0, frame)
         
-        # Draw border
-        cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
+        # Draw border (thicker)
+        cv2.rectangle(frame, (x1, y1), (x2, y2), color, 3)
     
     def draw_touch_sensor_indicator(self, frame, x, y, sensor_name, value):
         """Draw touch sensor status with visual feedback"""
@@ -319,60 +319,129 @@ class CameraFramebufferDisplay:
         
         color, symbol, description = pressure_states.get(value, (self.colors['gray'], "?", "Unknown"))
         
-        # Draw sensor circle
-        radius = 15
-        cv2.circle(frame, (x, y), radius, color, -1 if value > 0 else 2)
+        # Draw sensor circle (larger with more spacing)
+        radius = 30
+        cv2.circle(frame, (x, y), radius, color, -1 if value > 0 else 3)
         
-        # Draw symbol in center
-        symbol_size = cv2.getTextSize(symbol, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)[0]
+        # Draw symbol in center (larger font)
+        symbol_size = cv2.getTextSize(symbol, cv2.FONT_HERSHEY_SIMPLEX, 1.0, 2)[0]
         symbol_x = x - symbol_size[0] // 2
         symbol_y = y + symbol_size[1] // 2
-        cv2.putText(frame, symbol, (symbol_x, symbol_y), cv2.FONT_HERSHEY_SIMPLEX, 0.5, 
-                   self.colors['black'] if value > 0 else color, 1)
+        cv2.putText(frame, symbol, (symbol_x, symbol_y), cv2.FONT_HERSHEY_SIMPLEX, 1.0, 
+                   self.colors['black'] if value > 0 else color, 2)
         
-        # Sensor name below
-        name_size = cv2.getTextSize(sensor_name, cv2.FONT_HERSHEY_SIMPLEX, 0.3, 1)[0]
+        # Sensor name below (larger font with more spacing)
+        name_size = cv2.getTextSize(sensor_name, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 1)[0]
         name_x = x - name_size[0] // 2
-        name_y = y + radius + 15
-        cv2.putText(frame, sensor_name, (name_x, name_y), cv2.FONT_HERSHEY_SIMPLEX, 0.3, self.colors['white'], 1)
-    
+        name_y = y + radius + 35  # Increased spacing
+        cv2.putText(frame, sensor_name, (name_x, name_y), cv2.FONT_HERSHEY_SIMPLEX, 0.6, self.colors['white'], 1)
+
     def draw_collision_sensors(self, frame, collision_sensors):
-        """Draw collision sensor status"""
+        """Draw collision sensor status with improved modern design"""
         if not collision_sensors:
             return
         
-        # Position collision sensors in top-right area
-        base_x = frame.shape[1] - 100
-        base_y = 150
+        # Position collision sensors in top-right area with better spacing
+        base_x = frame.shape[1] - 200
+        base_y = 320  # Positioned below system gauges
         
-        # Head sensor (top)
-        head_color = self.colors['orange'] if collision_sensors.get('head', False) else self.colors['gray']
-        cv2.rectangle(frame, (base_x - 20, base_y), (base_x + 20, base_y + 15), head_color, -1 if collision_sensors.get('head', False) else 2)
-        cv2.putText(frame, "HEAD", (base_x - 15, base_y + 10), cv2.FONT_HERSHEY_SIMPLEX, 0.3, self.colors['black'] if collision_sensors.get('head', False) else head_color, 1)
+        # Create a larger panel for the collision sensors
+        panel_width = 160
+        panel_height = 140
+        self.draw_rounded_panel(frame, 
+                               (base_x - 20, base_y - 20), 
+                               (base_x + panel_width, base_y + panel_height), 
+                               self.colors['dark_gray'], 0.8)
         
-        # Left and right sensors
-        left_color = self.colors['orange'] if collision_sensors.get('left', False) else self.colors['gray']
-        right_color = self.colors['orange'] if collision_sensors.get('right', False) else self.colors['gray']
+        # Panel title
+        cv2.putText(frame, "[COLLISION]", (base_x, base_y + 5), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, self.colors['white'], 2)
         
-        # Left sensor
-        cv2.rectangle(frame, (base_x - 45, base_y + 25), (base_x - 25, base_y + 40), left_color, -1 if collision_sensors.get('left', False) else 2)
-        cv2.putText(frame, "L", (base_x - 40, base_y + 35), cv2.FONT_HERSHEY_SIMPLEX, 0.3, self.colors['black'] if collision_sensors.get('left', False) else left_color, 1)
+        # Modern sensor indicators with consistent sizing
+        sensor_size = 35  # Larger sensors
+        sensor_spacing = 50
         
-        # Right sensor  
-        cv2.rectangle(frame, (base_x + 5, base_y + 25), (base_x + 25, base_y + 40), right_color, -1 if collision_sensors.get('right', False) else 2)
-        cv2.putText(frame, "R", (base_x + 12, base_y + 35), cv2.FONT_HERSHEY_SIMPLEX, 0.3, self.colors['black'] if collision_sensors.get('right', False) else right_color, 1)
+        # Head sensor (top center)
+        head_x = base_x + panel_width // 2 - sensor_size // 2
+        head_y = base_y + 25
+        head_active = collision_sensors.get('head', False)
+        head_color = self.colors['orange'] if head_active else self.colors['gray']
+        
+        # Draw head sensor as rounded rectangle
+        cv2.rectangle(frame, (head_x, head_y), (head_x + sensor_size, head_y + 25), 
+                     head_color, -1 if head_active else 3)
+        
+        # Head sensor label
+        cv2.putText(frame, "HEAD", (head_x + 2, head_y + 18), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, 
+                   self.colors['black'] if head_active else head_color, 1)
+        
+        # Status indicator dot for head
+        dot_color = self.colors['orange'] if head_active else self.colors['dark_gray']
+        cv2.circle(frame, (head_x + sensor_size + 5, head_y + 12), 4, dot_color, -1)
+        
+        # Left sensor (bottom left)
+        left_x = base_x + 20
+        left_y = base_y + 70
+        left_active = collision_sensors.get('left', False)
+        left_color = self.colors['orange'] if left_active else self.colors['gray']
+        
+        # Draw left sensor as rounded rectangle
+        cv2.rectangle(frame, (left_x, left_y), (left_x + sensor_size, left_y + 25), 
+                     left_color, -1 if left_active else 3)
+        
+        # Left sensor label
+        cv2.putText(frame, "LEFT", (left_x + 4, left_y + 18), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, 
+                   self.colors['black'] if left_active else left_color, 1)
+        
+        # Status indicator dot for left
+        dot_color = self.colors['orange'] if left_active else self.colors['dark_gray']
+        cv2.circle(frame, (left_x + sensor_size + 5, left_y + 12), 4, dot_color, -1)
+        
+        # Right sensor (bottom right)
+        right_x = base_x + panel_width - sensor_size - 20
+        right_y = base_y + 70
+        right_active = collision_sensors.get('right', False)
+        right_color = self.colors['orange'] if right_active else self.colors['gray']
+        
+        # Draw right sensor as rounded rectangle
+        cv2.rectangle(frame, (right_x, right_y), (right_x + sensor_size, right_y + 25), 
+                     right_color, -1 if right_active else 3)
+        
+        # Right sensor label
+        cv2.putText(frame, "RIGHT", (right_x + 2, right_y + 18), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, 
+                   self.colors['black'] if right_active else right_color, 1)
+        
+        # Status indicator dot for right
+        dot_color = self.colors['orange'] if right_active else self.colors['dark_gray']
+        cv2.circle(frame, (right_x + sensor_size + 5, right_y + 12), 4, dot_color, -1)
+        
+        # Overall collision status at bottom of panel
+        any_collision = any(collision_sensors.values())
+        status_text = "COLLISION!" if any_collision else "ALL CLEAR"
+        status_color = self.colors['orange'] if any_collision else self.colors['green']
+        
+        # Center the status text
+        status_size = cv2.getTextSize(status_text, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)[0]
+        status_x = base_x + (panel_width - status_size[0]) // 2
+        status_y = base_y + panel_height - 15
+        
+        cv2.putText(frame, status_text, (status_x, status_y), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, status_color, 2)
     
     def draw_audio_visualization(self, frame, voice_info):
         """Draw audio visualization bars"""
         if not voice_info:
             return
         
-        # Position audio bars in the voice tracking panel
-        bar_x = 120
-        bar_y = 250  # Adjusted for new panel position
-        bar_width = 4
-        bar_spacing = 6
-        max_bar_height = 20
+        # Position audio bars aligned with DIR text (same Y axis)
+        bar_x = 180
+        bar_y = 500  # Aligned with DIR text position
+        bar_width = 8
+        bar_spacing = 12
+        max_bar_height = 40
         
         # Create animated bars based on voice activity
         active = voice_info.get('active', False)
@@ -391,10 +460,9 @@ class CameraFramebufferDisplay:
             x = bar_x + i * (bar_width + bar_spacing)
             cv2.rectangle(frame, (x, bar_y), (x + bar_width, bar_y - height), bar_color, -1)
         
-        # Audio status text
+        # Audio status text aligned with DIR text (same Y position)
         status_text = "LISTENING" if active else "QUIET"
-        cv2.putText(frame, status_text, (bar_x + 40, bar_y + 5), cv2.FONT_HERSHEY_SIMPLEX, 0.3, self.colors['pink'], 1)
-
+        cv2.putText(frame, status_text, (bar_x + 100, bar_y), cv2.FONT_HERSHEY_SIMPLEX, 0.6, self.colors['pink'], 1)
 
     def update_display(self, frame, emotion=None, distance=None, face_bboxes=None, 
                       animation_name=None, state=None, voice_info=None, 
@@ -414,20 +482,20 @@ class CameraFramebufferDisplay:
             # Create display frame
             display_frame = frame.copy()
             
-            # Draw face bounding boxes with friendly styling
+            # Draw face bounding boxes with friendly styling (thicker lines)
             if face_bboxes:
                 for bbox in face_bboxes:
                     if len(bbox) >= 4:
                         x1, y1, x2, y2 = bbox[0], bbox[1], bbox[2], bbox[3]
-                        # Draw rounded rectangle around face
-                        cv2.rectangle(display_frame, (x1, y1), (x2, y2), self.colors['teal'], 2)
-                        # Add friendly "Face" label
-                        cv2.putText(display_frame, "Human Friend", (x1, y1 - 10), 
-                                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, self.colors['teal'], 2)
+                        # Draw rounded rectangle around face (thicker)
+                        cv2.rectangle(display_frame, (x1, y1), (x2, y2), self.colors['teal'], 4)
+                        # Add friendly "Face" label (larger font)
+                        cv2.putText(display_frame, "Human Friend", (x1, y1 - 15), 
+                                   cv2.FONT_HERSHEY_SIMPLEX, 1.0, self.colors['teal'], 3)
             
             # === TOP HUD SECTION ===
             
-            # Robot name with lamp indicator (top left)
+            # Robot name with lamp indicator (top left, larger)
             lamp_color = self.colors['lux_gold']
             # Use lamp_info if provided, otherwise default to off
             current_lamp_status = lamp_info.get('status', False) if lamp_info else False
@@ -442,26 +510,26 @@ class CameraFramebufferDisplay:
                 lamp_glow_color = self.colors['gray']
                 lamp_color = self.colors['gray']
             
-            # Draw lamp indicator circle
-            cv2.circle(display_frame, (60, 40), 8, lamp_glow_color, -1)
-            cv2.circle(display_frame, (60, 40), 10, lamp_color, 2)
+            # Draw lamp indicator circle (larger)
+            cv2.circle(display_frame, (80, 60), 15, lamp_glow_color, -1)
+            cv2.circle(display_frame, (80, 60), 18, lamp_color, 3)
             
-            # Robot name
-            cv2.putText(display_frame, "LUX", (80, 50), cv2.FONT_HERSHEY_SIMPLEX, 1.2, lamp_color, 2)
+            # Robot name (much larger)
+            cv2.putText(display_frame, "LUX", (110, 75), cv2.FONT_HERSHEY_SIMPLEX, 2.4, lamp_color, 4)
             
-            # System time (top right)
+            # System time (top right, larger)
             import datetime
             timestamp = datetime.datetime.now().strftime("%H:%M:%S")
-            time_size = cv2.getTextSize(timestamp, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 1)[0]
-            time_x = display_frame.shape[1] - time_size[0] - 20
-            cv2.putText(display_frame, timestamp, (time_x, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.6, self.colors['teal'], 1)
+            time_size = cv2.getTextSize(timestamp, cv2.FONT_HERSHEY_SIMPLEX, 1.2, 2)[0]
+            time_x = display_frame.shape[1] - time_size[0] - 30
+            cv2.putText(display_frame, timestamp, (time_x, 60), cv2.FONT_HERSHEY_SIMPLEX, 1.2, self.colors['teal'], 2)
             
-            # === SYSTEM GAUGES (top right area) ===
+            # === SYSTEM GAUGES (top right area, moved down to avoid clock overlap) ===
             if system_metrics:
                 gauge_centers = [
-                    (display_frame.shape[1] - 120, 80),   # Temp
-                    (display_frame.shape[1] - 180, 130),  # CPU  
-                    (display_frame.shape[1] - 60, 130)    # RAM
+                    (display_frame.shape[1] - 180, 180),   # Temp - moved down
+                    (display_frame.shape[1] - 280, 240),   # CPU - moved down 
+                    (display_frame.shape[1] - 80, 240)     # RAM - moved down
                 ]
                 
                 metrics = [
@@ -471,69 +539,69 @@ class CameraFramebufferDisplay:
                 ]
                 
                 for i, ((value, max_val, color, label, unit), center) in enumerate(zip(metrics, gauge_centers)):
-                    self.draw_circular_gauge(display_frame, center, 25, value, max_val, color, label, unit)
+                    self.draw_circular_gauge(display_frame, center, 40, value, max_val, color, label, unit)
             
-            # === STATE MACHINE DISPLAY (left side) ===
+            # === STATE MACHINE DISPLAY (left side, much larger panel) ===
             if state:
                 friendly_state, description = self.get_friendly_state_info(state)
                 
-                # State panel background
-                self.draw_rounded_panel(display_frame, (20, 80), (280, 150), self.colors['dark_gray'], 0.8)
+                # State panel background (increased width by 10%)
+                self.draw_rounded_panel(display_frame, (30, 120), (550, 250), self.colors['dark_gray'], 0.8)
                 
-                # State label
-                cv2.putText(display_frame, "CURRENT STATE", (30, 100), cv2.FONT_HERSHEY_SIMPLEX, 0.4, self.colors['green'], 1)
+                # State label (larger font with more spacing)
+                cv2.putText(display_frame, "CURRENT STATE", (45, 150), cv2.FONT_HERSHEY_SIMPLEX, 0.8, self.colors['green'], 2)
                 
-                # State name with glow effect
-                cv2.putText(display_frame, friendly_state, (30, 125), cv2.FONT_HERSHEY_SIMPLEX, 0.8, self.colors['green'], 2)
+                # State name with glow effect (larger font with more spacing)
+                cv2.putText(display_frame, friendly_state, (45, 190), cv2.FONT_HERSHEY_SIMPLEX, 1.6, self.colors['green'], 3)
                 
-                # State description
-                cv2.putText(display_frame, description, (30, 145), cv2.FONT_HERSHEY_SIMPLEX, 0.4, self.colors['gray'], 1)
+                # State description (larger font with more spacing)
+                cv2.putText(display_frame, description, (45, 230), cv2.FONT_HERSHEY_SIMPLEX, 0.8, self.colors['gray'], 2)
             
-            # === EMOTION DISPLAY (left side) ===
+            # === EMOTION DISPLAY (left side, much larger panel with more spacing) ===
             emotion_face, emotion_text = self.emotion_moods.get(emotion, self.emotion_moods[None])
             
-            # Emotion panel
-            self.draw_rounded_panel(display_frame, (20, 160), (280, 210), self.colors['dark_gray'], 0.8)
+            # Emotion panel (increased width by 10% and moved down for more spacing)
+            self.draw_rounded_panel(display_frame, (30, 280), (550, 380), self.colors['dark_gray'], 0.8)
             
-            # Emotion emoji (larger)
-            cv2.putText(display_frame, emotion_face, (30, 190), cv2.FONT_HERSHEY_SIMPLEX, 1.0, self.colors['orange'], 2)
+            # Emotion emoji (much larger with more spacing)
+            cv2.putText(display_frame, emotion_face, (45, 340), cv2.FONT_HERSHEY_SIMPLEX, 2.0, self.colors['orange'], 4)
             
-            # Emotion text
-            cv2.putText(display_frame, emotion_text, (70, 190), cv2.FONT_HERSHEY_SIMPLEX, 0.6, self.colors['orange'], 1)
+            # Emotion text (larger with more spacing)
+            cv2.putText(display_frame, emotion_text, (140, 340), cv2.FONT_HERSHEY_SIMPLEX, 1.2, self.colors['orange'], 2)
             
-            # === AUDIO VISUALIZATION (left side) ===
+            # === AUDIO VISUALIZATION (left side, much larger panel) ===
             if voice_info:
-                # Audio panel with clearer title
-                audio_y = 220
-                self.draw_rounded_panel(display_frame, (20, audio_y), (200, audio_y + 50), self.colors['dark_gray'], 0.8)
+                # Audio panel with clearer title (much larger, moved down for spacing)
+                audio_y = 400
+                self.draw_rounded_panel(display_frame, (30, audio_y), (400, audio_y + 120), self.colors['dark_gray'], 0.8)
                 
-                # Audio title
-                cv2.putText(display_frame, "[VOICE TRACKING]", (30, audio_y + 15), cv2.FONT_HERSHEY_SIMPLEX, 0.4, self.colors['pink'], 1)
+                # Audio title (larger font with more spacing)
+                cv2.putText(display_frame, "[VOICE TRACKING]", (45, audio_y + 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, self.colors['pink'], 2)
                 
-                # Draw audio bars
+                # Draw audio bars (adjusted position)
                 self.draw_audio_visualization(display_frame, voice_info)
                 
-                # Voice direction if available
+                # Voice direction if available (larger font with more spacing)
                 if voice_info.get('direction') is not None:
                     direction_text = f"DIR: {voice_info['direction']:.0f}"
-                    cv2.putText(display_frame, direction_text, (30, audio_y + 45), cv2.FONT_HERSHEY_SIMPLEX, 0.35, self.colors['pink'], 1)
+                    cv2.putText(display_frame, direction_text, (45, audio_y + 100), cv2.FONT_HERSHEY_SIMPLEX, 0.7, self.colors['pink'], 1)
                 else:
-                    cv2.putText(display_frame, "DIR: ---", (30, audio_y + 45), cv2.FONT_HERSHEY_SIMPLEX, 0.35, self.colors['gray'], 1)
+                    cv2.putText(display_frame, "DIR: ---", (45, audio_y + 100), cv2.FONT_HERSHEY_SIMPLEX, 0.7, self.colors['gray'], 1)
             
-            # === TOUCH SENSORS (left side) ===
+            # === TOUCH SENSORS (left side, much larger panel) ===
             if touch_sensors:
-                # Touch panel
-                touch_y = 280  # Moved down to accommodate voice panel
-                self.draw_rounded_panel(display_frame, (20, touch_y), (200, touch_y + 80), self.colors['dark_gray'], 0.8)
+                # Touch panel (increased height by 15% and moved down for spacing)
+                touch_y = 550  # Moved down to accommodate larger panels above
+                self.draw_rounded_panel(display_frame, (30, touch_y), (400, touch_y + 230), self.colors['dark_gray'], 0.8)
                 
-                cv2.putText(display_frame, "[TOUCH SENSORS]", (30, touch_y + 20), cv2.FONT_HERSHEY_SIMPLEX, 0.4, self.colors['purple'], 1)
+                cv2.putText(display_frame, "[TOUCH SENSORS]", (45, touch_y + 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, self.colors['purple'], 2)
                 
-                # Draw touch sensors in a head-like pattern
+                # Draw touch sensors in a head-like pattern (adjusted for larger panel)
                 sensor_positions = {
-                    'head_top': (100, touch_y + 35),
-                    'head_left': (70, touch_y + 50),
-                    'head_right': (130, touch_y + 50),
-                    'head_bottom': (100, touch_y + 65)
+                    'head_top': (215, touch_y + 80),      # Centered horizontally
+                    'head_left': (140, touch_y + 130),    # Left side
+                    'head_right': (290, touch_y + 130),   # Right side  
+                    'head_bottom': (215, touch_y + 180)   # Bottom, more spacing from top
                 }
                 
                 for sensor_name, (x, y) in sensor_positions.items():
@@ -544,20 +612,20 @@ class CameraFramebufferDisplay:
             if collision_sensors:
                 self.draw_collision_sensors(display_frame, collision_sensors)
             
-            # === BOTTOM PANELS ===
+            # === BOTTOM PANELS (much larger) ===
             
-            # End Effector Panel (bottom right) - now shows actual lamp status
-            panel_bottom = display_frame.shape[0] - 20
-            panel_top = panel_bottom - 100
-            panel_right = display_frame.shape[1] - 20
-            panel_left = panel_right - 180
+            # End Effector Panel (bottom right) - much larger for lamp status
+            panel_bottom = display_frame.shape[0] - 40
+            panel_top = panel_bottom - 180  # Increased height
+            panel_right = display_frame.shape[1] - 40
+            panel_left = panel_right - 350  # Increased width
             
             self.draw_rounded_panel(display_frame, (panel_left, panel_top), (panel_right, panel_bottom), self.colors['dark_gray'], 0.8)
             
-            cv2.putText(display_frame, "[LAMP HEAD]", (panel_left + 10, panel_top + 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, self.colors['blue'], 1)
+            cv2.putText(display_frame, "[LAMP HEAD]", (panel_left + 20, panel_top + 35), cv2.FONT_HERSHEY_SIMPLEX, 1.0, self.colors['blue'], 2)
             
             # Position info (simulated for now)
-            position_y = panel_top + 40
+            position_y = panel_top + 70
             
             # Show actual lamp status from hardware (use lamp_info if available)
             lamp_status = "[LAMP ON]" if current_lamp_status else "[LAMP OFF]"
@@ -573,22 +641,22 @@ class CameraFramebufferDisplay:
                     lamp_bg_color = self.colors['orange']
                     lamp_text_color = self.colors['black']
                     
-                # Add lamp status timestamp for debugging (small text)
+                # Add lamp status timestamp for debugging (larger text with more spacing)
                 if time_since_update < 60.0:  # Only show if recent
                     timestamp_text = f"Updated {time_since_update:.0f}s ago"
-                    cv2.putText(display_frame, timestamp_text, (panel_left + 10, panel_top + 35), cv2.FONT_HERSHEY_SIMPLEX, 0.25, self.colors['gray'], 1)
+                    cv2.putText(display_frame, timestamp_text, (panel_left + 20, panel_top + 60), cv2.FONT_HERSHEY_SIMPLEX, 0.5, self.colors['gray'], 1)
             
-            # Draw lamp status background and text
-            cv2.rectangle(display_frame, (panel_left + 10, panel_bottom - 25), (panel_right - 10, panel_bottom - 5), lamp_bg_color, -1)
-            cv2.putText(display_frame, lamp_status, (panel_left + 15, panel_bottom - 12), cv2.FONT_HERSHEY_SIMPLEX, 0.4, lamp_text_color, 1)
+            # Draw lamp status background and text (much larger with more spacing)
+            cv2.rectangle(display_frame, (panel_left + 20, panel_bottom - 50), (panel_right - 20, panel_bottom - 15), lamp_bg_color, -1)
+            cv2.putText(display_frame, lamp_status, (panel_left + 30, panel_bottom - 28), cv2.FONT_HERSHEY_SIMPLEX, 1.0, lamp_text_color, 2)
             
-            # Joint Status Panel (bottom left)
-            joint_panel_right = display_frame.shape[1] - 200
-            joint_panel_left = joint_panel_right - 200
+            # Joint Status Panel (bottom left, much larger)
+            joint_panel_right = display_frame.shape[1] - 400  # More spacing from lamp panel
+            joint_panel_left = joint_panel_right - 400  # Increased width
             
             self.draw_rounded_panel(display_frame, (joint_panel_left, panel_top), (joint_panel_right, panel_bottom), self.colors['dark_gray'], 0.8)
             
-            cv2.putText(display_frame, "[LAMP JOINTS]", (joint_panel_left + 10, panel_top + 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, self.colors['purple'], 1)
+            cv2.putText(display_frame, "[LAMP JOINTS]", (joint_panel_left + 20, panel_top + 35), cv2.FONT_HERSHEY_SIMPLEX, 1.0, self.colors['purple'], 2)
             
             # Display real joint angles if available, otherwise show offline message
             if joint_states and len(joint_states) > 0:
@@ -617,58 +685,58 @@ class CameraFramebufferDisplay:
                         display_name = joint_name.replace('_', ' ').title()
                         available_joints.append((display_name, f"{angle:.1f}"))
                 
-                # Display the joints
-                joint_y = panel_top + 35
-                for i, (joint_name, angle) in enumerate(available_joints[:5]):  # Max 5 joints
-                    y_pos = joint_y + i * 12
+                # Display the joints (larger font and much more spacing)
+                joint_y = panel_top + 65
+                for i, (joint_name, angle) in enumerate(available_joints[:6]):  # Show up to 6 joints now
+                    y_pos = joint_y + i * 25  # Increased spacing between lines
                     # Truncate long joint names
-                    if len(joint_name) > 12:
-                        joint_name = joint_name[:12] + "..."
+                    if len(joint_name) > 15:
+                        joint_name = joint_name[:15] + "..."
                     
-                    cv2.putText(display_frame, joint_name, (joint_panel_left + 10, y_pos), cv2.FONT_HERSHEY_SIMPLEX, 0.35, self.colors['purple'], 1)
-                    cv2.putText(display_frame, angle, (joint_panel_left + 120, y_pos), cv2.FONT_HERSHEY_SIMPLEX, 0.35, self.colors['lux_gold'], 1)
+                    cv2.putText(display_frame, joint_name, (joint_panel_left + 20, y_pos), cv2.FONT_HERSHEY_SIMPLEX, 0.7, self.colors['purple'], 1)
+                    cv2.putText(display_frame, angle, (joint_panel_left + 250, y_pos), cv2.FONT_HERSHEY_SIMPLEX, 0.7, self.colors['lux_gold'], 1)
                 
-                # Show joint count if we have more than 5
-                if len(joint_states) > 5:
-                    extra_count = len(joint_states) - 5
-                    cv2.putText(display_frame, f"+ {extra_count} more", (joint_panel_left + 10, joint_y + 5 * 12), 
-                               cv2.FONT_HERSHEY_SIMPLEX, 0.3, self.colors['gray'], 1)
+                # Show joint count if we have more than 6 (larger font with more spacing)
+                if len(joint_states) > 6:
+                    extra_count = len(joint_states) - 6
+                    cv2.putText(display_frame, f"+ {extra_count} more", (joint_panel_left + 20, joint_y + 6 * 25), 
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.6, self.colors['gray'], 1)
             else:
-                # Show offline message when no joint data available
+                # Show offline message when no joint data available (larger font with more spacing)
                 offline_text = "JOINTS OFFLINE"
-                cv2.putText(display_frame, offline_text, (joint_panel_left + 10, panel_top + 40), 
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.5, self.colors['gray'], 1)
+                cv2.putText(display_frame, offline_text, (joint_panel_left + 20, panel_top + 70), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 1.0, self.colors['gray'], 2)
                 
-                # Show waiting message
+                # Show waiting message (larger font with more spacing)
                 waiting_text = "Waiting for /joint_states..."
-                cv2.putText(display_frame, waiting_text, (joint_panel_left + 10, panel_top + 60), 
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.35, self.colors['gray'], 1)
+                cv2.putText(display_frame, waiting_text, (joint_panel_left + 20, panel_top + 110), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.7, self.colors['gray'], 1)
             
-            # === CENTRAL CROSSHAIR ===
+            # === CENTRAL CROSSHAIR (larger) ===
             # Draw friendly crosshair in center
             center_x, center_y = display_frame.shape[1] // 2, display_frame.shape[0] // 2
             
-            # Breathing animation
+            # Breathing animation (larger)
             breath_scale = 1.0 + 0.1 * math.sin(self.animation_time * 1.5)
-            crosshair_radius = int(25 * breath_scale)
+            crosshair_radius = int(40 * breath_scale)
             
-            cv2.circle(display_frame, (center_x, center_y), crosshair_radius, self.colors['lux_gold'], 2)
-            cv2.circle(display_frame, (center_x, center_y), 4, self.colors['lux_gold'], -1)
+            cv2.circle(display_frame, (center_x, center_y), crosshair_radius, self.colors['lux_gold'], 3)
+            cv2.circle(display_frame, (center_x, center_y), 8, self.colors['lux_gold'], -1)
             
-            # === CAMERA INFO (bottom center) ===
-            camera_info = "[CAM] Lux Vision | 1920x1080@30fps | Raspberry Pi 5"
-            info_size = cv2.getTextSize(camera_info, cv2.FONT_HERSHEY_SIMPLEX, 0.4, 1)[0]
+            # === CAMERA INFO (bottom center, larger) ===
+            camera_info = "[CAM] Lux Vision | 1920x1080@30fps | @cyril.engman"
+            info_size = cv2.getTextSize(camera_info, cv2.FONT_HERSHEY_SIMPLEX, 0.8, 2)[0]
             info_x = (display_frame.shape[1] - info_size[0]) // 2
-            info_y = display_frame.shape[0] - 10
+            info_y = display_frame.shape[0] - 15
             
-            # Background for camera info
-            cv2.rectangle(display_frame, (info_x - 5, info_y - 15), (info_x + info_size[0] + 5, info_y + 5), self.colors['dark_gray'], -1)
-            cv2.putText(display_frame, camera_info, (info_x, info_y), cv2.FONT_HERSHEY_SIMPLEX, 0.4, self.colors['white'], 1)
+            # Background for camera info (larger)
+            cv2.rectangle(display_frame, (info_x - 10, info_y - 25), (info_x + info_size[0] + 10, info_y + 10), self.colors['dark_gray'], -1)
+            cv2.putText(display_frame, camera_info, (info_x, info_y), cv2.FONT_HERSHEY_SIMPLEX, 0.8, self.colors['white'], 2)
             
-            # === ANIMATED SCAN LINE ===
+            # === ANIMATED SCAN LINE (thicker) ===
             # Add subtle scan line animation
             scan_y = int((self.animation_time * 100) % display_frame.shape[0])
-            cv2.line(display_frame, (0, scan_y), (display_frame.shape[1], scan_y), (*self.colors['lux_gold'], 50), 2)
+            cv2.line(display_frame, (0, scan_y), (display_frame.shape[1], scan_y), (*self.colors['lux_gold'], 50), 3)
             
             # Display the frame
             self.display.display_frame(display_frame)
@@ -685,45 +753,45 @@ class CameraFramebufferDisplay:
             # Create a black frame
             frame = np.zeros((self.display.height, self.display.width, 3), dtype=np.uint8)
             
-            # Add Lux shutdown message
+            # Add Lux shutdown message (larger fonts)
             font = cv2.FONT_HERSHEY_SIMPLEX
             
-            # Main message
+            # Main message (much larger)
             text = "LUX POWERING DOWN"
-            font_scale = 1.5
-            thickness = 3
+            font_scale = 3.0
+            thickness = 6
             text_size = cv2.getTextSize(text, font, font_scale, thickness)[0]
             
             # Center the text
             x = (frame.shape[1] - text_size[0]) // 2
-            y = (frame.shape[0] + text_size[1]) // 2 - 50
+            y = (frame.shape[0] + text_size[1]) // 2 - 80
             
-            # Draw text with glow effect
-            cv2.putText(frame, text, (x, y), font, font_scale, (0, 0, 0), thickness + 2)  # Black border
+            # Draw text with glow effect (thicker)
+            cv2.putText(frame, text, (x, y), font, font_scale, (0, 0, 0), thickness + 4)  # Black border
             cv2.putText(frame, text, (x, y), font, font_scale, self.colors['lux_gold'], thickness)  # Gold text
             
-            # Add lamp icon
-            cv2.circle(frame, (x - 30, y - 15), 15, self.colors['lux_gold'], -1)
-            cv2.putText(frame, "[L]", (x - 40, y - 5), font, 1.0, self.colors['black'], 2)
+            # Add lamp icon (larger)
+            cv2.circle(frame, (x - 50, y - 25), 25, self.colors['lux_gold'], -1)
+            cv2.putText(frame, "[L]", (x - 65, y - 5), font, 2.0, self.colors['black'], 4)
             
-            # Add smaller subtitle
+            # Add smaller subtitle (larger)
             subtitle = "Thank you for playing!"
-            font_scale_sub = 1.0
-            thickness_sub = 2
+            font_scale_sub = 2.0
+            thickness_sub = 4
             text_size_sub = cv2.getTextSize(subtitle, font, font_scale_sub, thickness_sub)[0]
             x_sub = (frame.shape[1] - text_size_sub[0]) // 2
-            y_sub = y + 60
+            y_sub = y + 100
             
             cv2.putText(frame, subtitle, (x_sub, y_sub), font, font_scale_sub, self.colors['teal'], thickness_sub)
             
-            # Add timestamp
+            # Add timestamp (larger)
             import datetime
             timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            font_scale_ts = 0.7
-            thickness_ts = 1
+            font_scale_ts = 1.4
+            thickness_ts = 2
             text_size_ts = cv2.getTextSize(timestamp, font, font_scale_ts, thickness_ts)[0]
             x_ts = (frame.shape[1] - text_size_ts[0]) // 2
-            y_ts = y_sub + 40
+            y_ts = y_sub + 60
             
             cv2.putText(frame, timestamp, (x_ts, y_ts), font, font_scale_ts, self.colors['gray'], thickness_ts)
             
@@ -744,23 +812,23 @@ class CameraFramebufferDisplay:
                 # Create a frame with Lux colors
                 frame = np.full((self.display.height, self.display.width, 3), color, dtype=np.uint8)
                 
-                # Add Lux-themed "No Signal" message
+                # Add Lux-themed "No Signal" message (larger fonts)
                 font = cv2.FONT_HERSHEY_SIMPLEX
                 text = "LUX SLEEPING"
-                font_scale = 1.5
-                thickness = 2
+                font_scale = 3.0
+                thickness = 4
                 text_size = cv2.getTextSize(text, font, font_scale, thickness)[0]
                 
                 # Center the text
                 x = (frame.shape[1] - text_size[0]) // 2
                 y = (frame.shape[0] + text_size[1]) // 2
                 
-                # Draw text
+                # Draw text (larger)
                 cv2.putText(frame, text, (x, y), font, font_scale, self.colors['lux_gold'], thickness)
                 
-                # Add sleeping lamp icon
-                cv2.circle(frame, (x - 30, y - 15), 12, self.colors['gray'], 2)
-                cv2.putText(frame, "Z", (x - 35, y - 5), font, 0.8, self.colors['gray'], 1)
+                # Add sleeping lamp icon (larger)
+                cv2.circle(frame, (x - 50, y - 25), 20, self.colors['gray'], 3)
+                cv2.putText(frame, "Z", (x - 60, y - 5), font, 1.6, self.colors['gray'], 2)
                 
                 self.display.display_frame(frame)
             except Exception as e:
