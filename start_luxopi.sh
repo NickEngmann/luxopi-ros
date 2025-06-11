@@ -16,10 +16,10 @@ cd /home/pi/luxopi-ros
 colcon build
 ros2 launch luxo_behaviors luxo_system.launch.py \
   use_hardware:=true \
-  use_camera:=false \
+  use_camera:=true \
   enable_emotion_detection:=true \
-  enable_voice:=false \
-  enable_ads7830:=false \
+  enable_voice:=true \
+  enable_ads7830:=true \
   verbose:=true \
   enable_idle_animations:=true \
   enable_dynamic_adaptation:=false \

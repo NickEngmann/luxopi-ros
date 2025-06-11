@@ -49,7 +49,7 @@ class RoArmHardwareInterface(Node):
         
         # Base joint limit parameters (in degrees, converted to radians internally)
         self.declare_parameter('base_min_limit_deg', -260.0)  # Minimum base rotation in degrees
-        self.declare_parameter('base_max_limit_deg', 115.0)   # Maximum base rotation in degrees
+        self.declare_parameter('base_max_limit_deg', 135.0)   # Maximum base rotation in degrees
         self.declare_parameter('base_limit_buffer_deg', 10.0) # Buffer zone before hard limit in degrees
         self.declare_parameter('enable_base_wraparound', True) # Enable wraparound for collision avoidance
         

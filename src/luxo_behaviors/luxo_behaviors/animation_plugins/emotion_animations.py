@@ -60,7 +60,7 @@ class ExcitedHopAnimation(AnimationPlugin):
             [base_pos, 0.5, 1.0, 0.4, -1.6, 13.0],        # Mini-fold - left
             [base_pos-0.05, 0.3, 0.8, 0.6, -1.3, 14.0],   # Final hop - slight left
             [base_pos+0.05, 0.35, 0.75, 0.5, -1.7, 12.0], # Settling - right to balance
-            [base_pos, -0.85, 1.3, 1.4, -1.5, 10.0]       # Final position - center neutral
+            [base_pos, -0.5, 1.4, 1.0, -2.0, 10.0]       # Final position - center neutral
         ]
         
         # Scaled durations (base duration * 10 / acceleration)
@@ -112,7 +112,7 @@ class SadDroopAnimation(AnimationPlugin):
             [base_pos-0.35, -1.5, 1.7, 0.5, -1.6, 11.5],  # Slow recovery start - less right
             [base_pos-0.3, -1.0, 1.5, 0.0, -1.5, 12.0],   # Continue recovery - center
             [base_pos, 0.5, 1.3, 1.4, -1.5, 11.0],        # Return home 1 - neutral
-            [base_pos, -0.85, 1.3, 1.4, -1.5, 10.0]       # Return home 2 - neutral
+            [base_pos, -0.5, 1.4, 1.0, -2.0, 10.0]       # Return home 2 - neutral
         ]
         
         # Scaled durations (base duration * 10 / acceleration)
@@ -163,7 +163,7 @@ class PlayfulBounceAnimation(AnimationPlugin):
             [base_pos, 0.3, 0.7, 0.5, -1.5, 12.0],        # Settle - center
             [base_pos, 0.35, 0.75, 0.4, -1.5, 12.0],      # Final position - neutral
             [base_pos, 0.5, 1.3, 1.4, -1.5, 11.0],        # Return home 1 - neutral
-            [base_pos, -0.85, 1.3, 1.4, -1.5, 10.0]       # Return home 2 - neutral
+            [base_pos, -0.5, 1.4, 1.0, -2.0, 10.0]       # Return home 2 - neutral
         ]
         
         # Scaled durations (base duration * 10 / acceleration)
@@ -210,7 +210,7 @@ class StartledJumpAnimation(AnimationPlugin):
             [base_pos-0.05, 0.35, 0.8, 0.35, -1.4, 14.0], # Beginning to relax - left
             [base_pos, 0.3, 0.7, 0.25, -1.5, 12.0],       # Vigilant final pose - center neutral
             [base_pos, 0.5, 1.3, 1.4, -1.5, 11.0],        # Return home 1 - neutral
-            [base_pos, -0.85, 1.3, 1.4, -1.5, 10.0]       # Return home 2 - neutral
+            [base_pos, -0.5, 1.4, 1.0, -2.0, 10.0]       # Return home 2 - neutral
         ]
         
         # Scaled durations (base duration * 10 / acceleration)

@@ -37,7 +37,7 @@ class GentleSwayAnimation(AnimationPlugin):
         breath_lift = random.uniform(0.1, 0.15)
         
         keyframes = [
-            [base_pos, -0.85, 1.3, 1.4, -1.5, 12.0],                          # Start at home - gentle
+            [base_pos, -0.5, 1.4, 1.0, -2.0, 12.0],                          # Start at home - gentle
             [base_pos, -0.88, 1.32, 1.42, -1.6, 10.5],                        # Subtle inhale - very gentle
             [base_pos + sway_amount*0.15, -0.78, 1.25, 1.38, -1.2, 11.0],     # Begin shift - gentle
             [base_pos + sway_amount*0.4, -0.7, 1.18, 1.45, -1.8, 10.0],       # Lean into movement - slowest
@@ -53,7 +53,7 @@ class GentleSwayAnimation(AnimationPlugin):
             [base_pos - sway_amount*0.4, -0.74, 1.2, 1.4, -1.6, 11.5],        # Gentle return - gentle
             [base_pos - 0.05, -0.8, 1.26, 1.41, -1.3, 12.5],                  # Balance check - moderate
             [base_pos, -0.8, 1.29, 1.4, -1.5, 11.0],                         # Near home - gentle
-            [base_pos, -0.85, 1.3, 1.4, -1.5, 12.0]                           # Home 2 - gentle
+            [base_pos, -0.5, 1.4, 1.0, -2.0, 12.0]                           # Home 2 - gentle
         ]
         
         # Natural human-like timing scaled by acceleration (base duration * 10 / acceleration)
@@ -87,7 +87,7 @@ class CuriousExplorationAnimation(AnimationPlugin):
         base_pos = random.uniform(-0.25, 0.25)
         
         keyframes = [
-            [base_pos, -0.85, 1.3, 1.4, -1.5, 13.0],                    # Start at home - moderate
+            [base_pos, -0.5, 1.4, 1.0, -2.0, 13.0],                    # Start at home - moderate
             [base_pos - 0.1, -0.65, 1.15, 1.3, -1.2, 16.0],             # Something catches attention - quick
             [base_pos - 0.55, -0.55, 1.05, 1.2, -1.9, 19.0],            # Quick glance left - fast
             [base_pos - 0.5, -0.6, 1.1, 1.25, -0.8, 15.0],              # Pause - wait what? - quick
@@ -102,7 +102,7 @@ class CuriousExplorationAnimation(AnimationPlugin):
             [base_pos + 0.2, -0.6, 1.12, 1.3, -1.9, 16.0],              # Nod - I understand now - quick
             [base_pos, -0.75, 1.23, 1.37, -1.1, 13.5],                  # Satisfied exhale - moderate
             [base_pos, -0.82, 1.28, 1.39, -1.6, 12.0],                  # Return to rest - gentle
-            [base_pos, -0.85, 1.3, 1.4, -1.5, 13.0]                     # Home directly - moderate
+            [base_pos, -0.5, 1.4, 1.0, -2.0, 13.0]                     # Home directly - moderate
         ]
         
         # Varied timing for natural investigation (base duration * 10 / acceleration)
@@ -136,7 +136,7 @@ class BreathingAnimation(AnimationPlugin):
         sway = random.uniform(-0.05, 0.05)
         
         keyframes = [
-            [base_pos, -0.85, 1.3, 1.4, -1.5, 10.5],                    # Rest position - very gentle
+            [base_pos, -0.5, 1.4, 1.0, -2.0, 10.5],                    # Rest position - very gentle
             [base_pos, -0.88, 1.32, 1.43, -1.3, 10.0],                  # Mental preparation - slowest
             [base_pos + sway, -0.95, 1.34, 1.5, -1.8, 10.0],            # Begin deep inhale - slowest
             [base_pos, -1.08, 1.38, 1.6, -0.9, 10.5],                   # Chest expanding - very gentle
@@ -150,7 +150,7 @@ class BreathingAnimation(AnimationPlugin):
             [base_pos, -0.72, 1.24, 1.32, -0.6, 11.5],                  # Small recovery inhale - gentle
             [base_pos, -0.8, 1.28, 1.38, -1.6, 11.0],                   # Settling - gentle
             [base_pos, -0.84, 1.2, 1.39, -1.3, 10.5],                  # Peaceful state - very gentle
-            [base_pos, -0.85, 1.3, 1.4, -1.5, 10.0]                     # Home directly - slowest
+            [base_pos, -0.5, 1.4, 1.0, -2.0, 10.0]                     # Home directly - slowest
         ]
         
         # Yogic breathing rhythm (base duration * 10 / acceleration)
@@ -184,7 +184,7 @@ class AttentiveListeningAnimation(AnimationPlugin):
         base_pos = 0.0
         
         keyframes = [
-            [base_pos, -0.85, 1.3, 1.4, -1.5, 12.5],                    # Home - moderate
+            [base_pos, -0.5, 1.4, 1.0, -2.0, 12.5],                    # Home - moderate
             [base_pos, -0.7, 1.2, 1.35, -1.3, 14.0],                    # Shift to attention - moderate
             [base_pos, -0.65, 1.15, 1.3, -1.8, 15.5],                   # Eyebrow raise interest - quick
             [base_pos - 0.15, -0.5, 1.0, 1.15, -0.9, 13.0],             # Lean in curious - moderate
@@ -199,7 +199,7 @@ class AttentiveListeningAnimation(AnimationPlugin):
             [base_pos, -0.68, 1.18, 1.38, -1.8, 13.5],                  # Understanding dawns - moderate
             [base_pos, -0.55, 1.05, 1.25, -1.2, 15.0],                  # Agreement gesture forward - quick
             [base_pos, -0.78, 1.26, 1.38, -1.6, 11.5],                  # Settle back satisfied - gentle
-            [base_pos, -0.85, 1.3, 1.4, -1.5, 12.5]                     # Home 2 - moderate
+            [base_pos, -0.5, 1.4, 1.0, -2.0, 12.5]                     # Home 2 - moderate
         ]
         
         # Conversational rhythm (base duration * 10 / acceleration)
@@ -234,7 +234,7 @@ class PlayfulBobAnimation(AnimationPlugin):
         energy = random.uniform(0.8, 1.2)
         
         keyframes = [
-            [base_pos, -0.85, 1.3, 1.4, -1.5, 14.0],                          # Home - moderate
+            [base_pos, -0.5, 1.4, 1.0, -2.0, 14.0],                          # Home - moderate
             [base_pos, -0.5, 1.55, 0.95, -1.2, 18.0],                         # Deep anticipation - fast
             [base_pos + 0.05, -0.45, 1.6, 0.9, -1.9, 20.0],                   # Coiled spring - fast
             [base_pos - 0.1, -1.25 * energy, 0.85, 1.75, -0.7, 22.5],         # Explosive jump - fastest
@@ -249,7 +249,7 @@ class PlayfulBobAnimation(AnimationPlugin):
             [base_pos + 0.25, -0.72, 1.18, 1.42, -1.9, 18.0],                 # Wiggle right - fast
             [base_pos - 0.25, -0.75, 1.2, 1.45, -0.8, 17.5],                  # And left - fast
             [base_pos, -0.8, 1.25, 1.38, -1.6, 13.0],                         # Happy settling - moderate
-            [base_pos, -0.85, 1.3, 1.4, -1.5, 14.0]                           # Home 2 - moderate
+            [base_pos, -0.5, 1.4, 1.0, -2.0, 14.0]                           # Home 2 - moderate
         ]
         
         # Rhythmic, musical timing (base duration * 10 / acceleration)
@@ -282,7 +282,7 @@ class ScanningWatchAnimation(AnimationPlugin):
         alert_height = -0.6
         
         keyframes = [
-            [0.0, -0.85, 1.3, 1.4, -1.5, 13.0],                          # Home - moderate
+            [0.0, -0.5, 1.4, 1.0, -2.0, 13.0],                          # Home - moderate
             [0.0, alert_height, 1.0, 1.3, -1.2, 16.0],                   # Rise to alert - quick
             [-0.75, alert_height - 0.05, 0.95, 1.2, -1.9, 21.0],        # Snap look left - very fast
             [-0.7, alert_height, 1.0, 1.25, -0.8, 17.0],                 # Quick evaluation - fast
@@ -297,7 +297,7 @@ class ScanningWatchAnimation(AnimationPlugin):
             [-0.3, alert_height, 1.05, 1.35, -1.7, 15.0],               # One final check - quick
             [0.0, -0.7, 1.15, 1.38, -1.3, 13.5],                        # All clear, lowering - moderate
             [0.0, -0.82, 1.2, 1.39, -1.6, 12.0],                       # Return to rest - gentle
-            [0.0, -0.85, 1.3, 1.4, -1.5, 13.0]                          # Home directly - moderate
+            [0.0, -0.5, 1.4, 1.0, -2.0, 13.0]                          # Home directly - moderate
         ]
         
         # Alert, purposeful timing with snap movements (base duration * 10 / acceleration)
@@ -332,7 +332,7 @@ class SettlingAdjustAnimation(AnimationPlugin):
         shoulder_var = random.uniform(-0.25, 0.25)
         
         keyframes = [
-            [0.0, -0.85, 1.3, 1.4, -1.5, 12.0],                                   # Starting position - gentle
+            [0.0, -0.5, 1.4, 1.0, -2.0, 12.0],                                   # Starting position - gentle
             [base_adj * 0.3, -0.78, 1.35, 1.35, -1.3, 15.0],                      # Uncomfortable - quick
             [base_adj * 0.5 - 0.2, -0.95 + shoulder_var, 1.2, 1.5, -1.8, 14.5],   # Roll shoulder left - moderate
             [base_adj * 0.4, -0.82, 1.32, 1.38, -0.9, 16.0],                      # Test this spot - quick
@@ -347,7 +347,7 @@ class SettlingAdjustAnimation(AnimationPlugin):
             [0.05, -0.84, 1.3, 1.4, -1.7, 11.0],                                  # Almost perfect - gentle
             [0.0, -0.845, 1.3, 1.4, -1.3, 10.5],                                  # One final shift - very gentle
             [0.0, -0.85, 1.1, 1.4, -1.6, 10.0],                                   # Ahh, comfortable - slowest
-            [0.0, -0.85, 1.3, 1.4, -1.5, 12.0]                                    # Already home - gentle
+            [0.0, -0.5, 1.4, 1.0, -2.0, 12.0]                                    # Already home - gentle
         ]
         
         # Fidgety, restless timing (base duration * 10 / acceleration)
@@ -380,7 +380,7 @@ class DreamyDriftAnimation(AnimationPlugin):
         drift_radius = 0.5
         
         keyframes = [
-            [0.0, -0.85, 1.3, 1.4, -1.5, 10.0],                           # Home - slowest
+            [0.0, -0.5, 1.4, 1.0, -2.0, 10.0],                           # Home - slowest
             [0.08, -0.88, 1.27, 1.43, -1.3, 10.5],                        # Subtle drift start - very gentle
             [0.15, -1.1, 1.05, 1.65, -1.8, 10.0],                         # Float gently up - slowest
             [-drift_radius*0.8, -1.05, 1.1, 1.6, -0.8, 10.5],             # Arc to left high - very gentle
@@ -394,7 +394,7 @@ class DreamyDriftAnimation(AnimationPlugin):
             [0.0, -0.75, 1.28, 1.35, -1.1, 11.0],                         # Gravity slowly returns - gentle
             [0.0, -0.82, 1.29, 1.38, -1.6, 10.5],                         # Soft landing approach - very gentle
             [0.0, -0.84, 1.2, 1.39, -1.4, 10.0],                          # Almost settled - slowest
-            [0.0, -0.85, 1.3, 1.4, -1.5, 10.0]                            # Home directly - slowest
+            [0.0, -0.5, 1.4, 1.0, -2.0, 10.0]                            # Home directly - slowest
         ]
         
         # Slow, ethereal timing (base duration * 10 / acceleration)
@@ -427,7 +427,7 @@ class NeckStretchAnimation(AnimationPlugin):
         base_pos = 0.0
         
         keyframes = [
-            [base_pos, -0.85, 1.3, 1.4, -1.5, 12.0],                    # Home - gentle
+            [base_pos, -0.5, 1.4, 1.0, -2.0, 12.0],                    # Home - gentle
             [base_pos, -0.8, 1.25, 1.35, -1.3, 11.0],                   # Prepare for stretch - gentle
             [base_pos - 0.4, -0.75, 1.2, 1.3, -1.9, 10.5],              # Tilt head left - very gentle
             [base_pos - 0.6, -0.7, 1.15, 1.25, -0.7, 10.0],             # Deep stretch left side - slowest
@@ -441,7 +441,7 @@ class NeckStretchAnimation(AnimationPlugin):
             [base_pos - 0.05, -0.85, 1.25, 1.4, -1.2, 15.5],            # Relief shake - quick
             [base_pos, -0.83, 1.28, 1.39, -1.6, 12.5],                  # Final position adjust - gentle
             [base_pos, -0.84, 1.2, 1.4, -1.4, 11.5],                   # Relaxed after stretch - gentle
-            [base_pos, -0.85, 1.3, 1.4, -1.5, 12.0]                     # Home 2 - gentle
+            [base_pos, -0.5, 1.4, 1.0, -2.0, 12.0]                     # Home 2 - gentle
         ]
         
         # Slow stretching movements (base duration * 10 / acceleration)
@@ -474,7 +474,7 @@ class YawningStretchAnimation(AnimationPlugin):
         base_pos = 0.0
         
         keyframes = [
-            [base_pos, -0.85, 1.3, 1.4, -1.5, 12.0],                    # Home - gentle
+            [base_pos, -0.5, 1.4, 1.0, -2.0, 12.0],                    # Home - gentle
             [base_pos, -0.75, 1.35, 1.35, -1.3, 11.5],                  # Feeling tired - gentle
             [base_pos, -0.9, 1.15, 1.5, -1.8, 10.5],                    # Yawn beginning - very gentle
             [base_pos - 0.1, -1.05, 1.0, 1.65, -0.7, 10.0],             # Mouth opening wide - slowest
@@ -487,7 +487,7 @@ class YawningStretchAnimation(AnimationPlugin):
             [base_pos, -0.78, 1.25, 1.38, -1.8, 13.0],                  # Sleepy blink - moderate
             [base_pos + 0.15, -0.82, 1.27, 1.4, -1.0, 15.5],            # Shake head to wake - quick
             [base_pos, -0.84, 1.2, 1.4, -1.6, 12.5],                   # Back to normal - gentle
-            [base_pos, -0.85, 1.3, 1.4, -1.5, 12.0]                     # Home directly - gentle
+            [base_pos, -0.5, 1.4, 1.0, -2.0, 12.0]                     # Home directly - gentle
         ]
         
         # Yawning rhythm with holds (base duration * 10 / acceleration)
@@ -520,7 +520,7 @@ class ShoulderShimmy(AnimationPlugin):
         base_pos = 0.0
         
         keyframes = [
-            [base_pos, -0.85, 1.3, 1.4, -1.5, 14.0],                    # Home - moderate
+            [base_pos, -0.5, 1.4, 1.0, -2.0, 14.0],                    # Home - moderate
             [base_pos, -0.75, 1.2, 1.35, -1.3, 16.0],                   # Get ready - quick
             [base_pos + 0.2, -0.85, 1.15, 1.45, -1.8, 18.0],            # Right shoulder up - fast
             [base_pos - 0.2, -0.85, 1.15, 1.45, -0.9, 18.5],            # Left shoulder up - fast
@@ -533,7 +533,7 @@ class ShoulderShimmy(AnimationPlugin):
             [base_pos, -0.75, 1.2, 1.4, -1.7, 17.0],                    # Back to center - fast
             [base_pos + 0.1, -0.8, 1.25, 1.38, -1.2, 16.0],             # Final little shake - quick
             [base_pos, -0.83, 1.28, 1.39, -1.6, 13.0],                  # Cool down - moderate
-            [base_pos, -0.85, 1.3, 1.4, -1.5, 14.0]                     # Home directly - moderate
+            [base_pos, -0.5, 1.4, 1.0, -2.0, 14.0]                     # Home directly - moderate
         ]
         
         # Rhythmic shimmy timing (base duration * 10 / acceleration)
@@ -566,7 +566,7 @@ class LookAroundCasual(AnimationPlugin):
         base_pos = 0.0
         
         keyframes = [
-            [base_pos, -0.85, 1.3, 1.4, -1.5, 13.0],                    # Home - moderate
+            [base_pos, -0.5, 1.4, 1.0, -2.0, 13.0],                    # Home - moderate
             [base_pos, -0.78, 1.25, 1.38, -1.3, 14.0],                  # Slight head lift - moderate
             [base_pos - 0.4, -0.75, 1.22, 1.35, -1.8, 15.0],            # Casual glance left - quick
             [base_pos - 0.35, -0.72, 1.2, 1.32, -0.9, 14.5],            # Hmm, what's that? - moderate
@@ -578,7 +578,7 @@ class LookAroundCasual(AnimationPlugin):
             [base_pos - 0.25, -0.76, 1.23, 1.36, -1.0, 16.0],           # Quick left check - quick
             [base_pos, -0.8, 1.26, 1.38, -1.6, 12.5],                   # All good - gentle
             [base_pos, -0.84, 1.29, 1.39, -1.4, 11.5],                  # Settling back - gentle
-            [base_pos, -0.85, 1.3, 1.4, -1.5, 13.0]                     # Home directly - moderate
+            [base_pos, -0.5, 1.4, 1.0, -2.0, 13.0]                     # Home directly - moderate
         ]
         
         # Casual, relaxed timing (base duration * 10 / acceleration)

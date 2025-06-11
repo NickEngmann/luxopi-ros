@@ -1,4 +1,3 @@
-[] Transition state from Initialization to Home State before Going to Idle State
 [] Move Voice Stuff into its own state instead of being inside Collision Avoidance
 [] Touch Capabilities - Animations (Petting state)
 [] Fix DEMA Adaptation Mode and Integrate with Touch
