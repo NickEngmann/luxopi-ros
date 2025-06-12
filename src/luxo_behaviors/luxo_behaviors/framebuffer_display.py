@@ -219,7 +219,7 @@ class CameraFramebufferDisplay:
             'sad': ('->', 'SENSING SADNESS'),
             'surprise': ('->', 'FEELING SURPRISE'),
             'anger': ('!', 'READING TENSION'),
-            'neutral': ('-', 'NUETRAL'),
+            'neutral': ('-', 'NEUTRAL'),
             None: ('?', 'NO FACE DETECTED')
         }
         
