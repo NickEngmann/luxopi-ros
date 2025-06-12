@@ -1,9 +1,22 @@
-[] Move Voice Stuff into its own state instead of being inside Collision Avoidance
-[] Touch Capabilities - Animations (Petting state)
-[] Fix DEMA Adaptation Mode and Integrate with Touch
-[] Continue fine tuning the different animation commands
-[] Collision Avoiding needs to rotate different directions depending on state of device. Specifically the third joint if its above a certain angle, rotate the other way
+**TOMORROW AT HOME**
 
+- [] print New brackets to protect the motor shafts 
+- [] Print a New Head
+- [] Bring more cable guards to protect all the cables
+
+**Tonight/Tomorrow at Resistor**
+- [] Touch Capabilities - Animations (Petting state)
+- [] CAMERA FOLLOWING
+- [] More Fine tuning
+- [] Move VOICE FOLLOWING Stuff into its own state instead of being inside Collision Avoidance. Collision Avoidance is becoming crazy large
+
+- [] When there is nonstop voice activity, we struggle to go back to IDLE
+
+- [] Continue fine tuning the different animation commands
+- [] Fix DEMA Adaptation Mode and Integrate with Touch
+
+**BEFORE THE SHOW**
+- [] Tighten the Joints
 
 # Later Priorities
 ## High Priority
