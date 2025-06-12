@@ -43,7 +43,7 @@ class NoddingAnimation(AnimationPlugin):
             [base_pos, 0.32, 0.72, 0.25, -1.4, 13.0],  # Final tiny nod - slight right
             [base_pos, 0.3, 0.7, 0.3, -1.5, 12.0],     # Return neutral - center
             [base_pos, 0.5, 1.3, 1.4, -1.5, 11.0],     # Return to home position 1 - neutral
-            [base_pos, -0.5, 1.4, 1.0, -2.0, 10.0]    # Return to home position 2 - neutral
+            [base_pos, -0.55, 1.2, 1.0, -2.0, 10.0]    # Return to home position 2 - neutral
         ]
         
         # Scaled durations (base duration * 10 / acceleration)
@@ -90,7 +90,7 @@ class HeadShakeAnimation(AnimationPlugin):
             [base_pos-0.1, 0.3, 0.7, 0.3, -1.4, 15.0],   # Final left - slight right to balance
             [base_pos, 0.32, 0.72, 0.28, -1.5, 12.0],    # Settle - center neutral
             [base_pos, 0.5, 1.3, 1.4, -1.5, 11.0],       # Return home 1 - neutral
-            [base_pos, -0.5, 1.4, 1.0, -2.0, 10.0]      # Return home 2 - neutral
+            [base_pos, -0.55, 1.2, 1.0, -2.0, 10.0]      # Return home 2 - neutral
         ]
         
         # Scaled durations (base duration * 10 / acceleration)
@@ -132,7 +132,7 @@ class CloseAnimation(AnimationPlugin):
             [base_pos, -0.9, 1.5, 1.6, -1.8, 10.5],   # Begin fold - left to balance
             [base_pos, -1.1, 2.0, 1.7, -2.2, 10.0],   # Continue - more left
             [base_pos, -1.4, 2.0, 1.8, -0.8, 10.0],   # Final closed - right extreme to balance
-            [base_pos, -0.5, 1.4, 1.0, -2.0, 10.0]   # Go directly to home 2 (close) - neutral
+            [base_pos, -0.55, 1.2, 1.0, -2.0, 10.0]   # Go directly to home 2 (close) - neutral
         ]
         
         # Scaled durations (base duration * 10 / acceleration)
@@ -165,7 +165,7 @@ class StopAnimation(AnimationPlugin):
         keyframes = [
             [0.0, 0.3, 0.7, 0.3, -1.5, 14.0],     # Safe neutral - center
             [0.0, 0.5, 1.3, 1.4, -1.5, 12.0],     # Return home 1 - neutral
-            [0.0, -0.5, 1.4, 1.0, -2.0, 10.0]    # Return home 2 - neutral
+            [0.0, -0.55, 1.2, 1.0, -2.0, 10.0]    # Return home 2 - neutral
         ]
         
         durations = [0.71, 0.58, 1.3]  # Scaled for safety but still relatively quick

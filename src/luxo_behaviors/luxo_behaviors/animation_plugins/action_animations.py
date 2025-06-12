@@ -44,7 +44,7 @@ class CuriousLookAnimation(AnimationPlugin):
             [base_center+0.2, 0.5, 1.2, 0.7, -0.9, 17.0],    # Final examination - right to balance
             [base_center, 0.4, 0.8, 0.5, -1.5, 13.0],        # Return to center - neutral
             [base_center, 0.5, 1.3, 1.4, -1.5, 11.0],        # Return home 1 - neutral
-            [base_center, -0.5, 1.4, 1.0, -2.0, 10.0]       # Return home 2 - neutral
+            [base_center, -0.55, 1.2, 1.0, -2.0, 10.0]       # Return home 2 - neutral
         ]
         
         # Scaled durations (base duration * 10 / acceleration)
@@ -100,7 +100,7 @@ class ThinkingAnimation(AnimationPlugin):
             [base_pos-0.1, 0.2, 0.5, 0.7, -1.7, 14.0],     # Satisfied bounce - left
             [base_pos, 0.3, 0.7, 0.4, -1.5, 13.0],         # Final position - neutral
             [base_pos, 0.5, 1.3, 1.4, -1.5, 11.0],         # Return home 1 - neutral
-            [base_pos, -0.5, 1.4, 1.0, -2.0, 10.0]        # Return home 2 - neutral
+            [base_pos, -0.55, 1.2, 1.0, -2.0, 10.0]        # Return home 2 - neutral
         ]
         
         # Scaled durations (base duration * 10 / acceleration)
@@ -151,7 +151,7 @@ class StretchingAnimation(AnimationPlugin):
             [base_pos, 0.3, 0.75, 0.35, -1.7, 15.0],       # Small bounce - left
             [base_pos+0.1, 0.35, 0.8, 0.3, -1.4, 13.0],    # Final settled - slight left
             [base_pos, 0.5, 1.3, 1.4, -1.5, 11.0],         # Return home 1 - neutral
-            [base_pos, -0.5, 1.4, 1.0, -2.0, 10.0]        # Return home 2 - neutral
+            [base_pos, -0.55, 1.2, 1.0, -2.0, 10.0]        # Return home 2 - neutral
         ]
         
         # Scaled durations (base duration * 10 / acceleration)
@@ -196,7 +196,7 @@ class DancingAnimation(AnimationPlugin):
             [base_pos+0.2, 0.2, 0.5, 0.7, -1.5, 12.0],    # Hold finale - neutral
             [base_pos, 0.3, 0.7, 0.3, -1.5, 13.0],        # Return - neutral
             [base_pos, 0.5, 1.3, 1.4, -1.5, 11.0],        # Return home 1 - neutral
-            [base_pos, -0.5, 1.4, 1.0, -2.0, 10.0]       # Return home 2 - neutral
+            [base_pos, -0.55, 1.2, 1.0, -2.0, 10.0]       # Return home 2 - neutral
         ]
         
         # Scaled durations (base duration * 10 / acceleration)
@@ -244,7 +244,7 @@ class IdleAnimation(AnimationPlugin):
             [base_var - look_left, shoulder_var, elbow_var, wrist_var, roll_right, 15.0], # Look left with right tilt to balance
             [base_var + random.uniform(-0.05, 0.05), shoulder_var, elbow_var, wrist_var, -1.5, 12.0], # Final - neutral
             [0.0, 0.5, 1.3, 1.4, -1.5, 11.0],                                         # Return home 1 - neutral
-            [0.0, -0.5, 1.4, 1.0, -2.0, 10.0]                                        # Return home 2 - neutral
+            [0.0, -0.55, 1.2, 1.0, -2.0, 10.0]                                        # Return home 2 - neutral
         ]
         
         # Scaled durations (base duration * 10 / acceleration)
