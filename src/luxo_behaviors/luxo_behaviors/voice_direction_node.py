@@ -67,10 +67,10 @@ class VoiceDirectionNode(Node):
         self.debug_mode = True
         
         # Enhanced speech analysis parameters
-        self.speech_low_freq = 300
-        self.speech_high_freq = 3400
-        self.voice_energy_threshold = 0.4
-        self.spectral_centroid_range = (500, 2000)
+        self.speech_low_freq = 85  # Lowered from 300 to capture male fundamental frequencies
+        self.speech_high_freq = 4000  # Increased from 3400 for better harmonic coverage
+        self.voice_energy_threshold = 0.25  # Reduced from 0.4 to catch quieter male voices
+        self.spectral_centroid_range = (300, 2500)  # Lowered from (500, 2000) for male voices
         
         # Background noise calibration
         self.background_noise_energy = None
@@ -162,6 +162,11 @@ class VoiceDirectionNode(Node):
         
         # Add SNR tracking for compatibility
         self._last_snr = 0.0
+        
+        # Male voice detection enhancements
+        self.low_freq_emphasis_factor = 1.3  # Boost low frequencies for male voice detection
+        self.formant_tracking_enabled = True  # Enable formant analysis
+        self.pitch_adaptive_threshold = True  # Adapt thresholds based on detected pitch
         
         # Subscribe to robot state
         self.state_subscriber = self.create_subscription(
@@ -557,7 +562,7 @@ class VoiceDirectionNode(Node):
         return snr_db
 
     def analyze_speech_characteristics(self, audio_data):
-        """Analyze audio for speech-specific characteristics with background noise consideration"""
+        """Analyze audio for speech-specific characteristics with enhanced male voice detection"""
         # Convert to float for analysis
         audio_float = audio_data.astype(np.float32) / 32768.0
         
@@ -583,21 +588,34 @@ class VoiceDirectionNode(Node):
         self.current_snr = snr_db
         self._last_snr = snr_db  # Track for debug output
         
-        # Energy in speech frequency band
-        speech_energy = np.sum(fft_data[self.speech_mask[:len(fft_data)]]**2)
+        # Enhanced speech frequency analysis for male voices
+        freqs = self.freq_bins[:len(fft_data)]
+        speech_mask = (freqs >= self.speech_low_freq) & (freqs <= self.speech_high_freq)
+        speech_energy = np.sum(fft_data[speech_mask]**2)
         speech_ratio = speech_energy / total_energy if total_energy > 0 else 0
         
-        # Energy-based noise rejection using calibrated background (made more lenient)
+        # Additional low frequency analysis for male voices
+        low_freq_mask = (freqs >= 85) & (freqs <= 400)  # Male fundamental frequency range
+        low_freq_energy = np.sum(fft_data[low_freq_mask]**2)
+        low_freq_ratio = low_freq_energy / total_energy if total_energy > 0 else 0
+        
+        # Mid frequency analysis (male formant regions)
+        mid_freq_mask = (freqs >= 400) & (freqs <= 1500)
+        mid_freq_energy = np.sum(fft_data[mid_freq_mask]**2)
+        mid_freq_ratio = mid_freq_energy / total_energy if total_energy > 0 else 0
+        
+        # Energy-based noise rejection using calibrated background (more lenient for male voices)
         if self.is_calibrated and self.background_noise_energy is not None:
-            energy_above_background = current_energy > (self.background_noise_energy * self.noise_floor_multiplier)
-            snr_sufficient = snr_db >= self.snr_threshold
+            # Reduced noise floor multiplier for male voices which might be quieter
+            male_voice_noise_multiplier = self.noise_floor_multiplier * 0.8
+            energy_above_background = current_energy > (self.background_noise_energy * male_voice_noise_multiplier)
+            snr_sufficient = snr_db >= (self.snr_threshold - 1.0)  # Reduce SNR requirement by 1dB
         else:
             # Fallback to original thresholds if not calibrated or background_noise_energy is None
             energy_above_background = True
             snr_sufficient = True
         
-        # Spectral centroid (brightness measure)
-        freqs = self.freq_bins[:len(fft_data)]
+        # Spectral centroid (brightness measure) - adjusted for male voices
         spectral_centroid = np.sum(freqs * fft_data**2) / np.sum(fft_data**2) if np.sum(fft_data**2) > 0 else 0
         
         # Spectral rolloff (frequency below which 85% of energy is contained)
@@ -610,14 +628,23 @@ class VoiceDirectionNode(Node):
         zero_crossings = np.sum(np.diff(np.sign(audio_float)) != 0)
         zcr = zero_crossings / len(audio_float)
         
-        # Voice classification criteria (more lenient - matching standalone)
+        # Enhanced voice classification criteria for male voices
         criteria = {
             'speech_energy': speech_ratio >= self.voice_energy_threshold,
+            'low_freq_content': low_freq_ratio >= 0.1,  # Male voices have significant low frequency content
+            'mid_freq_content': mid_freq_ratio >= 0.2,  # Male formant regions
             'spectral_centroid': self.spectral_centroid_range[0] <= spectral_centroid <= self.spectral_centroid_range[1],
-            'spectral_rolloff': spectral_rolloff <= 4500,
-            'zero_crossing': 0.01 <= zcr <= 0.3,
-            'energy_level': total_energy > 1e-6,
+            'spectral_rolloff': spectral_rolloff <= 5000,  # Increased from 4500
+            'zero_crossing': 0.005 <= zcr <= 0.35,  # Expanded range for male voices
+            'energy_level': total_energy > 5e-7,  # Reduced threshold for quieter male voices
         }
+        
+        # Male voice boost: if low frequency content is strong, be more lenient
+        if low_freq_ratio > 0.15:
+            criteria['male_voice_boost'] = True
+            # Relax some other criteria for likely male voices
+            if speech_ratio >= 0.15:  # Reduced threshold when male characteristics present
+                criteria['speech_energy'] = True
         
         # Add noise criteria as bonus, not requirements
         if energy_above_background:
@@ -625,42 +652,50 @@ class VoiceDirectionNode(Node):
         if snr_sufficient:
             criteria['snr_sufficient'] = True
         
-        # Calculate voice confidence
+        # Calculate voice confidence with male voice adjustments
         passed_criteria = sum(criteria.values())
         total_criteria = len(criteria)
         voice_confidence = passed_criteria / total_criteria
         
-        # Additional noise rejection (more lenient)
-        # High frequency noise detection
-        high_freq_mask = freqs > 4000
+        # Boost confidence for male voice characteristics
+        if low_freq_ratio > 0.12 and mid_freq_ratio > 0.15:
+            voice_confidence = min(1.0, voice_confidence * 1.15)  # 15% boost for male characteristics
+        
+        # Additional noise rejection (more lenient for male voices)
+        # High frequency noise detection - adjusted for male voices
+        high_freq_mask = freqs > 3500  # Reduced from 4000
         if len(high_freq_mask) > 0:
             high_freq_energy = np.sum(fft_data[high_freq_mask]**2)
             high_freq_ratio = high_freq_energy / total_energy if total_energy > 0 else 0
             
-            # If too much high frequency content, likely noise
-            if high_freq_ratio > 0.3:
-                voice_confidence *= 0.5
+            # If too much high frequency content, likely noise (but be more lenient)
+            if high_freq_ratio > 0.4:  # Increased from 0.3
+                voice_confidence *= 0.6  # Less penalty than before (0.6 vs 0.5)
         
         # Sudden energy spikes (like paper crumpling) have different characteristics
         if spectral_rolloff > 6000 and zcr > 0.5:
-            voice_confidence *= 0.2  # Likely broadband noise
+            voice_confidence *= 0.3  # Likely broadband noise
         
-        # Boost confidence if SNR is very high
-        if snr_db > 12.0:  # Very clear signal
+        # Boost confidence if SNR is good (more lenient for male voices)
+        if snr_db > 10.0:  # Reduced from 12.0
             voice_confidence = min(1.0, voice_confidence * 1.2)
-        elif snr_db < 3.0:  # Very poor signal
-            voice_confidence *= 0.5
+        elif snr_db < 2.0:  # Reduced from 3.0
+            voice_confidence *= 0.6  # Less penalty (0.6 vs 0.5)
         
-        # More lenient final decision - matching standalone
-        base_voice_detection = voice_confidence >= 0.6
+        # More lenient final decision for male voices
+        base_voice_detection = voice_confidence >= 0.5  # Reduced from 0.6
+        
+        # Special case: if strong male voice characteristics, lower the threshold further
+        if low_freq_ratio > 0.15 and mid_freq_ratio > 0.2:
+            base_voice_detection = voice_confidence >= 0.4
         
         # Only apply strict noise filtering if we have very poor SNR or energy
         if self.is_calibrated and self.background_noise_energy is not None:
             # Allow voice if basic criteria pass, even with moderate noise
-            if snr_db < 0:  # Very poor SNR
+            if snr_db < -2:  # More lenient (-2 vs 0)
                 base_voice_detection = False
-            elif not energy_above_background and current_energy < (self.background_noise_energy * 0.8):
-                # Only reject if significantly below background
+            elif not energy_above_background and current_energy < (self.background_noise_energy * 0.6):
+                # More lenient energy threshold (0.6 vs 0.8)
                 base_voice_detection = False
         
         is_voice = base_voice_detection
@@ -669,6 +704,8 @@ class VoiceDirectionNode(Node):
             'is_voice': is_voice,
             'confidence': voice_confidence,
             'speech_ratio': speech_ratio,
+            'low_freq_ratio': low_freq_ratio,
+            'mid_freq_ratio': mid_freq_ratio,
             'spectral_centroid': spectral_centroid,
             'spectral_rolloff': spectral_rolloff,
             'zcr': zcr,
@@ -677,7 +714,7 @@ class VoiceDirectionNode(Node):
         }
     
     def is_speech_detected(self, mono_audio, chunk_data):
-        """Enhanced speech detection combining VAD, spectral analysis, and background noise calibration"""
+        """Enhanced speech detection with better male voice support"""
         # Basic VAD check
         vad_result = self.vad.is_speech(mono_audio, self.rate)
         
@@ -695,11 +732,17 @@ class VoiceDirectionNode(Node):
         preliminary_voice_detection = speech_analysis['is_voice']
         self.update_adaptive_background(audio_for_analysis, preliminary_voice_detection)
         
-        # If VAD says no speech, only override if spectral analysis is very confident
+        # Enhanced logic for male voices
+        # If VAD says no speech, override more easily for male voice characteristics
         if not vad_result:
-            return speech_analysis['confidence'] > 0.8
-        
-        # Combine VAD and spectral with more weight on VAD
+            # Check for male voice characteristics
+            has_male_characteristics = (
+                speech_analysis.get('low_freq_ratio', 0) > 0.12 and
+                speech_analysis.get('mid_freq_ratio', 0) > 0.15
+            )
+            
+            if has_male_characteristics:
+                return speech_analysis['confidence'] > 0.6  # Lower threshold for male voices
         spectral_confidence = np.mean(list(self.spectral_history)) if self.spectral_history else 0
         
         # Update spectral confidence for publishing
