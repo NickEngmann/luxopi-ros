@@ -178,6 +178,18 @@ class CollisionAvoidance:
         self.idle_animation_interval = random.uniform(10.0, 60.0)  # time between animations
         self.last_idle_animation_time = self.node.get_clock().now()
         
+        # Add idle head variation tracking
+        self.idle_head_variation_enabled = False  # Will be set by hardware interface
+        self.idle_head_variation_interval = 10.0  # Maximum interval - actual will be random 1.0 to this value
+        self.idle_head_base_rotation_range = 0.3
+        self.idle_head_look_up_range = 0.4
+        self.idle_head_look_down_range = 0.1
+        self.idle_head_variation_speed = 4.0
+        self.last_idle_head_variation_time = self.node.get_clock().now()
+        self.current_idle_head_target = None
+        self.idle_head_variation_active = False
+        self.idle_base_position = [0.0, -0.55, 1.2, 1.0, 2.0]  # Standard idle position
+        
         # Create action client for triggering animations
         self._idle_animation_client = ActionClient(
             self.node,
@@ -190,11 +202,22 @@ class CollisionAvoidance:
         self.node.declare_parameter('voice_follow_speed', 0.3)
         self.node.declare_parameter('voice_follow_deadzone', 15.0)
         self.node.declare_parameter('voice_follow_smoothing', 0.3)
+        # Add voice variation parameters
+        self.node.declare_parameter('voice_variation_enabled', True)
+        self.node.declare_parameter('voice_direction_tolerance', 5.0)
+        self.node.declare_parameter('voice_variation_interval', 2.0)
+        self.node.declare_parameter('voice_look_up_range', 1.0)  # How far up to look
+        self.node.declare_parameter('voice_look_down_range', 0.2)  # How far down to look
         
         self.voice_follow_enabled = self.node.get_parameter('enable_voice_following').value
         self.voice_follow_speed = self.node.get_parameter('voice_follow_speed').value
         self.voice_follow_deadzone = self.node.get_parameter('voice_follow_deadzone').value
         self.voice_follow_smoothing = self.node.get_parameter('voice_follow_smoothing').value
+        self.voice_variation_enabled = self.node.get_parameter('voice_variation_enabled').value
+        self.voice_direction_tolerance = self.node.get_parameter('voice_direction_tolerance').value
+        self.voice_variation_interval = self.node.get_parameter('voice_variation_interval').value
+        self.voice_look_up_range = self.node.get_parameter('voice_look_up_range').value
+        self.voice_look_down_range = self.node.get_parameter('voice_look_down_range').value
         
         # Voice tracking state
         self.last_voice_direction = None
@@ -202,6 +225,13 @@ class CollisionAvoidance:
         self.voice_influence = 0.0
         self.target_voice_angle = None
         self.voice_active = False
+        
+        # Voice variation tracking
+        self.voice_on_target_start_time = None
+        self.last_voice_variation_time = None
+        self.current_voice_variation = None
+        self.voice_neutral_position = [-0.55, 1.2, 1.0, -2.0, 10.0]  # Baseline position (excluding base)
+        self.voice_on_target_threshold = 3.0  # seconds to wait before starting variations
         
         # Create subscribers for voice data
         self.voice_direction_sub = self.node.create_subscription(
@@ -269,7 +299,7 @@ class CollisionAvoidance:
             self.voice_influence *= 0.8
     
     def voice_direction_callback(self, msg):
-        """Handle voice direction updates with intelligent wraparound"""
+        """Handle voice direction updates with intelligent wraparound and variation"""
         if not self.voice_follow_enabled:
             return
             
@@ -349,9 +379,102 @@ class CollisionAvoidance:
         # SEND COMMAND IMMEDIATELY with the calculated target
         self._send_voice_following_command()
 
-    
+    def _check_voice_on_target(self):
+        """Check if robot is pointing at voice direction and start variation timer"""
+        if not self.voice_variation_enabled or self.target_voice_angle is None:
+            return False
+            
+        current_base = self.current_joints[0] if self.current_joints else 0.0
+        angle_diff = abs(self._normalize_angle(self.target_voice_angle - current_base))
+        angle_diff_deg = np.rad2deg(angle_diff)
+        
+        current_time = self.node.get_clock().now()
+        
+        if angle_diff_deg <= self.voice_direction_tolerance:
+            # We're on target
+            if self.voice_on_target_start_time is None:
+                self.voice_on_target_start_time = current_time
+                self.node.get_logger().info(f"Voice on target - starting variation timer (diff: {angle_diff_deg:.1f}°)")
+            return True
+        else:
+            # We're not on target, reset timer
+            if self.voice_on_target_start_time is not None:
+                self.node.get_logger().debug(f"Voice off target - resetting timer (diff: {angle_diff_deg:.1f}°)")
+            self.voice_on_target_start_time = None
+            self.current_voice_variation = None
+            return False
+
+    def _should_add_voice_variation(self):
+        """Check if we should add variation to voice following"""
+        if not self.voice_variation_enabled:
+            return False
+            
+        if not self._check_voice_on_target():
+            return False
+            
+        current_time = self.node.get_clock().now()
+        
+        # Check if we've been on target long enough
+        if self.voice_on_target_start_time is None:
+            return False
+            
+        time_on_target = (current_time - self.voice_on_target_start_time).nanoseconds / 1e9
+        if time_on_target < self.voice_on_target_threshold:
+            return False
+        
+        # Check if enough time has passed since last variation
+        if self.last_voice_variation_time is not None:
+            time_since_variation = (current_time - self.last_voice_variation_time).nanoseconds / 1e9
+            if time_since_variation < self.voice_variation_interval:
+                return False
+        
+        return True
+
+    def _generate_voice_variation(self):
+        """Generate semi-random up/down movement for voice following"""
+        current_time = self.node.get_clock().now()
+        
+        # Generate random variation - bias towards looking up for face detection
+        # 70% chance to look up, 20% chance to look down, 10% chance to return to neutral
+        variation_type = random.random()
+        
+        if variation_type < 0.85:  # Look up (85% chance)
+            # Look up with some randomness - semi dramatic but not too much
+            shoulder_variation = random.uniform(0.2, self.voice_look_up_range)
+            elbow_variation = random.uniform(-0.2, 0.2)  # Small elbow adjustment
+            wrist_variation = random.uniform(-0.4, 0.0)  # Slight wrist adjustment to help with head angle
+            variation_description = "looking up"
+        elif variation_type < 0.95:  # Look down (10% chance)
+            # Look down slightly
+            shoulder_variation = random.uniform(-self.voice_look_down_range, -0.05)
+            elbow_variation = random.uniform(-0.05, 0.05)
+            wrist_variation = random.uniform(0.0, 0.1)
+            variation_description = "looking down"
+        else:  # Return to neutral (5% chance)
+            shoulder_variation = 0.0
+            elbow_variation = 0.0
+            wrist_variation = 0.0
+            variation_description = "returning to neutral"
+        
+        # Create varied position based on neutral
+        varied_position = self.voice_neutral_position.copy()
+        varied_position[0] += shoulder_variation  # Shoulder (index 1 in full array)
+        varied_position[1] += elbow_variation     # Elbow (index 2 in full array)
+        varied_position[2] += wrist_variation     # Wrist (index 3 in full array)
+        # Keep hand and acceleration the same
+        
+        self.current_voice_variation = varied_position
+        self.last_voice_variation_time = current_time
+        
+        self.node.get_logger().info(
+            f"Voice variation: {variation_description} "
+            f"(shoulder: {shoulder_variation:+.2f}, elbow: {elbow_variation:+.2f}, wrist: {wrist_variation:+.2f})"
+        )
+        
+        return varied_position
+
     def _send_voice_following_command(self):
-        """Send direct voice following command to target angle"""
+        """Send direct voice following command to target angle with optional variation"""
         if not self.voice_follow_enabled or self.voice_influence < 0.1:
             return
             
@@ -362,6 +485,25 @@ class CollisionAvoidance:
         voice_position = self.current_joints.copy()
         voice_position[0] = self.target_voice_angle  # Set base directly to target
         
+        # Check if we should add variation
+        if self._should_add_voice_variation():
+            variation = self._generate_voice_variation()
+            # Apply variation to joints 1-4 (shoulder, elbow, wrist, hand)
+            for i in range(1, min(5, len(voice_position))):
+                if i-1 < len(variation):
+                    voice_position[i] = variation[i-1]
+            self.node.get_logger().info("Applied voice following variation for face detection")
+        elif self.current_voice_variation is not None:
+            # Continue using current variation if we have one
+            for i in range(1, min(5, len(voice_position))):
+                if i-1 < len(self.current_voice_variation):
+                    voice_position[i] = self.current_voice_variation[i-1]
+        else:
+            # Use neutral position for non-base joints
+            for i in range(1, min(5, len(voice_position))):
+                if i-1 < len(self.voice_neutral_position):
+                    voice_position[i] = self.voice_neutral_position[i-1]
+        
         # Ensure we only have 5 joint positions, then add acceleration as 6th element
         if len(voice_position) > 5:
             voice_position = voice_position[:5]  # Truncate to 5 joints
@@ -370,31 +512,44 @@ class CollisionAvoidance:
         voice_position_with_accel = voice_position + [7.0]
         
         self.node.get_logger().info(
-            f"Sending DIRECT voice command: base from {np.rad2deg(self.current_joints[0]):.1f}° "
-            f"to {np.rad2deg(self.target_voice_angle):.1f}° (accel: 10)"
+            f"Sending voice command: base to {np.rad2deg(self.target_voice_angle):.1f}° "
+            f"with position: {[round(p, 2) for p in voice_position]}"
         )
         
         # Send the command with high priority
-        self.send_safe_joint_command(voice_position_with_accel, "Direct voice following")
+        self.send_safe_joint_command(voice_position_with_accel, "Voice following with variation")
         
         # Set this as a target override to prevent other systems from interfering
         self.target_override_active = True
         self.target_override_time = self.node.get_clock().now()
         self.target_override_joints = voice_position.copy()
-        self.target_override_reason = "Direct voice following"
+        self.target_override_reason = "Voice following with face detection"
         self.target_override_timeout = 3.0  # Short timeout for voice following
         
         # Update activity time
         self.last_activity_time = self.node.get_clock().now()
 
     def apply_voice_following(self, positions):
-        """Apply direct voice following to joint positions"""
+        """Apply direct voice following to joint positions with variation support"""
         if not self.voice_follow_enabled or self.voice_influence < 0.1:
+            # If no voice following, check if we should maintain idle head variation
+            if (self.idle_head_variation_active and 
+                self.current_idle_head_target and 
+                self.state_machine.is_in_state(LuxoState.IDLE)):
+                
+                # Continue using the idle head variation target
+                return self.current_idle_head_target.copy()
             return positions
             
         # Check if in escape mode or returning home - don't apply voice following
         if self.state_machine.is_in_state(LuxoState.ESCAPE_MODE, LuxoState.RETURNING_HOME):
             return positions
+        
+        # Clear any idle head variation when voice following starts
+        if self.idle_head_variation_active:
+            self.idle_head_variation_active = False
+            self.current_idle_head_target = None
+            self.node.get_logger().debug("Cleared idle head variation for voice following")
             
         # Check voice timeout
         if self.last_voice_time:
@@ -404,6 +559,8 @@ class CollisionAvoidance:
             if time_since_voice > 2.0:  # 2 second timeout
                 self.voice_influence = 0.0
                 self.target_voice_angle = None
+                self.voice_on_target_start_time = None
+                self.current_voice_variation = None
                 return positions
         
         # Apply DIRECT voice following - no gradual adjustment
@@ -413,14 +570,19 @@ class CollisionAvoidance:
             # Set base joint DIRECTLY to target angle
             adjusted_positions[0] = self.target_voice_angle
             
+            # Apply variation if we have one
+            if self.current_voice_variation is not None:
+                for i in range(1, min(5, len(adjusted_positions))):
+                    if i-1 < len(self.current_voice_variation):
+                        adjusted_positions[i] = self.current_voice_variation[i-1]
+            
             # Check if we've reached the target
             current_base = self.current_joints[0] if self.current_joints else 0.0
             angle_diff = abs(self._normalize_angle(self.target_voice_angle - current_base))
             
             if angle_diff < 0.1:  # Within ~6 degrees
-                self.target_voice_angle = None
-                self.voice_influence = 0.0  # Reset influence when reached
-                self.node.get_logger().info("Voice target reached, clearing voice following")
+                # Don't immediately clear - let variation system handle it
+                self.node.get_logger().debug("Voice target reached, maintaining for variation")
                 
             return adjusted_positions
             
@@ -1064,6 +1226,11 @@ class CollisionAvoidance:
                         self.returning_to_home_start_time = current_time
                         self.go_to_home_position("Extended idle timeout")
                         return
+                    
+                    # Check for idle head variation (only if no major idle animations are happening)
+                    elif (self._should_apply_idle_head_variation() and 
+                          time_since_last_animation > 5.0):  # Don't conflict with recent animations
+                        self.trigger_idle_head_variation()
             
             # Fast path: Check if there are any active collisions or we're in escape mode
             with self.collision_lock:
@@ -1502,7 +1669,7 @@ class CollisionAvoidance:
             return self.apply_voice_following(blended_target)
             
         # If override is still active and needed, use it
-        # VOICE FOLLOWING ADDITION: Apply voice following to the override joints
+        # VOICE FOLLOWING ADDITION: Apply voice following to the target override joints
         return self.apply_voice_following(self.target_override_joints)
     
     def apply_safety_limits(self, positions):
@@ -2005,6 +2172,12 @@ class CollisionAvoidance:
                 self.node.get_logger().warn("Animation action server not available for idle animation")
                 return
             
+            # Clear any active idle head variation
+            if self.idle_head_variation_active:
+                self.idle_head_variation_active = False
+                self.current_idle_head_target = None
+                self.node.get_logger().debug("Cleared idle head variation for animation")
+            
             # Select a random animation, avoiding the last one
             available_animations = [a for a in self.idle_animations if a != self.last_idle_animation]
             if not available_animations:
@@ -2159,7 +2332,7 @@ class CollisionAvoidance:
             # Escape to the LEFT (negative rotation) with limit awareness
             if at_max_limit and self.enable_base_wraparound:
                 new_position[0] = self.base_min_limit + 0.3
-                self.node.get_logger().warn("Right escape: wraparound to min limit")
+                self.node.get_logger().warn("Right escape: wraparound to min side")
             else:
                 new_position[0] -= 0.8 * escape_magnitude
             new_position[1] += 0.3 * escape_magnitude  # Pull back
@@ -2287,3 +2460,135 @@ class CollisionAvoidance:
             self.node.get_logger().error(f"Error publishing movement source: {e}")
             import traceback
             self.node.get_logger().error(f"Stack trace: {traceback.format_exc()}")
+    
+    def trigger_idle_head_variation(self):
+        """Trigger subtle head movements during idle periods."""
+        try:
+            # Don't trigger if not enabled or not in IDLE state
+            if not self.idle_head_variation_enabled or not self.state_machine.is_in_state(LuxoState.IDLE):
+                return
+                
+            # Don't interfere with voice following
+            if (hasattr(self, 'voice_active') and self.voice_active) or (self.voice_influence > 0.1):
+                return
+                
+            # Don't interfere with collision avoidance
+            if any(status['active'] for status in self.collision_status.values()):
+                return
+            
+            current_time = self.node.get_clock().now()
+            
+            # Generate a subtle head variation target
+            variation_target = self._generate_idle_head_variation()
+            
+            if variation_target:
+                self.current_idle_head_target = variation_target
+                self.idle_head_variation_active = True
+                self.last_idle_head_variation_time = current_time
+                
+                # Ensure we only have exactly 5 joint positions
+                if len(variation_target) > 5:
+                    variation_target = variation_target[:5]
+                
+                # Create target with acceleration - use list() + [acceleration] to avoid repeated concatenation
+                target_with_accel = list(variation_target) + [self.idle_head_variation_speed]
+                
+                # Send the gentle movement command
+                self.send_safe_joint_command(target_with_accel, "Idle head variation")
+                
+                # Set a gentle override to maintain the movement (without acceleration for internal tracking)
+                self.target_override_active = True
+                self.target_override_time = current_time
+                self.target_override_joints = variation_target.copy()
+                self.target_override_reason = "Idle head variation"
+                self.target_override_timeout = 2.0  # Short timeout for gentle movements
+                
+                self.node.get_logger().info(f"Applied idle head variation: {[round(p, 2) for p in variation_target]}")
+                
+        except Exception as e:
+            self.node.get_logger().error(f"Error in idle head variation: {e}")
+    
+    def _generate_idle_head_variation(self):
+        """Generate a subtle head movement variation based on idle position."""
+        try:
+            # Start with the CURRENT position, not the base idle position
+            variation = self.current_joints.copy()
+            
+            # Ensure we only work with 5 joints maximum
+            if len(variation) > 5:
+                variation = variation[:5]
+            
+            # Add subtle base rotation (looking left/right slightly) RELATIVE to current position
+            base_variation = random.uniform(-self.idle_head_base_rotation_range, self.idle_head_base_rotation_range)
+            variation[0] += base_variation  # Apply variation to current base position
+            
+            # For other joints, use the idle base position as reference but apply relative variations
+            # Add vertical look variation (primarily through shoulder adjustment)
+            # Bias towards looking up (70% chance) as it appears more alert/curious
+            look_type = random.random()
+            if look_type < 0.7:  # Look up
+                shoulder_variation = random.uniform(0.1, self.idle_head_look_up_range)
+                variation[1] = self.idle_base_position[1] - shoulder_variation  # More positive = looking up
+                variation_description = f"looking up (+{shoulder_variation:.2f})"
+            elif look_type < 0.9:  # Look down slightly
+                shoulder_variation = random.uniform(0.0, self.idle_head_look_down_range)
+                variation[1] = self.idle_base_position[1] + shoulder_variation  # More negative = looking down
+                variation_description = f"looking down (-{shoulder_variation:.2f})"
+            else:  # Stay neutral
+                variation[1] = self.idle_base_position[1]  # Use base idle position
+                variation_description = "staying neutral"
+            
+            # Use base idle position for elbow, wrist, hand with small variations
+            variation[2] = self.idle_base_position[2]  # Start with base idle elbow
+            variation[3] = self.idle_base_position[3]  # Start with base idle wrist
+            variation[4] = self.idle_base_position[4]  # Start with base idle hand
+            
+            # Add tiny variations to other joints for naturalness, but keep neck straighter
+            # Only add elbow variation 30% of the time to keep neck less crooked
+            if random.random() < 0.3:
+                variation[2] += random.uniform(-0.02, 0.02)  # Reduced elbow adjustment
+            # Only add wrist variation 20% of the time 
+            if random.random() < 0.2:
+                variation[3] += random.uniform(-0.01, 0.01)  # Reduced wrist adjustment
+            # Keep hand position stable
+            
+            # Ensure we return exactly 5 elements
+            variation = variation[:5]
+            
+            self.node.get_logger().info(
+                f"Generated idle head variation: base {base_variation:+.2f} (current: {np.rad2deg(self.current_joints[0]):.1f}° -> {np.rad2deg(variation[0]):.1f}°), {variation_description}"
+            )
+            
+            return variation
+            
+        except Exception as e:
+            self.node.get_logger().error(f"Error generating idle head variation: {e}")
+            return None
+    
+    def _should_apply_idle_head_variation(self):
+        """Check if we should apply idle head variation."""
+        if not self.idle_head_variation_enabled:
+            return False
+            
+        # Only in IDLE state
+        if not self.state_machine.is_in_state(LuxoState.IDLE):
+            return False
+            
+        # Don't interfere with voice following
+        if (hasattr(self, 'voice_active') and self.voice_active) or (self.voice_influence > 0.1):
+            return False
+            
+        # Don't interfere with active collisions
+        if any(status['active'] for status in self.collision_status.values()):
+            return False
+            
+        # Don't interfere with returning to home
+        if self.target_override_active and "home" in self.target_override_reason.lower():
+            return False
+            
+        current_time = self.node.get_clock().now()
+        time_since_last_variation = (current_time - self.last_idle_head_variation_time).nanoseconds / 1e9
+        
+        # Check if enough time has passed - use random interval between 1.0 and max interval
+        random_interval = random.uniform(2.0, self.idle_head_variation_interval)
+        return time_since_last_variation > random_interval

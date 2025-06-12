@@ -76,9 +76,23 @@ class RoArmHardwareInterface(Node):
         # Idle animation parameters
         self.declare_parameter('enable_idle_animations', True)
         self.declare_parameter('idle_animation_min_interval', 10.0)
-        self.declare_parameter('idle_animation_max_interval', 30.0)
+        self.declare_parameter('idle_animation_max_interval', 20.0)
         self.declare_parameter('idle_time_before_animation', 5.0)
         
+        # Add idle head variation parameters
+        self.declare_parameter('enable_idle_head_variation', True)
+        self.declare_parameter('idle_head_variation_interval', 8.0)  # Time between subtle movements
+        self.declare_parameter('idle_head_base_rotation_range', 0.3)  # Max base rotation in radians
+        self.declare_parameter('idle_head_look_up_range', 0.7)  # How much to look up (shoulder adjustment)
+        self.declare_parameter('idle_head_look_down_range', 0.2)  # How much to look down
+        self.declare_parameter('idle_head_variation_speed', 5.0)  # Acceleration for head movements (reduced from 8.0)
+        self.enable_idle_head_variation = self.get_parameter('enable_idle_head_variation').value
+        self.idle_head_variation_interval = self.get_parameter('idle_head_variation_interval').value
+        self.idle_head_base_rotation_range = self.get_parameter('idle_head_base_rotation_range').value
+        self.idle_head_look_up_range = self.get_parameter('idle_head_look_up_range').value
+        self.idle_head_look_down_range = self.get_parameter('idle_head_look_down_range').value
+        self.idle_head_variation_speed = self.get_parameter('idle_head_variation_speed').value
+
         # Get parameters
         self.serial_port = self.get_parameter('serial_port').value
         self.baud_rate = self.get_parameter('baud_rate').value
@@ -227,6 +241,14 @@ class RoArmHardwareInterface(Node):
                 self.get_parameter('idle_animation_min_interval').value,
                 self.get_parameter('idle_animation_max_interval').value
             )
+            
+            # Pass idle head variation parameters to collision avoidance
+            self.collision_avoidance.idle_head_variation_enabled = self.enable_idle_head_variation
+            self.collision_avoidance.idle_head_variation_interval = self.idle_head_variation_interval
+            self.collision_avoidance.idle_head_base_rotation_range = self.idle_head_base_rotation_range
+            self.collision_avoidance.idle_head_look_up_range = self.idle_head_look_up_range
+            self.collision_avoidance.idle_head_look_down_range = self.idle_head_look_down_range
+            self.collision_avoidance.idle_head_variation_speed = self.idle_head_variation_speed
             
             # Import and create animation command server with collision avoidance
             try:
