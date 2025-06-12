@@ -215,9 +215,9 @@ class CameraFramebufferDisplay:
         
         # Emotion to mood mapping
         self.emotion_moods = {
-            'happy': ('->', 'DETECTING JOY'),
-            'sad': ('->', 'SENSING SADNESS'),
-            'surprise': ('->', 'FEELING SURPRISE'),
+            'happy': ('-', 'DETECTING JOY'),
+            'sad': ('-', 'SENSING SADNESS'),
+            'surprise': ('-', 'FEELING SURPRISE'),
             'anger': ('!', 'READING TENSION'),
             'neutral': ('-', 'NEUTRAL'),
             None: ('?', 'NO FACE DETECTED')
