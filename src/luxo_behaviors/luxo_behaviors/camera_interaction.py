@@ -168,10 +168,22 @@ class CameraInteraction(Node):
         # Track last emotion detection time
         self.last_emotion_detection_time = None
 
-        # NEW: Track when any animation completes (not just emotion-triggered ones)
-        self.last_any_animation_end_time = self.get_clock().now()
+        # Track emotion display timeout
+        self.declare_parameter('emotion_display_timeout', 3.0)
+        self.emotion_display_timeout = self.get_parameter('emotion_display_timeout').get_parameter_value().double_value
         
-        # NEW: Minimum delay after ANY animation before allowing emotion-triggered animations
+        # Track animation emotion timeout (longer than display timeout)
+        self.declare_parameter('animation_emotion_timeout', 5.0)
+        self.animation_emotion_timeout = self.get_parameter('animation_emotion_timeout').get_parameter_value().double_value
+        
+        # Track when emotion was last displayed
+        self.last_emotion_display_time = self.get_clock().now()
+        self.displayed_emotion = None
+
+        # Track when any animation completes (not just emotion-triggered ones)
+        self.last_any_animation_end_time = self.get_clock().now()
+
+        # Minimum delay after ANY animation before allowing emotion-triggered animations
         self.declare_parameter('post_animation_delay', 3.0)
         self.post_animation_delay = self.get_parameter('post_animation_delay').get_parameter_value().double_value
 
@@ -441,12 +453,52 @@ class CameraInteraction(Node):
             except Exception as e:
                 self.get_logger().error(f"Error in display update thread: {e}")
 
+    def get_current_display_emotion(self):
+        """Get the emotion that should currently be displayed, handling timeouts"""
+        current_time = self.get_clock().now()
+        
+        # Check if we have an active animation
+        animation_active = bool(self.current_animation_name)
+        
+        with self.data_lock:
+            # If no emotion was ever detected, return neutral
+            if not self.last_emotion_detection_time:
+                return "neutral"
+            
+            # Calculate time since last emotion detection
+            time_since_detection = (current_time - self.last_emotion_detection_time).nanoseconds / 1e9
+            
+            # If animation is active, use longer timeout
+            if animation_active:
+                timeout = self.animation_emotion_timeout
+                # During animation, show the emotion that triggered the animation
+                if hasattr(self, 'last_emotion') and self.last_emotion:
+                    current_emotion = self.last_emotion
+                else:
+                    current_emotion = self.displayed_emotion or "neutral"
+            else:
+                timeout = self.emotion_display_timeout
+                current_emotion = self.displayed_emotion or "neutral"
+            
+            # Check if emotion has timed out
+            if time_since_detection > timeout:
+                # Reset to neutral if timed out
+                if self.displayed_emotion != "neutral":
+                    self.displayed_emotion = "neutral"
+                    self.get_logger().debug(f"Emotion display timed out after {time_since_detection:.1f}s, showing neutral")
+                return "neutral"
+            else:
+                return current_emotion
+
     def _update_framebuffer_display_threaded(self, frame, emotion, distance, face_bboxes):
         """Thread-safe framebuffer display update"""
         try:
             # Get animation and state info (thread-safe)
             animation_name = self.current_animation_name
             state = self.current_state
+            
+            # Get the emotion that should be displayed (with timeout handling)
+            display_emotion = self.get_current_display_emotion()
             
             # Collect voice debug info
             voice_info = {
@@ -467,7 +519,7 @@ class CameraInteraction(Node):
             # Update display with all info including joint states and lamp status
             self.framebuffer_display.update_display(
                 frame, 
-                emotion=emotion, 
+                emotion=display_emotion,  # Use timeout-aware emotion
                 distance=distance,
                 face_bboxes=face_bboxes,
                 animation_name=animation_name,
@@ -1058,6 +1110,9 @@ class CameraInteraction(Node):
             with self.data_lock:
                 self.latest_emotion = emotion_name
                 self.last_emotion_detection_time = timestamp
+                # Update display tracking when we detect a new emotion
+                self.displayed_emotion = emotion_name
+                self.last_emotion_display_time = timestamp
 
             # Always publish current emotion for monitoring/debugging
             emotion_msg = String()
@@ -1335,7 +1390,7 @@ class CameraInteraction(Node):
         if (len(self.emotion_buffer) > 0 and 
                 ((current_time - self.emotion_buffer_start_time).nanoseconds / 1e9) >= self.emotion_buffer_duration):
             
-            # NEW: Early check if we can trigger animations at all
+            # Early check if we can trigger animations at all
             if not self._can_trigger_emotion_animation():
                 self.get_logger().debug("Clearing emotion buffer - cannot trigger animation right now")
                 # Reset the buffer and start time
@@ -1386,7 +1441,7 @@ class CameraInteraction(Node):
                 
                 # Only trigger if dominant enough (using configurable threshold)
                 if dominant_percentage >= self.emotion_threshold:
-                    # NEW: Double-check we can still trigger (state might have changed)
+                    # Double-check we can still trigger (state might have changed)
                     if not self._can_trigger_emotion_animation():
                         self.get_logger().debug("Animation conditions changed during processing - skipping trigger")
                     # Check if this emotion is too repetitive
@@ -1439,6 +1494,11 @@ class CameraInteraction(Node):
         # Update state with ROS2 time
         self.last_emotion = emotion
         self.last_animation_time = self.get_clock().now()
+        
+        # When triggering an animation, update display emotion tracking
+        with self.data_lock:
+            self.displayed_emotion = emotion
+            self.last_emotion_display_time = self.last_animation_time
         
         # Add to recent emotions history
         self.recent_emotions.append(emotion)
@@ -1546,6 +1606,10 @@ class CameraInteraction(Node):
             # Clear the active goal handle and update timing
             self._active_goal_handle = None
             self.last_any_animation_end_time = self.get_clock().now()
+            
+            # When animation ends, start the post-animation emotion timeout
+            with self.data_lock:
+                self.last_emotion_display_time = self.last_any_animation_end_time
             
         except Exception as e:
             self.get_logger().error(f"Error in result callback: {e}")
