@@ -269,7 +269,7 @@ class CollisionAvoidance:
             self.voice_influence *= 0.8
     
     def voice_direction_callback(self, msg):
-        """Handle voice direction updates with direct angle targeting"""
+        """Handle voice direction updates with intelligent wraparound"""
         if not self.voice_follow_enabled:
             return
             
@@ -293,26 +293,62 @@ class CollisionAvoidance:
         # Increase voice influence more aggressively
         self.voice_influence = min(1.0, self.voice_influence + 0.8)  # Very aggressive following
         
-        # Convert voice direction directly to target angle in radians
+        # Convert voice direction to target angle with intelligent wraparound
         target_angle_rad = np.deg2rad(self.last_voice_direction)
+        target_angle = self._normalize_angle(target_angle_rad)
         
-        # Normalize to [-pi, pi] range 
-        while target_angle_rad > np.pi:
-            target_angle_rad -= 2 * np.pi
-        while target_angle_rad <= -np.pi:
-            target_angle_rad += 2 * np.pi
-        
-        # Set target directly - no complex path calculation
-        self.target_voice_angle = target_angle_rad
+        # Check if we need wraparound due to base limits
+        if target_angle > self.base_max_limit:
+            if self.enable_base_wraparound:
+                # Calculate wraparound path
+                wraparound_target = target_angle - 2 * np.pi
+                if wraparound_target >= self.base_min_limit:
+                    self.target_voice_angle = wraparound_target
+                    self.node.get_logger().info(
+                        f"Voice at {self.last_voice_direction}° beyond max limit - "
+                        f"using wraparound to {np.rad2deg(wraparound_target):.1f}°"
+                    )
+                else:
+                    # Even wraparound doesn't work, clamp to nearest reachable
+                    self.target_voice_angle = self.base_max_limit
+                    self.node.get_logger().warn(
+                        f"Voice at {self.last_voice_direction}° unreachable - clamping to max limit"
+                    )
+            else:
+                self.target_voice_angle = self.base_max_limit
+                self.node.get_logger().warn(f"Voice beyond max limit - clamping (wraparound disabled)")
+        elif target_angle < self.base_min_limit:
+            if self.enable_base_wraparound:
+                # Calculate wraparound path
+                wraparound_target = target_angle + 2 * np.pi
+                if wraparound_target <= self.base_max_limit:
+                    self.target_voice_angle = wraparound_target
+                    self.node.get_logger().info(
+                        f"Voice at {self.last_voice_direction}° beyond min limit - "
+                        f"using wraparound to {np.rad2deg(wraparound_target):.1f}°"
+                    )
+                else:
+                    # Even wraparound doesn't work, clamp to nearest reachable
+                    self.target_voice_angle = self.base_min_limit
+                    self.node.get_logger().warn(
+                        f"Voice at {self.last_voice_direction}° unreachable - clamping to min limit"
+                    )
+            else:
+                self.target_voice_angle = self.base_min_limit
+                self.node.get_logger().warn(f"Voice beyond min limit - clamping (wraparound disabled)")
+        else:
+            # Target is within normal range
+            self.target_voice_angle = target_angle
         
         self.node.get_logger().info(
             f"Voice detected at {self.last_voice_direction:.1f}°, "
-            f"target radians: {target_angle_rad:.3f}, "
+            f"target angle: {np.rad2deg(self.target_voice_angle):.1f}°, "
             f"sending direct command (influence: {self.voice_influence:.2f})"
         )
         
-        # SEND COMMAND IMMEDIATELY - no deadzone, no complex logic
+        # SEND COMMAND IMMEDIATELY with the calculated target
         self._send_voice_following_command()
+
     
     def _send_voice_following_command(self):
         """Send direct voice following command to target angle"""

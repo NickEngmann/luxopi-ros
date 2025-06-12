@@ -192,17 +192,75 @@ class VoiceFollowingBehavior:
         # Full influence - we want aggressive following
         self.voice_influence = 1.0
         
-        # Convert voice direction DIRECTLY to target angle
+        # Convert voice direction to target angle
         voice_angle_rad = np.deg2rad(self.last_voice_direction)
+        target_angle = self._normalize_angle(voice_angle_rad)
         
-        # Normalize to robot's coordinate system [-pi, pi]
-        self.target_voice_angle = self._normalize_angle(voice_angle_rad)
+        # Get current base position
+        current_base = self.current_joints[0] if self.current_joints else 0.0
+        
+        # Check if we need wraparound due to base limits
+        base_min_limit = getattr(self.node, 'base_min_limit', np.deg2rad(-260.0))
+        base_max_limit = getattr(self.node, 'base_max_limit', np.deg2rad(135.0))
+        enable_wraparound = getattr(self.node, 'enable_base_wraparound', True)
+        
+        # Check if target is unreachable with direct path
+        if target_angle > base_max_limit:
+            if enable_wraparound:
+                # Calculate wraparound path: go to minimum angle that represents same direction
+                wraparound_target = target_angle - 2 * np.pi
+                if wraparound_target >= base_min_limit:
+                    self.target_voice_angle = wraparound_target
+                    self.node.get_logger().info(
+                        f"Voice at {self.last_voice_direction}° beyond max limit - "
+                        f"using wraparound to {np.rad2deg(wraparound_target):.1f}°"
+                    )
+                else:
+                    # Even wraparound doesn't work, clamp to nearest reachable
+                    self.target_voice_angle = base_max_limit
+                    self.node.get_logger().warn(
+                        f"Voice at {self.last_voice_direction}° unreachable even with wraparound - "
+                        f"clamping to max limit {np.rad2deg(base_max_limit):.1f}°"
+                    )
+            else:
+                # No wraparound allowed, clamp to max limit
+                self.target_voice_angle = base_max_limit
+                self.node.get_logger().warn(
+                    f"Voice at {self.last_voice_direction}° beyond max limit - "
+                    f"clamping to {np.rad2deg(base_max_limit):.1f}° (wraparound disabled)"
+                )
+        elif target_angle < base_min_limit:
+            if enable_wraparound:
+                # Calculate wraparound path: go to maximum angle that represents same direction
+                wraparound_target = target_angle + 2 * np.pi
+                if wraparound_target <= base_max_limit:
+                    self.target_voice_angle = wraparound_target
+                    self.node.get_logger().info(
+                        f"Voice at {self.last_voice_direction}° beyond min limit - "
+                        f"using wraparound to {np.rad2deg(wraparound_target):.1f}°"
+                    )
+                else:
+                    # Even wraparound doesn't work, clamp to nearest reachable
+                    self.target_voice_angle = base_min_limit
+                    self.node.get_logger().warn(
+                        f"Voice at {self.last_voice_direction}° unreachable even with wraparound - "
+                        f"clamping to min limit {np.rad2deg(base_min_limit):.1f}°"
+                    )
+            else:
+                # No wraparound allowed, clamp to min limit
+                self.target_voice_angle = base_min_limit
+                self.node.get_logger().warn(
+                    f"Voice at {self.last_voice_direction}° beyond min limit - "
+                    f"clamping to {np.rad2deg(base_min_limit):.1f}° (wraparound disabled)"
+                )
+        else:
+            # Target is within normal range
+            self.target_voice_angle = target_angle
         
         self.node.get_logger().info(
             f"Voice detected at {self.last_voice_direction}°, "
-            f"setting DIRECT target: {np.rad2deg(self.target_voice_angle):.1f}°, "
-            f"combined confidence: {self.combined_confidence:.2f}, "
-            f"SNR: {self.get_average_snr():.1f}dB"
+            f"target angle: {np.rad2deg(self.target_voice_angle):.1f}°, "
+            f"combined confidence: {self.combined_confidence:.2f}"
         )
 
     def voice_active_callback(self, msg):
