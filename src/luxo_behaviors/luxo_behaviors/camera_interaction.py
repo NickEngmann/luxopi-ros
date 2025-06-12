@@ -168,6 +168,13 @@ class CameraInteraction(Node):
         # Track last emotion detection time
         self.last_emotion_detection_time = None
 
+        # NEW: Track when any animation completes (not just emotion-triggered ones)
+        self.last_any_animation_end_time = self.get_clock().now()
+        
+        # NEW: Minimum delay after ANY animation before allowing emotion-triggered animations
+        self.declare_parameter('post_animation_delay', 3.0)
+        self.post_animation_delay = self.get_parameter('post_animation_delay').get_parameter_value().double_value
+
         # Add a history of recent emotions to avoid repetition
         self.declare_parameter('recent_emotion_history', 3)
         self.recent_emotions = deque(maxlen=self.get_parameter('recent_emotion_history').get_parameter_value().integer_value)  # Keep track of last N emotions that triggered animations
@@ -236,7 +243,7 @@ class CameraInteraction(Node):
             self.state_status_callback,
             10
         )
-        
+
         # Subscribe to voice topics for debugging
         self.voice_active_sub = self.create_subscription(
             Bool,
@@ -523,8 +530,14 @@ class CameraInteraction(Node):
         self.lamp_status_update_time = time.time()
 
     def animation_status_callback(self, msg):
-        """Update current animation name."""
+        """Update current animation name and track animation state changes."""
+        previous_animation = self.current_animation_name
         self.current_animation_name = msg.data if msg.data else None
+        
+        if previous_animation and not self.current_animation_name:
+            # Animation just ended
+            self.last_any_animation_end_time = self.get_clock().now()
+            self.get_logger().debug(f"Animation '{previous_animation}' ended, starting post-animation delay")
 
     def state_status_callback(self, msg):
         """Update current state machine state."""
@@ -1279,6 +1292,41 @@ class CameraInteraction(Node):
                 self.get_logger().warn(f"Camera appears to be disconnected after {self.consecutive_camera_errors} consecutive errors. Attempting reconnection...")
                 self.handle_camera_disconnection()
 
+    def _can_trigger_emotion_animation(self) -> bool:
+        """Check if we can trigger an emotion-based animation right now."""
+        current_time = self.get_clock().now()
+        
+        # Check if any animation is currently running
+        if self.current_animation_name:
+            self.get_logger().debug(f"Cannot trigger emotion animation: '{self.current_animation_name}' is currently running")
+            return False
+        
+        # Check if we're in a state that allows emotion animations
+        if self.current_state not in ['IDLE', 'EMOTION_REACTING']:
+            self.get_logger().debug(f"Cannot trigger emotion animation in state: {self.current_state}")
+            return False
+        
+        # Check post-animation delay (after ANY animation, not just emotion ones)
+        time_since_any_animation = (current_time - self.last_any_animation_end_time).nanoseconds / 1e9
+        if time_since_any_animation < self.post_animation_delay:
+            remaining_delay = self.post_animation_delay - time_since_any_animation
+            self.get_logger().debug(f"Post-animation delay active: {remaining_delay:.1f}s remaining")
+            return False
+        
+        # Check emotion-specific cooldown
+        time_since_last_emotion_animation = (current_time - self.last_animation_time).nanoseconds / 1e9
+        if time_since_last_emotion_animation < self.emotion_cooldown:
+            remaining_cooldown = self.emotion_cooldown - time_since_last_emotion_animation
+            self.get_logger().debug(f"Emotion cooldown active: {remaining_cooldown:.1f}s remaining")
+            return False
+        
+        # Check if there's an active goal handle
+        if self._active_goal_handle and not getattr(self._active_goal_handle, '_finished', False):
+            self.get_logger().debug("Cannot trigger emotion animation: active goal handle exists")
+            return False
+        
+        return True
+
     def process_emotion_buffer(self):
         """Process the emotion buffer and trigger an animation if conditions are met"""
         current_time = self.get_clock().now()
@@ -1286,6 +1334,14 @@ class CameraInteraction(Node):
         # Check if we've collected enough data and if the buffer duration has elapsed
         if (len(self.emotion_buffer) > 0 and 
                 ((current_time - self.emotion_buffer_start_time).nanoseconds / 1e9) >= self.emotion_buffer_duration):
+            
+            # NEW: Early check if we can trigger animations at all
+            if not self._can_trigger_emotion_animation():
+                self.get_logger().debug("Clearing emotion buffer - cannot trigger animation right now")
+                # Reset the buffer and start time
+                self.emotion_buffer.clear()
+                self.emotion_buffer_start_time = current_time
+                return
             
             # Get the current elapsed time since last animation
             time_since_last_animation = (current_time - self.last_animation_time).nanoseconds / 1e9
@@ -1330,26 +1386,24 @@ class CameraInteraction(Node):
                 
                 # Only trigger if dominant enough (using configurable threshold)
                 if dominant_percentage >= self.emotion_threshold:
-                    # Check cooldown period
-                    if time_since_last_animation > self.emotion_cooldown:
-                        # Check if this emotion is too repetitive
-                        if self._is_too_repetitive(dominant_emotion):
-                            self.get_logger().info(f"Emotion {dominant_emotion} is repetitive, but checking if we should override...")
-                            
-                            # If it's been a long time since last animation, allow it anyway
-                            if time_since_last_animation > self.emotion_cooldown * 2:
-                                self.get_logger().info(f"Overriding repetition check due to long idle time ({time_since_last_animation:.1f}s)")
-                                # Trigger the animation
-                                self.trigger_animation(dominant_emotion, avg_distance)
-                            else:
-                                self.get_logger().info(f"Skipping repetitive emotion: {dominant_emotion}")
-                        else:
-                            self.get_logger().info(f"Triggering animation for emotion: {dominant_emotion} ({dominant_percentage:.1f}%)")
+                    # NEW: Double-check we can still trigger (state might have changed)
+                    if not self._can_trigger_emotion_animation():
+                        self.get_logger().debug("Animation conditions changed during processing - skipping trigger")
+                    # Check if this emotion is too repetitive
+                    elif self._is_too_repetitive(dominant_emotion):
+                        self.get_logger().info(f"Emotion {dominant_emotion} is repetitive, but checking if we should override...")
+                        
+                        # If it's been a long time since last animation, allow it anyway
+                        if time_since_last_animation > self.emotion_cooldown * 2:
+                            self.get_logger().info(f"Overriding repetition check due to long idle time ({time_since_last_animation:.1f}s)")
                             # Trigger the animation
                             self.trigger_animation(dominant_emotion, avg_distance)
+                        else:
+                            self.get_logger().info(f"Skipping repetitive emotion: {dominant_emotion}")
                     else:
-                        remaining_cooldown = self.emotion_cooldown - time_since_last_animation
-                        self.get_logger().info(f"Still in cooldown period, {remaining_cooldown:.1f}s remaining")
+                        self.get_logger().info(f"Triggering animation for emotion: {dominant_emotion} ({dominant_percentage:.1f}%)")
+                        # Trigger the animation
+                        self.trigger_animation(dominant_emotion, avg_distance)
                 else:
                     self.get_logger().debug(f"No dominant emotion found, highest: {dominant_emotion} ({dominant_percentage:.1f}%)")
             
@@ -1489,8 +1543,9 @@ class CameraInteraction(Node):
                     f"Emotion-triggered animation failed: {animation_name} - {result.message}"
                 )
                 
-            # Clear the active goal handle
+            # Clear the active goal handle and update timing
             self._active_goal_handle = None
+            self.last_any_animation_end_time = self.get_clock().now()
             
         except Exception as e:
             self.get_logger().error(f"Error in result callback: {e}")

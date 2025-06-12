@@ -215,11 +215,11 @@ class CameraFramebufferDisplay:
         
         # Emotion to mood mapping
         self.emotion_moods = {
-            'happy': (':)', 'DETECTING JOY'),
-            'sad': (':(', 'SENSING SADNESS'),
-            'surprise': (':O', 'FEELING SURPRISE'),
-            'anger': ('>:(', 'READING TENSION'),
-            'neutral': (':3', 'CALM PRESENCE'),
+            'happy': ('->', 'DETECTING JOY'),
+            'sad': ('->', 'SENSING SADNESS'),
+            'surprise': ('->', 'FEELING SURPRISE'),
+            'anger': ('!', 'READING TENSION'),
+            'neutral': ('-', 'NUETRAL'),
             None: ('?', 'NO FACE DETECTED')
         }
         
@@ -724,7 +724,7 @@ class CameraFramebufferDisplay:
             cv2.circle(display_frame, (center_x, center_y), 8, self.colors['lux_gold'], -1)
             
             # === CAMERA INFO (bottom center, larger) ===
-            camera_info = "[CAM] Lux Vision | 1920x1080@30fps | @cyril.engman"
+            camera_info = "[CAM] Lux Vision | 1920x1080-30fps | @cyril.engman"
             info_size = cv2.getTextSize(camera_info, cv2.FONT_HERSHEY_SIMPLEX, 0.8, 2)[0]
             info_x = (display_frame.shape[1] - info_size[0]) // 2
             info_y = display_frame.shape[0] - 15
