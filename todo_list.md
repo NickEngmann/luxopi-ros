@@ -1,22 +1,18 @@
 **TOMORROW AT HOME**
-
-- [] print New brackets to protect the motor shafts 
 - [] Print a New Head
-- [] Bring more cable guards to protect all the cables
-
-**Tonight/Tomorrow at Resistor**
-- [] Touch Capabilities - Animations (Petting state)
-- [] CAMERA FOLLOWING
-- [] More Fine tuning
-- [] Move VOICE FOLLOWING Stuff into its own state instead of being inside Collision Avoidance. Collision Avoidance is becoming crazy large
-
-- [] When there is nonstop voice activity, we struggle to go back to IDLE
-
-- [] Continue fine tuning the different animation commands
-- [] Fix DEMA Adaptation Mode and Integrate with Touch
 
 **BEFORE THE SHOW**
 - [] Tighten the Joints
+
+**Refactor before the show knowing full well you could revert**
+- [] More Fine tuning/complete rehaul of the animations
+- [] Move VOICE FOLLOWING Stuff into its own state instead of being inside Collision Avoidance. Collision Avoidance is becoming crazy large
+
+**IS THIS STILL A PROBLEM/Stuff I probably won't get to**
+- [] When there is nonstop voice activity, we struggle to go back to IDLE
+- [] Fix DEMA Adaptation Mode and Integrate with Touch
+- [] CAMERA FOLLOWING
+
 
 # Later Priorities
 ## High Priority

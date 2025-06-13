@@ -344,6 +344,10 @@ class CameraInteraction(Node):
             'head': False
         }
         
+        # Petting event tracking
+        self.petting_active = False
+        self.last_petting_event_time = None
+        
         # Touch sensor subscribers
         self.touch_head_top_sub = self.create_subscription(
             UInt8, '/touch_sensors/head_top', 
@@ -360,6 +364,12 @@ class CameraInteraction(Node):
         self.touch_head_right_sub = self.create_subscription(
             UInt8, '/touch_sensors/head_right',
             lambda msg: self.update_touch_sensor('head_right', msg.data), 10
+        )
+        
+        # Subscribe to petting events from collision node
+        self.petting_events_sub = self.create_subscription(
+            String, '/collision/petting_events',
+            self.petting_events_callback, 10
         )
         
         # Collision severity subscribers - these tell us when collisions are detected
@@ -622,6 +632,32 @@ class CameraInteraction(Node):
         severity = msg.data.lower()
         is_collision = severity in ['warning', 'danger']
         self.collision_sensors['right'] = is_collision
+
+    def petting_events_callback(self, msg):
+        """Handle petting events from collision node"""
+        event_data = msg.data
+        current_time = self.get_clock().now()
+        
+        if "petting_started" in event_data:
+            # Extract pressure value if available
+            try:
+                pressure = int(event_data.split(':')[1]) if ':' in event_data else 0
+                self.get_logger().info(f"Petting event detected with pressure: {pressure}")
+            except (ValueError, IndexError):
+                pressure = 0
+                self.get_logger().info("Petting event detected")
+            
+            self.petting_active = True
+            self.last_petting_event_time = current_time
+            
+            # Trigger PETTING state display in framebuffer
+            if self.enable_framebuffer_display and hasattr(self, 'framebuffer_display'):
+                self.framebuffer_display.trigger_petting_display()
+                
+        elif "petting_stopped" in event_data:
+            self.get_logger().info("Petting stopped")
+            self.petting_active = False
+            # Note: We don't clear the display timer here - let it run for 5 seconds
 
     def _show_camera_not_found_message(self):
         """Show camera not found message on framebuffer"""

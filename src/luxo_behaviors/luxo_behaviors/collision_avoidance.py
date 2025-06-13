@@ -146,8 +146,7 @@ class CollisionAvoidance:
         self.last_petting_message_time = self.node.get_clock().now()
         self.petting_message_timeout = 5.0  # seconds - if no petting messages for this long, consider stopped
         self.petting_animations = [
-            'folded_wiggle', 'bouncy_wiggle', 
-            'sleepy_melt'
+            'folded_wiggle', 'sleepy_melt'
         ]
         
         # Subscribe to petting detection

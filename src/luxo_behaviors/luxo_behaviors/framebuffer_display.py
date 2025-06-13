@@ -197,6 +197,7 @@ class CameraFramebufferDisplay:
         self.petting_display_start_time = None
         self.petting_display_duration = 5.0  # Show PETTING state for 5 seconds
         self.last_actual_state = None
+        self.petting_triggered_externally = False  # Track if petting was triggered by event
         
         # State mapping for friendly descriptions
         self.state_descriptions = {
@@ -232,6 +233,13 @@ class CameraFramebufferDisplay:
         if not self.enabled:
             self.node.get_logger().warn("Framebuffer display could not be initialized")
     
+    def trigger_petting_display(self):
+        """Directly trigger PETTING state display from external event"""
+        current_time = time.time()
+        self.petting_display_start_time = current_time
+        self.petting_triggered_externally = True
+        self.node.get_logger().info("PETTING display triggered by petting event - will show for 5 seconds")
+    
     def get_friendly_state_info(self, state):
         """Get friendly state name and description with PETTING state display logic"""
         current_time = time.time()
@@ -240,10 +248,10 @@ class CameraFramebufferDisplay:
         if state != self.last_actual_state:
             self.last_actual_state = state
             
-            # If we're entering PETTING state, start the display timer
-            if state == "PETTING":
+            # If we're entering PETTING state via state machine, start the display timer
+            if state == "PETTING" and not self.petting_triggered_externally:
                 self.petting_display_start_time = current_time
-                self.node.get_logger().info("PETTING state triggered - will display for 5 seconds")
+                self.node.get_logger().info("PETTING state triggered via state machine - will display for 5 seconds")
         
         # Determine what state to display
         display_state = state
@@ -261,6 +269,7 @@ class CameraFramebufferDisplay:
             else:
                 # 5 seconds have passed, clear the timer and show actual state
                 self.petting_display_start_time = None
+                self.petting_triggered_externally = False
                 self.node.get_logger().debug("PETTING display duration expired - showing actual state")
         
         # Handle unknown/invalid states
@@ -395,7 +404,7 @@ class CameraFramebufferDisplay:
                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, self.colors['white'], 2)
         
         # Modern sensor indicators with consistent sizing
-        sensor_size = 35  # Larger sensors
+        sensor_size = 45  # Larger sensors
         sensor_spacing = 50
         
         # Head sensor (top center)
@@ -447,7 +456,7 @@ class CameraFramebufferDisplay:
                      right_color, -1 if right_active else 3)
         
         # Right sensor label
-        cv2.putText(frame, "RIGHT", (right_x + 2, right_y + 18), 
+        cv2.putText(frame, "RGHT", (right_x + 2, right_y + 18), 
                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, 
                    self.colors['black'] if right_active else right_color, 1)
         
@@ -526,8 +535,17 @@ class CameraFramebufferDisplay:
                         x1, y1, x2, y2 = bbox[0], bbox[1], bbox[2], bbox[3]
                         # Draw rounded rectangle around face (thicker)
                         cv2.rectangle(display_frame, (x1, y1), (x2, y2), self.colors['teal'], 4)
-                        # Add friendly "Face" label (larger font)
-                        cv2.putText(display_frame, "Human Friend", (x1, y1 - 15), 
+                        
+                        # Create label with emotion if not neutral
+                        if emotion and emotion != 'neutral':
+                            # Capitalize emotion for display
+                            emotion_display = emotion.capitalize()
+                            face_label = f"Human Friend - {emotion_display}"
+                        else:
+                            face_label = "Human Friend"
+                        
+                        # Add friendly face label with emotion (larger font)
+                        cv2.putText(display_frame, face_label, (x1, y1 - 15), 
                                    cv2.FONT_HERSHEY_SIMPLEX, 1.0, self.colors['teal'], 3)
             
             # === TOP HUD SECTION ===
@@ -604,11 +622,15 @@ class CameraFramebufferDisplay:
                     if remaining_time > 0:
                         # Draw heart icon next to PETTING state
                         heart_x = 45 + len(friendly_state) * 25  # Position after state text
-                        cv2.putText(display_frame, "♥", (heart_x, 190), cv2.FONT_HERSHEY_SIMPLEX, 1.6, self.colors['pink'], 3)
                         
                         # Show remaining time as a small indicator
                         time_text = f"({remaining_time:.1f}s)"
                         cv2.putText(display_frame, time_text, (heart_x + 40, 190), cv2.FONT_HERSHEY_SIMPLEX, 0.6, self.colors['pink'], 1)
+                        
+                        # Show trigger source for debugging
+                        trigger_source = "Event" if self.petting_triggered_externally else "State"
+                        source_text = f"[{trigger_source}]"
+                        cv2.putText(display_frame, source_text, (heart_x + 120, 190), cv2.FONT_HERSHEY_SIMPLEX, 0.5, self.colors['pink'], 1)
             
             # === EMOTION DISPLAY (left side, much larger panel with more spacing) ===
             emotion_face, emotion_text = self.emotion_moods.get(emotion, self.emotion_moods[None])
