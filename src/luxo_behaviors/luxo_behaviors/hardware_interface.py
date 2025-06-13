@@ -29,8 +29,8 @@ class RoArmHardwareInterface(Node):
         self.declare_parameter('hard_limit_distance', 8.0)   # cm
         self.declare_parameter('max_deceleration', 2.0)  # rad/s²
         self.declare_parameter('collision_recovery_timeout', 3.0)  # seconds
-        self.declare_parameter('idle_timeout_min', 3.0)  # Minimum idle timeout
-        self.declare_parameter('idle_timeout_max', 12.0)  # Maximum idle timeout
+        self.declare_parameter('idle_timeout_min', 5.0)  # Minimum idle timeout
+        self.declare_parameter('idle_timeout_max', 16.0)  # Maximum idle timeout
         
         # Additional parameters for proactive avoidance
         self.declare_parameter('avoidance_playfulness', 0.3)  # 0.0-1.0 random factor
@@ -77,15 +77,15 @@ class RoArmHardwareInterface(Node):
         self.declare_parameter('enable_idle_animations', True)
         self.declare_parameter('idle_animation_min_interval', 10.0)
         self.declare_parameter('idle_animation_max_interval', 20.0)
-        self.declare_parameter('idle_time_before_animation', 5.0)
+        self.declare_parameter('idle_time_before_animation', 6.0)
         
         # Add idle head variation parameters
         self.declare_parameter('enable_idle_head_variation', True)
-        self.declare_parameter('idle_head_variation_interval', 8.0)  # Time between subtle movements
+        self.declare_parameter('idle_head_variation_interval', 10.0)  # Time between subtle movements
         self.declare_parameter('idle_head_base_rotation_range', 0.3)  # Max base rotation in radians
         self.declare_parameter('idle_head_look_up_range', 0.7)  # How much to look up (shoulder adjustment)
         self.declare_parameter('idle_head_look_down_range', 0.2)  # How much to look down
-        self.declare_parameter('idle_head_variation_speed', 5.0)  # Acceleration for head movements (reduced from 8.0)
+        self.declare_parameter('idle_head_variation_speed', 3.5)  # Acceleration for head movements (reduced from 8.0)
         self.enable_idle_head_variation = self.get_parameter('enable_idle_head_variation').value
         self.idle_head_variation_interval = self.get_parameter('idle_head_variation_interval').value
         self.idle_head_base_rotation_range = self.get_parameter('idle_head_base_rotation_range').value

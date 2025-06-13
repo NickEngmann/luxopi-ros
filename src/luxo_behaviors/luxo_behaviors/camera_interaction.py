@@ -642,10 +642,10 @@ class CameraInteraction(Node):
             # Extract pressure value if available
             try:
                 pressure = int(event_data.split(':')[1]) if ':' in event_data else 0
-                self.get_logger().info(f"Petting event detected with pressure: {pressure}")
+                self.get_logger().info(f"Petting event detected with pressure: {pressure} - PINK FILTER ACTIVATED")
             except (ValueError, IndexError):
                 pressure = 0
-                self.get_logger().info("Petting event detected")
+                self.get_logger().info("Petting event detected - PINK FILTER ACTIVATED")
             
             self.petting_active = True
             self.last_petting_event_time = current_time
@@ -655,7 +655,7 @@ class CameraInteraction(Node):
                 self.framebuffer_display.trigger_petting_display()
                 
         elif "petting_stopped" in event_data:
-            self.get_logger().info("Petting stopped")
+            self.get_logger().info("Petting stopped - PINK FILTER WILL FADE")
             self.petting_active = False
             # Note: We don't clear the display timer here - let it run for 5 seconds
 

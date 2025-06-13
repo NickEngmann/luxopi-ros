@@ -510,6 +510,32 @@ class CameraFramebufferDisplay:
         status_text = "LISTENING" if active else "QUIET"
         cv2.putText(frame, status_text, (bar_x + 100, bar_y), cv2.FONT_HERSHEY_SIMPLEX, 0.6, self.colors['pink'], 1)
 
+    def apply_color_filter(self, frame, filter_type=None, intensity=0.3):
+        """Apply color filters to the camera frame"""
+        if filter_type is None:
+            return frame
+        
+        # Create a copy to avoid modifying the original
+        filtered_frame = frame.copy()
+        
+        # Create filter overlay
+        overlay = np.zeros_like(filtered_frame, dtype=np.uint8)
+        
+        if filter_type == 'pink':
+            # Pink filter for petting - soft pink overlay
+            overlay[:, :] = [158, 160, 255]  # Pink color in BGR
+        elif filter_type == 'red':
+            # Red filter for anger - strong red overlay
+            overlay[:, :] = [0, 0, 255]  # Red color in BGR
+        elif filter_type == 'orange':
+            # Orange filter for other strong emotions
+            overlay[:, :] = [0, 165, 255]  # Orange color in BGR
+        
+        # Apply the filter with specified intensity
+        cv2.addWeighted(filtered_frame, 1.0 - intensity, overlay, intensity, 0, filtered_frame)
+        
+        return filtered_frame
+
     def update_display(self, frame, emotion=None, distance=None, face_bboxes=None, 
                       animation_name=None, state=None, voice_info=None, 
                       system_metrics=None, touch_sensors=None, collision_sensors=None,
@@ -525,28 +551,68 @@ class CameraFramebufferDisplay:
             self.animation_time += dt
             self.last_update_time = current_time
             
-            # Create display frame
+            # === APPLY COLOR FILTERS TO CAMERA FRAME ===
             display_frame = frame.copy()
+            
+            # Determine which filter to apply based on state and animation
+            filter_type = None
+            filter_intensity = 0.3  # Default intensity
+            
+            # Check for petting state first (highest priority)
+            if (hasattr(self, 'petting_display_start_time') and 
+                self.petting_display_start_time is not None):
+                time_since_petting = current_time - self.petting_display_start_time
+                if time_since_petting <= self.petting_display_duration:
+                    filter_type = 'pink'
+                    # Fade the filter intensity as petting duration expires
+                    remaining_ratio = 1.0 - (time_since_petting / self.petting_display_duration)
+                    filter_intensity = 0.4 * remaining_ratio  # Stronger pink filter that fades
+            
+            # Check for anger-related animation (lower priority than petting)
+            elif animation_name and self._is_anger_animation(animation_name):
+                filter_type = 'red'
+                filter_intensity = 0.35  # Stronger red filter for anger animations
+                # Log when red filter is active
+                if not hasattr(self, '_last_red_filter_log') or current_time - self._last_red_filter_log > 2.0:
+                    self.node.get_logger().info(f"RED FILTER ACTIVATED - Animation: {animation_name}")
+                    self._last_red_filter_log = current_time
+            
+            # Apply the determined filter
+            if filter_type:
+                display_frame = self.apply_color_filter(display_frame, filter_type, filter_intensity)
             
             # Draw face bounding boxes with friendly styling (thicker lines)
             if face_bboxes:
                 for bbox in face_bboxes:
                     if len(bbox) >= 4:
                         x1, y1, x2, y2 = bbox[0], bbox[1], bbox[2], bbox[3]
+                        
+                        # Adjust bounding box color based on active filter
+                        bbox_color = self.colors['teal']  # Default
+                        if filter_type == 'red':
+                            bbox_color = self.colors['orange']  # Orange for anger animations
+                        elif filter_type == 'pink':
+                            bbox_color = self.colors['pink']   # Pink for petting
+                        
                         # Draw rounded rectangle around face (thicker)
-                        cv2.rectangle(display_frame, (x1, y1), (x2, y2), self.colors['teal'], 4)
+                        cv2.rectangle(display_frame, (x1, y1), (x2, y2), bbox_color, 4)
                         
                         # Create label with emotion if not neutral
                         if emotion and emotion != 'neutral':
                             # Capitalize emotion for display
                             emotion_display = emotion.capitalize()
-                            face_label = f"Human Friend - {emotion_display}"
+                            if filter_type == 'pink':
+                                face_label = "Being Petted! ♥"
+                            elif filter_type == 'red':
+                                face_label = f"Angry Animation: {animation_name}"
+                            else:
+                                face_label = f"Human Friend - {emotion_display}"
                         else:
                             face_label = "Human Friend"
                         
                         # Add friendly face label with emotion (larger font)
                         cv2.putText(display_frame, face_label, (x1, y1 - 15), 
-                                   cv2.FONT_HERSHEY_SIMPLEX, 1.0, self.colors['teal'], 3)
+                                   cv2.FONT_HERSHEY_SIMPLEX, 1.0, bbox_color, 3)
             
             # === TOP HUD SECTION ===
             
@@ -631,6 +697,10 @@ class CameraFramebufferDisplay:
                         trigger_source = "Event" if self.petting_triggered_externally else "State"
                         source_text = f"[{trigger_source}]"
                         cv2.putText(display_frame, source_text, (heart_x + 120, 190), cv2.FONT_HERSHEY_SIMPLEX, 0.5, self.colors['pink'], 1)
+                        
+                        # Add visual filter indicator
+                        filter_text = "[<3]"
+                        cv2.putText(display_frame, filter_text, (heart_x + 200, 190), cv2.FONT_HERSHEY_SIMPLEX, 0.4, self.colors['pink'], 1)
             
             # === EMOTION DISPLAY (left side, much larger panel with more spacing) ===
             emotion_face, emotion_text = self.emotion_moods.get(emotion, self.emotion_moods[None])
@@ -639,10 +709,19 @@ class CameraFramebufferDisplay:
             self.draw_rounded_panel(display_frame, (30, 280), (550, 380), self.colors['dark_gray'], 0.8)
             
             # Emotion emoji (much larger with more spacing)
-            cv2.putText(display_frame, emotion_face, (45, 340), cv2.FONT_HERSHEY_SIMPLEX, 2.0, self.colors['orange'], 4)
+            emotion_color = self.colors['orange']
+            if filter_type == 'red':
+                emotion_color = (0, 0, 255)  # Bright red for anger animations
+            
+            cv2.putText(display_frame, emotion_face, (45, 340), cv2.FONT_HERSHEY_SIMPLEX, 2.0, emotion_color, 4)
             
             # Emotion text (larger with more spacing)
-            cv2.putText(display_frame, emotion_text, (140, 340), cv2.FONT_HERSHEY_SIMPLEX, 1.2, self.colors['orange'], 2)
+            if filter_type == 'red' and animation_name:
+                emotion_text_display = f"ANGRY ANIMATION: {animation_name.upper()}"
+            else:
+                emotion_text_display = emotion_text
+            
+            cv2.putText(display_frame, emotion_text_display, (140, 340), cv2.FONT_HERSHEY_SIMPLEX, 1.2, emotion_color, 2)
             
             # === AUDIO VISUALIZATION (left side, much larger panel) ===
             if voice_info:
@@ -918,3 +997,22 @@ class CameraFramebufferDisplay:
             self.show_shutdown_message()
             # Then cleanup
             self.display.cleanup()
+
+    def _is_anger_animation(self, animation_name):
+        """Check if the given animation is an anger-related animation"""
+        if not animation_name:
+            return False
+        
+        # List of animations that should trigger red filter
+        anger_animations = [
+            'shake',      # Anger animation from emotion mapping
+            'startled',   # Can be triggered by anger
+            'think',      # Can be triggered by anger
+            'angry',      # Direct anger animation if it exists
+            'frustrated', # Frustration animation if it exists
+            'agitated'    # Agitation animation if it exists
+        ]
+        
+        # Check if current animation matches any anger-related animations
+        animation_lower = animation_name.lower()
+        return any(anger_anim in animation_lower for anger_anim in anger_animations)

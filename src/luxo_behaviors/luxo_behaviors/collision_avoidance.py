@@ -173,7 +173,7 @@ class CollisionAvoidance:
         # Add tracking for idle time with ROS time
         self.last_activity_time = self.node.get_clock().now()
         # Random idle timeout between 3-12 seconds
-        self.idle_timeout = random.uniform(3.0, 12.0)
+        self.idle_timeout = random.uniform(4.0, 16.0)
         self.idle_check_active = True  # Flag to enable/disable idle detection
         self.idle_check_last_log = self.node.get_clock().now()  # For log throttling
         
@@ -337,14 +337,8 @@ class CollisionAvoidance:
         self.last_voice_direction = msg.data
         self.last_voice_time = self.node.get_clock().now()
         
-        # IMPORTANT: Don't update activity time for voice following
-        # Voice following should not prevent idle animations from triggering
-        # Only update if we haven't had activity in a very long time (> 60 seconds)
-        current_time = self.last_voice_time
-        time_since_activity = (current_time - self.last_activity_time).nanoseconds / 1e9
-        if time_since_activity > 60.0:  # Only reset if idle for more than 1 minute
-            self.last_activity_time = current_time
-            self.node.get_logger().debug("Voice detected after long idle period - updating activity timestamp")
+        # REMOVED: Voice following should NOT reset idle timeout
+        # This allows idle animations to still trigger while voice following is active
         
         # Increase voice influence more aggressively
         self.voice_influence = min(1.0, self.voice_influence + 0.8)  # Very aggressive following
@@ -552,9 +546,8 @@ class CollisionAvoidance:
         self.target_override_reason = "Voice following with face detection"
         self.target_override_timeout = 3.0  # Short timeout for voice following
         
-        # Update activity time
-        self.last_activity_time = self.node.get_clock().now()
-
+        # REMOVED: Do not update activity time for voice following
+        # This prevents voice following from interfering with idle animation timing
     def apply_voice_following(self, positions):
         """Apply direct voice following to joint positions with variation support"""
         if not self.voice_follow_enabled or self.voice_influence < 0.1:
@@ -1429,42 +1422,47 @@ class CollisionAvoidance:
                 time_since_activity = (current_time - self.last_activity_time).nanoseconds / 1e9
                 time_since_last_animation = (current_time - self.last_idle_animation_time).nanoseconds / 1e9
                 
-                # VOICE FOLLOWING ADDITION: Don't trigger idle animations if voice is active or we're following voice
-                if (hasattr(self, 'voice_active') and self.voice_active) or (self.voice_influence > 0.1):
-                    self.last_activity_time = current_time
-                    self.node.get_logger().debug("Voice active or following - resetting idle timer")
-                    # Don't proceed with idle animation checks
-                else:
-                    # Check if we're already at or very close to home positions
-                    already_at_home2 = self._at_position(self.current_joints, self.home_position_2, self.home_position_tolerance)
+                # UPDATED: Voice following should not prevent idle animations
+                # Only log when voice is very active (multiple recent detections)
+                voice_very_active = False
+                if hasattr(self, 'voice_active') and self.voice_active and hasattr(self, 'last_voice_time'):
+                    time_since_voice = (current_time - self.last_voice_time).nanoseconds / 1e9
+                    voice_very_active = time_since_voice < 2.0  # Only consider very recent voice activity
+                
+                if voice_very_active:
+                    self.node.get_logger().debug("Very recent voice activity - allowing idle animations to coexist")
+                
+                # Check if we're already at or very close to home positions
+                already_at_home2 = self._at_position(self.current_joints, self.home_position_2, self.home_position_tolerance)
+                
+                # If we've been idle for a while and enough time has passed since last animation
+                if (time_since_activity > self.min_idle_time_before_animation and 
+                    time_since_last_animation > self.idle_animation_interval and
+                    self.state_machine.is_in_state(LuxoState.IDLE) and
+                    getattr(self, 'idle_animations_enabled', True)):  # Check if enabled
                     
-                    # If we've been idle for a while and enough time has passed since last animation
-                    if (time_since_activity > self.min_idle_time_before_animation and 
-                        time_since_last_animation > self.idle_animation_interval and
-                        self.state_machine.is_in_state(LuxoState.IDLE) and
-                        getattr(self, 'idle_animations_enabled', True)):  # Check if enabled
-                        
-                        self.node.get_logger().info(f"Device idle for {time_since_activity:.1f}s - triggering idle animation")
-                        
-                        # Trigger a random idle animation
-                        self.trigger_idle_animation()
-                        
-                        # Update timers
-                        self.last_idle_animation_time = current_time
-                        self.idle_animation_interval = random.uniform(10.0, 60.0)  # Random interval for next animation
-                        
-                    # Still check for extended idle to return home eventually
-                    elif time_since_activity > 120.0 and not already_at_home2:  # 2 minutes
-                        self.node.get_logger().info(f"Extended idle timeout - returning to home position")
-                        self.state_machine.transition_to(LuxoState.RETURNING_HOME)
-                        self.returning_to_home_start_time = current_time
-                        self.go_to_home_position("Extended idle timeout")
-                        return
+                    self.node.get_logger().info(f"Device idle for {time_since_activity:.1f}s - triggering idle animation (voice influence: {getattr(self, 'voice_influence', 0.0):.2f})")
                     
-                    # Check for idle head variation (only if no major idle animations are happening)
-                    elif (self._should_apply_idle_head_variation() and 
-                          time_since_last_animation > 5.0):  # Don't conflict with recent animations
-                        self.trigger_idle_head_variation()
+                    # Trigger a random idle animation
+                    self.trigger_idle_animation()
+                    
+                    # Update timers
+                    self.last_idle_animation_time = current_time
+                    self.idle_animation_interval = random.uniform(10.0, 60.0)  # Random interval for next animation
+                    
+                # Still check for extended idle to return home eventually
+                elif time_since_activity > 120.0 and not already_at_home2:  # 2 minutes
+                    self.node.get_logger().info(f"Extended idle timeout - returning to home position")
+                    self.state_machine.transition_to(LuxoState.RETURNING_HOME)
+                    self.returning_to_home_start_time = current_time
+                    self.go_to_home_position("Extended idle timeout")
+                    return
+                
+                # Check for idle head variation (only if no major idle animations are happening AND no active voice following)
+                elif (self._should_apply_idle_head_variation() and 
+                      time_since_last_animation > 5.0 and
+                      not (hasattr(self, 'voice_influence') and self.voice_influence > 0.1)):  # Don't conflict with voice following
+                    self.trigger_idle_head_variation()
             
             # Fast path: Check if there are any active collisions or we're in escape mode
             with self.collision_lock:
@@ -2407,11 +2405,16 @@ class CollisionAvoidance:
                 self.node.get_logger().warn("Animation action server not available for idle animation")
                 return
             
-            # Clear any active idle head variation
+            # UPDATED: Only clear idle head variation, not voice following
             if self.idle_head_variation_active:
                 self.idle_head_variation_active = False
                 self.current_idle_head_target = None
                 self.node.get_logger().debug("Cleared idle head variation for animation")
+            
+            # Allow voice following to continue during idle animations
+            current_voice_influence = getattr(self, 'voice_influence', 0.0)
+            if current_voice_influence > 0.1:
+                self.node.get_logger().info(f"Triggering idle animation while voice following active (influence: {current_voice_influence:.2f})")
             
             # Select a random animation, avoiding the last one
             available_animations = [a for a in self.idle_animations if a != self.last_idle_animation]
@@ -2695,7 +2698,7 @@ class CollisionAvoidance:
             self.node.get_logger().error(f"Error publishing movement source: {e}")
             import traceback
             self.node.get_logger().error(f"Stack trace: {traceback.format_exc()}")
-    
+
     def trigger_idle_head_variation(self):
         """Trigger subtle head movements during idle periods."""
         try:
@@ -2703,9 +2706,13 @@ class CollisionAvoidance:
             if not self.idle_head_variation_enabled or not self.state_machine.is_in_state(LuxoState.IDLE):
                 return
                 
-            # Don't interfere with voice following
-            if (hasattr(self, 'voice_active') and self.voice_active) or (self.voice_influence > 0.1):
-                return
+            # UPDATED: Don't interfere with ACTIVE voice following, but allow coexistence
+            # Only prevent if voice is very recently active (within last 1 second)
+            if hasattr(self, 'voice_active') and self.voice_active and hasattr(self, 'last_voice_time'):
+                time_since_voice = (self.node.get_clock().now() - self.last_voice_time).nanoseconds / 1e9
+                if time_since_voice < 1.0:  # Very recent voice activity
+                    self.node.get_logger().debug("Very recent voice activity - skipping idle head variation")
+                    return
                 
             # Don't interfere with collision avoidance
             if any(status['active'] for status in self.collision_status.values()):
@@ -2809,11 +2816,13 @@ class CollisionAvoidance:
         if not self.state_machine.is_in_state(LuxoState.IDLE):
             return False
             
-        # Don't interfere with voice following
-        if (hasattr(self, 'voice_active') and self.voice_active) or (self.voice_influence > 0.1):
-            return False
+        # Don't interfere with ACTIVE voice following, but allow coexistence
+        if hasattr(self, 'voice_active') and self.voice_active and hasattr(self, 'last_voice_time'):
+            time_since_voice = (self.node.get_clock().now() - self.last_voice_time).nanoseconds / 1e9
+            if time_since_voice < 1.0:  # Very recent voice activity
+                return False
             
-        # Don't interfere with active collisions
+        # Don't interfere with collision avoidance
         if any(status['active'] for status in self.collision_status.values()):
             return False
             
@@ -2825,5 +2834,5 @@ class CollisionAvoidance:
         time_since_last_variation = (current_time - self.last_idle_head_variation_time).nanoseconds / 1e9
         
         # Check if enough time has passed - use random interval between 1.0 and max interval
-        random_interval = random.uniform(2.0, self.idle_head_variation_interval)
+        random_interval = random.uniform(3.5, self.idle_head_variation_interval)
         return time_since_last_variation > random_interval
