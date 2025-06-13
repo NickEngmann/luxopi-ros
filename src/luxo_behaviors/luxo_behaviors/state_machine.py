@@ -15,6 +15,7 @@ class LuxoState(Enum):
     ESCAPE_MODE = auto()
     USER_CONTROL = auto()  # Dynamic adaptation mode
     EMOTION_REACTING = auto()
+    PETTING = auto()  # High-priority state for petting interactions
     ERROR = auto()
     INITIALIZING = auto()
     SHUTDOWN = auto()
@@ -80,13 +81,15 @@ class LuxoStateMachine:
         self.add_transition(LuxoState.IDLE, LuxoState.USER_CONTROL)
         self.add_transition(LuxoState.IDLE, LuxoState.EMOTION_REACTING)
         self.add_transition(LuxoState.IDLE, LuxoState.RETURNING_HOME)
+        self.add_transition(LuxoState.IDLE, LuxoState.PETTING)
         
         # From ANIMATING
         self.add_transition(LuxoState.ANIMATING, LuxoState.IDLE)
         self.add_transition(LuxoState.ANIMATING, LuxoState.VOICE_FOLLOWING)  # New: Can follow voice during animation
         self.add_transition(LuxoState.ANIMATING, LuxoState.COLLISION_AVOIDING)
         self.add_transition(LuxoState.ANIMATING, LuxoState.ESCAPE_MODE)
-        self.add_transition(LuxoState.ANIMATING, LuxoState.RETURNING_HOME) 
+        self.add_transition(LuxoState.ANIMATING, LuxoState.RETURNING_HOME)
+        self.add_transition(LuxoState.ANIMATING, LuxoState.PETTING)
         
         # New: From VOICE_FOLLOWING
         self.add_transition(LuxoState.VOICE_FOLLOWING, LuxoState.IDLE)
@@ -94,30 +97,43 @@ class LuxoStateMachine:
         self.add_transition(LuxoState.VOICE_FOLLOWING, LuxoState.COLLISION_AVOIDING)  # Voice following can be interrupted by collision
         self.add_transition(LuxoState.VOICE_FOLLOWING, LuxoState.ESCAPE_MODE)
         self.add_transition(LuxoState.VOICE_FOLLOWING, LuxoState.RETURNING_HOME)
+        self.add_transition(LuxoState.VOICE_FOLLOWING, LuxoState.PETTING)
         
         # From COLLISION_AVOIDING
         self.add_transition(LuxoState.COLLISION_AVOIDING, LuxoState.IDLE)
         self.add_transition(LuxoState.COLLISION_AVOIDING, LuxoState.ESCAPE_MODE)
         self.add_transition(LuxoState.COLLISION_AVOIDING, LuxoState.RETURNING_HOME)
+        self.add_transition(LuxoState.COLLISION_AVOIDING, LuxoState.PETTING)
         # Note: NO transition from COLLISION_AVOIDING to VOICE_FOLLOWING
         
         # From ESCAPE_MODE
         self.add_transition(LuxoState.ESCAPE_MODE, LuxoState.IDLE)
         self.add_transition(LuxoState.ESCAPE_MODE, LuxoState.RETURNING_HOME)
         self.add_transition(LuxoState.ESCAPE_MODE, LuxoState.COLLISION_AVOIDING)
+        self.add_transition(LuxoState.ESCAPE_MODE, LuxoState.PETTING)
         
         # From RETURNING_HOME
         self.add_transition(LuxoState.RETURNING_HOME, LuxoState.IDLE)
         self.add_transition(LuxoState.RETURNING_HOME, LuxoState.ANIMATING)
+        self.add_transition(LuxoState.RETURNING_HOME, LuxoState.PETTING)
         
         # From USER_CONTROL
         self.add_transition(LuxoState.USER_CONTROL, LuxoState.IDLE)
         self.add_transition(LuxoState.USER_CONTROL, LuxoState.COLLISION_AVOIDING)
+        self.add_transition(LuxoState.USER_CONTROL, LuxoState.PETTING)
         
         # From EMOTION_REACTING
         self.add_transition(LuxoState.EMOTION_REACTING, LuxoState.IDLE)
         self.add_transition(LuxoState.EMOTION_REACTING, LuxoState.VOICE_FOLLOWING)  # New: Can follow voice during emotion
         self.add_transition(LuxoState.EMOTION_REACTING, LuxoState.COLLISION_AVOIDING)
+        self.add_transition(LuxoState.EMOTION_REACTING, LuxoState.PETTING)
+        
+        # From PETTING - Can return to most states or continue petting
+        self.add_transition(LuxoState.PETTING, LuxoState.IDLE)
+        self.add_transition(LuxoState.PETTING, LuxoState.ANIMATING)
+        self.add_transition(LuxoState.PETTING, LuxoState.VOICE_FOLLOWING)
+        self.add_transition(LuxoState.PETTING, LuxoState.EMOTION_REACTING)
+        self.add_transition(LuxoState.PETTING, LuxoState.COLLISION_AVOIDING)  # Safety still takes priority
         
         # From ERROR - can transition to most states for recovery
         self.add_transition(LuxoState.ERROR, LuxoState.IDLE)

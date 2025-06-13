@@ -193,6 +193,11 @@ class CameraFramebufferDisplay:
         self.animation_time = 0
         self.last_update_time = time.time()
         
+        # PETTING state display tracking
+        self.petting_display_start_time = None
+        self.petting_display_duration = 5.0  # Show PETTING state for 5 seconds
+        self.last_actual_state = None
+        
         # State mapping for friendly descriptions
         self.state_descriptions = {
             'IDLE': 'Gently swaying, waiting...',
@@ -210,6 +215,7 @@ class CameraFramebufferDisplay:
             'LAMP_SHY': 'Hiding a bit, feeling bashful...',
             'LAMP_TRACKING': 'Following a human friend...',
             'LAMP_HAPPY': 'Glowing with happiness!',
+            'PETTING': 'Being petted - feeling loved!',
             'UNKNOWN': 'Initializing...'
         }
         
@@ -227,8 +233,38 @@ class CameraFramebufferDisplay:
             self.node.get_logger().warn("Framebuffer display could not be initialized")
     
     def get_friendly_state_info(self, state):
-        """Get friendly state name and description"""
-        if not state or state == "UNKNOWN":
+        """Get friendly state name and description with PETTING state display logic"""
+        current_time = time.time()
+        
+        # Track the actual state changes
+        if state != self.last_actual_state:
+            self.last_actual_state = state
+            
+            # If we're entering PETTING state, start the display timer
+            if state == "PETTING":
+                self.petting_display_start_time = current_time
+                self.node.get_logger().info("PETTING state triggered - will display for 5 seconds")
+        
+        # Determine what state to display
+        display_state = state
+        
+        # If we have a petting display timer active, check if we should still show PETTING
+        if self.petting_display_start_time is not None:
+            time_since_petting = current_time - self.petting_display_start_time
+            
+            if time_since_petting <= self.petting_display_duration:
+                # Still within the 5-second display window - show PETTING
+                display_state = "PETTING"
+                if hasattr(self, 'verbose_petting_log'):
+                    remaining_time = self.petting_display_duration - time_since_petting
+                    self.node.get_logger().debug(f"Displaying PETTING state ({remaining_time:.1f}s remaining)")
+            else:
+                # 5 seconds have passed, clear the timer and show actual state
+                self.petting_display_start_time = None
+                self.node.get_logger().debug("PETTING display duration expired - showing actual state")
+        
+        # Handle unknown/invalid states
+        if not display_state or display_state == "UNKNOWN":
             return "INITIALIZING", "Starting up systems..."
         
         # Convert technical states to friendly ones
@@ -237,10 +273,11 @@ class CameraFramebufferDisplay:
             'ANIMATING': 'LAMP_ANIMATING', 
             'EMOTION_REACTING': 'LAMP_EMOTION',
             'VOICE_FOLLOWING': 'LAMP_TRACKING',
-            'MANUAL_CONTROL': 'LAMP_FOCUSED'
+            'MANUAL_CONTROL': 'LAMP_FOCUSED',
+            'PETTING': 'PETTING'  # Keep PETTING as-is for special display
         }
         
-        friendly_state = friendly_states.get(state, state)
+        friendly_state = friendly_states.get(display_state, display_state)
         description = self.state_descriptions.get(friendly_state, 'Doing robot things...')
         
         return friendly_state, description
@@ -551,11 +588,27 @@ class CameraFramebufferDisplay:
                 # State label (larger font with more spacing)
                 cv2.putText(display_frame, "CURRENT STATE", (45, 150), cv2.FONT_HERSHEY_SIMPLEX, 0.8, self.colors['green'], 2)
                 
+                # Special coloring for PETTING state
+                state_color = self.colors['pink'] if friendly_state == 'PETTING' else self.colors['green']
+                
                 # State name with glow effect (larger font with more spacing)
-                cv2.putText(display_frame, friendly_state, (45, 190), cv2.FONT_HERSHEY_SIMPLEX, 1.6, self.colors['green'], 3)
+                cv2.putText(display_frame, friendly_state, (45, 190), cv2.FONT_HERSHEY_SIMPLEX, 1.6, state_color, 3)
                 
                 # State description (larger font with more spacing)
-                cv2.putText(display_frame, description, (45, 230), cv2.FONT_HERSHEY_SIMPLEX, 0.8, self.colors['gray'], 2)
+                description_color = self.colors['pink'] if friendly_state == 'PETTING' else self.colors['gray']
+                cv2.putText(display_frame, description, (45, 230), cv2.FONT_HERSHEY_SIMPLEX, 0.8, description_color, 2)
+                
+                # Add petting indicator if showing PETTING state
+                if friendly_state == 'PETTING' and self.petting_display_start_time is not None:
+                    remaining_time = self.petting_display_duration - (current_time - self.petting_display_start_time)
+                    if remaining_time > 0:
+                        # Draw heart icon next to PETTING state
+                        heart_x = 45 + len(friendly_state) * 25  # Position after state text
+                        cv2.putText(display_frame, "♥", (heart_x, 190), cv2.FONT_HERSHEY_SIMPLEX, 1.6, self.colors['pink'], 3)
+                        
+                        # Show remaining time as a small indicator
+                        time_text = f"({remaining_time:.1f}s)"
+                        cv2.putText(display_frame, time_text, (heart_x + 40, 190), cv2.FONT_HERSHEY_SIMPLEX, 0.6, self.colors['pink'], 1)
             
             # === EMOTION DISPLAY (left side, much larger panel with more spacing) ===
             emotion_face, emotion_text = self.emotion_moods.get(emotion, self.emotion_moods[None])

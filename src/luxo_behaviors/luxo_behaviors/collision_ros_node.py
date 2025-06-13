@@ -9,6 +9,9 @@ class CollisionNode(Node):
     def __init__(self):
         super().__init__('collision_node')
         
+        # Track startup time to prevent false positives
+        self._startup_time = self.get_clock().now()
+        
         # Set the proximity threshold for collision detection
         self.declare_parameter('proximity_threshold', 15)
         self.proximity_threshold = self.get_parameter('proximity_threshold').value
@@ -31,6 +34,11 @@ class CollisionNode(Node):
         self.prev_left_distance = float('inf')
         self.prev_right_distance = float('inf')
         self.prev_proximity = 0
+        
+        # Add petting state tracking to prevent spam
+        self.petting_currently_active = False
+        self.last_petting_publish_time = self.get_clock().now()
+        self.petting_publish_rate = 0.5  # seconds between petting messages when continuously pressed
         
         # Track last received data time for timeout detection
         self.last_proximity_time = self.get_clock().now()
@@ -153,6 +161,7 @@ class CollisionNode(Node):
         self.front_severity_pub = self.create_publisher(String, '/front_collision_severity', 10)
         self.left_severity_pub = self.create_publisher(String, '/left_collision_severity', 10)
         self.right_severity_pub = self.create_publisher(String, '/right_collision_severity', 10)
+        self.petting_event_pub = self.create_publisher(String, '/collision/petting_events', 10)
         
         # Service client for sensor configuration
         self.sensor_config_client = self.create_client(
@@ -176,6 +185,23 @@ class CollisionNode(Node):
         self.get_logger().info(f'Warning threshold: {self.warning_threshold} cm')
         
         self.get_logger().info('FSR touch sensor collision detection enabled')
+        
+        # Add startup delay timer to prevent initial false positives
+        self.startup_delay = 5.0  # seconds
+        self.startup_complete = False
+        self.startup_timer = self.create_timer(
+            self.startup_delay, 
+            self._complete_startup
+        )
+        
+        self.get_logger().info(f'Collision detection will be fully active after {self.startup_delay}s startup delay')
+    
+    def _complete_startup(self):
+        """Mark startup as complete and enable full collision detection."""
+        self.startup_complete = True
+        if hasattr(self, 'startup_timer'):
+            self.startup_timer.cancel()
+        self.get_logger().info('Startup complete - full collision detection active')
     
     def proximity_data_callback(self, msg):
         """Handle proximity data from I2C manager"""
@@ -324,10 +350,51 @@ class CollisionNode(Node):
                 self.prev_right_distance = self.current_right_distance
     
     def touch_head_top_callback(self, msg):
-        """Handle head top touch sensor data (no collision action)"""
+        """Handle head top touch sensor data - triggers petting behavior"""
         self.touch_sensors['head_top'] = msg.data
         self.last_touch_sensor_time['head_top'] = self.get_clock().now()
-        # Head top doesn't trigger collisions, just track the data
+        
+        # Don't process petting during startup period
+        if not self.startup_complete:
+            self.get_logger().debug(f"Ignoring head touch during startup: {msg.data}")
+            return
+        
+        current_time = self.get_clock().now()
+        
+        # Check for petting trigger (any pressure > 1)
+        if msg.data > 1:
+            # Only publish if we weren't already petting OR enough time has passed for rate limiting
+            time_since_last_publish = (current_time - self.last_petting_publish_time).nanoseconds / 1e9
+            
+            if not self.petting_currently_active:
+                # New petting session started
+                self.get_logger().info(f"Petting started on head top (pressure: {msg.data})")
+                self.petting_currently_active = True
+                self.last_petting_publish_time = current_time
+                
+                # Publish petting trigger
+                petting_msg = String()
+                petting_msg.data = f"petting_started:{msg.data}"
+                self.petting_event_pub.publish(petting_msg)
+                
+            elif time_since_last_publish > self.petting_publish_rate:
+                # Continue petting session, but rate limited
+                self.get_logger().debug(f"Petting continues (pressure: {msg.data})")
+                self.last_petting_publish_time = current_time
+                
+                # Publish continued petting (for intensity updates)
+                petting_msg = String()
+                petting_msg.data = f"petting_started:{msg.data}"
+                self.petting_event_pub.publish(petting_msg)
+        else:
+            # Petting stopped
+            if self.petting_currently_active:
+                self.get_logger().info("Petting stopped")
+                self.petting_currently_active = False
+                
+                petting_msg = String()
+                petting_msg.data = "petting_stopped:0"
+                self.petting_event_pub.publish(petting_msg)
     
     def touch_head_left_callback(self, msg):
         """Handle head left touch sensor data"""

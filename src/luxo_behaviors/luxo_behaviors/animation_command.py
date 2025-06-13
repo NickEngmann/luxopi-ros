@@ -226,7 +226,8 @@ class AnimationCommandActionServer(Node):
             'luxo_behaviors.animation_plugins.emotion_animations',
             'luxo_behaviors.animation_plugins.action_animations',
             'luxo_behaviors.animation_plugins.response_animations',
-            'luxo_behaviors.animation_plugins.idle_animations'
+            'luxo_behaviors.animation_plugins.idle_animations',
+            'luxo_behaviors.animation_plugins.petting_animations'
         ]
         
         for module_name in plugin_modules:

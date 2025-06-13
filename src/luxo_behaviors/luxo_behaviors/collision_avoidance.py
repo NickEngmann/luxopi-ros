@@ -32,6 +32,9 @@ class CollisionAvoidance:
         self.publish_actual_joint_states = publish_actual_joint_states_callback
         self.state_machine = state_machine
         
+        # Track startup time to prevent false petting detection
+        self._startup_time = self.node.get_clock().now()
+        
         # Load parameters from the node
         self.enable_collision_avoidance = node.get_parameter('enable_collision_avoidance').value
         self.soft_limit_distance = node.get_parameter('soft_limit_distance').value
@@ -130,6 +133,30 @@ class CollisionAvoidance:
         self.animation_allow_interruption = True
         self.animation_progress = 0.0
         self.animation_lock = threading.Lock()
+
+        # Petting behavior tracking
+        self.petting_active = False
+        self.petting_start_time = None
+        self.petting_intensity = 0
+        self.last_petting_animation_time = self.node.get_clock().now()
+        self.petting_animation_cooldown = 8.0  # seconds between petting animations
+        self.petting_animation_active = False  # Track if petting animation is running
+        self.petting_animation_goal_handle = None  # Track current petting animation goal
+        # Add petting state tracking
+        self.last_petting_message_time = self.node.get_clock().now()
+        self.petting_message_timeout = 5.0  # seconds - if no petting messages for this long, consider stopped
+        self.petting_animations = [
+            'folded_wiggle', 'bouncy_wiggle', 
+            'sleepy_melt'
+        ]
+        
+        # Subscribe to petting detection
+        self.petting_sub = self.node.create_subscription(
+            String,
+            '/collision/petting_events',
+            self.petting_callback,
+            10
+        )
         
         # Track if we've preempted an animation
         self.animation_preempted = False
@@ -1057,6 +1084,179 @@ class CollisionAvoidance:
         except Exception as e:
             self.node.get_logger().error(f"Error in post-animation home callback: {e}")
     
+    def _trigger_petting_animation(self):
+        """Trigger a petting response animation"""
+        try:
+            # Don't trigger if action client not ready
+            if not self._idle_animation_client.wait_for_server(timeout_sec=0.5):
+                self.node.get_logger().info("Animation action server not available for petting animation")
+                return
+            
+            # Don't trigger if we already have a petting animation running
+            if self.petting_animation_active:
+                self.node.get_logger().info("Petting animation already active - skipping")
+                return
+            
+            # Select a random petting animation
+            selected_animation = random.choice(self.petting_animations)
+            
+            # Create goal for petting animation
+            goal = PlayAnimation.Goal()
+            goal.animation_name = selected_animation
+            goal.speed_multiplier = random.uniform(0.9, 1.1)  # Slower, more gentle movements
+            goal.allow_interruption = False  # Don't allow interruption of petting animations
+            goal.use_hardware_feedback = False
+            
+            self.node.get_logger().info(f"Triggering petting animation: {selected_animation}")
+            
+            # Mark petting animation as active
+            self.petting_animation_active = True
+            
+            # Send goal asynchronously
+            future = self._idle_animation_client.send_goal_async(goal)
+            future.add_done_callback(self._petting_animation_goal_response_callback)
+            
+            # Update last animation time
+            self.last_petting_animation_time = self.node.get_clock().now()
+
+        except Exception as e:
+            self.node.get_logger().error(f"Error triggering petting animation: {e}")
+            self.petting_animation_active = False
+
+    def _petting_animation_goal_response_callback(self, future):
+        """Handle the petting animation goal response."""
+        try:
+            goal_handle = future.result()
+            if not goal_handle.accepted:
+                self.node.get_logger().debug("Petting animation goal rejected")
+                self.petting_animation_active = False
+                return
+            
+            self.node.get_logger().debug("Petting animation goal accepted")
+            self.petting_animation_goal_handle = goal_handle
+            
+            # Get the result future and add callback for completion
+            result_future = goal_handle.get_result_async()
+            result_future.add_done_callback(self._petting_animation_result_callback)
+            
+        except Exception as e:
+            self.node.get_logger().error(f"Error in petting animation goal response: {e}")
+            self.petting_animation_active = False
+
+    def _petting_animation_result_callback(self, future):
+        """Handle petting animation completion."""
+        try:
+            result = future.result()
+            self.node.get_logger().info(f"Petting animation completed with status: {result.status}")
+            
+            # Mark petting animation as completed
+            self.petting_animation_active = False
+            self.petting_animation_goal_handle = None
+            
+            # Check if we should transition out of PETTING state
+            self._check_petting_state_transition()
+            
+        except Exception as e:
+            self.node.get_logger().error(f"Error in petting animation result: {e}")
+            self.petting_animation_active = False
+            self.petting_animation_goal_handle = None
+
+    def _check_petting_state_transition(self):
+        """Check if we should transition out of PETTING state."""
+        try:
+            # Only transition out if BOTH conditions are met:
+            # 1. Petting is no longer active
+            # 2. No petting animation is currently running
+            if (self.state_machine.is_in_state(LuxoState.PETTING) and 
+                not self.petting_active and 
+                not self.petting_animation_active):
+                
+                self.node.get_logger().info("Petting stopped and animation complete - transitioning to IDLE")
+                self.state_machine.transition_to(LuxoState.IDLE)
+                
+        except Exception as e:
+            self.node.get_logger().error(f"Error checking petting state transition: {e}")
+
+    def petting_callback(self, msg):
+        """Handle petting detection messages."""
+        try:
+            # Parse the string message format: "petting_started:pressure" or "petting_stopped:0"
+            parts = msg.data.split(':')
+            if len(parts) != 2:
+                self.node.get_logger().warn(f"Invalid petting message format: {msg.data}")
+                return
+                
+            action = parts[0]
+            pressure = int(parts[1]) if parts[1].isdigit() else 0
+            
+            # Don't process petting during initialization or if system not ready
+            if self.state_machine.is_in_state(LuxoState.INITIALIZING):
+                self.node.get_logger().debug(f"Ignoring petting during initialization: {msg.data}")
+                return
+                
+            # Prevent false positives during startup
+            current_time = self.node.get_clock().now()
+            time_since_startup = (current_time - self._startup_time).nanoseconds / 1e9
+            if time_since_startup < 10.0:  # Ignore petting for first 10 seconds
+                self.node.get_logger().debug(f"Ignoring petting during startup period ({time_since_startup:.1f}s): {msg.data}")
+                return
+            
+            # Update last message time
+            self.last_petting_message_time = current_time
+            
+            # Determine if petting is active
+            new_petting_state = (action == "petting_started" and pressure > 1)
+            was_petting = self.petting_active
+            
+            if new_petting_state:
+                # Update petting state
+                self.petting_active = True
+                self.petting_intensity = pressure
+                
+                # Only transition to PETTING state if we weren't already petting
+                if not was_petting:
+                    self.node.get_logger().info(f"Petting started (pressure: {pressure}) - transitioning to PETTING state")
+                    self.petting_start_time = current_time
+                    
+                    # Only transition if we're in a valid state for petting
+                    if self.state_machine.is_in_state(LuxoState.IDLE, LuxoState.ANIMATING, LuxoState.EMOTION_REACTING):
+                        self.state_machine.transition_to(LuxoState.PETTING)
+                        
+                        # Trigger immediate petting response
+                        self._trigger_petting_animation()
+                    else:
+                        self.node.get_logger().warn(f"Cannot transition to petting from current state: {self.state_machine.current_state.name}")
+                        self.petting_active = False  # Reset since we can't transition
+                else:
+                    # Already petting, just update intensity
+                    self.node.get_logger().debug(f"Petting continues with pressure: {pressure}")
+                    self.petting_intensity = pressure
+                    
+                    # Check if we should trigger another animation (with cooldown)
+                    time_since_last_animation = (current_time - self.last_petting_animation_time).nanoseconds / 1e9
+                    if (time_since_last_animation > self.petting_animation_cooldown and 
+                        not self.petting_animation_active and
+                        self.state_machine.is_in_state(LuxoState.PETTING)):
+                        
+                        self.node.get_logger().info(f"Triggering additional petting animation after {time_since_last_animation:.1f}s")
+                        self._trigger_petting_animation()
+                        
+            elif action == "petting_stopped":
+                # Explicit stop message
+                if was_petting:
+                    self.node.get_logger().info("Petting explicitly stopped - waiting for animation to complete")
+                    self.petting_active = False
+                    self.petting_start_time = None
+                    self.petting_intensity = 0
+                    
+                    # Check if we can transition (animation might already be done)
+                    self._check_petting_state_transition()
+                
+        except Exception as e:
+            self.node.get_logger().error(f"Error in petting callback: {e}")
+            import traceback
+            self.node.get_logger().error(f"Stack trace: {traceback.format_exc()}")
+
     def safety_monitor_callback(self):
         """Periodic callback to monitor safety and adjust motion if needed"""
         if not self.enable_collision_avoidance:
@@ -1067,6 +1267,41 @@ class CollisionAvoidance:
             # Get current time for this check cycle
             current_time = self.node.get_clock().now()
             
+            # Handle petting state updates and timeout detection
+            if self.state_machine.is_in_state(LuxoState.PETTING):
+                # Check for petting timeout (no messages received recently)
+                time_since_petting_message = (current_time - self.last_petting_message_time).nanoseconds / 1e9
+                
+                if time_since_petting_message > self.petting_message_timeout:
+                    # Petting timed out
+                    if self.petting_active:
+                        self.node.get_logger().info(f"Petting timed out after {time_since_petting_message:.1f}s - stopping petting")
+                        self.petting_active = False
+                        self.petting_start_time = None
+                        self.petting_intensity = 0
+                        
+                        # Check if we can transition out
+                        self._check_petting_state_transition()
+                
+                if self.petting_active:
+                    # Check if we should trigger another petting animation
+                    time_since_last_animation = (current_time - self.last_petting_animation_time).nanoseconds / 1e9
+                    
+                    if time_since_last_animation > self.petting_animation_cooldown and not self.petting_animation_active:
+                        # Trigger another gentle animation if still being petted and no animation running
+                        self._trigger_petting_animation()
+                        
+                    # Don't perform other safety checks while being petted
+                    # Petting has high priority and should not be interrupted by idle timeouts
+                    return
+                else:
+                    # Petting state but no active petting - check if we can transition
+                    self._check_petting_state_transition()
+                    
+                    # If we're still in petting state after check, don't do other safety operations
+                    if self.state_machine.is_in_state(LuxoState.PETTING):
+                        return
+        
             # Check if target override is stuck (not in RETURNING_HOME state)
             if self.target_override_active and not self.state_machine.is_in_state(LuxoState.RETURNING_HOME):
                 # Don't clear voice following overrides too quickly
@@ -1341,6 +1576,7 @@ class CollisionAvoidance:
         if hasattr(self.node, 'enable_movement_source_integration') and self.node.enable_movement_source_integration:
             try:
                 movement_source_msg = String()
+               
                 movement_source_msg.data = "collision"
                 if hasattr(self.node, 'movement_source_publisher'):
                     self.node.movement_source_publisher.publish(movement_source_msg)
@@ -1623,7 +1859,7 @@ class CollisionAvoidance:
                     
                     # Log the current differences for debugging
                     self.node.get_logger().info(f"Current differences from home_position_2: {[round(d, 4) for d in differences]}")
-                elif self._at_position(self.current_joints, self.home_position_2, self.home_position_tolerance):
+                elif self._at_home_position(self.current_joints, self.home_position_2, self.home_position_tolerance):
                     # We've successfully reached the final home position
                     self.node.get_logger().debug("Successfully reached final home position (stage 2)")
                     # Transition back to IDLE will be handled in safety_monitor_callback

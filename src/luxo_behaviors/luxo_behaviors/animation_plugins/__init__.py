@@ -6,4 +6,4 @@ dynamically by the animation command action server.
 """
 
 # Make this a proper Python package
-__all__ = ['emotion_animations', 'action_animations', 'response_animations', 'idle_animations']
+__all__ = ['emotion_animations', 'action_animations', 'response_animations', 'idle_animations', 'petting_animations']
