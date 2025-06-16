@@ -146,7 +146,7 @@ class CollisionAvoidance:
         self.last_petting_message_time = self.node.get_clock().now()
         self.petting_message_timeout = 5.0  # seconds - if no petting messages for this long, consider stopped
         self.petting_animations = [
-            'folded_wiggle', 'sleepy_melt'
+            'folded_wiggle'
         ]
         
         # Subscribe to petting detection
@@ -1426,7 +1426,11 @@ class CollisionAvoidance:
                 # Only log when voice is very active (multiple recent detections)
                 voice_very_active = False
                 if hasattr(self, 'voice_active') and self.voice_active and hasattr(self, 'last_voice_time'):
-                    time_since_voice = (current_time - self.last_voice_time).nanoseconds / 1e9
+                    if self.last_voice_time is not None:
+                        time_since_voice = (current_time - self.last_voice_time).nanoseconds / 1e9
+                    else:
+                        # If no voice time recorded yet, set to a large value to allow voice
+                        time_since_voice = float('inf')
                     voice_very_active = time_since_voice < 2.0  # Only consider very recent voice activity
                 
                 if voice_very_active:

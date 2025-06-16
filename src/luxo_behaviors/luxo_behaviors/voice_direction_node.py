@@ -27,7 +27,7 @@ class VoiceDirectionNode(Node):
         self.declare_parameter('channels', 4)
         self.declare_parameter('vad_frames', 30)
         self.declare_parameter('doa_frames', 1600)
-        self.declare_parameter('vad_aggressiveness', 1)
+        self.declare_parameter('vad_aggressiveness', 3)
         self.declare_parameter('confidence_threshold', 0.5)
         self.declare_parameter('publish_rate', 10.0)  # Hz
         self.declare_parameter('enable_pixel_ring', True)
