@@ -30,18 +30,18 @@ class LuxoConstants:
     HOME_POSITION_STAGE_TIMEOUT = 0.5  # seconds
     
     # Rest position configuration
-    BASE_REST_POSITION = [0.0, -0.55, 1.2, 1.0, 2.0]
+    BASE_REST_POSITION = [0.0, -0.55, 1.2, 1.4, -1.5]
     REST_VARIATION_RANGE = 0.1
     
     # Idle behavior constants
-    IDLE_BASE_POSITION = [0.0, -0.55, 1.2, 1.0, 2.0]
+    IDLE_BASE_POSITION = [0.0, -0.55, 1.2, 1.4, -1.5]
     IDLE_HEAD_BASE_ROTATION_RANGE = 0.3
     IDLE_HEAD_LOOK_UP_RANGE = 0.4
     IDLE_HEAD_LOOK_DOWN_RANGE = 0.1
     IDLE_HEAD_VARIATION_SPEED = 4.0
     
     # Voice following constants
-    VOICE_NEUTRAL_POSITION = [-0.55, 1.2, 1.0, -2.0, 10.0]  # Baseline position (excluding base)
+    VOICE_NEUTRAL_POSITION = [-0.55, 1.2, 1.4, -2.0, 10.0]  # Baseline position (excluding base)
     VOICE_DIRECTION_TOLERANCE = 5.0  # degrees
     VOICE_ON_TARGET_THRESHOLD = 3.0  # seconds
     VOICE_VARIATION_INTERVAL = 2.0  # seconds

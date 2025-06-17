@@ -335,7 +335,7 @@ def generate_launch_description():
     # HARDWARE INTERFACE AND SENSOR NODES
     # ==========================================================================
     
-    # Hardware interface node (hardware only)
+    # Hardware interface node (hardware only) - FIXED: Removed error log level
     hardware_interface_node = Node(
         package='luxo_behaviors',
         executable='hardware_interface',
@@ -346,6 +346,7 @@ def generate_launch_description():
             {'baud_rate': 115200},
             {'enable_torque': True},
             {'read_throttle': 0.1},
+            {'behavior_mode': PythonExpression(["'", test_mode, "' == 'behavior'"])},
             {'enable_dynamic_adaptation': enable_dynamic_adaptation},
             {'dynamic_adaptation_base_limit': 1},
             {'dynamic_adaptation_shoulder_limit': 1},
@@ -354,8 +355,7 @@ def generate_launch_description():
             {'dynamic_adaptation_roll_limit': 1},
             {'dynamic_adaptation_hand_limit': 0},
             {'dynamic_adaptation_resume_delay': 10.0},
-            {'enable_movement_source_integration': True},
-            {'ros__parameters': {'log_level': 'error'}}
+            {'enable_movement_source_integration': True}
         ],
         condition=IfCondition(use_hardware)
     )
@@ -533,9 +533,12 @@ def generate_launch_description():
             {'enable_movement_source_integration': True},
             {'command_rate_limit': 50.0},
             
-            # Hardware interface - corrected topic routing
-            {'joint_command_topic': '/joint_states_target' if PythonExpression(["'", use_hardware, "' == 'true'"]) else '/roarm/joint_command'},
-            {'joint_names': ['base', 'shoulder', 'elbow', 'wrist', 'hand']}
+            # Hardware interface - FIXED: Use consistent topic
+            {'joint_command_topic': '/roarm/joint_command'},
+            {'joint_names': ['base', 'shoulder', 'elbow', 'wrist', 'hand']},
+            
+            # Debug logging
+            {'enable_debug_logging': verbose_output}
         ],
         condition=IfCondition(PythonExpression(["'", test_mode, "' == 'behavior'"]))
     )

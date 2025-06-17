@@ -61,8 +61,7 @@ class PettingResponseNode(Node):
         super().__init__('petting_response_node')
         
         # Initialize state machine integration
-        self.state_machine = LuxoStateMachine()
-        self.state_machine.set_node(self)
+        self.state_machine = LuxoStateMachine(self)
         
         # Track startup time to prevent false positives
         self._startup_time = self.get_clock().now()

@@ -1,3 +1,4 @@
+
 - [] Print a New Head that can fix the neopixels
 - [] More Fine tuning/complete rehaul of the animations
 - [] Move VOICE FOLLOWING Stuff into its own state instead of being inside Collision Avoidance. Collision Avoidance is becoming crazy large

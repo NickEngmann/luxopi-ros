@@ -13,6 +13,7 @@ Author: Generated from collision_avoidance.py refactor
 """
 
 import threading
+import random
 from typing import Dict, List, Optional, Tuple, Any
 from enum import Enum
 from dataclasses import dataclass, field
@@ -94,7 +95,7 @@ class SafetyCoordinatorNode(Node):
     """
     
     def __init__(self):
-        super().__init__('safety_coordinator_node')
+        super().__init__('safety_coordinator')
         
         # Declare parameters
         self._declare_parameters()
@@ -156,6 +157,9 @@ class SafetyCoordinatorNode(Node):
         # Hardware interface parameters
         self.declare_parameter('joint_command_topic', '/roarm/joint_command')
         self.declare_parameter('joint_names', ['base', 'shoulder', 'elbow', 'wrist', 'hand'])
+        
+        # Debug logging
+        self.declare_parameter('enable_debug_logging', False)
     
     def _load_parameters(self):
         """Load parameters from ROS parameter server."""
@@ -187,44 +191,54 @@ class SafetyCoordinatorNode(Node):
         
         self.joint_command_topic = self.get_parameter('joint_command_topic').value
         self.joint_names = self.get_parameter('joint_names').value
+        
+        self.enable_debug_logging = self.get_parameter('enable_debug_logging').value
     
     def _initialize_state(self):
         """Initialize internal state variables."""
         # Current robot state
-        self.current_joints: List[float] = [0.0, 0.0, 0.0, 0.0, 0.0]
-        self.target_joints: List[float] = [0.0, 0.0, 0.0, 0.0, 0.0]
-        self.joint_velocities: List[float] = [0.0, 0.0, 0.0, 0.0, 0.0]
-        self.robot_state: str = "IDLE"
+        self.current_joints = [0.5, 0.5, 1.3, 1.4, -1.5]  # HOME_POSITION_1
+        self.target_joints = [0.5, 0.5, 1.3, 1.4, -1.5]   # HOME_POSITION_1
+        self.current_acceleration = 10.0  # Store current acceleration separately
+        self.robot_state = "IDLE"
+        
+        # Target initialization tracking
+        self.target_initialized = False
+        self._last_init_warning_time = None
         
         # Target override management
-        self.active_overrides: Dict[str, TargetOverride] = {}
-        self.current_override: Optional[TargetOverride] = None
-        self.last_override_evaluation: Time = self.get_clock().now()
+        self.active_overrides = {}
+        self.current_override = None
+        self.last_override_evaluation = self.get_clock().now()
         
         # Behavior coordination
-        self.pending_requests: Dict[str, BehaviorRequest] = {}
-        self.last_processed_request: Optional[str] = None
+        self.pending_requests = {}
+        self.last_processed_request = None
         self.request_counter = 0
         
         # Status tracking from other nodes
-        self.collision_status: Optional[CollisionStatus] = None
-        self.voice_target: Optional[VoiceTarget] = None
-        self.petting_status: Optional[PettingStatus] = None
-        self.animation_active: bool = False
-        self.escape_mode_active: bool = False
+        self.collision_status = None
+        self.voice_target = None
+        self.petting_status = None
+        self.animation_active = False
+        self.escape_mode_active = False
         
         # Command rate limiting
-        self.last_command_time: Time = self.get_clock().now()
+        self.last_command_time = self.get_clock().now()
         self.min_command_interval = 1.0 / self.command_rate_limit
         
         # Safety state
-        self.safety_limits_enabled: bool = True
-        self.emergency_stop_active: bool = False
-        self.system_healthy: bool = True
+        self.safety_limits_enabled = True
+        self.emergency_stop_active = False
+        self.system_healthy = True
         
         # Movement source tracking for DEMA integration
-        self.current_movement_source: str = "idle"
-        self.last_movement_source_time: Time = self.get_clock().now()
+        self.current_movement_source = "idle"
+        self.last_movement_source_time = self.get_clock().now()
+        
+        # Track last commanded position
+        self.last_commanded_position = self.current_joints.copy()
+        self.position_change_threshold = 0.01  # radians
     
     def _create_publishers(self):
         """Create ROS publishers."""
@@ -392,14 +406,67 @@ class SafetyCoordinatorNode(Node):
         
         # Status publishing timer (runs every 500ms)
         self.status_timer = self.create_timer(0.5, self.status_publish_callback)
+        
+        # Fallback initialization timer (runs once after 3 seconds)
+        self.fallback_init_timer = self.create_timer(3.0, self._fallback_initialization)
+    
+    def _fallback_initialization(self):
+        """Fallback initialization if joint states aren't received quickly."""
+        try:
+            if not self.target_initialized:
+                self.get_logger().warn("Joint states not received after 3 seconds - using default initialization")
+                # Use a safe default position (home position)
+                default_position = [0.5, 0.5, 1.3, 1.4, -1.5]
+                self.target_joints = default_position.copy()
+                self.current_joints = default_position.copy()
+                self.target_initialized = True
+                
+                self.get_logger().info(f"Initialized with default position: {[round(p, 2) for p in default_position]}")
+                
+                # Send initial command to get things moving
+                self._execute_joint_command(self.target_joints)
+            
+            # Cancel this timer after running once
+            if hasattr(self, 'fallback_init_timer'):
+                self.fallback_init_timer.cancel()
+                
+        except Exception as e:
+            self.get_logger().error(f"Error in fallback initialization: {e}")
     
     def joint_states_callback(self, msg: JointState):
         """Handle joint state updates from hardware."""
+        # FIXED: Handle the format where positions contains [5 joints + acceleration]
         if len(msg.position) >= 5:
             self.current_joints = list(msg.position[:5])
             
-        if len(msg.velocity) >= 5:
-            self.joint_velocities = list(msg.velocity[:5])
+            # Extract acceleration if available (6th position field)
+            if len(msg.position) >= 6:
+                self.current_acceleration = msg.position[5]
+            
+            # Initialize target_joints with current position if not done yet
+            if not self.target_initialized:
+                self.target_joints = self.current_joints.copy()
+                self.target_initialized = True
+                self.get_logger().info(f"Target position initialized from hardware: {[round(p, 2) for p in self.target_joints]}")
+                
+                # Cancel fallback timer since we got real data
+                if hasattr(self, 'fallback_init_timer'):
+                    self.fallback_init_timer.cancel()
+        
+        # Note: No longer trying to access msg.velocity since it's empty
+        # Acceleration is now stored in the 6th position field
+    
+    def robot_state_callback(self, msg: String):
+        """Handle robot state changes."""
+        old_state = self.robot_state
+        self.robot_state = msg.data
+        
+        if old_state != self.robot_state:
+            self.get_logger().debug(f"Robot state changed: {old_state} -> {self.robot_state}")
+            
+            # Update coordination flags
+            if self.robot_state == "ESCAPE_MODE" and self.escape_mode_active != True:
+                self.escape_mode_active = True
     
     def collision_status_callback(self, msg: CollisionStatus):
         """Handle collision status updates."""
@@ -452,14 +519,14 @@ class SafetyCoordinatorNode(Node):
             # Create voice following override if voice is active
             if msg.active and msg.influence > 0.1:
                 override = TargetOverride(
-                    positions=list(msg.target_position),
+                    positions=list(msg.positions),
                     priority=BehaviorPriority.VOICE_FOLLOWING.value,
                     source="voice_following",
-                    reason=f"Voice following at {msg.direction:.1f}° (influence: {msg.influence:.2f})",
+                    reason=f"Voice following at {msg.direction} (influence: {msg.influence:.2f})",
                     timestamp=self.get_clock().now(),
                     timeout=3.0,  # Short timeout for voice following
                     allow_interruption=True,
-                    acceleration=msg.speed,
+                    acceleration=8.0,
                     blend_factor=msg.influence  # Use voice influence as blend factor
                 )
                 
@@ -467,11 +534,13 @@ class SafetyCoordinatorNode(Node):
                     self.active_overrides["voice_following"] = override
                     
                 self._update_movement_source("voice")
+                self.get_logger().debug(f"Voice override created: {msg.direction} degrees")
             else:
                 # Clear voice following override if voice is inactive
                 with self._override_lock:
                     if "voice_following" in self.active_overrides:
                         del self.active_overrides["voice_following"]
+                        self.get_logger().debug("Voice override cleared")
                         
         except Exception as e:
             self.get_logger().error(f"Error handling voice target: {e}")
@@ -532,6 +601,7 @@ class SafetyCoordinatorNode(Node):
                 
                 with self._override_lock:
                     self.active_overrides["external"] = override
+                    self.get_logger().info(f"External override created: {msg.reason}")
                     
         except Exception as e:
             self.get_logger().error(f"Error handling external override: {e}")
@@ -572,6 +642,12 @@ class SafetyCoordinatorNode(Node):
     def _handle_position_request(self, msg: PositionRequest, source_type: str, priority: Optional[int] = None):
         """Handle incoming position requests from any source."""
         try:
+            # Log at debug level (not info)
+            if self.enable_debug_logging:
+                self.get_logger().debug(f"Received position request from {source_type}")
+                self.get_logger().debug(f"Positions: {[round(p, 2) for p in msg.positions]}")
+                self.get_logger().debug(f"Priority: {priority}, Description: {msg.description}")
+            
             # Use priority from message or provided priority
             actual_priority = priority if priority is not None else msg.priority
             
@@ -602,16 +678,31 @@ class SafetyCoordinatorNode(Node):
             else:
                 self._update_movement_source("idle")
                 
-            self.get_logger().debug(f"Position request received: {source_type} (priority: {actual_priority})")
+            if self.enable_debug_logging:
+                self.get_logger().debug(f"Position request processed successfully: {source_type}")
             
         except Exception as e:
-            self.get_logger().error(f"Error handling position request from {source_type}: {e}")
+            self.get_logger().error(f"ERROR in _handle_position_request from {source_type}: {e}")
+            import traceback
+            self.get_logger().error(f"Stack trace: {traceback.format_exc()}")
     
     def coordination_timer_callback(self):
         """Main coordination timer - determines and executes final target."""
         try:
             # Skip if emergency stop active
             if self.emergency_stop_active:
+                return
+                
+            # Skip if target not initialized yet
+            if not self.target_initialized:
+                current_time = self.get_clock().now()
+                if self._last_init_warning_time is None:
+                    self._last_init_warning_time = current_time
+                
+                time_since_warning = ROSUtils.time_since(self._last_init_warning_time, current_time)
+                if time_since_warning > 5.0:  # Only warn every 5 seconds
+                    self.get_logger().warn("Target not initialized yet - waiting for joint states")
+                    self._last_init_warning_time = current_time
                 return
                 
             # Rate limiting check
@@ -621,6 +712,12 @@ class SafetyCoordinatorNode(Node):
             if time_since_last_command < self.min_command_interval:
                 return
                 
+            # Process active overrides
+            with self._override_lock:
+                override_count = len(self.active_overrides)
+                if self.enable_debug_logging and override_count > 0:
+                    self.get_logger().debug(f"Processing {override_count} active overrides")
+                
             # Determine effective target position
             effective_target = self._determine_effective_target()
             
@@ -629,15 +726,46 @@ class SafetyCoordinatorNode(Node):
                 safe_target = self._apply_safety_limits(effective_target)
                 
                 # Validate target
-                if self._validate_target_position(safe_target):
-                    # Execute the command
-                    self._execute_joint_command(safe_target)
-                    self.last_command_time = current_time
+                is_valid = self._validate_target_position(safe_target)
+                
+                if is_valid:
+                    # Check if position has changed significantly
+                    position_changed = self._has_position_changed(safe_target)
+                    
+                    if position_changed or self._should_send_command():
+                        # Execute the command
+                        self._execute_joint_command(safe_target)
+                        self.last_command_time = current_time
+                        self.last_commanded_position = safe_target.copy()
                 else:
-                    self.get_logger().debug("Target position validation failed")
+                    if self.enable_debug_logging:
+                        self.get_logger().debug("Target position validation failed")
             
         except Exception as e:
             self.get_logger().error(f"Error in coordination timer: {e}")
+            import traceback
+            self.get_logger().error(f"Stack trace: {traceback.format_exc()}")
+    
+    def _has_position_changed(self, new_position: List[float]) -> bool:
+        """Check if position has changed significantly from last commanded position."""
+        for i, (new, old) in enumerate(zip(new_position, self.last_commanded_position)):
+            if abs(new - old) > self.position_change_threshold:
+                return True
+        return False
+    
+    def _should_send_command(self) -> bool:
+        """Determine if we should send a command even if position hasn't changed."""
+        # Always send commands during certain states
+        if self.escape_mode_active:
+            return True
+        
+        # Send periodic commands to maintain connection (every 1 second)
+        current_time = self.get_clock().now()
+        time_since_last = ROSUtils.time_since(self.last_command_time, current_time)
+        if time_since_last > 1.0:
+            return True
+            
+        return False
     
     def override_management_callback(self):
         """Manage override timeouts and priority resolution."""
@@ -683,6 +811,12 @@ class SafetyCoordinatorNode(Node):
         try:
             current_time = self.get_clock().now()
             
+            # Publish coordinator status
+            status_msg = String()
+            with self._override_lock:
+                status_msg.data = f"Overrides: {len(self.active_overrides)}, Current: {self.current_override.source if self.current_override else 'none'}"
+            self.coordinator_status_pub.publish(status_msg)
+            
             # Publish system status
             system_status = SystemStatus()
             system_status.header.stamp = current_time.to_msg()
@@ -720,25 +854,38 @@ class SafetyCoordinatorNode(Node):
         except Exception as e:
             self.get_logger().error(f"Error publishing status: {e}")
     
-    def _determine_effective_target(self) -> Optional[List[float]]:
+    def _determine_effective_target(self):
         """Determine the effective target position considering all inputs."""
         try:
-            # If no override, use current target joints
-            if self.current_override is None:
-                return self.target_joints.copy()
+            # Check active_overrides
+            with self._override_lock:
+                if not self.active_overrides:
+                    return self.target_joints.copy()
                 
-            # Use override position
-            override_target = self.current_override.positions.copy()
-            
-            # Apply blending if specified
-            if self.current_override.blend_factor < 1.0:
-                override_target = MathUtils.blend_positions(
-                    self.target_joints,
-                    override_target,
-                    self.current_override.blend_factor
+                # Find the highest priority override directly
+                highest_priority_override = max(
+                    self.active_overrides.values(),
+                    key=lambda x: x.priority
                 )
                 
-            return override_target
+                # Use override position
+                override_target = highest_priority_override.positions.copy()
+                
+                # Apply blending if specified
+                if highest_priority_override.blend_factor < 1.0:
+                    override_target = MathUtils.blend_positions(
+                        self.target_joints,
+                        override_target,
+                        highest_priority_override.blend_factor
+                    )
+                
+                # Update current_override for other functions that use it
+                if self.current_override != highest_priority_override:
+                    old_source = self.current_override.source if self.current_override else "none"
+                    self.current_override = highest_priority_override
+                    self.get_logger().info(f"Current override updated: {old_source} -> {highest_priority_override.source}")
+                    
+                return override_target
             
         except Exception as e:
             self.get_logger().error(f"Error determining effective target: {e}")
@@ -863,16 +1010,6 @@ class SafetyCoordinatorNode(Node):
                     )
                     return False
             
-            # Check for excessive change from current position
-            max_change_per_command = 0.5  # radians
-            for i, (target, current) in enumerate(zip(positions, self.current_joints)):
-                change = abs(target - current)
-                if change > max_change_per_command:
-                    self.get_logger().debug(
-                        f"Excessive change in joint {i}: {change:.3f} > {max_change_per_command}"
-                    )
-                    return False
-            
             return True
             
         except Exception as e:
@@ -882,34 +1019,37 @@ class SafetyCoordinatorNode(Node):
     def _execute_joint_command(self, positions: List[float]):
         """Execute final joint command to hardware."""
         try:
-            # Create joint state message
-            msg = ROSUtils.create_joint_state_msg(
-                self,
-                self.joint_names,
-                positions
-            )
+            # Create joint state message with 6 position fields (including acceleration)
+            msg = JointState()
+            msg.header.stamp = self.get_clock().now().to_msg()
+            msg.name = self.joint_names
             
-            # Add acceleration if specified in current override
+            # Add acceleration to positions (6 total fields)
+            acceleration = 10.0
             if self.current_override and self.current_override.acceleration:
-                # Encode acceleration in velocity field for hardware interface
-                msg.velocity = [self.current_override.acceleration]
+                acceleration = self.current_override.acceleration
+                
+            positions_with_accel = list(positions[:5]) + [acceleration]
+            msg.position = positions_with_accel
             
             # Publish command
             self.joint_command_pub.publish(msg)
             
             # Update target joints for next cycle
-            self.target_joints = positions.copy()
+            self.target_joints = positions[:5].copy()
             
             # Log significant position changes
-            if not PositionUtils.at_position(positions, self.current_joints, 0.1):
+            if self._has_position_changed(positions[:5]) or self.enable_debug_logging:
                 source = self.current_override.source if self.current_override else "default"
-                self.get_logger().debug(
+                self.get_logger().info(
                     f"Joint command executed (source: {source}): "
-                    f"{[round(p, 3) for p in positions]}"
+                    f"{[round(p, 3) for p in positions[:5]]}, accel: {acceleration}"
                 )
                 
         except Exception as e:
             self.get_logger().error(f"Error executing joint command: {e}")
+            import traceback
+            self.get_logger().error(f"Stack trace: {traceback.format_exc()}")
     
     def _execute_current_target(self, force: bool = False):
         """Force immediate execution of current target (for emergency situations)."""
@@ -946,8 +1086,9 @@ class SafetyCoordinatorNode(Node):
         """Request return to home position."""
         try:
             # Create high-priority home position override
+            home_position = [0.5, 0.5, 1.3, 1.4, -1.5]
             override = TargetOverride(
-                positions=LuxoConstants.HOME_POSITION_1,
+                positions=home_position,
                 priority=BehaviorPriority.RETURNING_HOME.value,
                 source="safety_coordinator_home",
                 reason=f"Home position request: {reason}",
