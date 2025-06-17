@@ -1,20 +1,12 @@
-**TOMORROW AT HOME**
-- [] Print a New Head
-
-**BEFORE THE SHOW**
-- [] Tighten the Joints
-
-**Refactor before the show knowing full well you could revert**
+- [] Print a New Head that can fix the neopixels
 - [] More Fine tuning/complete rehaul of the animations
 - [] Move VOICE FOLLOWING Stuff into its own state instead of being inside Collision Avoidance. Collision Avoidance is becoming crazy large
-
-**IS THIS STILL A PROBLEM/Stuff I probably won't get to**
-- [] When there is nonstop voice activity, we struggle to go back to IDLE
 - [] Fix DEMA Adaptation Mode and Integrate with Touch
 - [] CAMERA FOLLOWING
+- [] When we sense a collision, we eventually return back to the same position it was before the collision. This is dumb. We should move out the way and not return back to the same position
+- [] Speaker (have it communicate back to me)
 
 
-# Later Priorities
 ## High Priority
 - [ ] Fix dynamic adaptation mode (DEMA) - increase torque limit for better operation
 - [ ] Fix animation system to handle interruptions from collision avoidance more gracefully
