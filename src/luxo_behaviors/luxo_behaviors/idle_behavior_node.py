@@ -29,7 +29,7 @@ from luxo_interfaces.action import PlayAnimation
 from luxo_interfaces.msg import IdleRequest, PositionRequest, ActivityUpdate
 
 # Import shared utilities
-from shared_utilities import (
+from luxo_behaviors.shared_utilities import (
     LuxoConstants, 
     PositionUtils, 
     ROSUtils, 

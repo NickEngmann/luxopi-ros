@@ -33,7 +33,7 @@ from luxo_interfaces.msg import (
 )
 
 # Import shared utilities
-from shared_utilities import (
+from luxo_behaviors.shared_utilities import (
     LuxoConstants, 
     SafetyUtils,
     AngleUtils, 
@@ -634,7 +634,7 @@ class SafetyCoordinatorNode(Node):
                     self._execute_joint_command(safe_target)
                     self.last_command_time = current_time
                 else:
-                    self.get_logger().warn("Target position validation failed")
+                    self.get_logger().debug("Target position validation failed")
             
         except Exception as e:
             self.get_logger().error(f"Error in coordination timer: {e}")
@@ -868,7 +868,7 @@ class SafetyCoordinatorNode(Node):
             for i, (target, current) in enumerate(zip(positions, self.current_joints)):
                 change = abs(target - current)
                 if change > max_change_per_command:
-                    self.get_logger().warn(
+                    self.get_logger().debug(
                         f"Excessive change in joint {i}: {change:.3f} > {max_change_per_command}"
                     )
                     return False

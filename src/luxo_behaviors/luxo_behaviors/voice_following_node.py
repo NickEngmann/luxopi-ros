@@ -28,7 +28,7 @@ from sensor_msgs.msg import JointState
 from luxo_interfaces.msg import VoiceTarget, PositionRequest, ActivityUpdate
 
 # Import shared utilities
-from shared_utilities import (
+from luxo_behaviors.shared_utilities import (
     LuxoConstants, 
     AngleUtils, 
     PositionUtils, 

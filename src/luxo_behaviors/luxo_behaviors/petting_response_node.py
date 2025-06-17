@@ -33,7 +33,7 @@ from std_msgs.msg import String
 from luxo_interfaces.action import PlayAnimation
 from luxo_behaviors.state_machine import LuxoState, LuxoStateMachine
 
-from shared_utilities import (
+from luxo_behaviors.shared_utilities import (
     LuxoConstants, 
     ROSUtils, 
     StateUtils

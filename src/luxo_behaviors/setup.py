@@ -7,7 +7,7 @@ package_name = 'luxo_behaviors'
 
 setup(
     name=package_name,
-    version='0.0.1',
+    version='0.0.2',
     packages=[package_name, package_name + '.animation_plugins'],
     data_files=[
         ('share/ament_index/resource_index/packages',
@@ -36,6 +36,11 @@ setup(
             'hardware_interface = luxo_behaviors.hardware_interface:main',
             'collision_detection = luxo_behaviors.collision_detection:main',
             'animation_action_client = luxo_behaviors.animation_action_client:main',
+            'safety_coordinator_node = luxo_behaviors.safety_coordinator_node:main',
+            'collision_monitor_node = luxo_behaviors.collision_monitor_node:main',
+            'voice_following_node = luxo_behaviors.voice_following_node:main',
+            'idle_behavior_node = luxo_behaviors.idle_behavior_node:main',
+            'petting_response_node = luxo_behaviors.petting_response_node:main',
         ],
     },
 )

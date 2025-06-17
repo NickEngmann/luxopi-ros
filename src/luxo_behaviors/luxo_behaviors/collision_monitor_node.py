@@ -32,7 +32,7 @@ from luxo_interfaces.msg import (
 )
 
 # Import shared utilities
-from shared_utilities import (
+from luxo_behaviors.shared_utilities import (
     LuxoConstants, 
     SafetyUtils,
     AngleUtils, 

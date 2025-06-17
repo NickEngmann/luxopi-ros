@@ -1,4 +1,16 @@
 #!/usr/bin/env python3
+"""
+Modular Luxo System Launch File - Using the new behavior node architecture.
+
+This launch file starts the modular behavior system with:
+- SafetyCoordinatorNode (central arbitration)
+- CollisionMonitorNode (collision detection and immediate responses) 
+- VoiceFollowingNode (voice direction tracking)
+- IdleBehaviorNode (idle animations and behaviors)
+- PettingResponseNode (petting detection and responses)
+- Plus all the existing hardware interface and sensor nodes
+"""
+
 from launch import LaunchDescription
 from launch.actions import IncludeLaunchDescription, DeclareLaunchArgument, LogInfo, ExecuteProcess
 from launch.conditions import IfCondition, UnlessCondition
@@ -15,7 +27,7 @@ def generate_launch_description():
     use_camera = LaunchConfiguration('use_camera')
     sense_collision = LaunchConfiguration('sense_collision')
     enable_depth_collision = LaunchConfiguration('enable_depth_collision')
-    test_mode = LaunchConfiguration('test_mode', default='animation')
+    test_mode = LaunchConfiguration('test_mode', default='behavior')  # Changed default to 'behavior'
     
     # Other standard arguments with simplified defaults
     use_gui = LaunchConfiguration('use_gui', default='false')
@@ -27,6 +39,12 @@ def generate_launch_description():
     
     # Add gesture detection parameter
     enable_gestures = LaunchConfiguration('enable_gestures')
+    
+    # Behavior system parameters
+    enable_voice_following = LaunchConfiguration('enable_voice_following')
+    enable_idle_behaviors = LaunchConfiguration('enable_idle_behaviors')
+    enable_petting_response = LaunchConfiguration('enable_petting_response')
+    enable_collision_avoidance = LaunchConfiguration('enable_collision_avoidance')
     
     # Main hardware/simulation mode selector
     declare_use_hardware = DeclareLaunchArgument(
@@ -70,25 +88,24 @@ def generate_launch_description():
         description='Enable depth-based collision detection (default: false)'
     )
     
-    
     declare_use_gui = DeclareLaunchArgument(
         name='use_gui',
         default_value='false',
         description='Flag to enable joint_state_publisher_gui'
     )
     
-    # Fix for joint_state_publisher issue - set a default value that doesn't 
-    # require the joint_state_publisher package if not available
+    # Fix for joint_state_publisher issue
     use_joint_state_publisher_arg = DeclareLaunchArgument(
         'use_joint_state_publisher',
         default_value='false',  # Always default to false
         description='Use the joint_state_publisher'
     )
     
+    # Updated test mode - now includes 'behavior' option
     declare_test_mode = DeclareLaunchArgument(
         'test_mode',
-        default_value='animation',
-        description='Test mode: "position" for position_test or "animation" for animation_command'
+        default_value='behavior',
+        description='Test mode: "position" for position_test, "animation" for animation_command, or "behavior" for full behavior system'
     )
     
     declare_safety_distance = DeclareLaunchArgument(
@@ -103,10 +120,17 @@ def generate_launch_description():
         description='Enable verbose output and additional debugging information'
     )
     
+    # Voice following arguments
     declare_enable_voice = DeclareLaunchArgument(
         'enable_voice',
         default_value='true',
-        description='Enable voice direction detection and following'
+        description='Enable voice direction detection'
+    )
+    
+    declare_enable_voice_following = DeclareLaunchArgument(
+        'enable_voice_following',
+        default_value='true',
+        description='Enable voice following behavior node'
     )
 
     # Add a launch argument for camera rotation
@@ -128,13 +152,33 @@ def generate_launch_description():
         default_value='true',
         description='Enable system monitoring (CPU, RAM, temperature)'
     )
+    
+    # Behavior system arguments
+    declare_enable_idle_behaviors = DeclareLaunchArgument(
+        'enable_idle_behaviors',
+        default_value='true',
+        description='Enable idle behavior system (animations, head variations, home positions)'
+    )
+    
+    declare_enable_petting_response = DeclareLaunchArgument(
+        'enable_petting_response',
+        default_value=PythonExpression(["'", sense_collision, "'"]),  # Default to same as collision sensing
+        description='Enable petting detection and response behaviors'
+    )
+    
+    declare_enable_collision_avoidance = DeclareLaunchArgument(
+        'enable_collision_avoidance',
+        default_value=PythonExpression(["'", sense_collision, "'"]),  # Default to same as collision sensing
+        description='Enable collision monitoring and avoidance behaviors'
+    )
+    
     # ==========================================================================
     # LOGGING ACTIONS
     # ==========================================================================
     
     # Initial startup banner
     startup_banner = LogInfo(msg=["="*80, 
-                                  "\n\n🚀 STARTING LUXOPI ROS SYSTEM\n",
+                                  "\n\n🚀 STARTING LUXOPI MODULAR BEHAVIOR SYSTEM\n",
                                   "="*80])
     
     # Mode selection info
@@ -146,13 +190,28 @@ def generate_launch_description():
                             "- Collision detection: ", enable_depth_collision, "\n",
                             "- Using I2C sensors: ", sense_collision, "\n",
                             "- Gesture detection: ", enable_gestures, "\n",
+                            "- Voice following: ", enable_voice_following, "\n",
+                            "- Idle behaviors: ", enable_idle_behaviors, "\n",
+                            "- Petting response: ", enable_petting_response, "\n",
+                            "- Collision avoidance: ", enable_collision_avoidance, "\n",
                             ])
+    
+    # Behavior system info
+    behavior_system_info = LogInfo(
+        msg=["\n🤖 MODULAR BEHAVIOR SYSTEM:\n",
+             "- SafetyCoordinator: Central arbitration and safety\n",
+             "- CollisionMonitor: ", PythonExpression(["'enabled' if '", enable_collision_avoidance, "' == 'true' else 'disabled'"]), "\n",
+             "- VoiceFollowing: ", PythonExpression(["'enabled' if '", enable_voice_following, "' == 'true' else 'disabled'"]), "\n",
+             "- IdleBehavior: ", PythonExpression(["'enabled' if '", enable_idle_behaviors, "' == 'true' else 'disabled'"]), "\n",
+             "- PettingResponse: ", PythonExpression(["'enabled' if '", enable_petting_response, "' == 'true' else 'disabled'"]), "\n"],
+        condition=IfCondition(PythonExpression(["'", test_mode, "' == 'behavior'"]))
+    )
     
     # Hardware-specific info
     hardware_info = LogInfo(
         msg=["\n🔧 HARDWARE MODE DETAILS:\n",
              "- Serial port: /dev/ttyAMA0 (baud: 115200)\n",
-             "- Test mode: ", test_mode, " (position=basic movements, animation=complex behaviors)\n",
+             "- Test mode: ", test_mode, " (position=basic movements, animation=complex behaviors, behavior=full system)\n",
              "- I2C sensing: ", PythonExpression(["'enabled' if '", sense_collision, "' == 'true' else 'disabled'"]), "\n",
              "- Hardware joint states enabled\n"],
         condition=IfCondition(use_hardware)
@@ -163,7 +222,7 @@ def generate_launch_description():
         msg=["\n🖥️ SIMULATION MODE DETAILS:\n",
              "- Using RoArm simulation backend\n",
              "- GUI enabled: ", use_gui, "\n",
-             "- Test mode: animation (using standard animation_command node)\n",
+             "- Test mode: ", test_mode, "\n",
              "- Running with standard joint names\n"],
         condition=UnlessCondition(use_hardware)
     )
@@ -171,11 +230,12 @@ def generate_launch_description():
     # Quick reference for common launch commands
     quick_reference = LogInfo(
         msg=["\n📝 QUICK REFERENCE:\n",
-             "- Hardware mode: ros2 launch luxo_behaviors luxo_system.launch.py use_hardware:=true\n",
+             "- Full hardware system: ros2 launch luxo_behaviors luxo_system.launch.py use_hardware:=true\n",
              "- Basic simulation: ros2 launch luxo_behaviors luxo_system.launch.py\n",
-             "- Simulation with GUI: ros2 launch luxo_behaviors luxo_system.launch.py use_gui:=true\n",
+             "- Simulation with behaviors: ros2 launch luxo_behaviors luxo_system.launch.py test_mode:=behavior\n",
+             "- Hardware behavior system: ros2 launch luxo_behaviors luxo_system.launch.py use_hardware:=true test_mode:=behavior\n",
              "- Hardware with collision: ros2 launch luxo_behaviors luxo_system.launch.py use_hardware:=true enable_depth_collision:=true\n",
-             "- Hardware with gestures: ros2 launch luxo_behaviors luxo_system.launch.py use_hardware:=true enable_gestures:=true\n"],
+             "- Disable specific behaviors: ros2 launch luxo_behaviors luxo_system.launch.py enable_idle_behaviors:=false\n"],
         condition=IfCondition(verbose_output)
     )
     
@@ -196,6 +256,7 @@ def generate_launch_description():
              "- APDS9960 proximity sensor: enabled\n",
              "- VL53L4CD distance sensors (left/right): enabled\n",
              "- Gesture detection: ", PythonExpression(["'enabled' if '", enable_gestures, "' == 'true' else 'disabled'"]), "\n",
+             "- Petting detection: ", PythonExpression(["'enabled' if '", enable_petting_response, "' == 'true' else 'disabled'"]), "\n",
              "- Bus protection: active\n",
              "- Auto-recovery: enabled\n"],
         condition=IfCondition(PythonExpression(["'", use_hardware, "' == 'true' and '", sense_collision, "' == 'true'"]))
@@ -207,17 +268,19 @@ def generate_launch_description():
              "- If hardware not responding, check serial connection and permissions\n",
              "- For camera issues, verify USB connection and permissions\n",
              "- For I2C sensor issues, check: ros2 topic echo /i2c/sensor_health\n",
-             "- Package not found error? Install the package or disable the feature\n",
+             "- Monitor behavior coordination: ros2 topic echo /safety/system_status\n",
+             "- Check collision status: ros2 topic echo /collision/status\n",
+             "- View voice following: ros2 topic echo /voice/status\n",
+             "- Monitor idle behavior: ros2 topic echo /idle/status\n",
+             "- Check petting status: ros2 topic echo /petting/status\n",
              "- View topics with: ros2 topic list\n",
-             "- Check node status with: ros2 node list\n",
-             "- Monitor joint states: ros2 topic echo /joint_states\n",
-             "- View TF tree: ros2 run tf2_tools view_frames\n"],
+             "- Check node status with: ros2 node list\n"],
         condition=IfCondition(verbose_output)
     )
     
     # Show active nodes at end of startup
     show_nodes_cmd = ExecuteProcess(
-        cmd=["bash", "-c", "echo '📊 ACTIVE NODES:' && sleep 2 && ros2 node list"],
+        cmd=["bash", "-c", "echo '📊 ACTIVE NODES:' && sleep 3 && ros2 node list | grep -E '(safety|collision|voice|idle|petting)' || echo 'No behavior nodes detected yet'"],
         output='screen',
         condition=IfCondition(verbose_output)
     )
@@ -247,7 +310,7 @@ def generate_launch_description():
         condition=IfCondition(PythonExpression(["'", use_hardware, "' == 'false' and '", use_gui, "' == 'true'"]))
     )
 
-    # Make sure robot_state_publisher has priority and runs even with camera enabled
+    # Robot state publisher for simulation
     robot_state_publisher_node = Node(
         package='robot_state_publisher',
         executable='robot_state_publisher',
@@ -262,24 +325,21 @@ def generate_launch_description():
                 ])
             ]),
             'publish_frequency': 30.0,
-            # Ensure this is the root frame
             'frame_prefix': '',
             'use_sim_time': False
         }],
-        # Always run this node regardless of other settings
         condition=UnlessCondition(use_hardware)
     )
     
-    
     # ==========================================================================
-    # NODE DEFINITIONS
+    # HARDWARE INTERFACE AND SENSOR NODES
     # ==========================================================================
     
     # Hardware interface node (hardware only)
     hardware_interface_node = Node(
         package='luxo_behaviors',
         executable='hardware_interface',
-        name='hardware_interface',
+        name='hardware_interface_main',  # Changed name to avoid conflicts
         output='screen',
         parameters=[
             {'serial_port': '/dev/ttyAMA0'},
@@ -294,17 +354,13 @@ def generate_launch_description():
             {'dynamic_adaptation_roll_limit': 1},
             {'dynamic_adaptation_hand_limit': 0},
             {'dynamic_adaptation_resume_delay': 10.0},
-            {'enable_movement_source_integration': True},  # Explicitly enable movement source integration
-            {'ros__parameters': {'log_level': 'error'}},
-            {'enable_voice_following': LaunchConfiguration('enable_voice')},
-            {'voice_follow_speed': 0.3},
-            {'voice_follow_deadzone': 15.0},
-            {'voice_follow_smoothing': 0.3}
+            {'enable_movement_source_integration': True},
+            {'ros__parameters': {'log_level': 'error'}}
         ],
         condition=IfCondition(use_hardware)
     )
     
-    # I2C Device Manager node (hardware only, replaces direct APDS9960 node)
+    # I2C Device Manager node (hardware only)
     i2c_device_manager_node = Node(
         package='luxo_behaviors',
         executable='i2c_device_manager',
@@ -315,11 +371,12 @@ def generate_launch_description():
             {'enable_apds9960': True},
             {'enable_vl53_left': True},
             {'enable_vl53_right': True},
-            {'publish_rate': 5.0}  # 5Hz update rate
+            {'publish_rate': 10.0}  # Increased to 10Hz for better responsiveness
         ],
         condition=IfCondition(PythonExpression(["'", use_hardware, "' == 'true' and '", sense_collision, "' == 'true'"]))
     )
     
+    # Voice direction detection node (low-level audio processing)
     voice_direction_node = Node(
         package='luxo_behaviors',
         executable='voice_direction_node',
@@ -327,33 +384,34 @@ def generate_launch_description():
         output='screen',
         parameters=[
             {'sample_rate': 16000},
-            {'channels': 4},  # or 8 depending on your ReSpeaker model
+            {'channels': 4},
             {'vad_aggressiveness': 3},
             {'confidence_threshold': 0.5},
             {'enable_pixel_ring': True},
-            {'enable_voice_following': True},
             {'direction_smoothing_window': 5},
             {'min_report_interval': 0.5}
         ],
         condition=IfCondition(LaunchConfiguration('enable_voice'))
     )
 
-    # Collision detection logic node (hardware only, now uses I2C manager data)
+    # Legacy collision detection logic node (hardware only, now mainly for sensor processing)
     collision_logic_node = Node(
         package='luxo_behaviors',
         executable='collision_ros_node',
-        name='collision_node',
+        name='collision_sensor_processor',  # Renamed to reflect new role
         output='screen',
         parameters=[
             {'proximity_threshold': 15},
             {'side_distance_threshold': 8.0},
             {'danger_threshold': 5.0},
             {'warning_threshold': 15.0},
-            {'enable_gestures': enable_gestures}
+            {'enable_gestures': enable_gestures},
+            {'publish_petting_events': True}  # Enable petting event publishing
         ],
         condition=IfCondition(PythonExpression(["'", use_hardware, "' == 'true' and '", sense_collision, "' == 'true'"]))
     )
 
+    # System monitor node
     system_monitor_node = Node(
         package='luxo_behaviors',
         executable='system_monitor',
@@ -367,64 +425,25 @@ def generate_launch_description():
         condition=IfCondition(LaunchConfiguration('enable_system_monitor'))
     )
     
-    # Position test node - basic movement patterns (hardware only)
-    position_test_node = Node(
-        package='luxo_behaviors',
-        executable='position_test',
-        name='position_test',
-        output='screen',
-        condition=IfCondition(PythonExpression(["'", use_hardware, "' == 'true' and '", test_mode, "' == 'position'"]))
-    )
-    
-    # Animation command node (hardware version)
-    hardware_animation_node = Node(
-        package='luxo_behaviors',
-        executable='animation_command',
-        name='animation_command',
-        output='screen',
-        parameters=[
-            {'publish_joint_states_target': True},
-            {'use_hardware_joint_names': True},
-            {'publish_target_topic': True},  # Hardware should use target topic
-            {'enforce_joint_limits': True},   # Enable joint limits enforcement
-            {'use_hardware_position_feedback': True}  # Enable hardware position feedback in hardware mode
-        ],
-        condition=IfCondition(PythonExpression(["'", use_hardware, "' == 'true' and '", test_mode, "' == 'animation'"]))
-    )
-    
-    # Animation command node (simulation version)
-    simulation_animation_node = Node(
-        package='luxo_behaviors',
-        executable='animation_command',
-        name='animation_command',
-        output='screen',
-        parameters=[
-            {'publish_joint_states_target': False},  # Changed to false for simulation
-            {'publish_target_topic': True},   # Simulation should use a separate topic
-            {'enforce_joint_limits': True},    # Enable joint limits enforcement
-        ],
-        condition=UnlessCondition(use_hardware)
-    )
-
-    # Collision detection node (depth-based)
+    # Depth-based collision detection node (optional)
     collision_detection_node = Node(
         package='luxo_behaviors',
         executable='collision_detection',
-        name='collision_detection',
+        name='depth_collision_detection',
         output='screen',
         parameters=[
             {'safety_distance': safety_distance},
             {'robot_base_frame': 'base_link'},
             {'point_cloud_topic': '/oak/points'},
             {'joint_states_topic': '/joint_states'},
-            {'override_animation': True},
-            {'qos_reliability': 0},  # 0=BEST_EFFORT, 1=RELIABLE
-            {'qos_durability': 0},   # 0=VOLATILE, 1=TRANSIENT_LOCAL
+            {'override_animation': False},  # Let SafetyCoordinator handle this
+            {'qos_reliability': 0},
+            {'qos_durability': 0},
         ],
         condition=IfCondition(enable_depth_collision)
     )
     
-    # Camera interaction node (requires camera) - now with emotion detection capability
+    # Camera interaction node (requires camera)
     camera_interaction_node = Node(
         package='luxo_behaviors',
         executable='camera_interaction',
@@ -439,17 +458,226 @@ def generate_launch_description():
         condition=IfCondition(use_camera)
     )
     
+    # ==========================================================================
+    # TEST MODE NODES (Legacy support)
+    # ==========================================================================
+    
+    # Position test node - basic movement patterns (hardware only)
+    position_test_node = Node(
+        package='luxo_behaviors',
+        executable='position_test',
+        name='position_test',
+        output='screen',
+        condition=IfCondition(PythonExpression(["'", use_hardware, "' == 'true' and '", test_mode, "' == 'position'"]))
+    )
+    
+    # Animation command node (hardware version) - DISABLED in behavior mode to prevent conflicts
+    hardware_animation_node = Node(
+        package='luxo_behaviors',
+        executable='animation_command',
+        name='animation_command',
+        output='screen',
+        parameters=[
+            {'publish_joint_states_target': True},
+            {'use_hardware_joint_names': True},
+            {'publish_target_topic': True},
+            {'enforce_joint_limits': True},
+            {'use_hardware_position_feedback': True}
+        ],
+        condition=IfCondition(PythonExpression(["'", use_hardware, "' == 'true' and '", test_mode, "' == 'animation'"]))
+    )
+    
+    # Animation command node (simulation version)
+    simulation_animation_node = Node(
+        package='luxo_behaviors',
+        executable='animation_command',
+        name='animation_command',
+        output='screen',
+        parameters=[
+            {'publish_joint_states_target': False},
+            {'publish_target_topic': True},
+            {'enforce_joint_limits': True},
+        ],
+        condition=IfCondition(PythonExpression(["'", use_hardware, "' == 'false' and '", test_mode, "' == 'animation'"]))
+    )
+
+    # ==========================================================================
+    # MODULAR BEHAVIOR SYSTEM NODES
+    # ==========================================================================
+    
+    # SafetyCoordinatorNode - Central arbitration and safety (ALWAYS runs in behavior mode)
+    safety_coordinator_node = Node(
+        package='luxo_behaviors',
+        executable='safety_coordinator_node',
+        name='safety_coordinator',
+        output='screen',
+        parameters=[
+            # Safety limits
+            {'soft_limit_distance': 15.0},
+            {'hard_limit_distance': 8.0},
+            {'max_deceleration': 22.5},
+            
+            # Override management
+            {'default_override_timeout': 10.0},
+            {'max_override_duration': 30.0},
+            {'blend_transition_time': 2.0},
+            
+            # Base rotation limits
+            {'base_min_limit': -260.0},
+            {'base_max_limit': 135.0},
+            {'enable_base_wraparound': True},
+            
+            # Coordination
+            {'enable_voice_coordination': enable_voice_following},
+            {'enable_collision_coordination': enable_collision_avoidance},
+            {'enable_movement_source_integration': True},
+            {'command_rate_limit': 50.0},
+            
+            # Hardware interface - corrected topic routing
+            {'joint_command_topic': '/joint_states_target' if PythonExpression(["'", use_hardware, "' == 'true'"]) else '/roarm/joint_command'},
+            {'joint_names': ['base', 'shoulder', 'elbow', 'wrist', 'hand']}
+        ],
+        condition=IfCondition(PythonExpression(["'", test_mode, "' == 'behavior'"]))
+    )
+    
+    # CollisionMonitorNode - Collision detection and immediate safety responses
+    collision_monitor_node = Node(
+        package='luxo_behaviors',
+        executable='collision_monitor_node',
+        name='collision_monitor',
+        output='screen',
+        parameters=[
+            # Basic collision parameters
+            {'enable_collision_avoidance': enable_collision_avoidance},
+            {'soft_limit_distance': 15.0},
+            {'hard_limit_distance': 8.0},
+            {'max_deceleration': 22.5},
+            
+            # Collision tracking
+            {'consecutive_collision_threshold': 5},
+            {'escape_threshold': 8},
+            {'max_escape_attempts': 3},
+            {'adjustment_cooldown': 1.0},
+            
+            # Escape mode
+            {'escape_mode_duration': 5.0},
+            {'max_retreat_angle': 1.0},
+            {'side_avoidance_magnitude': 0.4},
+            
+            # Timeouts
+            {'collision_recovery_timeout': 2.0},
+            {'short_collision_timeout': 1.25},
+            {'extended_collision_timeout': 8.0},
+            {'max_collision_timeout': 15.0},
+            
+            # Base limits
+            {'base_min_limit': -260.0},
+            {'base_max_limit': 135.0},
+            {'enable_base_wraparound': True}
+        ],
+        condition=IfCondition(PythonExpression(["'", test_mode, "' == 'behavior' and '", enable_collision_avoidance, "' == 'true'"]))
+    )
+    
+    # VoiceFollowingNode - Voice direction following and head tracking
+    voice_following_node = Node(
+        package='luxo_behaviors',
+        executable='voice_following_node',
+        name='voice_following',
+        output='screen',
+        parameters=[
+            # Main voice following parameters
+            {'enable_voice_following': enable_voice_following},
+            {'voice_follow_speed': 0.3},
+            {'voice_follow_deadzone': 15.0},
+            {'voice_follow_smoothing': 0.3},
+            
+            # Voice variation parameters
+            {'voice_variation_enabled': True},
+            {'voice_direction_tolerance': 5.0},
+            {'voice_variation_interval': 2.0},
+            {'voice_look_up_range': 1.0},
+            {'voice_look_down_range': 0.2},
+            {'voice_on_target_threshold': 3.0},
+            
+            # Base rotation limits
+            {'base_min_limit': -260.0},
+            {'base_max_limit': 135.0},
+            {'enable_base_wraparound': True},
+            
+            # Timing
+            {'voice_timeout': 2.0},
+            {'voice_influence_decay_rate': 0.8},
+            {'voice_influence_gain': 0.8}
+        ],
+        condition=IfCondition(PythonExpression(["'", test_mode, "' == 'behavior' and '", enable_voice_following, "' == 'true'"]))
+    )
+    
+    # IdleBehaviorNode - Idle animations and behaviors
+    idle_behavior_node = Node(
+        package='luxo_behaviors',
+        executable='idle_behavior_node',
+        name='idle_behavior',
+        output='screen',
+        parameters=[
+            # Idle animation parameters
+            {'idle_animations_enabled': True},
+            {'min_idle_time_before_animation': 5.0},
+            {'idle_animation_interval_min': 10.0},
+            {'idle_animation_interval_max': 60.0},
+            {'extended_idle_timeout': 120.0},
+            
+            # Idle head variation parameters
+            {'idle_head_variation_enabled': True},
+            {'idle_head_variation_interval_min': 3.5},
+            {'idle_head_variation_interval_max': 10.0},
+            {'idle_head_base_rotation_range': 0.3},
+            {'idle_head_look_up_range': 0.4},
+            {'idle_head_look_down_range': 0.1},
+            {'idle_head_variation_speed': 4.0},
+            
+            # Home position parameters
+            {'enable_home_position': True},
+            {'home_position_timeout': 30.0},
+            
+            # Rest position parameters
+            {'enable_rest_position': True},
+            {'rest_variation_range': 0.05},
+            
+            # Activity tracking
+            {'activity_timeout_min': 45.0},
+            {'activity_timeout_max': 90.0}
+        ],
+        condition=IfCondition(PythonExpression(["'", test_mode, "' == 'behavior' and '", enable_idle_behaviors, "' == 'true'"]))
+    )
+    
+    # PettingResponseNode - Petting detection and response behaviors
+    petting_response_node = Node(
+        package='luxo_behaviors',
+        executable='petting_response_node',
+        name='petting_response',
+        output='screen',
+        parameters=[
+            # Petting response parameters
+            {'petting_message_timeout': 5.0},
+            {'petting_animation_cooldown': 8.0},
+            {'startup_grace_period': 10.0},
+            {'petting_animations': ['folded_wiggle']},
+            {'enable_petting_response': enable_petting_response},
+            {'max_petting_intensity': 100},
+            {'min_petting_pressure': 2}
+        ],
+        condition=IfCondition(PythonExpression(["'", test_mode, "' == 'behavior' and '", enable_petting_response, "' == 'true'"]))
+    )
 
     # System completion message
     completion_message = LogInfo(
-        msg=["\n✅ SYSTEM LAUNCH COMPLETE\n",
+        msg=["\n✅ MODULAR BEHAVIOR SYSTEM LAUNCH COMPLETE\n",
              "- Mode: ", PythonExpression(["'Hardware' if '", use_hardware, "' == 'true' else 'Simulation'"]), "\n",
+             "- Test mode: ", test_mode, "\n",
+             "- Behavior nodes: ", PythonExpression(["'Active' if '", test_mode, "' == 'behavior' else 'Inactive'"]), "\n",
              "- For help, run with 'verbose:=true'\n",
-             "- Common commands: \n",
-             "  • View topics: ros2 topic list\n",
-             "  • View nodes: ros2 node list\n",
-             "  • Monitor I2C health: ros2 topic echo /i2c/sensor_health\n",
-             "  • Stop system: Ctrl+C\n"]
+             "- Monitor system: ros2 topic echo /safety/system_status\n",
+             "- Stop system: Ctrl+C\n"]
     )
     
     # Create and return launch description
@@ -462,6 +690,7 @@ def generate_launch_description():
         use_joint_state_publisher_arg,
         declare_test_mode,
         declare_enable_voice,
+        declare_enable_voice_following,
         declare_enable_depth_collision,
         declare_safety_distance,
         declare_sense_collision,
@@ -470,34 +699,46 @@ def generate_launch_description():
         declare_camera_rotation,
         declare_enable_dynamic_adaptation,
         declare_system_monitor,
+        declare_enable_idle_behaviors,
+        declare_enable_petting_response,
+        declare_enable_collision_avoidance,
         
         # Launch info and banners
         startup_banner,
         mode_info,
+        behavior_system_info,
         hardware_info,
         simulation_info,
         quick_reference,
         camera_info,
         i2c_info,
         troubleshooting_info,
-        jsp_killer,
-        voice_direction_node,
+        
         # Launch files
         roarm_launch,
-        
-        # Add robot_state_publisher with high priority (add before other nodes)
         robot_state_publisher_node,
+        jsp_killer,
         
-        # Nodes
+        # Hardware interface and sensor nodes
         hardware_interface_node,
+        i2c_device_manager_node,
+        voice_direction_node,
+        collision_logic_node,
+        system_monitor_node,
+        collision_detection_node,
+        camera_interaction_node,
+        
+        # Test mode nodes (legacy support)
         position_test_node,
         hardware_animation_node,
-        system_monitor_node,
         simulation_animation_node,
-        collision_detection_node,
-        i2c_device_manager_node,
-        collision_logic_node,
-        camera_interaction_node,
+        
+        # Modular behavior system nodes
+        safety_coordinator_node,
+        collision_monitor_node,
+        voice_following_node,
+        idle_behavior_node,
+        petting_response_node,
         
         # Final info
         completion_message,
