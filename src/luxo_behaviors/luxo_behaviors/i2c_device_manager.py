@@ -222,11 +222,11 @@ class ADS7830Sensor(I2CSensor):
         Map ADC value to pressure state
         Returns: (state_number, state_name, state_symbol)
         """
-        if value >= 64000:  # Not pressed (allowing for some noise)
+        if value >= 24000:  # Not pressed (allowing for some noise)
             return (0, "Not Pressed", "-")
-        elif value >= 50000:  # Very light touch
+        elif value >= 20000:  # Very light touch
             return (1, "Light Touch", "1")
-        elif value >= 30000:  # Light press
+        elif value >= 17500:  # Light press
             return (2, "Light Press", "2")
         elif value >= 15000:  # Medium press
             return (3, "Medium Press", "3")
