@@ -328,7 +328,7 @@ class CollisionMonitorNode(Node):
         # Robot state updates
         self.robot_state_sub = self.create_subscription(
             String,
-            '/robot/state',
+            '/luxo/current_state',
             self.robot_state_callback,
             10
         )

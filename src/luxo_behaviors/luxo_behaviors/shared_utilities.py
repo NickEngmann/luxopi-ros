@@ -38,7 +38,7 @@ class LuxoConstants:
     IDLE_HEAD_BASE_ROTATION_RANGE = 0.3
     IDLE_HEAD_LOOK_UP_RANGE = 0.4
     IDLE_HEAD_LOOK_DOWN_RANGE = 0.1
-    IDLE_HEAD_VARIATION_SPEED = 4.0
+    IDLE_HEAD_VARIATION_SPEED = 14.0
     
     # Voice following constants
     VOICE_NEUTRAL_POSITION = [-0.55, 1.2, 1.4, -2.0, 10.0]  # Baseline position (excluding base)
@@ -537,28 +537,30 @@ class StateUtils:
     @staticmethod
     def get_state_priority(state: str) -> int:
         """
-        Get priority level for a state (higher number = higher priority).
+        Get the priority of a state for transition decisions.
+        Higher numbers indicate higher priority.
         
         Args:
             state: State name
             
         Returns:
-            Priority level (0-10)
+            Priority value (0-100)
         """
-        priorities = {
-            'EMERGENCY': 10,
-            'COLLISION_AVOIDING': 9,
-            'ESCAPE_MODE': 8,
-            'RETURNING_HOME': 7,
-            'PETTING': 6,
-            'ANIMATING': 5,
-            'EMOTION_REACTING': 4,
-            'VOICE_FOLLOWING': 3,
-            'IDLE': 2,
-            'INITIALIZING': 1
+        state_priorities = {
+            'ERROR': 100,           # Highest priority
+            'SHUTDOWN': 95,
+            'ESCAPE_MODE': 90,
+            'RETURNING_HOME': 85,
+            'COLLISION_AVOIDING': 80,
+            'PETTING': 70,
+            'USER_CONTROL': 60,
+            'EMOTION_REACTING': 50,
+            'ANIMATING': 40,
+            'IDLE': 30,
+            'INITIALIZING': 20,     # Lowest priority
         }
         
-        return priorities.get(state, 0)
+        return state_priorities.get(state, 0)
 
 
 class MathUtils:

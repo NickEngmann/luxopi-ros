@@ -531,7 +531,7 @@ def generate_launch_description():
             {'enable_voice_coordination': enable_voice_following},
             {'enable_collision_coordination': enable_collision_avoidance},
             {'enable_movement_source_integration': True},
-            {'command_rate_limit': 50.0},
+            {'command_rate_limit': 5.0},
             
             # Hardware interface - FIXED: Use consistent topic
             {'joint_command_topic': '/roarm/joint_command'},
@@ -636,7 +636,7 @@ def generate_launch_description():
             {'idle_head_base_rotation_range': 0.3},
             {'idle_head_look_up_range': 0.4},
             {'idle_head_look_down_range': 0.1},
-            {'idle_head_variation_speed': 4.0},
+            {'idle_head_variation_speed': 14.0},
             
             # Home position parameters
             {'enable_home_position': True},

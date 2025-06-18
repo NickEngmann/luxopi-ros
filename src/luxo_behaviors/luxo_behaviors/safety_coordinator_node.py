@@ -152,7 +152,7 @@ class SafetyCoordinatorNode(Node):
         self.declare_parameter('enable_voice_coordination', True)
         self.declare_parameter('enable_collision_coordination', True)
         self.declare_parameter('enable_movement_source_integration', True)
-        self.declare_parameter('command_rate_limit', 50.0)  # Hz
+        self.declare_parameter('command_rate_limit', 5.0)  # Hz
         
         # Hardware interface parameters
         self.declare_parameter('joint_command_topic', '/roarm/joint_command')
@@ -280,7 +280,7 @@ class SafetyCoordinatorNode(Node):
         # Robot state updates
         self.robot_state_pub = self.create_publisher(
             String,
-            '/robot/state',
+            '/luxo/current_state',
             10
         )
         
@@ -696,6 +696,9 @@ class SafetyCoordinatorNode(Node):
             # Skip if target not initialized yet
             if not self.target_initialized:
                 current_time = self.get_clock().now()
+                time_since_last_command = ROSUtils.time_since(self.last_command_time, current_time)
+                if time_since_last_command < 0.2:  # Minimum 200ms between commands
+                    return
                 if self._last_init_warning_time is None:
                     self._last_init_warning_time = current_time
                 
@@ -704,47 +707,29 @@ class SafetyCoordinatorNode(Node):
                     self.get_logger().warn("Target not initialized yet - waiting for joint states")
                     self._last_init_warning_time = current_time
                 return
-                
-            # Rate limiting check
             current_time = self.get_clock().now()
             time_since_last_command = ROSUtils.time_since(self.last_command_time, current_time)
             
             if time_since_last_command < self.min_command_interval:
                 return
                 
-            # Process active overrides
-            with self._override_lock:
-                override_count = len(self.active_overrides)
-                if self.enable_debug_logging and override_count > 0:
-                    self.get_logger().debug(f"Processing {override_count} active overrides")
+            # IMPORTANT: Add minimum interval between commands
+            if time_since_last_command < 0.2:  # Minimum 200ms between commands
+                return
                 
             # Determine effective target position
             effective_target = self._determine_effective_target()
             
             if effective_target is not None:
-                # Apply safety limits
-                safe_target = self._apply_safety_limits(effective_target)
-                
-                # Validate target
-                is_valid = self._validate_target_position(safe_target)
-                
-                if is_valid:
-                    # Check if position has changed significantly
-                    position_changed = self._has_position_changed(safe_target)
+                # Check if position has changed significantly or should force send
+                if (self._has_position_changed(effective_target) or 
+                    self._should_send_command() or
+                    time_since_last_command > 1.0):  # Force send every 1 second
                     
-                    if position_changed or self._should_send_command():
-                        # Execute the command
-                        self._execute_joint_command(safe_target)
-                        self.last_command_time = current_time
-                        self.last_commanded_position = safe_target.copy()
-                else:
-                    if self.enable_debug_logging:
-                        self.get_logger().debug("Target position validation failed")
+                    self._execute_joint_command(effective_target)
             
         except Exception as e:
             self.get_logger().error(f"Error in coordination timer: {e}")
-            import traceback
-            self.get_logger().error(f"Stack trace: {traceback.format_exc()}")
     
     def _has_position_changed(self, new_position: List[float]) -> bool:
         """Check if position has changed significantly from last commanded position."""
@@ -1019,18 +1004,23 @@ class SafetyCoordinatorNode(Node):
     def _execute_joint_command(self, positions: List[float]):
         """Execute final joint command to hardware."""
         try:
-            # Create joint state message with 6 position fields (including acceleration)
+            # Create joint state message with proper format for hardware interface
             msg = JointState()
             msg.header.stamp = self.get_clock().now().to_msg()
             msg.name = self.joint_names
             
-            # Add acceleration to positions (6 total fields)
+            # Get acceleration from current override or use default
             acceleration = 10.0
             if self.current_override and self.current_override.acceleration:
                 acceleration = self.current_override.acceleration
-                
+            
+            # Hardware interface expects: [joint1, joint2, joint3, joint4, joint5, acceleration]
             positions_with_accel = list(positions[:5]) + [acceleration]
             msg.position = positions_with_accel
+            
+            # Add empty velocity and effort arrays to maintain compatibility
+            msg.velocity = []
+            msg.effort = []
             
             # Publish command
             self.joint_command_pub.publish(msg)
@@ -1041,7 +1031,7 @@ class SafetyCoordinatorNode(Node):
             # Log significant position changes
             if self._has_position_changed(positions[:5]) or self.enable_debug_logging:
                 source = self.current_override.source if self.current_override else "default"
-                self.get_logger().info(
+                self.get_logger().debug(
                     f"Joint command executed (source: {source}): "
                     f"{[round(p, 3) for p in positions[:5]]}, accel: {acceleration}"
                 )

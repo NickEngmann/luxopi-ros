@@ -171,7 +171,7 @@ class AnimationCommandActionServer(Node):
         
         # Maximum attempts to get hardware position
         self.max_position_attempts = 10
-        self.position_request_interval = 0.5
+        self.position_request_interval = 5.0
         
         self.get_logger().info('Animation command action server initialized')
         self.get_logger().info(f'Available animations: {", ".join(self.animation_plugins.keys())}')
