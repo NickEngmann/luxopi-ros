@@ -1,24 +1,19 @@
-**TOMORROW AT HOME**
-- [] Print a New Head
-
-**BEFORE THE SHOW**
-- [] Tighten the Joints
-
-**Refactor before the show knowing full well you could revert**
-- [] More Fine tuning/complete rehaul of the animations
-- [] Move VOICE FOLLOWING Stuff into its own state instead of being inside Collision Avoidance. Collision Avoidance is becoming crazy large
-
-**IS THIS STILL A PROBLEM/Stuff I probably won't get to**
-- [] When there is nonstop voice activity, we struggle to go back to IDLE
-- [] Fix DEMA Adaptation Mode and Integrate with Touch
-- [] CAMERA FOLLOWING
-
+# Issues
+- [] Neopixels aren't stable (the smaller ring keeps crashing - needs more solder)
+- [] Neopixel wire needs to be coated
+- [] Larger Light Diffuser
+- [] I2C periodically crashing
+- [] Mic Following isn't very accurate
+- [] Neopixels color orientation
+- [] Neopixel interacting with state machine
 
 # Later Priorities
 ## High Priority
 - [ ] Fix dynamic adaptation mode (DEMA) - increase torque limit for better operation
 - [ ] Fix animation system to handle interruptions from collision avoidance more gracefully
-
+- [] Move VOICE FOLLOWING Stuff into its own state instead of being inside Collision Avoidance. Collision Avoidance is becoming crazy large
+- [] Fix DEMA Adaptation Mode and Integrate with Touch
+- [] CAMERA FOLLOWING
 
 ## Feature Enhancements
 - [ ] Implement smoother transition between animations when interrupted by collisions
