@@ -12,28 +12,28 @@ import random
 import argparse
 
 # Configuration
-PIXEL_COUNT = 102
+PIXEL_COUNT = 76
 # Using proper SPI MOSI pin (GPIO 10, Physical Pin 19)
 print("Using GPIO 10 (MOSI - Pin 19) for NeoPixel SPI")
 
-BRIGHTNESS = 0.5     # 0.0 to 1.0 (start dim for safety)
-SPI_FREQUENCY = 1000000  # Further reduced to 400kHz for better stability
+BRIGHTNESS = 0.8     # 0.0 to 1.0 (start dim for safety)
+SPI_FREQUENCY = 100000  # 100kHz for stability
 
 def init_pixels():
-    """Initialize pixels with default GRB color order"""
+    """Initialize pixels with RGBW color order"""
     global pixels
     
     try:
         # Get the SPI bus
         spi = board.SPI()
         
-        # Initialize NeoPixels using SPI with default GRB color order
+        # Initialize NeoPixels using SPI with RGBW color order
         pixels = neopixel_spi.NeoPixel_SPI(
             spi, 
             PIXEL_COUNT, 
             brightness=BRIGHTNESS,
             auto_write=False,
-            pixel_order=neopixel_spi.GRB,
+            pixel_order=neopixel_spi.RGBW,
             bpp=3
         )
         
