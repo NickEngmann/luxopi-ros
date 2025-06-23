@@ -1883,28 +1883,7 @@ class CollisionAvoidance:
         # Check if collision has been clear for a while
         any_collision_active = any(self.collision_status[direction]['active'] for direction in self.collision_status)
         override_duration = (current_time - self.target_override_time).nanoseconds / 1e9
-        
-        if not any_collision_active and override_duration > self.target_override_timeout:
-            self.node.get_logger().debug(f"Collisions clear for {override_duration:.1f}s - gradually returning to original target")
-            
-            # Gradually blend between override and original target
-            max_blend = 0.05  # Only blend back part of the way
-            blend_factor = min(max_blend, (override_duration - self.target_override_timeout) / 2.0)
-            blended_target = [
-                self.target_override_joints[i] * (1.0 - blend_factor) + original_target[i] * blend_factor
-                for i in range(len(original_target))
-            ]
-            
-            # If we're very close to original target, clear the override completely
-            if blend_factor > 0.9:
-                self.node.get_logger().warn("Override expired - returning to original target")
-                self.target_override_active = False
-                # VOICE FOLLOWING ADDITION: Apply voice following to the original target
-                return self.apply_voice_following(original_target)
-                
-            # VOICE FOLLOWING ADDITION: Apply voice following to the blended target
-            return self.apply_voice_following(blended_target)
-            
+           
         # If override is still active and needed, use it
         # VOICE FOLLOWING ADDITION: Apply voice following to the target override joints
         return self.apply_voice_following(self.target_override_joints)
