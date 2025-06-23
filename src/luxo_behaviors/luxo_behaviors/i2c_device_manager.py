@@ -515,8 +515,10 @@ class I2CDeviceManager(Node):
             self.get_logger().debug(f"Attempting to initialize {len(self.pending_sensors)} pending sensors")
             self._initialize_pending_sensors()
         
-        # Check active sensors for problems
-        for sensor_name, sensor in self.sensors.items():
+        # Check active sensors for problems - create a copy of items to avoid iteration issues
+        sensors_to_move = []
+        
+        for sensor_name, sensor in list(self.sensors.items()):
             # Try to recover inactive sensors
             if not sensor.active:
                 self.get_logger().info(f"Attempting to recover {sensor_name}")
@@ -526,11 +528,8 @@ class I2CDeviceManager(Node):
                     self._publish_sensor_health(sensor_name, "recovered", 
                         f"Recovered after {sensor.total_errors} total errors")
                 else:
-                    # Move back to pending if recovery failed
-                    if sensor_name not in self.pending_sensors:
-                        self.pending_sensors[sensor_name] = sensor
-                        del self.sensors[sensor_name]
-                        self.get_logger().warn(f"{sensor_name} moved back to pending sensors")
+                    # Mark for moving back to pending
+                    sensors_to_move.append(sensor_name)
                     
             # Check for sensors that haven't reported in a while
             elif sensor.last_success_time:
@@ -540,7 +539,22 @@ class I2CDeviceManager(Node):
                     sensor.active = False
                     self._publish_sensor_health(sensor_name, "timeout", 
                         f"No data for {time_since_success:.1f}s")
-                    
+        
+        # Move failed recovery sensors back to pending (outside the iteration)
+        for sensor_name in sensors_to_move:
+            if sensor_name in self.sensors:
+                sensor = self.sensors[sensor_name]
+                # Only move if we haven't exceeded max attempts
+                if sensor.initialization_attempts < self.max_init_attempts:
+                    self.pending_sensors[sensor_name] = sensor
+                    del self.sensors[sensor_name]
+                    self.get_logger().warn(f"{sensor_name} moved back to pending sensors")
+                else:
+                    # Move to failed sensors if max attempts exceeded
+                    self.failed_sensors[sensor_name] = sensor
+                    del self.sensors[sensor_name]
+                    self.get_logger().error(f"{sensor_name} moved to failed sensors after {sensor.initialization_attempts} attempts")
+
     def publish_health_summary(self):
         """Publish a summary of all sensor health"""
         active_sensors = len([s for s in self.sensors.values() if s.active])
@@ -576,12 +590,17 @@ class I2CDeviceManager(Node):
             
             # Check all sensor lists
             sensor = None
+            current_location = None
+            
             if sensor_name in self.sensors:
                 sensor = self.sensors[sensor_name]
+                current_location = 'active'
             elif sensor_name in self.pending_sensors:
                 sensor = self.pending_sensors[sensor_name]
+                current_location = 'pending'
             elif sensor_name in self.failed_sensors:
                 sensor = self.failed_sensors[sensor_name]
+                current_location = 'failed'
                 
             if not sensor:
                 response.success = False
@@ -595,26 +614,28 @@ class I2CDeviceManager(Node):
                 # Reset counters and try to initialize
                 sensor.initialization_attempts = 0
                 sensor.error_count = 0
+                sensor.total_errors = 0
                 
-                # Move to pending if not already there
-                if sensor_name in self.failed_sensors:
+                # Move to pending based on current location
+                if current_location == 'failed':
                     self.pending_sensors[sensor_name] = sensor
                     del self.failed_sensors[sensor_name]
-                elif sensor_name in self.sensors and not sensor.active:
+                elif current_location == 'active' and not sensor.active:
                     self.pending_sensors[sensor_name] = sensor
                     del self.sensors[sensor_name]
                     
+                # Try to initialize immediately
                 self._initialize_pending_sensors()
                 
             response.success = True
-            response.message = f"Configuration applied to {sensor_name}"
+            response.message = f"Configuration applied to {sensor_name} (was in {current_location})"
             
         except Exception as e:
             response.success = False
             response.message = str(e)
             
         return response
-        
+
     def _publish_status(self, message: str):
         """Publish status message"""
         msg = String()
