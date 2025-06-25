@@ -247,7 +247,7 @@ class CollisionAvoidance:
         
         # Voice tracking state
         self.last_voice_direction = None
-        self.last_voice_time = None
+        self.last_voice_time = self.node.get_clock().now()
         self.voice_influence = 0.0
         self.target_voice_angle = None
         self.voice_active = False
@@ -258,6 +258,13 @@ class CollisionAvoidance:
         self.current_voice_variation = None
         self.voice_neutral_position = [-0.55, 1.2, 1.0, -2.0, 10.0]  # Baseline position (excluding base)
         self.voice_on_target_threshold = 3.0  # seconds to wait before starting variations
+        
+        # NEW: Voice command cooldown and direction filtering
+        self.voice_command_cooldown = 1.25  # seconds between voice commands
+        # Initialize to None to allow immediate first command
+        self.last_voice_command_time = None
+        self.last_acted_voice_direction = None  # Last direction we actually sent a command for
+        self.voice_direction_filter_threshold = 5.0  # degrees - ignore directions within this range
         
         # Create subscribers for voice data
         self.voice_direction_sub = self.node.create_subscription(
@@ -333,9 +340,40 @@ class CollisionAvoidance:
         if not self.state_machine.is_in_state(LuxoState.IDLE, LuxoState.ANIMATING, LuxoState.EMOTION_REACTING):
             return
         
+        current_time = self.node.get_clock().now()
+        voice_direction = msg.data
+        
+        # Check cooldown timer - don't process if we sent a command too recently
+        if self.last_voice_command_time is not None:
+            time_since_last_command = (current_time - self.last_voice_command_time).nanoseconds / 1e9
+            if time_since_last_command < self.voice_command_cooldown:
+                remaining_cooldown = self.voice_command_cooldown - time_since_last_command
+                self.node.get_logger().debug(
+                    f"Voice command on cooldown - {remaining_cooldown:.2f}s remaining "
+                    f"(last command: {time_since_last_command:.2f}s ago)"
+                )
+                return
+        
+        # Check if direction is too similar to last acted-upon direction
+        if self.last_acted_voice_direction is not None:
+            direction_diff = abs(voice_direction - self.last_acted_voice_direction)
+            # Handle wraparound case (e.g., 359° vs 1°)
+            if direction_diff > 180:
+                direction_diff = 360 - direction_diff
+                
+            if direction_diff <= self.voice_direction_filter_threshold:
+                self.node.get_logger().debug(
+                    f"Ignoring similar voice direction: {voice_direction:.1f}° "
+                    f"(last: {self.last_acted_voice_direction:.1f}°, diff: {direction_diff:.1f}°)"
+                )
+                # Still update tracking but don't send command
+                self.last_voice_direction = voice_direction
+                self.last_voice_time = current_time
+                return
+        
         # Update voice tracking
-        self.last_voice_direction = msg.data
-        self.last_voice_time = self.node.get_clock().now()
+        self.last_voice_direction = voice_direction
+        self.last_voice_time = current_time
         
         # REMOVED: Voice following should NOT reset idle timeout
         # This allows idle animations to still trigger while voice following is active
@@ -344,7 +382,7 @@ class CollisionAvoidance:
         self.voice_influence = min(1.0, self.voice_influence + 0.8)  # Very aggressive following
         
         # Convert voice direction to target angle with intelligent wraparound
-        target_angle_rad = np.deg2rad(self.last_voice_direction)
+        target_angle_rad = np.deg2rad(voice_direction)
         target_angle = self._normalize_angle(target_angle_rad)
         
         # Check if we need wraparound due to base limits
@@ -355,14 +393,14 @@ class CollisionAvoidance:
                 if wraparound_target >= self.base_min_limit:
                     self.target_voice_angle = wraparound_target
                     self.node.get_logger().info(
-                        f"Voice at {self.last_voice_direction}° beyond max limit - "
+                        f"Voice at {voice_direction}° beyond max limit - "
                         f"using wraparound to {np.rad2deg(wraparound_target):.1f}°"
                     )
                 else:
                     # Even wraparound doesn't work, clamp to nearest reachable
                     self.target_voice_angle = self.base_max_limit
                     self.node.get_logger().warn(
-                        f"Voice at {self.last_voice_direction}° unreachable - clamping to max limit"
+                        f"Voice at {voice_direction}° unreachable - clamping to max limit"
                     )
             else:
                 self.target_voice_angle = self.base_max_limit
@@ -374,14 +412,14 @@ class CollisionAvoidance:
                 if wraparound_target <= self.base_max_limit:
                     self.target_voice_angle = wraparound_target
                     self.node.get_logger().info(
-                        f"Voice at {self.last_voice_direction}° beyond min limit - "
+                        f"Voice at {voice_direction}° beyond min limit - "
                         f"using wraparound to {np.rad2deg(wraparound_target):.1f}°"
                     )
                 else:
                     # Even wraparound doesn't work, clamp to nearest reachable
                     self.target_voice_angle = self.base_min_limit
                     self.node.get_logger().warn(
-                        f"Voice at {self.last_voice_direction}° unreachable - clamping to min limit"
+                        f"Voice at {voice_direction}° unreachable - clamping to min limit"
                     )
             else:
                 self.target_voice_angle = self.base_min_limit
@@ -391,13 +429,17 @@ class CollisionAvoidance:
             self.target_voice_angle = target_angle
         
         self.node.get_logger().info(
-            f"Voice detected at {self.last_voice_direction:.1f}°, "
+            f"Voice detected at {voice_direction:.1f}°, "
             f"target angle: {np.rad2deg(self.target_voice_angle):.1f}°, "
             f"sending direct command (influence: {self.voice_influence:.2f})"
         )
         
         # SEND COMMAND IMMEDIATELY with the calculated target
         self._send_voice_following_command()
+        
+        # Update tracking for cooldown and filtering
+        self.last_voice_command_time = current_time
+        self.last_acted_voice_direction = voice_direction
 
     def _check_voice_on_target(self):
         """Check if robot is pointing at voice direction and start variation timer"""
@@ -792,15 +834,32 @@ class CollisionAvoidance:
             self.last_activity_time = current_time
             self.node.get_logger().debug(f"Activity timestamp updated due to significant joint position change")
             
-        # Check if this is a new target that's different from our original target
-        if not self._at_position(joints, self.target_joints, 0.05):
-            self.last_original_target_change_time = current_time
+        # MODIFIED: Only clear collision-related overrides for VERY significant target changes
+        # This prevents clearing overrides when the system is just updating with the same target
+        if self.target_override_active:
+            is_collision_override = ("collision" in self.target_override_reason.lower() or 
+                                "avoidance" in self.target_override_reason.lower() or
+                                "escape" in self.target_override_reason.lower())
             
-            # Clear target override if the desired target has changed
-            if self.target_override_active:
-                self.node.get_logger().info(f"New target received - clearing safety override")
-                self.target_override_active = False
-                self.target_override_joints = None
+            if is_collision_override:
+                # For collision overrides, only clear if the new target is very different
+                distance = self._calculate_position_distance(joints, self.target_override_joints)
+                if distance > 0.5:  # Much higher threshold for collision overrides
+                    self.node.get_logger().info(f"Major target change detected (distance: {distance:.3f}) - clearing collision override")
+                    self.target_override_active = False
+                    self.target_override_joints = None
+                else:
+                    self.node.get_logger().debug(f"Minor target change (distance: {distance:.3f}) - keeping collision override active")
+            else:
+                # For non-collision overrides, use the original logic
+                distance = self._calculate_position_distance(joints, self.target_override_joints)
+                if distance > 0.1:
+                    self.node.get_logger().info(f"New target received - clearing non-collision override")
+                    self.target_override_active = False
+                    self.target_override_joints = None
+        
+        # Update the timestamp for target changes
+        self.last_original_target_change_time = current_time
     
     def update_joint_velocities(self, velocities):
         """Update the current joint velocities."""
@@ -1577,7 +1636,7 @@ class CollisionAvoidance:
         if hasattr(self.node, 'enable_movement_source_integration') and self.node.enable_movement_source_integration:
             try:
                 movement_source_msg = String()
-               
+            
                 movement_source_msg.data = "collision"
                 if hasattr(self.node, 'movement_source_publisher'):
                     self.node.movement_source_publisher.publish(movement_source_msg)
@@ -1719,12 +1778,14 @@ class CollisionAvoidance:
             # Send command with high priority and dynamic acceleration
             self.send_safe_joint_command(new_position_with_acceleration, f"Collision avoidance (count: {consecutive_count}, accel: {acceleration})")
             
-            # Set this as our target override position (without acceleration for internal tracking)
+            # MODIFIED: Create a more persistent override that won't be easily cleared
             self.target_override_active = True
             self.target_override_time = self.node.get_clock().now()
             self.target_override_joints = new_position.copy()
             self.target_override_reason = f"Collision avoidance for {direction} at {distance:.1f}cm (accel: {acceleration})"
-            self.node.get_logger().info(f"Created target override: {self.target_override_reason}")
+            # MODIFIED: Make this the new "normal" target position
+            self.target_joints = new_position.copy()  # Update our target to the safe position
+            self.node.get_logger().info(f"Created persistent collision override: {self.target_override_reason}")
             
             # If emergency and avoidance doesn't work after multiple attempts,
             # schedule a return to rest position
@@ -1873,20 +1934,53 @@ class CollisionAvoidance:
             # VOICE FOLLOWING ADDITION: Apply voice following to the original target
             return self.apply_voice_following(original_target)
         
-        # Check if original target has changed significantly
-        if self._at_position(original_target, self.target_joints, 0.05) == False:
-            self.node.get_logger().info("Original target changed - clearing override")
+        # MODIFIED: Only clear override for SIGNIFICANT target changes, not just any difference
+        # Check if we have a genuinely NEW target that's significantly different from our current override position
+        override_to_new_target_distance = self._calculate_position_distance(original_target, self.target_override_joints)
+        
+        # Only clear override if the new target is significantly different from where we currently are
+        # This prevents returning to the original position just because collisions cleared
+        if override_to_new_target_distance > 0.3:  # Significant movement required (increased from 0.05)
+            self.node.get_logger().info(f"Significant new target detected (distance: {override_to_new_target_distance:.3f}) - clearing collision override")
             self.target_override_active = False
-            # VOICE FOLLOWING ADDITION: Apply voice following to the original target
+            # Update our internal target to the new position
+            self.target_joints = original_target.copy()
             return self.apply_voice_following(original_target)
-            
-        # Check if collision has been clear for a while
+        
+        # MODIFIED: Don't automatically clear overrides just because collisions are gone
+        # Instead, make the collision avoidance position the "new normal"
         any_collision_active = any(self.collision_status[direction]['active'] for direction in self.collision_status)
         override_duration = (current_time - self.target_override_time).nanoseconds / 1e9
-           
-        # If override is still active and needed, use it
-        # VOICE FOLLOWING ADDITION: Apply voice following to the target override joints
+        
+        # Only clear collision avoidance overrides for very specific reasons:
+        # 1. If it's been a very long time (extended timeout)
+        # 2. If it's a non-collision override that has timed out
+        is_collision_override = ("collision" in self.target_override_reason.lower() or 
+                            "avoidance" in self.target_override_reason.lower() or
+                            "escape" in self.target_override_reason.lower())
+        
+        if not is_collision_override and override_duration > self.target_override_timeout:
+            # Non-collision overrides (like voice following) can still timeout normally
+            self.node.get_logger().debug(f"Non-collision override expired after {override_duration:.1f}s")
+            self.target_override_active = False
+            return self.apply_voice_following(original_target)
+        elif is_collision_override and override_duration > 60.0:  # Much longer timeout for collision overrides
+            # Only clear collision overrides after a very long time of no new commands
+            self.node.get_logger().info(f"Collision override cleared after extended timeout ({override_duration:.1f}s)")
+            self.target_override_active = False
+            # Make the collision avoidance position the new "normal" target
+            self.target_joints = self.target_override_joints.copy()
+            return self.apply_voice_following(self.target_joints)
+        
+        # Continue using the override position - this makes collision avoidance positions "stick"
         return self.apply_voice_following(self.target_override_joints)
+
+    def _calculate_position_distance(self, pos1, pos2):
+        """Calculate the Euclidean distance between two joint positions."""
+        if not pos1 or not pos2 or len(pos1) != len(pos2):
+            return float('inf')
+        
+        return math.sqrt(sum((a - b) ** 2 for a, b in zip(pos1, pos2)))
     
     def apply_safety_limits(self, positions):
         """Apply safety limits to joint positions based on collision status."""
