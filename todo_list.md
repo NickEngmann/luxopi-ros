@@ -1,11 +1,16 @@
 # Issues
+- [] Reset On/Off Light Controls from State Manager or something similar
+- [] Neopixel interacting with state machine (Petting timer isn't working properly)
 - [] Neopixels aren't stable (the smaller ring keeps crashing - needs more solder)
-- [] Neopixel wire needs to be coated
-- [] Larger Light Diffuser
+- [] Collision keeps resetting - aka the device moves back into position where it originally collided
 - [] I2C periodically crashing
-- [] Mic Following isn't very accurate
-- [] Neopixels color orientation
-- [] Neopixel interacting with state machine
+- [] Audio Commands
+-- Turn on/off light
+-- stop moving
+-- start moving
+-- go to rest position
+- [] Audio Filtering (some more)
+
 
 # Later Priorities
 ## High Priority
