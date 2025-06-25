@@ -13,8 +13,8 @@ from pixel_ring import pixel_ring
 
 # Configuration parameters
 config = {
-    'audio': {'rate': 16000, 'channels': 6, 'vad_frames': 20, 'doa_frames': 400},
-    'vad': {'aggressiveness': 3, 'speech_ratio': 0.7, 'timeout': 1.5},
+    'audio': {'rate': 16000, 'channels': 6, 'vad_frames': 30, 'doa_frames': 600},
+    'vad': {'aggressiveness': 3, 'speech_ratio': 0.9, 'timeout': 1.5},
     'amplitude': {'min_amplitude': 300, 'peak_ratio': 0.2, 'peak_decay_rate': 0.995},
     'stability': {'history_size': 5, 'max_angular_std': 60, 'smoothing_factor': 0.7},
     'led': {'brightness': 50},
