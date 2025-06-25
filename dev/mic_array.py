@@ -1,132 +1,160 @@
-# mic_array.py
+"""
+MicArray class for ReSpeaker 4 Mic Array
+Calibrated implementation for accurate Direction of Arrival (DOA) detection
+"""
+
 import pyaudio
-import queue
-import threading
 import numpy as np
 from gcc_phat import gcc_phat
-import math
 
-
+# Constants for ReSpeaker 4 Mic Array
 SOUND_SPEED = 343.2
 
-MIC_DISTANCE_6P1 = 0.064
-MAX_TDOA_6P1 = MIC_DISTANCE_6P1 / float(SOUND_SPEED)
-
+# Distance between opposite microphones for 4-mic array (in meters)
 MIC_DISTANCE_4 = 0.08127
 MAX_TDOA_4 = MIC_DISTANCE_4 / float(SOUND_SPEED)
 
 
-
-class MicArray(object):
-
-    def __init__(self, rate=16000, channels=8, chunk_size=None):
-        self.pyaudio_instance = pyaudio.PyAudio()
-        self.queue = queue.Queue()
-        self.quit_event = threading.Event()
+class MicArray:
+    """
+    Interface for ReSpeaker 4 Mic Array with calibrated DOA detection
+    
+    Handles:
+    - 6 channel audio input (4 mics + 2 reference channels)
+    - Direction of Arrival calculation using proven GCC-PHAT algorithm
+    - Proper audio device selection and calibration
+    """
+    
+    def __init__(self, rate=16000, channels=6, chunk_size=160, direction_offset=0):
+        """
+        Initialize microphone array
+        
+        Parameters:
+        -----------
+        rate : int
+            Sampling rate in Hz
+        channels : int
+            Number of audio channels (6 for ReSpeaker 4 Mic)
+        chunk_size : int
+            Number of samples per chunk
+        direction_offset : int
+            Direction offset for calibration in degrees
+        """
+        self.rate = rate
         self.channels = channels
-        self.sample_rate = rate
-        self.chunk_size = chunk_size if chunk_size else rate / 100
-
+        self.chunk_size = int(chunk_size)
+        self.direction_offset = direction_offset
+        
+        # Initialize PyAudio
+        self.p = pyaudio.PyAudio()
+        self.stream = None
+        
+        # Speed of sound in m/s
+        self.sound_speed = SOUND_SPEED
+        
+        # Maximum time delay between microphones
+        self.max_tau = MAX_TDOA_4
+        
+    def __enter__(self):
+        """Context manager entry"""
+        # Find the ReSpeaker device
         device_index = None
-        for i in range(self.pyaudio_instance.get_device_count()):
-            dev = self.pyaudio_instance.get_device_info_by_index(i)
-            name = dev['name']
-            input_channels = dev['maxInputChannels']
-            print(i, name, input_channels, dev['maxOutputChannels'])
-            if 'ReSpeaker' in name and input_channels >= self.channels:
-                print(f'Using device {i}: {name} with {input_channels} channels')
+        for i in range(self.p.get_device_count()):
+            info = self.p.get_device_info_by_index(i)
+            if "ReSpeaker" in info.get('name', '') and info['maxInputChannels'] >= self.channels:
                 device_index = i
                 break
-
+        
         if device_index is None:
-            raise Exception(f'Cannot find input device with at least {self.channels} channel(s)')
-
-
-        self.stream = self.pyaudio_instance.open(
-            input=True,
-            start=False,
+            print("Warning: ReSpeaker device not found, using default input")
+            device_index = None
+        
+        # Open audio stream
+        self.stream = self.p.open(
             format=pyaudio.paInt16,
             channels=self.channels,
-            rate=int(self.sample_rate),
-            frames_per_buffer=int(self.chunk_size),
-            stream_callback=self._callback,
+            rate=self.rate,
+            input=True,
             input_device_index=device_index,
+            frames_per_buffer=self.chunk_size
         )
-
-    def _callback(self, in_data, frame_count, time_info, status):
-        self.queue.put(in_data)
-        return None, pyaudio.paContinue
-
-    def start(self):
-        self.queue.queue.clear()
-        self.stream.start_stream()
-
-
-    def read_chunks(self):
-        self.quit_event.clear()
-        while not self.quit_event.is_set():
-            frames = self.queue.get()
-            if not frames:
-                break
-
-            frames = np.fromstring(frames, dtype='int16')
-            yield frames
-
-    def stop(self):
-        self.quit_event.set()
-        self.stream.stop_stream()
-        self.queue.put('')
-
-    def __enter__(self):
-        self.start()
+        
         return self
-
-    def __exit__(self, type, value, traceback):
-        if value:
-            return False
-        self.stop()
-
-    def get_direction(self, buf):
-        best_guess = None
-        if np.max(np.abs(buf)) < 100:  # Threshold for minimum signal level
+        
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Context manager exit"""
+        if self.stream:
+            self.stream.stop_stream()
+            self.stream.close()
+        self.p.terminate()
+        
+    def read_chunks(self):
+        """
+        Generator that yields audio chunks
+        
+        Yields:
+        -------
+        chunk : ndarray
+            Audio data with shape (chunk_size * channels,)
+        """
+        while True:
+            try:
+                # Read raw audio data
+                data = self.stream.read(self.chunk_size, exception_on_overflow=False)
+                
+                # Convert to numpy array
+                chunk = np.frombuffer(data, dtype=np.int16)
+                
+                yield chunk
+                
+            except Exception as e:
+                print(f"Audio read error: {e}")
+                break
+                
+    def get_direction(self, frames):
+        """
+        Calculate direction of arrival from audio frames using the proven ReSpeaker algorithm
+        
+        Parameters:
+        -----------
+        frames : ndarray
+            Multi-channel audio data
+            
+        Returns:
+        --------
+        direction : float
+            Estimated direction in degrees (0-360)
+        """
+        # Check if signal is strong enough
+        if np.max(np.abs(frames)) < 100:
             return None  # Signal too weak
-        if self.channels == 8:
-            MIC_GROUP_N = 3
-            MIC_GROUP = [[1, 4], [2, 5], [3, 6]]
-
-            tau = [0] * MIC_GROUP_N
-            theta = [0] * MIC_GROUP_N
-
-            # buf = np.fromstring(buf, dtype='int16')
-            for i, v in enumerate(MIC_GROUP):
-                tau[i], _ = gcc_phat(buf[v[0]::8], buf[v[1]::8], fs=self.sample_rate, max_tau=MAX_TDOA_6P1, interp=1)
-                theta[i] = math.asin(tau[i] / MAX_TDOA_6P1) * 180 / math.pi
-
-            min_index = np.argmin(np.abs(tau))
-            if (min_index != 0 and theta[min_index - 1] >= 0) or (min_index == 0 and theta[MIC_GROUP_N - 1] < 0):
-                best_guess = (theta[min_index] + 360) % 360
-            else:
-                best_guess = (180 - theta[min_index])
-
-            best_guess = (best_guess + 120 + min_index * 60) % 360
-            
-        elif self.channels == 6:
-            # Use the 4 raw microphones (channels 1-4)
+        
+        if self.channels == 6:
+            # Use the 4 raw microphones (channels 1-4 in the 6-channel stream)
             # Create a 4-channel buffer from the 6-channel input
-            buf_4ch = np.zeros(len(buf) // 6 * 4, dtype=buf.dtype)
+            buf_4ch = np.zeros(len(frames) // 6 * 4, dtype=frames.dtype)
             for i in range(4):
-                buf_4ch[i::4] = buf[(i+1)::6]  # Extract channels 1-4
+                buf_4ch[i::4] = frames[(i+1)::6]  # Extract channels 1-4
             
-            # Use the 4-mic algorithm with the extracted channels
-            MIC_GROUP_N = 2
-            MIC_GROUP = [[0, 2], [1, 3]]
-
-            tau = [0] * MIC_GROUP_N
-            theta = [0] * MIC_GROUP_N
-            for i, v in enumerate(MIC_GROUP):
-                tau[i], _ = gcc_phat(buf_4ch[v[0]::4], buf_4ch[v[1]::4], fs=self.sample_rate, max_tau=MAX_TDOA_4, interp=1)
-                theta[i] = math.asin(tau[i] / MAX_TDOA_4) * 180 / math.pi
-
+            # Use the proven 4-mic algorithm with proper calibration
+            MIC_GROUP = [[0, 2], [1, 3]]  # Front-Back and Left-Right pairs
+            
+            tau = [0] * 2
+            theta = [0] * 2
+            
+            # Calculate time delays for each microphone pair
+            for i, mic_pair in enumerate(MIC_GROUP):
+                tau[i], _ = gcc_phat(
+                    buf_4ch[mic_pair[0]::4], 
+                    buf_4ch[mic_pair[1]::4], 
+                    fs=self.rate, 
+                    max_tau=self.max_tau, 
+                    interp=1
+                )
+                # Convert time delay to angle
+                theta[i] = np.arcsin(np.clip(tau[i] / self.max_tau, -1, 1)) * 180 / np.pi
+            
+            # Determine the best direction estimate using the proven algorithm
             if np.abs(theta[0]) < np.abs(theta[1]):
                 if theta[1] > 0:
                     best_guess = (theta[0] + 360) % 360
@@ -137,20 +165,39 @@ class MicArray(object):
                     best_guess = (theta[1] + 360) % 360
                 else:
                     best_guess = (180 - theta[1])
-
                 best_guess = (best_guess + 90 + 180) % 360
-
+            
+            # Apply the calibration offset for ReSpeaker 4 Mic Array
             best_guess = (-best_guess + 120) % 360
+            
+            # Invert direction to fix left/right movement issue
+            best_guess = (360 - best_guess) % 360
+            
+            # Apply user-configurable direction offset
+            best_guess = (best_guess + self.direction_offset) % 360
+            
+            return best_guess
+        
         elif self.channels == 4:
-            MIC_GROUP_N = 2
-            MIC_GROUP = [[0, 2], [1, 3]]
-
-            tau = [0] * MIC_GROUP_N
-            theta = [0] * MIC_GROUP_N
-            for i, v in enumerate(MIC_GROUP):
-                tau[i], _ = gcc_phat(buf[v[0]::4], buf[v[1]::4], fs=self.sample_rate, max_tau=MAX_TDOA_4, interp=1)
-                theta[i] = math.asin(tau[i] / MAX_TDOA_4) * 180 / math.pi
-
+            # Direct 4-channel processing
+            MIC_GROUP = [[0, 2], [1, 3]]  # Front-Back and Left-Right pairs
+            
+            tau = [0] * 2
+            theta = [0] * 2
+            
+            # Calculate time delays for each microphone pair
+            for i, mic_pair in enumerate(MIC_GROUP):
+                tau[i], _ = gcc_phat(
+                    frames[mic_pair[0]::4], 
+                    frames[mic_pair[1]::4], 
+                    fs=self.rate, 
+                    max_tau=self.max_tau, 
+                    interp=1
+                )
+                # Convert time delay to angle
+                theta[i] = np.arcsin(np.clip(tau[i] / self.max_tau, -1, 1)) * 180 / np.pi
+            
+            # Determine the best direction estimate
             if np.abs(theta[0]) < np.abs(theta[1]):
                 if theta[1] > 0:
                     best_guess = (theta[0] + 360) % 360
@@ -161,65 +208,36 @@ class MicArray(object):
                     best_guess = (theta[1] + 360) % 360
                 else:
                     best_guess = (180 - theta[1])
-
                 best_guess = (best_guess + 90 + 180) % 360
-
-
+            
+            # Apply the calibration offset
             best_guess = (-best_guess + 120) % 360
-
-             
-        elif self.channels == 2:
-            pass
-
-        return best_guess
-
-
-def test_4mic():
-    import signal
-    import time
-
-    is_quit = threading.Event()
-
-    def signal_handler(sig, num):
-        is_quit.set()
-        print('Quit')
-
-    signal.signal(signal.SIGINT, signal_handler)
- 
-    with MicArray(16000, 4, 16000 / 4)  as mic:
-        for chunk in mic.read_chunks():
-            direction = mic.get_direction(chunk)
-            print(int(direction))
-
-            if is_quit.is_set():
-                break
-
-
-def test_8mic():
-    import signal
-    import time
-    from pixel_ring import pixel_ring
-
-    is_quit = threading.Event()
-
-    def signal_handler(sig, num):
-        is_quit.set()
-        print('Quit')
-
-    signal.signal(signal.SIGINT, signal_handler)
- 
-    with MicArray(16000, 8, 16000 / 4)  as mic:
-        for chunk in mic.read_chunks():
-            direction = mic.get_direction(chunk)
-            pixel_ring.set_direction(direction)
-            print(int(direction))
-
-            if is_quit.is_set():
-                break
-
-    pixel_ring.off()
+            
+            # Invert direction to fix left/right movement issue
+            best_guess = (360 - best_guess) % 360
+            
+            # Apply user-configurable direction offset
+            best_guess = (best_guess + self.direction_offset) % 360
+            
+            return best_guess
+        
+        else:
+            # Unsupported number of channels
+            return None
 
 
 if __name__ == '__main__':
-    # test_4mic()
-    test_8mic()
+    """Test the microphone array"""
+    import time
+    
+    with MicArray() as mic:
+        print("Recording... Press Ctrl+C to stop")
+        
+        chunk_count = 0
+        for chunk in mic.read_chunks():
+            chunk_count += 1
+            
+            # Every second, calculate direction on accumulated data
+            if chunk_count * mic.chunk_size >= mic.rate:
+                print(f"Recorded {chunk_count} chunks")
+                chunk_count = 0
