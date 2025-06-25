@@ -29,7 +29,7 @@ def init_pixels():
         
         # Initialize NeoPixels using SPI with RGBW color order
         pixels = neopixel_spi.NeoPixel_SPI(
-            spi, 
+            spi,
             PIXEL_COUNT, 
             brightness=BRIGHTNESS,
             auto_write=False,

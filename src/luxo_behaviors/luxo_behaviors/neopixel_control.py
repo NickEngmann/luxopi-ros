@@ -76,12 +76,35 @@ class NeoPixelController:
             print(f"[NeoPixel] {message}")
     
     def _initialize_pixels(self) -> bool:
-        """Initialize the NeoPixel strip"""
+        """Initialize the NeoPixel strip with error recovery"""
         try:
-            # Get the SPI bus
+            # Get current frequency to try   
+            # Get the SPI bus - this returns a shared instance
             spi = board.SPI()
             
+            try:
+                # Attempt to acquire and configure the bus
+                acquired = False
+                for _ in range(10):  # Try up to 10 times
+                    if spi.try_lock():
+                        acquired = True
+                        break
+                    time.sleep(0.01)
+                
+                if acquired:
+                    try:
+                        # Configure SPI with our frequency
+                        spi.configure(baudrate=self.spi_frequency)
+                        self._log(f"SPI bus configured with baudrate: {self.spi_frequency}Hz")
+                    finally:
+                        spi.unlock()
+                else:
+                    self._log(f"Could not acquire SPI lock, using default frequency", "warn")
+            except Exception as e:
+                self._log(f"Could not configure SPI frequency: {e}. Using default.", "warn")
+            
             # Initialize NeoPixels using SPI
+            # The NeoPixel_SPI library will handle the actual SPI communication
             self.pixels = neopixel_spi.NeoPixel_SPI(
                 spi, 
                 self.pixel_count, 
@@ -91,10 +114,13 @@ class NeoPixelController:
                 bpp=3
             )
             
-            self._log(f"NeoPixel SPI initialized: {self.pixel_count} LEDs, Brightness: {self.brightness}")
+            # Clear the strip with a small delay
+            time.sleep(0.1)
+            
+            self._log(f"NeoPixel SPI initialized: {self.pixel_count} LEDs, Brightness: {self.brightness}, Target Frequency: {self.spi_frequency}Hz")
             self._is_initialized = True
             return True
-            
+
         except Exception as e:
             self._log(f"Failed to initialize NeoPixel SPI: {e}", "error")
             self._is_initialized = False
