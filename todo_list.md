@@ -10,6 +10,7 @@
 -- start moving
 -- go to rest position
 - [] Audio Filtering (some more)
+- [] camera back on and cleanup its interactions
 
 
 # Later Priorities
