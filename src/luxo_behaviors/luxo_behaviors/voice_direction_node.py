@@ -67,7 +67,7 @@ class VoiceDirectionNode(Node):
         if pixel_ring:
             pixel_ring.set_brightness(self.config['led']['brightness'])
         
-        self.get_logger().info('Voice Direction Node initialized (Exact vad_doa.py copy)')
+        self.get_logger().info('Voice Direction Node initialized')
         
         # Start audio processing
         self.start_audio_processing()
