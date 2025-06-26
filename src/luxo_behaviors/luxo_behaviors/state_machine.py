@@ -70,7 +70,7 @@ class LuxoStateMachine:
         
         # NeoPixel animation timing control
         self._neopixel_animation_start_time = None
-        self._neopixel_min_animation_duration = 2.0  # Minimum 2 seconds for animations
+        self._neopixel_min_animation_duration = 3  # Minimum seconds for animations
         self._neopixel_last_visual_state = None  # Track last visual state to avoid redundant updates
         self._neopixel_pending_state = None  # Queue next state if animation is still running
         
@@ -87,7 +87,7 @@ class LuxoStateMachine:
             LuxoState.ESCAPE_MODE: (255, 0, 0),  # Red - keep lamp function
             LuxoState.USER_CONTROL: (255, 255, 255), # White - keep lamp function
             LuxoState.EMOTION_REACTING: (255, 255, 255), # White - keep lamp function
-            LuxoState.PETTING: (255, 230, 240),     # Slightly pink - more white than red
+            LuxoState.PETTING: (255, 0, 180),     # Pink - petting interaction
             LuxoState.ERROR: (255, 0, 0),           # Red - error (flashing)
             LuxoState.SHUTDOWN: (128, 128, 128)     # Dim gray - shutting down
         }
@@ -102,7 +102,7 @@ class LuxoStateMachine:
             from luxo_behaviors.neopixel_control import NeoPixelController
             self._neopixel_controller = NeoPixelController(
                 pixel_count=76,
-                brightness=0.8,  # Brighter for desk lamp use
+                brightness=0.5,  # Brighter for desk lamp use
                 logger=self.node.get_logger()
             )
             if self._neopixel_controller.is_initialized():
@@ -114,18 +114,30 @@ class LuxoStateMachine:
             self.node.get_logger().warn(f"NeoPixel not available: {e}")
             self._neopixel_controller = None
     
+    def _get_min_animation_duration_for_state(self, state: LuxoState) -> float:
+        """Get the minimum animation duration for a specific state"""
+        if state == LuxoState.PETTING:
+            return 12.0  # Longer duration for petting interactions
+        else:
+            return self._neopixel_min_animation_duration  # Default
+    
     def _is_neopixel_animation_running(self) -> bool:
         """Check if a NeoPixel animation is still in its minimum duration period"""
         if self._neopixel_animation_start_time is None:
             return False
         
         elapsed = time.time() - self._neopixel_animation_start_time
-        return elapsed < self._neopixel_min_animation_duration
+        # Use the duration that was set when the animation started
+        min_duration = getattr(self, '_current_animation_duration', self._neopixel_min_animation_duration)
+        return elapsed < min_duration
     
-    def _start_neopixel_animation_timer(self):
+    def _start_neopixel_animation_timer(self, state: LuxoState):
         """Start the timer for NeoPixel animation minimum duration"""
         self._neopixel_animation_start_time = time.time()
-        self.node.get_logger().debug("NeoPixel animation timer started - 2 second minimum duration")
+        duration = self._get_min_animation_duration_for_state(state)
+        # Store the duration that was set for this animation
+        self._current_animation_duration = duration
+        self.node.get_logger().debug(f"NeoPixel animation timer started - {duration} second minimum duration for {state.name}")
     
     def _update_neopixel_for_state(self, state: LuxoState):
         """Update NeoPixel display based on current state - optimized for desk lamp"""
@@ -145,6 +157,12 @@ class LuxoStateMachine:
             return
         
         try:
+            # Only clear all pixels and wait when switching states/animations
+            if self._neopixel_last_visual_state is not None:
+                self._neopixel_controller.clear_all()
+                time.sleep(0.1)  # Wait to prevent funky colors when switching
+                self.node.get_logger().debug(f"Cleared pixels for state switch: {self._neopixel_last_visual_state.name} -> {state.name}")
+            
             # Always stop any running effect first before starting new one
             self._neopixel_controller.stop_effect()
             
@@ -178,8 +196,8 @@ class LuxoStateMachine:
                                                        blocking=False)
                 needs_animation_timer = True
             elif state == LuxoState.PETTING:
-                # White spinning group for animations
-                self.node.get_logger().debug("NeoPixel: White spinning group for PETTING state")
+                # Pink spinning group for petting (longer duration)
+                self.node.get_logger().debug("NeoPixel: Pink spinning group for PETTING state (6 second duration)")
                 self._neopixel_controller.spinning_group(color, group_size=48, cycles=1, 
                                                        delay_first_60=0.03, delay_last_16=0.06, 
                                                        blocking=False)
@@ -197,10 +215,11 @@ class LuxoStateMachine:
             
             # Start animation timer if this state has animations
             if needs_animation_timer:
-                self._start_neopixel_animation_timer()
+                self._start_neopixel_animation_timer(state)
             else:
                 # Clear animation timer for non-animated states
                 self._neopixel_animation_start_time = None
+                self._current_animation_duration = None
             
             # Update last visual state
             self._neopixel_last_visual_state = state
@@ -503,55 +522,7 @@ class LuxoStateMachine:
         with self._state_lock:
             return self._current_state in states
     
-    def can_transition_to(self, state: LuxoState) -> bool:
-        """Check if a transition to the given state is valid."""
-        with self._state_lock:
-            for transition in self._transitions[self._current_state]:
-                if transition.to_state == state:
-                    if transition.condition is None or transition.condition():
-                        return True
-        return False
-    
-    def set_neopixel_brightness(self, brightness: float):
-        """Adjust NeoPixel brightness for desk lamp use"""
-        if self._neopixel_controller:
-            self._neopixel_controller.set_brightness(brightness)
-            self.node.get_logger().info(f"Desk lamp brightness set to {brightness * 100:.0f}%")
-    
-    def disable_neopixel_state_indication(self):
-        """Temporarily disable state indication (for other NeoPixel uses)"""
-        if self._neopixel_controller:
-            self._neopixel_override_active = True
-            self._neopixel_controller.clear_all()
-            self.node.get_logger().debug("NeoPixel state indication disabled for override")
-    
-    def enable_neopixel_state_indication(self):
-        """Re-enable state indication"""
-        if self._neopixel_controller:
-            self._neopixel_override_active = False
-            self._update_neopixel_for_state(self._current_state)
-            self.node.get_logger().debug("NeoPixel state indication re-enabled")
-    
-    def get_neopixel_controller(self):
-        """Get direct access to NeoPixel controller for other uses"""
-        return self._neopixel_controller
-    
     def cleanup_neopixel(self):
         """Clean up NeoPixel resources"""
         if self._neopixel_controller:
             self._neopixel_controller.cleanup()
-    
-    def set_neopixel_min_animation_duration(self, duration: float):
-        """Set the minimum duration for NeoPixel animations"""
-        self._neopixel_min_animation_duration = duration
-        self.node.get_logger().info(f"NeoPixel minimum animation duration set to {duration} seconds")
-    
-    def get_neopixel_animation_status(self) -> Dict[str, Any]:
-        """Get current NeoPixel animation status for debugging"""
-        return {
-            'is_running': self._is_neopixel_animation_running(),
-            'start_time': self._neopixel_animation_start_time,
-            'min_duration': self._neopixel_min_animation_duration,
-            'last_visual_state': self._neopixel_last_visual_state.name if self._neopixel_last_visual_state else None,
-            'pending_state': self._neopixel_pending_state.name if self._neopixel_pending_state else None
-        }

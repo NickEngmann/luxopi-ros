@@ -32,8 +32,8 @@ class NeoPixelController:
     Provides thread-safe control of NeoPixel strip with various effects
     """
     
-    def __init__(self, pixel_count: int = 76, brightness: float = 0.8, 
-                 spi_frequency: int = 100000, logger=None):
+    def __init__(self, pixel_count: int = 76, brightness: float = 0.5, 
+                 spi_frequency: int = 800000, logger=None):
         """
         Initialize NeoPixel controller
         
@@ -111,7 +111,7 @@ class NeoPixelController:
                 brightness=self.brightness,
                 auto_write=False,
                 pixel_order=neopixel_spi.GRBW,
-                bpp=3
+                bpp=4
             )
             
             # Clear the strip with a small delay
@@ -154,6 +154,7 @@ class NeoPixelController:
             try:
                 self.pixels.fill((0, 0, 0))
                 self.pixels.show()
+                time.sleep(0.01)  # Small delay to ensure clearing takes effect
                 self._current_mode = NeoPixelMode.OFF
                 self._current_color = (0, 0, 0)
                 return True

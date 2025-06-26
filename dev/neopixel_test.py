@@ -16,7 +16,7 @@ PIXEL_COUNT = 76
 # Using proper SPI MOSI pin (GPIO 10, Physical Pin 19)
 print("Using GPIO 10 (MOSI - Pin 19) for NeoPixel SPI")
 
-BRIGHTNESS = 0.8     # 0.0 to 1.0 (start dim for safety)
+BRIGHTNESS = 0.5     # 0.0 to 1.0 (start dim for safety)
 SPI_FREQUENCY = 100000  # 100kHz for stability
 
 def init_pixels():

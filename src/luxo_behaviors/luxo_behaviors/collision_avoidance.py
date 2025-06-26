@@ -260,7 +260,7 @@ class CollisionAvoidance:
         self.voice_on_target_threshold = 3.0  # seconds to wait before starting variations
         
         # NEW: Voice command cooldown and direction filtering
-        self.voice_command_cooldown = 1.25  # seconds between voice commands
+        self.voice_command_cooldown = 2.5  # seconds between voice commands
         # Initialize to None to allow immediate first command
         self.last_voice_command_time = None
         self.last_acted_voice_direction = None  # Last direction we actually sent a command for
