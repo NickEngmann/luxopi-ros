@@ -13,6 +13,12 @@ from std_msgs.msg import String, Float32, Bool
 from luxo_behaviors.state_machine import LuxoState
 import numpy as np
 
+# Import shared utilities
+from luxo_behaviors.shared_modules import (
+    PositionUtils, MovementSourcePublisher, CollisionStatusTracker,
+    TimeUtils, SafetyLimits, AnimationTracker, IdleAnimationConfig
+)
+
 
 class CollisionAvoidance:
     """Class to handle collision avoidance logic for the RoArm hardware interface."""
@@ -54,8 +60,13 @@ class CollisionAvoidance:
         self.base_rest_position = node.get_parameter('base_rest_position').value
         self.rest_variation_range = node.get_parameter('rest_variation_range').value
         
-        # Get base joint limits from the hardware interface node
+        # Initialize safety limits
         if hasattr(node, 'base_min_limit'):
+            self.safety_limits = SafetyLimits(
+                base_min=node.base_min_limit,
+                base_max=node.base_max_limit,
+                soft_margin=np.deg2rad(10.0)
+            )
             self.base_min_limit = node.base_min_limit
             self.base_max_limit = node.base_max_limit
             self.base_soft_min = node.base_soft_min
@@ -63,18 +74,23 @@ class CollisionAvoidance:
             self.enable_base_wraparound = node.enable_base_wraparound
         else:
             # Fallback values if not available
+            self.safety_limits = SafetyLimits()
             self.base_min_limit = np.deg2rad(-260.0)
             self.base_max_limit = np.deg2rad(135.0)
             self.base_soft_min = self.base_min_limit + np.deg2rad(10.0)
             self.base_soft_max = self.base_max_limit - np.deg2rad(10.0)
             self.enable_base_wraparound = True
         
+        # Initialize shared utilities
+        self.position_utils = PositionUtils()
+        self.movement_publisher = MovementSourcePublisher()
+        self.collision_tracker = CollisionStatusTracker()
+        self.animation_tracker = AnimationTracker()
+        self.idle_config = IdleAnimationConfig()
+        self.time_utils = TimeUtils()
+        
         # Collision tracking with ROS time
-        self.collision_status = {
-            'front': {'active': False, 'distance': float('inf'), 'severity': 'safe', 'consecutive_count': 0},
-            'left': {'active': False, 'distance': float('inf'), 'severity': 'safe', 'consecutive_count': 0},
-            'right': {'active': False, 'distance': float('inf'), 'severity': 'safe', 'consecutive_count': 0}
-        }
+        self.collision_status = self.collision_tracker.status
         self.collision_lock = threading.Lock()
         self.last_collision_time = self.node.get_clock().now()
         self.last_avoidance_direction = None  # Track which direction last triggered avoidance
@@ -145,9 +161,7 @@ class CollisionAvoidance:
         # Add petting state tracking
         self.last_petting_message_time = self.node.get_clock().now()
         self.petting_message_timeout = 5.0  # seconds - if no petting messages for this long, consider stopped
-        self.petting_animations = [
-            'folded_wiggle'
-        ]
+        self.petting_animations = self.idle_config.petting_animations
         
         # Subscribe to petting detection
         self.petting_sub = self.node.create_subscription(
@@ -193,12 +207,7 @@ class CollisionAvoidance:
         # Timer for idle reset (will be created when needed)
         self.idle_reset_timer = None
 
-        self.idle_animations = [
-            'gentle_sway', 'curious_exploration', 'breathing', 
-            'attentive_listening', 'playful_bob', 'scanning_watch',
-            'settling_adjust', 'dreamy_drift', 'neck_stretch',
-            'yawning_stretch', 'shoulder_shimmy', 'look_around_casual'
-        ]
+        self.idle_animations = self.idle_config.idle_animations
         self.last_idle_animation = None
         self.min_idle_time_before_animation = 5.0  # seconds before first idle animation
         self.idle_animation_interval = random.uniform(10.0, 60.0)  # time between animations
@@ -283,47 +292,6 @@ class CollisionAvoidance:
         
         self.node.get_logger().info(f"Voice following enabled: {self.voice_follow_enabled}")
 
-
-    def _should_wrap_around(self, current_angle, target_angle):
-        """Check if wrapping around would be more efficient"""
-        # Calculate both paths
-        direct_path = abs(self._normalize_angle(target_angle - current_angle))
-        wrap_path = 2 * np.pi - direct_path
-        
-        # If wrap path is significantly shorter and we're at a limit
-        if wrap_path < direct_path * 0.7:  # 30% shorter
-            return True
-        return False
-
-    def _initiate_wrap_around(self):
-        """Initiate a wrap-around movement to reach target from opposite direction"""
-        current_base = self.current_joints[0]
-        
-        # Determine which direction to start wrapping
-        if current_base > 0:
-            # We're on the positive side, start moving negative
-            intermediate_target = current_base - 0.5  # Move away from limit
-        else:
-            # We're on the negative side, start moving positive
-            intermediate_target = current_base + 0.5  # Move away from limit
-        
-        self.node.get_logger().info(
-            f"Initiating wrap-around movement. Current: {np.rad2deg(current_base):.1f}°, "
-            f"Intermediate: {np.rad2deg(intermediate_target):.1f}°, "
-            f"Final target: {np.rad2deg(self.target_voice_angle):.1f}°"
-        )
-        
-        # Create intermediate position
-        wrap_position = self.current_joints.copy()
-        wrap_position[0] = intermediate_target
-        
-        # Send the wrap-around command
-        self.send_safe_joint_command(wrap_position, "Voice following wrap-around")
-        
-        # Update activity time
-        self.last_activity_time = self.node.get_clock().now()
-            
-
     def voice_active_callback(self, msg):
         """Handle voice activity status"""
         self.voice_active = msg.data
@@ -383,7 +351,7 @@ class CollisionAvoidance:
         
         # Convert voice direction to target angle with intelligent wraparound
         target_angle_rad = np.deg2rad(voice_direction)
-        target_angle = self._normalize_angle(target_angle_rad)
+        target_angle = self.position_utils.normalize_angle(target_angle_rad)
         
         # Check if we need wraparound due to base limits
         if target_angle > self.base_max_limit:
@@ -447,7 +415,7 @@ class CollisionAvoidance:
             return False
             
         current_base = self.current_joints[0] if self.current_joints else 0.0
-        angle_diff = abs(self._normalize_angle(self.target_voice_angle - current_base))
+        angle_diff = abs(self.position_utils.normalize_angle(self.target_voice_angle - current_base))
         angle_diff_deg = np.rad2deg(angle_diff)
         
         current_time = self.node.get_clock().now()
@@ -590,6 +558,7 @@ class CollisionAvoidance:
         
         # REMOVED: Do not update activity time for voice following
         # This prevents voice following from interfering with idle animation timing
+    
     def apply_voice_following(self, positions):
         """Apply direct voice following to joint positions with variation support"""
         if not self.voice_follow_enabled or self.voice_influence < 0.1:
@@ -639,7 +608,7 @@ class CollisionAvoidance:
             
             # Check if we've reached the target
             current_base = self.current_joints[0] if self.current_joints else 0.0
-            angle_diff = abs(self._normalize_angle(self.target_voice_angle - current_base))
+            angle_diff = abs(self.position_utils.normalize_angle(self.target_voice_angle - current_base))
             
             if angle_diff < 0.1:  # Within ~6 degrees
                 # Don't immediately clear - let variation system handle it
@@ -648,18 +617,7 @@ class CollisionAvoidance:
             return adjusted_positions
             
         return positions
-    def _normalize_angle(self, angle):
-        """Normalize angle to [-pi, pi]"""
-        while angle > np.pi:
-            angle -= 2 * np.pi
-        while angle < -np.pi:
-            angle += 2 * np.pi
-        return angle
 
-    def reset_idle_timeout(self):
-        """Reset idle timeout to a new random value between 45-90 seconds."""
-        self.idle_timeout = random.uniform(45.0, 90.0)
-        self.node.get_logger().info(f"Idle timeout reset to {self.idle_timeout:.1f} seconds")
 
     def set_active_animation(self, animation_name, allow_interruption=True):
         """Track the currently active animation."""
@@ -695,10 +653,6 @@ class CollisionAvoidance:
             self.animation_progress = 0.0
             self.animation_preempted = False
     
-    def update_animation_progress(self, progress):
-        """Update current animation progress for smarter collision handling."""
-        with self.animation_lock:
-            self.animation_progress = progress
     
     def should_preempt_animation(self, severity="warning"):
         """Determine if current animation should be preempted."""
@@ -843,7 +797,7 @@ class CollisionAvoidance:
             
             if is_collision_override:
                 # For collision overrides, only clear if the new target is very different
-                distance = self._calculate_position_distance(joints, self.target_override_joints)
+                distance = self.position_utils.calculate_position_distance(joints, self.target_override_joints)
                 if distance > 0.5:  # Much higher threshold for collision overrides
                     self.node.get_logger().info(f"Major target change detected (distance: {distance:.3f}) - clearing collision override")
                     self.target_override_active = False
@@ -852,7 +806,7 @@ class CollisionAvoidance:
                     self.node.get_logger().debug(f"Minor target change (distance: {distance:.3f}) - keeping collision override active")
             else:
                 # For non-collision overrides, use the original logic
-                distance = self._calculate_position_distance(joints, self.target_override_joints)
+                distance = self.position_utils.calculate_position_distance(joints, self.target_override_joints)
                 if distance > 0.1:
                     self.node.get_logger().info(f"New target received - clearing non-collision override")
                     self.target_override_active = False
@@ -1093,47 +1047,9 @@ class CollisionAvoidance:
                         # Re-acquire lock after operation
                         self.collision_lock.acquire()
 
-    def schedule_home_after_animation(self, delay=0.5):
-        """Schedule a return to home position after animation completes."""
-        try:
-            # Cancel any existing home timer
-            if hasattr(self, 'post_animation_home_timer') and self.post_animation_home_timer:
-                self.post_animation_home_timer.cancel()
-            
-            # Create a one-shot timer to go home after delay
-            self.post_animation_home_timer = self.node.create_timer(
-                delay,
-                lambda: self._post_animation_home_callback()
-            )
-            self.node.get_logger().debug(f"Scheduled return to home position in {delay} seconds")
-        except Exception as e:
-            self.node.get_logger().error(f"Error scheduling home position: {e}")
-    
     def _at_home_position(self, current_pos, home_pos, tolerance):
         """Check if robot is at a home position, ignoring base joint."""
-        # Compare all joints except base (index 0)
-        for i in range(1, min(len(current_pos), len(home_pos))):
-            if abs(current_pos[i] - home_pos[i]) > tolerance:
-                return False
-        return True
-
-    def _post_animation_home_callback(self):
-        """Callback to return to home position after animation."""
-        try:
-            # Cancel the timer
-            if hasattr(self, 'post_animation_home_timer') and self.post_animation_home_timer:
-                self.post_animation_home_timer.cancel()
-                self.post_animation_home_timer = None
-            
-            # Only go home if we're still in idle state
-            if self.state_machine.is_in_state(LuxoState.IDLE):
-                self.node.get_logger().info("Animation complete and idle - returning to home position")
-                self.returning_to_home_start_time = self.node.get_clock().now()
-                self.go_to_home_position("Post-animation return to home")
-            else:
-                self.node.get_logger().debug(f"Not returning home - current state: {self.state_machine.current_state.name}")
-        except Exception as e:
-            self.node.get_logger().error(f"Error in post-animation home callback: {e}")
+        return self.position_utils.at_home_position(current_pos, home_pos, tolerance, ignore_base=True)
     
     def _trigger_petting_animation(self):
         """Trigger a petting response animation"""
@@ -1633,16 +1549,7 @@ class CollisionAvoidance:
         self.node.get_logger().debug(f"Activity timestamp updated due to collision avoidance action")
         
         # Report collision movement source for DEMA coordination
-        if hasattr(self.node, 'enable_movement_source_integration') and self.node.enable_movement_source_integration:
-            try:
-                movement_source_msg = String()
-            
-                movement_source_msg.data = "collision"
-                if hasattr(self.node, 'movement_source_publisher'):
-                    self.node.movement_source_publisher.publish(movement_source_msg)
-                    self.node.get_logger().debug("Published collision movement source for DEMA")
-            except Exception as e:
-                self.node.get_logger().error(f"Error publishing collision movement source: {e}")
+        self._publish_movement_source("collision")
         
         try:
             # Start with current position
@@ -1808,72 +1715,8 @@ class CollisionAvoidance:
         if position2 is None:
             position2 = self.current_joints
         
-        # Calculate differences between positions
-        differences = [abs(pos1 - pos2) for pos1, pos2 in zip(position1, position2)]
-        
-        # Add debugging to help diagnose position comparison issues
-        if self.state_machine.is_in_state(LuxoState.RETURNING_HOME):
-            # Explicitly identify which position is target and which is current
-            target_pos = position1  # First parameter should be the target position
-            current_pos = position2  # Second parameter should be the current position
-            
-            # For debugging stage transitions, clearly label which positions we're comparing
-            if self.home_position_stage == 1:
-                stage_target = "home_position_1"
-                compare_target = self.home_position_1
-            else:
-                stage_target = "home_position_2"
-                compare_target = self.home_position_2
-                
-            self.node.get_logger().debug(f"Position comparison: differences={[round(d, 4) for d in differences]}, tolerance={tolerance}")
-            self.node.get_logger().debug(f"Target ({stage_target})={[round(p, 4) for p in target_pos]}, Current={[round(p, 4) for p in current_pos]}")
-            
-            # If any difference is too large for the current stage, handle it
-            if max(differences) > 0.4 and self.home_position_stage == 2:
-                self.node.get_logger().warn(f"Significant difference detected - resetting home position stage to 1")
-                self.home_position_stage = 1
-                return False
-            
-            # Add additional validation - verify we're actually comparing against the correct target
-            # IGNORE BASE POSITION (index 0) when checking home positions
-            correct_target_diffs = [abs(c - t) if i != 0 else 0.0 
-                                  for i, (c, t) in enumerate(zip(current_pos, compare_target))]
-            if stage_target == "home_position_1" and max(correct_target_diffs) > self.home_position_tolerance * 1.5:
-                self.node.get_logger().warn(f"Robot not close to {stage_target}: actual diffs={[round(d, 4) for d in correct_target_diffs]}")
-                return False
-            elif stage_target == "home_position_2" and max(correct_target_diffs) > self.home_position_tolerance * 1.5:
-                self.node.get_logger().warn(f"Robot not close to {stage_target}: actual diffs={[round(d, 4) for d in correct_target_diffs]}")
-                return False
-                
-            # If we're in stage 1 and the robot thinks it's at position 1, double-check with actual data
-            if self.home_position_stage == 1 and max(differences) <= tolerance:
-                # Create modified home position that preserves current base
-                mod_hp1 = self.home_position_1.copy()
-                mod_hp1[0] = current_pos[0]  # Use current base position
-                hp1_diffs = [abs(c - t) for c, t in zip(current_pos, mod_hp1)]
-                if max(hp1_diffs) > self.home_position_tolerance:
-                    self.node.get_logger().warn(f"False positive detection of home_position_1: actual diffs={[round(d, 4) for d in hp1_diffs]}")
-                    return False
-                else:
-                    self.node.get_logger().debug(f"DETECTED: Robot has reached home_position_1 within tolerance {self.home_position_tolerance}")
-            
-            # Same validation for stage 2
-            if self.home_position_stage == 2 and max(differences) <= tolerance:
-                # Create modified home position that preserves current base
-                mod_hp2 = self.home_position_2.copy()
-                mod_hp2[0] = current_pos[0]  # Use current base position
-                hp2_diffs = [abs(c - t) for c, t in zip(current_pos, mod_hp2)]
-                if max(hp2_diffs) > self.home_position_tolerance:
-                    self.node.get_logger().warn(f"False positive detection of home_position_2: actual diffs={[round(d, 4) for d in hp2_diffs]}")
-                    return False
-                else:
-                    self.node.get_logger().debug(f"DETECTED: Robot has reached home_position_2 within tolerance {self.home_position_tolerance}")
-        
-        # The actual position comparison
-        for i, (pos1, pos2) in enumerate(zip(position1, position2)):
-            if abs(pos1 - pos2) > tolerance:
-                return False
-        return True
+        # Use shared utility
+        return self.position_utils.at_position(position1, position2, tolerance)
     
     def get_effective_target_position(self, original_target):
         """Determine which target position to use based on overrides and safety."""
@@ -1936,7 +1779,7 @@ class CollisionAvoidance:
         
         # MODIFIED: Only clear override for SIGNIFICANT target changes, not just any difference
         # Check if we have a genuinely NEW target that's significantly different from our current override position
-        override_to_new_target_distance = self._calculate_position_distance(original_target, self.target_override_joints)
+        override_to_new_target_distance = self.position_utils.calculate_position_distance(original_target, self.target_override_joints)
         
         # Only clear override if the new target is significantly different from where we currently are
         # This prevents returning to the original position just because collisions cleared
@@ -1974,13 +1817,6 @@ class CollisionAvoidance:
         
         # Continue using the override position - this makes collision avoidance positions "stick"
         return self.apply_voice_following(self.target_override_joints)
-
-    def _calculate_position_distance(self, pos1, pos2):
-        """Calculate the Euclidean distance between two joint positions."""
-        if not pos1 or not pos2 or len(pos1) != len(pos2):
-            return float('inf')
-        
-        return math.sqrt(sum((a - b) ** 2 for a, b in zip(pos1, pos2)))
     
     def apply_safety_limits(self, positions):
         """Apply safety limits to joint positions based on collision status."""
@@ -2572,8 +2408,7 @@ class CollisionAvoidance:
         """Check if a position is in any of the recorded unsafe zones."""
         for unsafe_pos, radius in self.unsafe_zones:
             # Calculate Euclidean distance in joint space
-            sum_squared = sum((p1 - p2) ** 2 for p1, p2 in zip(position, unsafe_pos))
-            distance = math.sqrt(sum_squared)
+            distance = self.position_utils.calculate_position_distance(position, unsafe_pos)
             
             if distance < radius:
                 return True
@@ -2725,56 +2560,15 @@ class CollisionAvoidance:
         
         return False
     
-    def get_animation_escape_position(self, direction):
-        """Calculate a safe escape position during animation collision."""
-        escape_position = self.current_joints.copy()
-        
-        # Smaller adjustments during animations
-        if direction == 'front':
-            escape_position[1] -= 0.3  # Pull shoulder back
-            escape_position[2] += 0.2  # Fold elbow slightly
-        elif direction == 'left':
-            escape_position[0] += 0.2  # Rotate slightly right
-        elif direction == 'right':
-            escape_position[0] -= 0.2  # Rotate slightly left
-        
-        return escape_position
-    
     def _publish_movement_source(self, source):
         """Publish movement source information for DEMA coordination."""
-        try:
-            # Check if node has movement source publisher
-            if hasattr(self.node, 'enable_movement_source_integration') and self.node.enable_movement_source_integration:
-                self.node.get_logger().info(f"Publishing movement source: {source} from collision avoidance")
-                
-                # Try with joint_states style encoding for hardware interface
-                if hasattr(self.node, 'joint_states_publisher'):
-                    msg = JointState()
-                    msg.header.stamp = self.node.get_clock().now().to_msg()
-                    msg.name = ['base', 'shoulder', 'elbow', 'wrist', 'hand']
-                    msg.position = self.current_joints.copy()
-                    
-                    # Encode movement source in velocity field
-                    source_code = 0  # Default to idle
-                    if source == "animation":
-                        source_code = 1
-                    elif source == "collision":
-                        source_code = 2
-                    elif source == "user":
-                        source_code = 3
-                    
-                    msg.velocity = [float(source_code)]
-                    self.node.joint_states_publisher.publish(msg)
-                
-                # Also try with the String message approach for compatibility
-                if hasattr(self.node, 'movement_source_publisher'):
-                    str_msg = String()
-                    str_msg.data = source
-                    self.node.movement_source_publisher.publish(str_msg)
-        except Exception as e:
-            self.node.get_logger().error(f"Error publishing movement source: {e}")
-            import traceback
-            self.node.get_logger().error(f"Stack trace: {traceback.format_exc()}")
+        self.movement_publisher.publish_movement_source(
+            self.node, 
+            source, 
+            self.current_joints,
+            getattr(self.node, 'joint_states_publisher', None),
+            getattr(self.node, 'movement_source_publisher', None)
+        )
 
     def trigger_idle_head_variation(self):
         """Trigger subtle head movements during idle periods."""
