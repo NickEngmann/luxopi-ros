@@ -12,7 +12,7 @@ import numpy as np
 from luxo_behaviors.serial_manager import SerialManager
 from luxo_behaviors.collision_avoidance import CollisionAvoidance
 from luxo_behaviors.state_machine import LuxoState  # Import for state enum only
-from luxo_behaviors.shared_modules import StateUtils  # Import shared state utilities
+from luxo_behaviors.shared_utils import StateUtils  # Import shared state utilities
 from luxo_interfaces.srv import RequestStateTransition
 
 class RoArmHardwareInterface(Node):

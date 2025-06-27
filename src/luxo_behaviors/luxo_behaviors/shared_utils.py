@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-#shared_modules.py
+#shared_utils.py
 """
 Shared utility modules for Luxo behaviors.
 Contains common functions used across collision, vision, idle, and other nodes.
@@ -8,6 +8,7 @@ Contains common functions used across collision, vision, idle, and other nodes.
 import math
 import numpy as np
 import random
+import time
 from typing import List, Tuple, Optional, Dict, Any
 from std_msgs.msg import String
 from sensor_msgs.msg import JointState
@@ -85,6 +86,24 @@ class PositionUtils:
             else:
                 clipped.append(pos)
         return clipped
+    
+    @staticmethod
+    def interpolate_positions(start: List[float], end: List[float], 
+                            factor: float) -> List[float]:
+        """Linearly interpolate between two positions."""
+        if len(start) != len(end):
+            return start
+        
+        return [s + (e - s) * factor for s, e in zip(start, end)]
+    
+    @staticmethod
+    def get_position_velocity(pos1: List[float], pos2: List[float], 
+                            time_delta: float) -> List[float]:
+        """Calculate velocity between two positions given time delta."""
+        if len(pos1) != len(pos2) or time_delta <= 0:
+            return [0.0] * len(pos1)
+        
+        return [(p2 - p1) / time_delta for p1, p2 in zip(pos1, pos2)]
 
 
 class StateUtils:
@@ -271,7 +290,7 @@ class CollisionStatusTracker:
 
 
 class TimeUtils:
-    """Utilities for working with ROS time."""
+    """Utilities for working with ROS time and timing operations."""
     
     @staticmethod
     def get_elapsed_time(node, start_time) -> float:
@@ -283,6 +302,44 @@ class TimeUtils:
     def has_elapsed(node, start_time, duration: float) -> bool:
         """Check if a duration has elapsed since start_time."""
         return TimeUtils.get_elapsed_time(node, start_time) >= duration
+    
+    @staticmethod
+    def get_time_since(node, timestamp) -> float:
+        """Get time elapsed since a timestamp in seconds."""
+        if timestamp is None:
+            return float('inf')
+        current_time = node.get_clock().now()
+        return (current_time - timestamp).nanoseconds / 1e9
+    
+    @staticmethod
+    def create_rate_limiter(node, rate_hz: float):
+        """Create a rate limiter that tracks time between calls."""
+        class RateLimiter:
+            def __init__(self, node, rate_hz):
+                self.node = node
+                self.min_interval = 1.0 / rate_hz
+                self.last_time = None
+            
+            def ready(self) -> bool:
+                """Check if enough time has passed for next call."""
+                current_time = self.node.get_clock().now()
+                if self.last_time is None:
+                    return True
+                elapsed = (current_time - self.last_time).nanoseconds / 1e9
+                return elapsed >= self.min_interval
+            
+            def mark(self):
+                """Mark that an action was taken."""
+                self.last_time = self.node.get_clock().now()
+        
+        return RateLimiter(node, rate_hz)
+    
+    @staticmethod
+    def exponential_backoff(attempt: int, base_delay: float = 1.0, 
+                          max_delay: float = 60.0) -> float:
+        """Calculate exponential backoff delay."""
+        delay = base_delay * (2 ** attempt)
+        return min(delay, max_delay)
 
 
 class SafetyLimits:
@@ -318,6 +375,23 @@ class SafetyLimits:
         elif abs(angle - self.base_max_limit) < threshold:
             return 'max'
         return 'none'
+    
+    def clamp_base_angle(self, angle: float) -> float:
+        """Clamp base angle to limits."""
+        return np.clip(angle, self.base_min_limit, self.base_max_limit)
+    
+    def get_safe_base_direction(self, current_angle: float, 
+                              preferred_direction: int) -> int:
+        """Get safe rotation direction considering limits."""
+        at_min = self.is_at_base_limit(current_angle) == 'min'
+        at_max = self.is_at_base_limit(current_angle) == 'max'
+        
+        if at_min and preferred_direction < 0:
+            return 1  # Force positive direction
+        elif at_max and preferred_direction > 0:
+            return -1  # Force negative direction
+        else:
+            return preferred_direction
 
 
 class AnimationTracker:
@@ -395,3 +469,136 @@ class IdleAnimationConfig:
         """Get a random interval for next idle animation."""
         return random.uniform(self.idle_animation_interval_min, 
                             self.idle_animation_interval_max)
+
+
+class CollisionMath:
+    """Mathematical utilities for collision detection and response."""
+    
+    @staticmethod
+    def calculate_severity(distance: float, danger_threshold: float = 7.0, 
+                         warning_threshold: float = 15.0) -> str:
+        """Calculate collision severity based on distance."""
+        if distance < danger_threshold:
+            return 'danger'
+        elif distance < warning_threshold:
+            return 'warning'
+        else:
+            return 'safe'
+    
+    @staticmethod
+    def calculate_avoidance_magnitude(severity: str, consecutive_count: int,
+                                    emergency: bool = False) -> float:
+        """Calculate how much to adjust position based on collision severity."""
+        base_magnitude = 0.8
+        
+        if consecutive_count > 8:
+            magnitude = 2.5
+        elif consecutive_count > 5:
+            magnitude = 2.0
+        elif emergency or severity == 'danger':
+            magnitude = 1.5
+        else:
+            magnitude = base_magnitude
+        
+        # Add variation to avoid repeating patterns
+        variation = random.uniform(0.9, 1.1)
+        return magnitude * variation
+    
+    @staticmethod
+    def calculate_acceleration(severity: str, consecutive_count: int,
+                             base_acceleration: float = 12.5) -> float:
+        """Calculate joint acceleration based on urgency."""
+        if severity == 'danger':
+            acceleration = 17.5
+        else:
+            acceleration = base_acceleration
+        
+        # Increase for persistent collisions
+        if consecutive_count > 5:
+            acceleration = min(22.5, acceleration + (consecutive_count - 5) * 1.0)
+        
+        return acceleration
+    
+    @staticmethod
+    def calculate_escape_rotation(direction: str, base_rotation: float = 0.3,
+                                escape_multiplier: float = 2.0) -> float:
+        """Calculate rotation amount for escape maneuvers."""
+        if direction == 'left':
+            return base_rotation * escape_multiplier  # Rotate right
+        elif direction == 'right':
+            return -base_rotation * escape_multiplier  # Rotate left
+        else:
+            # For front collision, alternate direction
+            return random.choice([-1, 1]) * base_rotation * escape_multiplier
+    
+    @staticmethod
+    def check_path_blocked(collision_status: Dict[str, Dict]) -> Tuple[bool, List[str]]:
+        """Check if path is blocked and return blocked directions."""
+        blocked_directions = []
+        
+        for direction, status in collision_status.items():
+            if status['active'] and status['severity'] == 'danger':
+                blocked_directions.append(direction)
+        
+        # Path is blocked if 2+ directions have danger collisions
+        is_blocked = len(blocked_directions) >= 2
+        return is_blocked, blocked_directions
+    
+    @staticmethod
+    def calculate_safe_direction(blocked_directions: List[str], 
+                               current_base: float) -> float:
+        """Calculate safe rotation direction when path is blocked."""
+        if 'left' in blocked_directions and 'right' not in blocked_directions:
+            # Left blocked, go right
+            return current_base + np.deg2rad(45)
+        elif 'right' in blocked_directions and 'left' not in blocked_directions:
+            # Right blocked, go left
+            return current_base - np.deg2rad(45)
+        else:
+            # Both sides blocked or front only, try 180 turn
+            return current_base + np.pi
+
+
+class MovementValidator:
+    """Validates and adjusts movements for safety."""
+    
+    @staticmethod
+    def validate_position(position: List[float], limits: SafetyLimits) -> List[float]:
+        """Validate and clamp a position to safety limits."""
+        validated = position.copy()
+        
+        # Validate base
+        if len(validated) > 0:
+            validated[0] = limits.clamp_base_angle(validated[0])
+        
+        # Validate other joints using limit dictionary
+        joint_names = ['shoulder', 'elbow', 'wrist', 'hand']
+        for i, joint_name in enumerate(joint_names, 1):
+            if i < len(validated) and joint_name in limits.joint_limits:
+                joint_limit = limits.joint_limits[joint_name]
+                validated[i] = np.clip(validated[i], joint_limit['min'], joint_limit['max'])
+        
+        return validated
+    
+    @staticmethod
+    def check_movement_safety(current: List[float], target: List[float],
+                            collision_status: Dict[str, Dict]) -> Tuple[bool, str]:
+        """Check if movement from current to target is safe."""
+        # Check for active collisions
+        for direction, status in collision_status.items():
+            if not status['active']:
+                continue
+            
+            if status['severity'] == 'danger':
+                # Check if movement would worsen collision
+                if direction == 'front' and len(current) > 1 and len(target) > 1:
+                    if target[1] < current[1]:  # Shoulder moving forward
+                        return False, f"Movement blocked by {direction} collision"
+                elif direction == 'left' and len(current) > 0 and len(target) > 0:
+                    if target[0] < current[0]:  # Base rotating left
+                        return False, f"Movement blocked by {direction} collision"
+                elif direction == 'right' and len(current) > 0 and len(target) > 0:
+                    if target[0] > current[0]:  # Base rotating right
+                        return False, f"Movement blocked by {direction} collision"
+        
+        return True, "Movement safe"

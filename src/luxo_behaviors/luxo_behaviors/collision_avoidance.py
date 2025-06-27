@@ -17,7 +17,7 @@ from luxo_behaviors.state_machine import LuxoState
 import numpy as np
 
 # Import shared utilities
-from luxo_behaviors.shared_modules import (
+from luxo_behaviors.shared_utils import (
     PositionUtils, MovementSourcePublisher, CollisionStatusTracker,
     TimeUtils, SafetyLimits, AnimationTracker, IdleAnimationConfig
 )

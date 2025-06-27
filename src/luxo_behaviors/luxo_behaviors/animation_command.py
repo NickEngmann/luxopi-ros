@@ -21,7 +21,7 @@ from typing import Dict, List, Optional
 from luxo_behaviors.animation_plugin_base import AnimationPlugin
 # Import state machine classes and utilities
 from luxo_behaviors.state_machine import LuxoState
-from luxo_behaviors.shared_modules import StateUtils
+from luxo_behaviors.shared_utils import StateUtils
 
 
 class AnimationCommandActionServer(Node):
