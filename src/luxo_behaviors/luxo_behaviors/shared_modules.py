@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+#shared_modules.py
 """
 Shared utility modules for Luxo behaviors.
 Contains common functions used across collision, vision, idle, and other nodes.
@@ -84,6 +85,79 @@ class PositionUtils:
             else:
                 clipped.append(pos)
         return clipped
+
+
+class StateUtils:
+    """Utilities for working with global state management."""
+    
+    @staticmethod
+    def request_state_transition(node, requested_state, priority: int = 50, force: bool = False, completion: bool = False):
+        """Request a state transition from the global state manager."""
+        try:
+            from luxo_interfaces.srv import RequestStateTransition
+            
+            # Create service client if it doesn't exist
+            if not hasattr(node, '_state_client'):
+                node._state_client = node.create_client(
+                    RequestStateTransition,
+                    '/luxo/request_state_transition'
+                )
+            
+            if not node._state_client.wait_for_service(timeout_sec=1.0):
+                node.get_logger().warn("State manager service not available")
+                return False
+            
+            request = RequestStateTransition.Request()
+            request.requested_state = requested_state.name
+            request.requesting_node = node.get_name()
+            request.priority = priority
+            request.force = force
+            # Note: completion field needs to be added to the service definition
+            if hasattr(request, 'completion'):
+                request.completion = completion
+            
+            future = node._state_client.call_async(request)
+            # Don't wait for response to avoid blocking
+            
+            return True
+        except Exception as e:
+            node.get_logger().error(f"Error requesting state transition: {e}")
+            return False
+    
+    @staticmethod
+    def is_in_state(node, *states):
+        """Check if node is in any of the given states."""
+        # First check if node has a current_state attribute directly
+        if hasattr(node, 'current_state'):
+            # Check if we need to use a lock (for thread safety)
+            if hasattr(node, 'state_lock'):
+                with node.state_lock:
+                    return node.current_state in states
+            else:
+                return node.current_state in states
+        # If no current_state attribute, check if there's a get_current_state method
+        elif hasattr(node, 'get_current_state'):
+            return node.get_current_state() in states
+        else:
+            node.get_logger().warn("No state information available")
+            return False
+    
+    @staticmethod
+    def get_current_state(node):
+        """Get current state from node."""
+        # First check for current_state attribute directly
+        if hasattr(node, 'current_state'):
+            # Check if we need to use a lock (for thread safety)
+            if hasattr(node, 'state_lock'):
+                with node.state_lock:
+                    return node.current_state
+            else:
+                return node.current_state
+        # If no current_state attribute, check for get_current_state method
+        elif hasattr(node, 'get_current_state'):
+            return node.get_current_state()
+        else:
+            return None
 
 
 class MovementSourcePublisher:

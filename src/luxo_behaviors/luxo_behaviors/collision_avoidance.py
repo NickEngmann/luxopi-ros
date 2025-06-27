@@ -5,11 +5,14 @@ import random
 import time
 import math
 import threading
+import rclpy
 from rclpy.action import ActionClient
 from luxo_interfaces.action import PlayAnimation
 import time
 from sensor_msgs.msg import JointState
 from std_msgs.msg import String, Float32, Bool
+from luxo_interfaces.srv import RequestStateTransition
+from luxo_interfaces.msg import StateInfo
 from luxo_behaviors.state_machine import LuxoState
 import numpy as np
 
@@ -23,7 +26,7 @@ from luxo_behaviors.shared_modules import (
 class CollisionAvoidance:
     """Class to handle collision avoidance logic for the RoArm hardware interface."""
     
-    def __init__(self, node, send_safe_joint_command_callback, publish_actual_joint_states_callback, state_machine):
+    def __init__(self, node, send_safe_joint_command_callback, publish_actual_joint_states_callback):
         """
         Initialize the CollisionAvoidance system.
         
@@ -31,12 +34,33 @@ class CollisionAvoidance:
             node: The ROS node that owns this system (for logging and parameters)
             send_safe_joint_command_callback: Callback to send commands to hardware
             publish_actual_joint_states_callback: Callback to publish joint states
-            state_machine: The LuxoStateMachine instance for state management
         """
         self.node = node
         self.send_safe_joint_command = send_safe_joint_command_callback
         self.publish_actual_joint_states = publish_actual_joint_states_callback
-        self.state_machine = state_machine
+        
+        # Create service clients for state management
+        self.request_state_transition_client = self.node.create_client(
+            RequestStateTransition, 
+            '/luxo/request_state_transition'
+        )
+        
+        # Wait for state management services
+        while not self.request_state_transition_client.wait_for_service(timeout_sec=1.0):
+            self.node.get_logger().info('Waiting for state management services...')
+        
+        # Subscribe to state changes
+        self.state_subscription = self.node.create_subscription(
+            StateInfo,
+            '/luxo/state_info',
+            self._state_info_callback,
+            10
+        )
+        
+        # Cache current state locally for quick access
+        self._cached_state = None
+        self._state_info = None
+        self._state_lock = threading.Lock()
         
         # Track startup time to prevent false petting detection
         self._startup_time = self.node.get_clock().now()
@@ -292,6 +316,46 @@ class CollisionAvoidance:
         
         self.node.get_logger().info(f"Voice following enabled: {self.voice_follow_enabled}")
 
+    def _state_info_callback(self, msg):
+        """Callback for state info updates."""
+        with self._state_lock:
+            try:
+                self._cached_state = LuxoState[msg.current_state]
+                self._state_info = msg
+            except KeyError:
+                self.node.get_logger().error(f"Unknown state received: {msg.current_state}")
+
+    def _get_current_state(self):
+        """Get the current state from cache."""
+        with self._state_lock:
+            if self._cached_state is not None:
+                return self._cached_state
+        
+        # Default to IDLE if we haven't received state yet
+        self.node.get_logger().warn("No state info received yet, defaulting to IDLE")
+        return LuxoState.IDLE
+
+    def _is_in_state(self, *states):
+        """Check if the current state matches any of the given states."""
+        current_state = self._get_current_state()
+        return current_state in states
+
+    def _transition_to_state(self, new_state):
+        """Request a state transition."""
+        try:
+            request = RequestStateTransition.Request()
+            request.requested_state = new_state.name
+            request.requesting_node = "collision_avoidance"
+            request.priority = 5  # Medium priority for collision avoidance
+            request.force = False
+            
+            future = self.request_state_transition_client.call_async(request)
+            # Fire and forget - don't wait for response
+            return True
+        except Exception as e:
+            self.node.get_logger().error(f"Error requesting state transition: {e}")
+            return False
+
     def voice_active_callback(self, msg):
         """Handle voice activity status"""
         self.voice_active = msg.data
@@ -305,7 +369,7 @@ class CollisionAvoidance:
             return
             
         # Only process if in appropriate state
-        if not self.state_machine.is_in_state(LuxoState.IDLE, LuxoState.ANIMATING, LuxoState.EMOTION_REACTING):
+        if not self._is_in_state(LuxoState.IDLE, LuxoState.ANIMATING, LuxoState.EMOTION_REACTING):
             return
         
         current_time = self.node.get_clock().now()
@@ -565,14 +629,14 @@ class CollisionAvoidance:
             # If no voice following, check if we should maintain idle head variation
             if (self.idle_head_variation_active and 
                 self.current_idle_head_target and 
-                self.state_machine.is_in_state(LuxoState.IDLE)):
+                self._is_in_state(LuxoState.IDLE)):
                 
                 # Continue using the idle head variation target
                 return self.current_idle_head_target.copy()
             return positions
             
         # Check if in escape mode or returning home - don't apply voice following
-        if self.state_machine.is_in_state(LuxoState.ESCAPE_MODE, LuxoState.RETURNING_HOME):
+        if self._is_in_state(LuxoState.ESCAPE_MODE, LuxoState.RETURNING_HOME):
             return positions
         
         # Clear any idle head variation when voice following starts
@@ -618,7 +682,6 @@ class CollisionAvoidance:
             
         return positions
 
-
     def set_active_animation(self, animation_name, allow_interruption=True):
         """Track the currently active animation."""
         with self.animation_lock:
@@ -633,10 +696,10 @@ class CollisionAvoidance:
                 self.last_activity_time = self.node.get_clock().now()
                 
                 # If we're currently returning to home, cancel it immediately
-                if self.state_machine.is_in_state(LuxoState.RETURNING_HOME):
+                if self._is_in_state(LuxoState.RETURNING_HOME):
                     self.node.get_logger().info("Animation starting - cancelling return to home operation")
                     self.target_override_active = False
-                    self.state_machine.transition_to(LuxoState.ANIMATING)
+                    self._transition_to_state(LuxoState.ANIMATING)
                     
             # If same animation, just update the interruption flag if needed
             elif self.animation_allow_interruption != allow_interruption:
@@ -785,8 +848,16 @@ class CollisionAvoidance:
         
         # Only update activity time if significant change or first update
         if significant_change:
-            self.last_activity_time = current_time
-            self.node.get_logger().debug(f"Activity timestamp updated due to significant joint position change")
+            # Don't count idle-specific movements as breaking idleness
+            is_idle_movement = (self.target_override_active and 
+                               self.target_override_reason and
+                               "idle head variation" in self.target_override_reason.lower())
+            
+            if not is_idle_movement:
+                self.last_activity_time = current_time
+                self.node.get_logger().debug(f"Activity timestamp updated due to significant joint position change")
+            else:
+                self.node.get_logger().debug(f"Idle head variation detected - not updating activity timestamp")
             
         # MODIFIED: Only clear collision-related overrides for VERY significant target changes
         # This prevents clearing overrides when the system is just updating with the same target
@@ -851,7 +922,7 @@ class CollisionAvoidance:
                 
                 # If we're already returning to home, just track state but don't react to collisions
                 # This prevents collision reactions from interrupting the return to home
-                if self.state_machine.is_in_state(LuxoState.RETURNING_HOME):
+                if self._is_in_state(LuxoState.RETURNING_HOME):
                     self.collision_status[direction]['active'] = is_active
                     return
                 
@@ -867,7 +938,7 @@ class CollisionAvoidance:
                     self.collision_status[direction]['consecutive_count'] = 1
                     
                     # Transition to COLLISION_AVOIDING state
-                    self.state_machine.transition_to(LuxoState.COLLISION_AVOIDING)
+                    self._transition_to_state(LuxoState.COLLISION_AVOIDING)
                     
                     # Fast reaction for immediate danger
                     if self.collision_status[direction]['severity'] == 'danger':
@@ -892,8 +963,8 @@ class CollisionAvoidance:
                     # Check if all collisions are cleared
                     if not any(status['active'] for status in self.collision_status.values()):
                         # Transition back to IDLE if no collisions remain
-                        if self.state_machine.is_in_state(LuxoState.COLLISION_AVOIDING):
-                            self.state_machine.transition_to(LuxoState.IDLE)
+                        if self._is_in_state(LuxoState.COLLISION_AVOIDING):
+                            self._transition_to_state(LuxoState.IDLE)
                     return
                     
                 # Update the active state
@@ -918,7 +989,7 @@ class CollisionAvoidance:
                         # Check if we need to trigger escape mode
                         if self.collision_status[direction]['consecutive_count'] > self.escape_threshold:
                             self.node.get_logger().warn(f"Persistent collision detected ({self.collision_status[direction]['consecutive_count']}), attempting to escape")
-                            if not self.state_machine.is_in_state(LuxoState.ESCAPE_MODE):
+                            if not self._is_in_state(LuxoState.ESCAPE_MODE):
                                 # Release lock before calling _activate_escape_mode to prevent deadlock
                                 self.collision_lock.release()
                                 try:
@@ -991,7 +1062,7 @@ class CollisionAvoidance:
                 self.collision_status[direction]['active'] = True
                 
                 # Transition to COLLISION_AVOIDING state
-                self.state_machine.transition_to(LuxoState.COLLISION_AVOIDING)
+                self._transition_to_state(LuxoState.COLLISION_AVOIDING)
                 
                 # Release lock before potentially long operation
                 self.collision_lock.release()
@@ -1035,7 +1106,7 @@ class CollisionAvoidance:
                     self.collision_status[direction]['active'] = True
                     
                     # Transition to COLLISION_AVOIDING state
-                    self.state_machine.transition_to(LuxoState.COLLISION_AVOIDING)
+                    self._transition_to_state(LuxoState.COLLISION_AVOIDING)
                     
                     # Release lock before potentially long operation
                     self.collision_lock.release()
@@ -1134,12 +1205,12 @@ class CollisionAvoidance:
             # Only transition out if BOTH conditions are met:
             # 1. Petting is no longer active
             # 2. No petting animation is currently running
-            if (self.state_machine.is_in_state(LuxoState.PETTING) and 
+            if (self._is_in_state(LuxoState.PETTING) and 
                 not self.petting_active and 
                 not self.petting_animation_active):
                 
                 self.node.get_logger().info("Petting stopped and animation complete - transitioning to IDLE")
-                self.state_machine.transition_to(LuxoState.IDLE)
+                self._transition_to_state(LuxoState.IDLE)
                 
         except Exception as e:
             self.node.get_logger().error(f"Error checking petting state transition: {e}")
@@ -1157,7 +1228,7 @@ class CollisionAvoidance:
             pressure = int(parts[1]) if parts[1].isdigit() else 0
             
             # Don't process petting during initialization or if system not ready
-            if self.state_machine.is_in_state(LuxoState.INITIALIZING):
+            if self._is_in_state(LuxoState.INITIALIZING):
                 self.node.get_logger().debug(f"Ignoring petting during initialization: {msg.data}")
                 return
                 
@@ -1186,13 +1257,13 @@ class CollisionAvoidance:
                     self.petting_start_time = current_time
                     
                     # Only transition if we're in a valid state for petting
-                    if self.state_machine.is_in_state(LuxoState.IDLE, LuxoState.ANIMATING, LuxoState.EMOTION_REACTING):
-                        self.state_machine.transition_to(LuxoState.PETTING)
+                    if self._is_in_state(LuxoState.IDLE, LuxoState.ANIMATING, LuxoState.EMOTION_REACTING):
+                        self._transition_to_state(LuxoState.PETTING)
                         
                         # Trigger immediate petting response
                         self._trigger_petting_animation()
                     else:
-                        self.node.get_logger().warn(f"Cannot transition to petting from current state: {self.state_machine.current_state.name}")
+                        self.node.get_logger().warn(f"Cannot transition to petting from current state: {self._get_current_state().name}")
                         self.petting_active = False  # Reset since we can't transition
                 else:
                     # Already petting, just update intensity
@@ -1203,7 +1274,7 @@ class CollisionAvoidance:
                     time_since_last_animation = (current_time - self.last_petting_animation_time).nanoseconds / 1e9
                     if (time_since_last_animation > self.petting_animation_cooldown and 
                         not self.petting_animation_active and
-                        self.state_machine.is_in_state(LuxoState.PETTING)):
+                        self._is_in_state(LuxoState.PETTING)):
                         
                         self.node.get_logger().info(f"Triggering additional petting animation after {time_since_last_animation:.1f}s")
                         self._trigger_petting_animation()
@@ -1235,7 +1306,7 @@ class CollisionAvoidance:
             current_time = self.node.get_clock().now()
             
             # Handle petting state updates and timeout detection
-            if self.state_machine.is_in_state(LuxoState.PETTING):
+            if self._is_in_state(LuxoState.PETTING):
                 # Check for petting timeout (no messages received recently)
                 time_since_petting_message = (current_time - self.last_petting_message_time).nanoseconds / 1e9
                 
@@ -1266,11 +1337,11 @@ class CollisionAvoidance:
                     self._check_petting_state_transition()
                     
                     # If we're still in petting state after check, don't do other safety operations
-                    if self.state_machine.is_in_state(LuxoState.PETTING):
+                    if self._is_in_state(LuxoState.PETTING):
                         return
         
             # Check if target override is stuck (not in RETURNING_HOME state)
-            if self.target_override_active and not self.state_machine.is_in_state(LuxoState.RETURNING_HOME):
+            if self.target_override_active and not self._is_in_state(LuxoState.RETURNING_HOME):
                 # Don't clear voice following overrides too quickly
                 if self.target_override_reason != "Voice following":
                     override_duration = (current_time - self.target_override_time).nanoseconds / 1e9
@@ -1281,7 +1352,7 @@ class CollisionAvoidance:
                         self.target_override_reason = "Cleared due to timeout"
             
             # Check if we're currently trying to go home and handle timeouts
-            if self.state_machine.is_in_state(LuxoState.RETURNING_HOME):
+            if self._is_in_state(LuxoState.RETURNING_HOME):
                 time_since_home_attempt = (current_time - self.returning_to_home_start_time).nanoseconds / 1e9
                 if time_since_home_attempt > self.idle_timeout:
                     self.node.get_logger().warn(f"Home position return timeout after {time_since_home_attempt:.1f}s - giving up")
@@ -1292,7 +1363,7 @@ class CollisionAvoidance:
                     self.persistent_head_collision_active = False
                     self.is_returning_to_rest = False
                     # Transition back to IDLE
-                    self.state_machine.transition_to(LuxoState.IDLE)
+                    self._transition_to_state(LuxoState.IDLE)
                     # Reset other state variables for clean slate
                     self.escape_attempts = 0
                     with self.collision_lock:
@@ -1360,7 +1431,7 @@ class CollisionAvoidance:
                             self.persistent_head_collision_active = False
                             self.is_returning_to_rest = False
                             # Transition back to IDLE
-                            self.state_machine.transition_to(LuxoState.IDLE)
+                            self._transition_to_state(LuxoState.IDLE)
                             # Reset collision counters
                             with self.collision_lock:
                                 for direction in self.collision_status:
@@ -1381,13 +1452,13 @@ class CollisionAvoidance:
                 if head_collision_duration > self.extended_collision_timeout:
                     self.node.get_logger().warn(f"Persistent head collision for over {self.extended_collision_timeout:.1f}s - returning to home position")
                     # Force go to home by transitioning to RETURNING_HOME state
-                    self.state_machine.transition_to(LuxoState.RETURNING_HOME)
+                    self._transition_to_state(LuxoState.RETURNING_HOME)
                     self.returning_to_home_start_time = current_time
                     self.go_to_home_position("Extended persistent head collision - return to home")
                     return  # Skip remaining checks as we're already taking action
                 elif head_collision_duration > self.short_collision_timeout:
                     # First try more moderate correction for shorter duration collisions
-                    if not self.state_machine.is_in_state(LuxoState.ESCAPE_MODE):
+                    if not self._is_in_state(LuxoState.ESCAPE_MODE):
                         self.node.get_logger().warn(f"Persistent head collision for {head_collision_duration:.1f}s - attempting escape mode")
                         self._activate_escape_mode('front')
                         return  # Skip remaining checks as we're already taking action
@@ -1417,7 +1488,7 @@ class CollisionAvoidance:
                 # If we've been idle for a while and enough time has passed since last animation
                 if (time_since_activity > self.min_idle_time_before_animation and 
                     time_since_last_animation > self.idle_animation_interval and
-                    self.state_machine.is_in_state(LuxoState.IDLE) and
+                    self._is_in_state(LuxoState.IDLE) and
                     getattr(self, 'idle_animations_enabled', True)):  # Check if enabled
                     
                     self.node.get_logger().info(f"Device idle for {time_since_activity:.1f}s - triggering idle animation (voice influence: {getattr(self, 'voice_influence', 0.0):.2f})")
@@ -1432,7 +1503,7 @@ class CollisionAvoidance:
                 # Still check for extended idle to return home eventually
                 elif time_since_activity > 120.0 and not already_at_home2:  # 2 minutes
                     self.node.get_logger().info(f"Extended idle timeout - returning to home position")
-                    self.state_machine.transition_to(LuxoState.RETURNING_HOME)
+                    self._transition_to_state(LuxoState.RETURNING_HOME)
                     self.returning_to_home_start_time = current_time
                     self.go_to_home_position("Extended idle timeout")
                     return
@@ -1449,7 +1520,7 @@ class CollisionAvoidance:
                 any_persistent_collision = any(status['consecutive_count'] > 5 for status in self.collision_status.values())
                 
                 # If nothing needs attention, return early to reduce overhead
-                if not any_collision_active and not any_persistent_collision and not self.state_machine.is_in_state(LuxoState.ESCAPE_MODE):
+                if not any_collision_active and not any_persistent_collision and not self._is_in_state(LuxoState.ESCAPE_MODE):
                     return
                 
                 # Get current collision status (do this early so we have latest data)
@@ -1474,12 +1545,12 @@ class CollisionAvoidance:
                     self.perform_collision_avoidance('right', right_status['distance'], emergency=True)
 
             # Check if escape mode is active and should be updated or deactivated
-            if self.state_machine.is_in_state(LuxoState.ESCAPE_MODE):
+            if self._is_in_state(LuxoState.ESCAPE_MODE):
                 # Check if escape mode has been active too long
                 escape_duration = (current_time - self.escape_mode_start_time).nanoseconds / 1e9
                 if escape_duration > self.escape_mode_duration:
                     # Transition back to IDLE
-                    self.state_machine.transition_to(LuxoState.IDLE)
+                    self._transition_to_state(LuxoState.IDLE)
                     self.node.get_logger().info("Escape mode deactivated - normal operation resuming")
                     
                     # Force publish current position to ensure animation can continue
@@ -1513,7 +1584,7 @@ class CollisionAvoidance:
                                 self.node.get_logger().warn(f"Escape attempts exceeded ({self.escape_attempts}/{self.max_escape_attempts}), returning to rest")
                                 self.go_to_rest_position("Escape failure rest position")
                                 # Transition back to IDLE
-                                self.state_machine.transition_to(LuxoState.IDLE)
+                                self._transition_to_state(LuxoState.IDLE)
                                 self.escape_attempts = 0
                             else:
                                 # Try another escape attempt
@@ -1723,7 +1794,7 @@ class CollisionAvoidance:
         current_time = self.node.get_clock().now()
         
         # When returning to home, always return the home position override
-        if self.state_machine.is_in_state(LuxoState.RETURNING_HOME) and self.target_override_active and self.target_override_joints is not None:
+        if self._is_in_state(LuxoState.RETURNING_HOME) and self.target_override_active and self.target_override_joints is not None:
             # Log that we're enforcing home position override (throttled)
             time_since_log = (current_time - self.last_home_override_log).nanoseconds / 1e9
             if time_since_log > 5.0:  # Increased from 1.0 to reduce log spam
@@ -1821,7 +1892,7 @@ class CollisionAvoidance:
     def apply_safety_limits(self, positions):
         """Apply safety limits to joint positions based on collision status."""
         # If returning to home position, don't apply collision-based safety limits
-        if self.state_machine.is_in_state(LuxoState.RETURNING_HOME):
+        if self._is_in_state(LuxoState.RETURNING_HOME):
             return positions
             
         # Get a copy of the target positions
@@ -1885,7 +1956,7 @@ class CollisionAvoidance:
                 safe_positions[0] = self.current_joints[0] - (delta * limit_factor)
         
         # Add additional check for escape mode
-        if self.state_machine.is_in_state(LuxoState.ESCAPE_MODE):
+        if self._is_in_state(LuxoState.ESCAPE_MODE):
             # In escape mode, we relax some limits to allow more dramatic movements
             # We'll only apply hard limits here, no soft limits
             pass  # Continue with existing logic, but with modified thresholds
@@ -1895,7 +1966,7 @@ class CollisionAvoidance:
     def adjust_path_for_collision(self, front_status, left_status, right_status):
         """Adjust the current motion path to avoid obstacles."""
         # Skip if we're returning to home - don't adjust the home positioning
-        if self.state_machine.is_in_state(LuxoState.RETURNING_HOME):
+        if self._is_in_state(LuxoState.RETURNING_HOME):
             return
             
         # Update activity time when adjusting path
@@ -2175,7 +2246,7 @@ class CollisionAvoidance:
             # Reset collision counters and escape status when we return to rest
             if success:
                 # Transition back to IDLE when returning to rest
-                self.state_machine.transition_to(LuxoState.IDLE)
+                self._transition_to_state(LuxoState.IDLE)
                 self.escape_attempts = 0
                 with self.collision_lock:
                     for direction in self.collision_status:
@@ -2194,7 +2265,7 @@ class CollisionAvoidance:
         """Move to home position using a two-stage sequence with rotation limit awareness"""
         try:
             # Transition to RETURNING_HOME state
-            self.state_machine.transition_to(LuxoState.RETURNING_HOME)
+            self._transition_to_state(LuxoState.RETURNING_HOME)
             
             # IMPORTANT: Set the start time for timeout tracking
             self.returning_to_home_start_time = self.node.get_clock().now()
@@ -2295,7 +2366,7 @@ class CollisionAvoidance:
             else:
                 self.node.get_logger().error("Failed to send home position command")
                 # Return to IDLE state if command failed
-                self.state_machine.transition_to(LuxoState.IDLE)
+                self._transition_to_state(LuxoState.IDLE)
             
             # Reset idle timer
             self.last_activity_time = current_time
@@ -2304,14 +2375,14 @@ class CollisionAvoidance:
         except Exception as e:
             self.node.get_logger().error(f"Error moving to home position: {e}")
             # Return to IDLE state on error
-            self.state_machine.transition_to(LuxoState.IDLE)
+            self._transition_to_state(LuxoState.IDLE)
             return False
 
     def trigger_idle_animation(self):
         """Trigger a random idle animation."""
         try:
             # Don't trigger if not in IDLE state or action client not ready
-            if not self.state_machine.is_in_state(LuxoState.IDLE):
+            if not self._is_in_state(LuxoState.IDLE):
                 return
                 
             if not self._idle_animation_client.wait_for_server(timeout_sec=1.0):
@@ -2418,7 +2489,7 @@ class CollisionAvoidance:
     def _activate_escape_mode(self, direction):
         """Activate escape mode to avoid persistent collisions in a direction."""
         # Transition to ESCAPE_MODE state
-        self.state_machine.transition_to(LuxoState.ESCAPE_MODE)
+        self._transition_to_state(LuxoState.ESCAPE_MODE)
         
         self.escape_mode_start_time = self.node.get_clock().now()
         self.last_escape_direction = direction
@@ -2534,7 +2605,7 @@ class CollisionAvoidance:
     def is_animating(self):
         """Determine if the robot is currently executing an animation."""
         # Check state machine first
-        if self.state_machine.is_in_state(LuxoState.ANIMATING):
+        if self._is_in_state(LuxoState.ANIMATING):
             return True
             
         # Check if we have an active animation tracked
@@ -2574,7 +2645,7 @@ class CollisionAvoidance:
         """Trigger subtle head movements during idle periods."""
         try:
             # Don't trigger if not enabled or not in IDLE state
-            if not self.idle_head_variation_enabled or not self.state_machine.is_in_state(LuxoState.IDLE):
+            if not self.idle_head_variation_enabled or not self._is_in_state(LuxoState.IDLE):
                 return
                 
             # UPDATED: Don't interfere with ACTIVE voice following, but allow coexistence
@@ -2684,7 +2755,7 @@ class CollisionAvoidance:
             return False
             
         # Only in IDLE state
-        if not self.state_machine.is_in_state(LuxoState.IDLE):
+        if not self._is_in_state(LuxoState.IDLE):
             return False
             
         # Don't interfere with ACTIVE voice following, but allow coexistence

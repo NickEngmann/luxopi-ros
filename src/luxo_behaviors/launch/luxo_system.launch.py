@@ -158,6 +158,13 @@ def generate_launch_description():
         condition=IfCondition(use_hardware)
     )
     
+    state_manager_info = LogInfo(
+        msg=["\n🎯 STATE MANAGER:\n",
+            "- Centralized state coordination enabled\n",
+            "- Publishing to: /luxo/current_state\n",
+            "- Service: /luxo/request_state_transition\n"],
+    )
+
     # Simulation-specific info
     simulation_info = LogInfo(
         msg=["\n🖥️ SIMULATION MODE DETAILS:\n",
@@ -275,6 +282,17 @@ def generate_launch_description():
     # NODE DEFINITIONS
     # ==========================================================================
     
+    # State Manager node - runs in both hardware and simulation
+    state_manager_node = Node(
+        package='luxo_behaviors',
+        executable='state_manager',
+        name='state_manager',
+        output='screen',
+        parameters=[
+            {'ros__parameters': {'log_level': 'info'}}
+        ]
+        # No condition - runs in both hardware and simulation modes
+    )
     # Hardware interface node (hardware only)
     hardware_interface_node = Node(
         package='luxo_behaviors',
@@ -490,6 +508,7 @@ def generate_launch_description():
         
         # Nodes
         hardware_interface_node,
+        state_manager_node,
         position_test_node,
         hardware_animation_node,
         system_monitor_node,
@@ -498,7 +517,6 @@ def generate_launch_description():
         i2c_device_manager_node,
         collision_logic_node,
         camera_interaction_node,
-        
         # Final info
         completion_message,
         show_nodes_cmd

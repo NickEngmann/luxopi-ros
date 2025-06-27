@@ -1,17 +1,19 @@
-# Issues
-- [] Reset On/Off Light Controls from State Manager or something similar
-- [] Neopixel interacting with state machine (Petting timer isn't working properly)
-- [] Neopixels aren't stable (the smaller ring keeps crashing - needs more solder)
+# Issues (Needs Stabability)
 - [] Collision keeps resetting - aka the device moves back into position where it originally collided
-- [] I2C periodically crashing
+--- Seperate States in Collision Avoidance (Petting, Idle, Voice Following need seperate states!)
+- [] Audio Filtering (noise of my own motors!!)
+- [] Camera back on and cleanup its interactions (make it farrr less annoying)
+- [] I2C periodically crashing - think I solved this with new components, and no LED
+- [] Neopixels periodically crash
+
+# New Features
 - [] Audio Commands
 -- Turn on/off light
 -- stop moving
 -- start moving
 -- go to rest position
-- [] Audio Filtering (some more)
-- [] camera back on and cleanup its interactions
-
+- [] Update to DepthAI 3.0 (update model as well for more interactions)
+- [] Audio device recovery
 
 # Later Priorities
 ## High Priority

@@ -1,0 +1,9 @@
+string requested_state
+string requesting_node
+int32 priority
+bool force
+bool completion false
+---
+bool success
+string current_state
+string message

@@ -11,7 +11,9 @@ import random
 import numpy as np
 from luxo_behaviors.serial_manager import SerialManager
 from luxo_behaviors.collision_avoidance import CollisionAvoidance
-from luxo_behaviors.state_machine import LuxoStateMachine, LuxoState
+from luxo_behaviors.state_machine import LuxoState  # Import for state enum only
+from luxo_behaviors.shared_modules import StateUtils  # Import shared state utilities
+from luxo_interfaces.srv import RequestStateTransition
 
 class RoArmHardwareInterface(Node):
     def __init__(self):
@@ -138,42 +140,35 @@ class RoArmHardwareInterface(Node):
         # Get initialization duration
         self.initialization_duration = self.get_parameter('initialization_duration').value
         
-        # Initialize timing variables for state machine
+        # Initialize timing variables for state tracking
         self.initialization_start_time = self.get_clock().now()
         
-        # Initialize the state machine
-        self.state_machine = LuxoStateMachine(self, LuxoState.INITIALIZING)
+        # Track current state (received from global state manager)
+        self.current_state = LuxoState.INITIALIZING
+        self.state_lock = threading.Lock()
+        self.collision_interrupted_state = None  # Track what state collision interrupted
 
-        # Publisher for state machine state
-        self.state_publisher = self.create_publisher(
+        # State manager communication - using StateUtils pattern
+        # Note: StateUtils will create the client as needed
+        
+        # Subscribe to state updates
+        self.state_subscription = self.create_subscription(
             String,
             '/luxo/current_state',
+            self.state_update_callback,
             10
         )
         
-        # Publisher for light status
-        self.light_status_publisher = self.create_publisher(
-            Bool,
-            '/luxo/light_status',
+        # Publisher for node heartbeat
+        self.heartbeat_publisher = self.create_publisher(
+            String,
+            '/luxo/node_heartbeat',
             10
         )
         
-        # Track actual light status
-        self.current_light_status = False
-        
-        # Timer to publish light status periodically
-        self.light_status_timer = self.create_timer(1.0, self.publish_light_status)
-        
-        # Timer to publish state periodically
-        self.state_publish_timer = self.create_timer(0.5, self.publish_current_state)
-        
-        # Register callbacks with state machine to publish on state changes
-        for state in LuxoState:
-            self.state_machine.register_on_enter(state, self._on_state_change)
-        
-        self.get_logger().info("State publisher initialized - publishing to /luxo/current_state")
-        self._setup_state_callbacks()
-        
+        # Heartbeat timer
+        self.heartbeat_timer = self.create_timer(1.0, self.send_heartbeat)
+
         # Connection control
         self.connection_active = False
         self.connection_lock = threading.Lock()
@@ -197,6 +192,7 @@ class RoArmHardwareInterface(Node):
         # Connect to the serial port
         self.connection_active = self.serial_manager.connect()
         time.sleep(2)  # Allow time for connection to stabilize
+        
         # Joint state tracking with fallback default values
         # These will be initialized from hardware before publishing begins
         self.current_joints = [0.0, 0.0, 0.0, 0.0, 0.0]  # base, shoulder, elbow, wrist, hand (no acceleration in current)
@@ -215,6 +211,8 @@ class RoArmHardwareInterface(Node):
         self.dynamic_adaptation_timeout = 10.0  # Keep enabled for 10 seconds
         self.last_movement_source = "unknown"  # Track movement source for DEMA control
         self.initial_adaptation_setup = True  # Flag to track initial setup vs toggle
+        self.dema_reenable_timer = None  # Initialize the timer variable
+        self.last_publish_time = self.get_clock().now()  # Initialize publish time
         
         # Enable movement source integration
         self.enable_movement_source_integration = self.get_parameter('enable_movement_source_integration').value
@@ -226,12 +224,11 @@ class RoArmHardwareInterface(Node):
             )
         
         if self.connection_active:
-            # Initialize the collision avoidance system with state machine
+            # Initialize the collision avoidance system (no state machine passed)
             self.collision_avoidance = CollisionAvoidance(
                 self,  # Pass this node to the collision system
                 self.send_safe_joint_command,  # Callback to send joint commands
                 self.publish_actual_joint_states,  # Callback to publish joint states
-                self.state_machine  # Pass the state machine
             )
             
             # Pass idle animation parameters to collision avoidance
@@ -255,7 +252,7 @@ class RoArmHardwareInterface(Node):
                 from luxo_behaviors.animation_command import AnimationCommandActionServer
                 self.animation_command_server = AnimationCommandActionServer()
                 self.animation_command_server.set_collision_avoidance(self.collision_avoidance)
-                self.animation_command_server.set_state_machine(self.state_machine)
+                self.animation_command_server.set_node(self)  # Pass node instead of state machine
                 self.get_logger().info("Animation command server integrated with hardware interface")
             except Exception as e:
                 self.get_logger().warn(f"Could not integrate animation command server: {e}")
@@ -379,128 +376,108 @@ class RoArmHardwareInterface(Node):
                 10
             )
             
+            # Add publisher for light status
+            self.light_status_publisher = self.create_publisher(
+                Bool,
+                '/roarm/light_status',
+                10
+            )
+            
+            # Initialize light status
+            self.current_light_status = False
+            
             # Add timer to turn on the light after X seconds
             self.light_timer = self.create_timer(60.0, self.delayed_light_on)
             self.get_logger().info("Light will automatically turn on in 60 seconds")
             
             self.get_logger().info("RoArm hardware interface initialized")
             
-            if self.enable_collision_avoidance:
-                self.get_logger().info("Collision avoidance enabled")
-            else:
-                self.get_logger().warn("Collision avoidance disabled - robot will not react to obstacles")
-            
-            if self.enable_dynamic_adaptation:
-                self.get_logger().info("Dynamic adaptation/external force control enabled")
-            
-            # Create subscription for dynamic adaptation toggle topic
-            self.dynamic_adaptation_sub = self.create_subscription(
-                Bool,
-                '/dynamic_adaptation_toggle',
-                self.dynamic_adaptation_toggle_callback,
-                10
-            )
-            
-            # Add subscription for position feedback
-            self.position_feedback_sub = self.create_subscription(
-                String,
-                '/position_feedback',
-                self.position_feedback_callback,
-                10
-            )
-            
-            # Initialize ROS time tracking for various features
-            self.last_publish_time = self.get_clock().now()
-            self.last_watchdog_check_time = self.get_clock().now()
-            self.last_dema_pending_log = self.get_clock().now()
-            self.last_adaptation_toggle_time = self.get_clock().now()
-            
-            # Track command significance
-            self.significant_publish = False
-            self.significant_command = False
-            
-            # Initialize recent command times tracking
-            self.recent_command_times = []
-            
-            # Timer for DEMA re-enable checking
-            self.dema_reenable_timer = None
-            
-            # Timer for state machine updates
-            self.state_update_timer = self.create_timer(0.1, self._update_state_machine)
-            
         else:
             self.get_logger().error("Failed to initialize hardware interface")
-            self.state_machine.transition_to(LuxoState.ERROR)
-    def publish_current_state(self):
-        """Publish the current state machine state."""
-        if self.state_machine:
-            state_msg = String()
-            state_msg.data = self.state_machine.current_state.name
-            self.state_publisher.publish(state_msg)
+            self.request_state_transition(LuxoState.ERROR, priority=100)
 
-    # Add this callback method:
-    def _on_state_change(self):
-        """Callback when state changes - immediately publish new state."""
-        self.publish_current_state()
-        self.get_logger().info(f"State changed to: {self.state_machine.current_state.name}")
-    
-    def _setup_state_callbacks(self):
-        """Set up callbacks for state transitions."""
-        # INITIALIZING state
-        self.state_machine.register_on_enter(LuxoState.INITIALIZING, self._on_enter_initializing)
+    def send_heartbeat(self):
+        """Send heartbeat to state manager"""
+        try:
+            # Format: "node_name:state:priority"
+            heartbeat_msg = String()
+            with self.state_lock:
+                heartbeat_msg.data = f"hardware_interface:{self.current_state.name}:50"
+            self.heartbeat_publisher.publish(heartbeat_msg)
+        except Exception as e:
+            self.get_logger().error(f"Error sending heartbeat: {e}")
+
+    def state_update_callback(self, msg):
+        """Handle state updates from global state manager"""
+        try:
+            new_state = LuxoState[msg.data.upper()]
+            with self.state_lock:
+                if self.current_state != new_state:
+                    old_state = self.current_state
+                    self.current_state = new_state
+                    self.get_logger().info(f"State updated: {old_state.name} -> {new_state.name}")
+                    self._handle_state_change(old_state, new_state)
+        except KeyError:
+            self.get_logger().warn(f"Unknown state received: {msg.data}")
+        except Exception as e:
+            self.get_logger().error(f"Error in state update callback: {e}")
+
+    def _handle_state_change(self, old_state: LuxoState, new_state: LuxoState):
+        """Handle state transitions locally"""
+        # Handle state-specific actions
+        if new_state == LuxoState.INITIALIZING:
+            self._on_enter_initializing()
+        elif new_state == LuxoState.IDLE:
+            self._on_enter_idle()
+        elif new_state == LuxoState.ANIMATING:
+            self._on_enter_animating()
+        elif new_state == LuxoState.COLLISION_AVOIDING:
+            self._on_enter_collision_avoiding()
+        elif new_state == LuxoState.RETURNING_HOME:
+            self._on_enter_returning_home()
+        elif new_state == LuxoState.ESCAPE_MODE:
+            self._on_enter_escape_mode()
+        elif new_state == LuxoState.USER_CONTROL:
+            self._on_enter_user_control()
+        elif new_state == LuxoState.ERROR:
+            self._on_enter_error()
+        elif new_state == LuxoState.SHUTDOWN:
+            self._on_enter_shutdown()
         
-        # IDLE state
-        self.state_machine.register_on_enter(LuxoState.IDLE, self._on_enter_idle)
-        
-        # ANIMATING state
-        self.state_machine.register_on_enter(LuxoState.ANIMATING, self._on_enter_animating)
-        self.state_machine.register_on_exit(LuxoState.ANIMATING, self._on_exit_animating)
-        
-        # COLLISION_AVOIDING state
-        self.state_machine.register_on_enter(LuxoState.COLLISION_AVOIDING, self._on_enter_collision_avoiding)
-        
-        # RETURNING_HOME state
-        self.state_machine.register_on_enter(LuxoState.RETURNING_HOME, self._on_enter_returning_home)
-        self.state_machine.register_on_exit(LuxoState.RETURNING_HOME, self._on_exit_returning_home)
-        
-        # ESCAPE_MODE state
-        self.state_machine.register_on_enter(LuxoState.ESCAPE_MODE, self._on_enter_escape_mode)
-        
-        # USER_CONTROL state (DEMA)
-        self.state_machine.register_on_enter(LuxoState.USER_CONTROL, self._on_enter_user_control)
-        self.state_machine.register_on_exit(LuxoState.USER_CONTROL, self._on_exit_user_control)
-        
-        # ERROR state
-        self.state_machine.register_on_enter(LuxoState.ERROR, self._on_enter_error)
-        
-        # SHUTDOWN state
-        self.state_machine.register_on_enter(LuxoState.SHUTDOWN, self._on_enter_shutdown)
-    
-    def _update_state_machine(self):
-        """Periodically update the state machine."""
-        # Check for automatic transition from INITIALIZING to IDLE
-        if self.state_machine.is_in_state(LuxoState.INITIALIZING):
-            current_time = self.get_clock().now()
-            time_in_init = (current_time - self.initialization_start_time).nanoseconds / 1e9
-            
-            if time_in_init >= self.initialization_duration:
-                self.get_logger().info(f"Initialization period complete ({time_in_init:.1f}s) - transitioning to IDLE")
-                self.state_machine.transition_to(LuxoState.IDLE)
-        
-        self.state_machine.update()
+        # Handle state exit actions
+        if old_state == LuxoState.ANIMATING:
+            self._on_exit_animating()
+        elif old_state == LuxoState.RETURNING_HOME:
+            self._on_exit_returning_home()
+        elif old_state == LuxoState.USER_CONTROL:
+            self._on_exit_user_control()
+        elif old_state == LuxoState.COLLISION_AVOIDING:
+            self._on_exit_collision_avoiding()
+
+    def request_state_transition(self, requested_state: LuxoState, priority: int = 50, force: bool = False, completion: bool = False):
+        """Request a state transition from the global state manager using StateUtils"""
+        return StateUtils.request_state_transition(self, requested_state, priority, force, completion)
+
+    def is_in_state(self, *states: LuxoState) -> bool:
+        """Check if currently in any of the given states"""
+        with self.state_lock:
+            return self.current_state in states
+
+    def get_current_state(self) -> LuxoState:
+        """Get current state"""
+        with self.state_lock:
+            return self.current_state
 
     # State callback implementations
     def _on_enter_initializing(self):
         """Called when entering INITIALIZING state."""
-        self.get_logger().info(f"Entering INITIALIZING state - will remain for {self.initialization_duration} seconds")
+        self.get_logger().info("Entering INITIALIZING state")
         self.get_logger().info("Collision avoidance disabled during initialization")
-        # Reset the initialization start time
         self.initialization_start_time = self.get_clock().now()
-    
+
     def _on_enter_idle(self):
         """Called when entering IDLE state."""
         self.get_logger().info("Entering IDLE state")
-        # Clear any pending DEMA resume
         self.dynamic_adaptation_pending_resume = False
     
     def _on_enter_animating(self):
@@ -538,6 +515,17 @@ class RoArmHardwareInterface(Node):
         if self.dynamic_adaptation_pending_resume and self.enable_dynamic_adaptation:
             self.enable_dynamic_adaptation_mode()
             self.dynamic_adaptation_pending_resume = False
+    
+    def _on_exit_collision_avoiding(self):
+        """Called when exiting COLLISION_AVOIDING state."""
+        self.get_logger().info("Exiting COLLISION_AVOIDING state")
+        # Check if we should return to interrupted state
+        if hasattr(self, 'collision_interrupted_state') and self.collision_interrupted_state:
+            interrupted = self.collision_interrupted_state
+            self.collision_interrupted_state = None
+            self.get_logger().info(f"Collision resolved - returning to {interrupted.name}")
+            # Use completion transition to return to interrupted state
+            self.request_state_transition(interrupted, priority=50, completion=True)
     
     def _on_enter_escape_mode(self):
         """Called when entering ESCAPE_MODE state."""
@@ -647,66 +635,71 @@ class RoArmHardwareInterface(Node):
 
     # Collision detection callbacks - delegate to collision_avoidance system
     def right_collision_callback(self, msg):
-        # Don't process collisions during initialization
-        if self.state_machine.is_in_state(LuxoState.INITIALIZING):
+        if self.is_in_state(LuxoState.INITIALIZING):
             self.get_logger().debug("Ignoring collision during initialization phase")
             return
+        # Store what we interrupted if collision is detected
+        if msg.data and not self.is_in_state(LuxoState.COLLISION_AVOIDING):
+            self.collision_interrupted_state = self.get_current_state()
         self.collision_avoidance.handle_collision('right', msg.data)
 
     def left_collision_callback(self, msg):
-        # Don't process collisions during initialization
-        if self.state_machine.is_in_state(LuxoState.INITIALIZING):
+        if self.is_in_state(LuxoState.INITIALIZING):
             self.get_logger().debug("Ignoring collision during initialization phase")
             return
+        # Store what we interrupted if collision is detected
+        if msg.data and not self.is_in_state(LuxoState.COLLISION_AVOIDING):
+            self.collision_interrupted_state = self.get_current_state()
         self.collision_avoidance.handle_collision('left', msg.data)
 
     def front_collision_callback(self, msg):
-        # Don't process collisions during initialization
-        if self.state_machine.is_in_state(LuxoState.INITIALIZING):
+        if self.is_in_state(LuxoState.INITIALIZING):
             self.get_logger().debug("Ignoring collision during initialization phase")
             return
+        # Store what we interrupted if collision is detected
+        if msg.data and not self.is_in_state(LuxoState.COLLISION_AVOIDING):
+            self.collision_interrupted_state = self.get_current_state()
         self.collision_avoidance.handle_collision('front', msg.data)
-    
+
     def front_proximity_callback(self, msg):
         # Don't process proximity during initialization
-        if self.state_machine.is_in_state(LuxoState.INITIALIZING):
+        if self.is_in_state(LuxoState.INITIALIZING):
             return
         self.collision_avoidance.update_distance('front', msg.data, is_proximity=True)
 
     def left_distance_callback(self, msg):
         # Don't process distance during initialization
-        if self.state_machine.is_in_state(LuxoState.INITIALIZING):
+        if self.is_in_state(LuxoState.INITIALIZING):
             return
         self.collision_avoidance.update_distance('left', msg.data)
     
     def right_distance_callback(self, msg):
         # Don't process distance during initialization
-        if self.state_machine.is_in_state(LuxoState.INITIALIZING):
+        if self.is_in_state(LuxoState.INITIALIZING):
             return
         self.collision_avoidance.update_distance('right', msg.data)
     
     def front_severity_callback(self, msg):
         # Don't process severity during initialization
-        if self.state_machine.is_in_state(LuxoState.INITIALIZING):
+        if self.is_in_state(LuxoState.INITIALIZING):
             return
         self.collision_avoidance.update_severity('front', msg.data)
     
     def left_severity_callback(self, msg):
         # Don't process severity during initialization
-        if self.state_machine.is_in_state(LuxoState.INITIALIZING):
+        if self.is_in_state(LuxoState.INITIALIZING):
             return
         self.collision_avoidance.update_severity('left', msg.data)
     
     def right_severity_callback(self, msg):
         # Don't process severity during initialization
-        if self.state_machine.is_in_state(LuxoState.INITIALIZING):
+        if self.is_in_state(LuxoState.INITIALIZING):
             return
         self.collision_avoidance.update_severity('right', msg.data)
 
     def safety_monitor_callback(self):
         """Periodic callback to monitor safety and adjust motion if needed"""
-        # Don't run safety monitoring during initialization
-        if self.state_machine.is_in_state(LuxoState.INITIALIZING):
+        if self.is_in_state(LuxoState.INITIALIZING):
             self.get_logger().debug("Skipping safety monitoring during initialization")
             return
             
@@ -718,7 +711,7 @@ class RoArmHardwareInterface(Node):
             current_time = self.get_clock().now()
             
             # Only check for re-enabling if we have a pending resume request and we're in IDLE state
-            if self.dynamic_adaptation_pending_resume and self.state_machine.is_in_state(LuxoState.IDLE):
+            if self.dynamic_adaptation_pending_resume and self.is_in_state(LuxoState.IDLE):
                 # Check if there's been no significant movement for a while
                 time_since_command = (current_time - self.last_command_time).nanoseconds / 1e9
                 
@@ -727,7 +720,7 @@ class RoArmHardwareInterface(Node):
                 if time_since_command > 3.0:
                     self.get_logger().info(f"Movement appears complete (no commands for {time_since_command:.2f}s) - re-enabling DEMA")
                     # Cancel any pending re-enable timer first
-                    if self.dema_reenable_timer:
+                    if hasattr(self, 'dema_reenable_timer') and self.dema_reenable_timer:
                         self.dema_reenable_timer.cancel()
                         self.dema_reenable_timer = None
                     # Re-enable DEMA
@@ -740,6 +733,8 @@ class RoArmHardwareInterface(Node):
                         # Don't adjust the timer - we'll retry on the next callback
                 else:
                     # Log this less frequently to avoid spamming the logs
+                    if not hasattr(self, 'last_dema_pending_log'):
+                        self.last_dema_pending_log = current_time
                     time_since_log = (current_time - self.last_dema_pending_log).nanoseconds / 1e9
                     if time_since_log > 2.0:
                         self.get_logger().debug(f"DEMA re-enable pending: waiting for arm to be still (time since command: {time_since_command:.2f}s)")
@@ -752,7 +747,7 @@ class RoArmHardwareInterface(Node):
             
             # Check activity time
             now = self.get_clock().now()
-            time_since_publish = (now - self.last_publish_time).nanoseconds / 1e9
+            time_since_publish = (now - self.last_publish_time).nanoseconds / 1e9 if hasattr(self, 'last_publish_time') else float('inf')
             
             # If we've published recently, update last activity time in collision avoidance,
             # but only if last_publish was due to a significant change
@@ -769,7 +764,7 @@ class RoArmHardwareInterface(Node):
                 self.get_logger().debug("Activity timestamp updated due to recent command")
             
             # Check if we're returning to home - this check should be prioritized
-            if self.state_machine.is_in_state(LuxoState.RETURNING_HOME):
+            if self.is_in_state(LuxoState.RETURNING_HOME):
                 # Ensure dynamic adaptation is disabled during return to home
                 if self.enable_dynamic_adaptation and self.dynamic_adaptation_active:
                     self.get_logger().info("Disabling DEMA during return to home movement")
@@ -854,7 +849,7 @@ class RoArmHardwareInterface(Node):
             return
         
         # Allow basic joint commands during initialization but skip collision avoidance
-        if self.state_machine.is_in_state(LuxoState.INITIALIZING):
+        if self.is_in_state(LuxoState.INITIALIZING):
             self.get_logger().debug("Processing joint command during initialization (collision avoidance disabled)")
             # Process the command but skip collision avoidance entirely
             try:
@@ -902,7 +897,7 @@ class RoArmHardwareInterface(Node):
             self.last_command_time = self.get_clock().now()
             
             # Check if we're in RETURNING_HOME state - add timeout check
-            if self.state_machine.is_in_state(LuxoState.RETURNING_HOME):
+            if self.is_in_state(LuxoState.RETURNING_HOME):
                 # Check for stuck RETURNING_HOME state
                 if hasattr(self.collision_avoidance, 'returning_to_home_start_time'):
                     current_time = self.get_clock().now()
@@ -916,7 +911,7 @@ class RoArmHardwareInterface(Node):
                         self.collision_avoidance.target_override_joints = None
                         self.collision_avoidance.home_position_stage = 1
                         # Force transition to IDLE
-                        self.state_machine.transition_to(LuxoState.IDLE, force=True)
+                        self.request_state_transition(LuxoState.IDLE, priority=100, force=True)
                     else:
                         self.get_logger().debug("Skipping joint_states_target - currently returning to home position")
                         return
@@ -950,8 +945,10 @@ class RoArmHardwareInterface(Node):
                 self.get_logger().debug(f"Received encoded movement source: {encoded_source}")
                 if encoded_source == 1:
                     movement_source = "animation"
-                    # Transition to ANIMATING state
-                    self.state_machine.transition_to(LuxoState.ANIMATING)
+                    # Only request transition if not already in ANIMATING state
+                    if not self.is_in_state(LuxoState.ANIMATING):
+                        self.get_logger().info("Animation starting - requesting transition to ANIMATING state")
+                        StateUtils.request_state_transition(self, LuxoState.ANIMATING, priority=50)
                     # Animation name is no longer passed via effort field
                     # Just notify collision avoidance that an animation is active
                     self.collision_avoidance.set_active_animation("unknown_animation")
@@ -965,19 +962,36 @@ class RoArmHardwareInterface(Node):
                     
                 elif encoded_source == 2:
                     movement_source = "collision"
-                    # Should already be in COLLISION_AVOIDING state
+                    # Only request transition if not already in COLLISION_AVOIDING state
+                    if not self.is_in_state(LuxoState.COLLISION_AVOIDING):
+                        self.get_logger().info("Collision detected - requesting transition to COLLISION_AVOIDING state")
+                        StateUtils.request_state_transition(self, LuxoState.COLLISION_AVOIDING, priority=80)
                 elif encoded_source == 3:
                     movement_source = "user"
-                    # Transition to USER_CONTROL state
-                    self.state_machine.transition_to(LuxoState.USER_CONTROL)
+                    # Only request transition if not already in USER_CONTROL state
+                    if not self.is_in_state(LuxoState.USER_CONTROL):
+                        self.get_logger().info("User control detected - requesting transition to USER_CONTROL state")
+                        StateUtils.request_state_transition(self, LuxoState.USER_CONTROL, priority=70)
                 elif encoded_source == 0:
                     movement_source = "idle"
                     # Clear any active animation tracking
                     self.collision_avoidance.clear_active_animation()
                     
-                    if hasattr(self, 'last_movement_source') and self.last_movement_source == "animation":
-                        self.get_logger().info(f"Animation completed - transitioning to IDLE state")
-                        self.state_machine.transition_to(LuxoState.IDLE)
+                    # Use completion transition when returning from states
+                    if self.is_in_state(LuxoState.ANIMATING):
+                        self.get_logger().info(f"Animation completed - requesting completion transition")
+                        # Return to IDLE after animation
+                        StateUtils.request_state_transition(self, LuxoState.IDLE, priority=30, completion=True)
+                    elif self.is_in_state(LuxoState.COLLISION_AVOIDING):
+                        # Check if we should return to interrupted state
+                        if hasattr(self, 'collision_interrupted_state') and self.collision_interrupted_state:
+                            self.get_logger().info(f"Collision resolved - returning to {self.collision_interrupted_state.name}")
+                            StateUtils.request_state_transition(self, self.collision_interrupted_state, priority=50, completion=True)
+                            self.collision_interrupted_state = None
+                        else:
+                            # Default to IDLE if no interrupted state
+                            self.get_logger().info(f"Collision resolved - returning to IDLE")
+                            StateUtils.request_state_transition(self, LuxoState.IDLE, priority=30, completion=True)
 
                 
                 # Store the last movement source
@@ -1268,7 +1282,7 @@ class RoArmHardwareInterface(Node):
                 self.dynamic_adaptation_last_disable_time = self.get_clock().now()
                 
                 # Schedule a ROS timer to check for re-enabling DEMA after 3 seconds
-                if self.dema_reenable_timer is None or not self.dema_reenable_timer.is_ready():
+                if not hasattr(self, 'dema_reenable_timer') or self.dema_reenable_timer is None:
                     self.dema_reenable_timer = self.create_timer(
                         3.0, 
                         self.check_dema_reenable
@@ -1359,7 +1373,7 @@ class RoArmHardwareInterface(Node):
                             break
                 
                 # Re-enable DEMA if we've settled for at least 1 second and we're in IDLE state
-                if time_since_command >= 1.0 and is_settled and self.state_machine.is_in_state(LuxoState.IDLE):
+                if time_since_command >= 1.0 and is_settled and self.is_in_state(LuxoState.IDLE):
                     self.get_logger().info("Robot appears to have settled into position - re-enabling DEMA")
                     success = self.enable_dynamic_adaptation_mode()
                     if success:
@@ -1414,7 +1428,7 @@ class RoArmHardwareInterface(Node):
                 self.collision_avoidance.update_current_joints(self.current_joints)
                 
                 # Check if we've reached home position when returning to home
-                if (self.state_machine.is_in_state(LuxoState.RETURNING_HOME) and 
+                if (self.is_in_state(LuxoState.RETURNING_HOME) and 
                     self.collision_avoidance.target_override_active and 
                     self.collision_avoidance.target_override_joints is not None):
                     
@@ -1433,7 +1447,7 @@ class RoArmHardwareInterface(Node):
                         elif self.collision_avoidance.home_position_stage == 2:
                             self.get_logger().info("Successfully reached final home position (stage 2)")
                             # Transition back to IDLE state
-                            self.state_machine.transition_to(LuxoState.IDLE)
+                            self.request_state_transition(LuxoState.IDLE, priority=30)
                             self.collision_avoidance.persistent_head_collision_active = False
                             
                             # Reset the activity timer to prevent immediately triggering idle timeout
@@ -1534,15 +1548,15 @@ class RoArmHardwareInterface(Node):
         """Clean up when node is destroyed."""
         self.get_logger().info("Shutting down hardware interface")
         
+        # Request shutdown state using StateUtils
+        StateUtils.request_state_transition(self, LuxoState.SHUTDOWN, priority=100, force=True)
+        
         if hasattr(self, 'state_publish_timer'):
             self.state_publish_timer.cancel()
 
         if hasattr(self, 'light_status_timer'):
             self.light_status_timer.cancel()
 
-        # Transition to shutdown state
-        self.state_machine.transition_to(LuxoState.SHUTDOWN, force=True)
-        
         # Cancel any active timers
         if hasattr(self, 'dema_reenable_timer') and self.dema_reenable_timer:
             self.dema_reenable_timer.cancel()
@@ -1595,8 +1609,8 @@ class RoArmHardwareInterface(Node):
                 if success:
                     self.dynamic_adaptation_active = True
                     # Transition to USER_CONTROL state if not already there
-                    if not self.state_machine.is_in_state(LuxoState.USER_CONTROL):
-                        self.state_machine.transition_to(LuxoState.USER_CONTROL)
+                    if not self.is_in_state(LuxoState.USER_CONTROL):
+                        self.request_state_transition(LuxoState.USER_CONTROL, priority=50)
                     self.get_logger().info("Dynamic adaptation mode enabled")
                 else:
                     self.get_logger().error("Failed to enable dynamic adaptation mode")
@@ -1617,8 +1631,8 @@ class RoArmHardwareInterface(Node):
                     self.dynamic_adaptation_active = False
                     self.dynamic_adaptation_last_disable_time = self.get_clock().now()
                     # Transition out of USER_CONTROL state if we're in it
-                    if self.state_machine.is_in_state(LuxoState.USER_CONTROL):
-                        self.state_machine.transition_to(LuxoState.IDLE)
+                    if self.is_in_state(LuxoState.USER_CONTROL):
+                        self.request_state_transition(LuxoState.IDLE, priority=30)
                     self.get_logger().info("Dynamic adaptation mode disabled")
                 else:
                     self.get_logger().error("Failed to disable dynamic adaptation mode")
@@ -1632,6 +1646,8 @@ class RoArmHardwareInterface(Node):
         try:
             # Add extra check to prevent rapid toggles
             current_time = self.get_clock().now()
+            if not hasattr(self, 'last_adaptation_toggle_time'):
+                self.last_adaptation_toggle_time = current_time
             time_since_toggle = (current_time - self.last_adaptation_toggle_time).nanoseconds / 1e9
             
             if time_since_toggle < 2.0:
@@ -1715,9 +1731,10 @@ class RoArmHardwareInterface(Node):
     def publish_light_status(self):
         """Publish the current light status."""
         try:
-            status_msg = Bool()
-            status_msg.data = self.current_light_status
-            self.light_status_publisher.publish(status_msg)
+            if hasattr(self, 'light_status_publisher'):
+                status_msg = Bool()
+                status_msg.data = self.current_light_status
+                self.light_status_publisher.publish(status_msg)
         except Exception as e:
             self.get_logger().error(f"Error publishing light status: {e}")
 
