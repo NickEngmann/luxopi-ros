@@ -10,9 +10,28 @@ import numpy as np
 import threading
 import time
 import sys
+import os
+import contextlib
 from .mic_array import MicArray
 from .pixel_ring import pixel_ring
 import webrtcvad
+
+# Suppress ALSA warnings
+os.environ['ALSA_PCM_CARD'] = 'default'
+os.environ['ALSA_PCM_DEVICE'] = '0'
+
+
+@contextlib.contextmanager
+def suppress_alsa_warnings():
+    """Context manager to suppress ALSA error messages"""
+    devnull = os.open(os.devnull, os.O_WRONLY)
+    old_stderr = os.dup(2)
+    try:
+        os.dup2(devnull, 2)
+        yield
+    finally:
+        os.dup2(old_stderr, 2)
+        os.close(devnull)
 
 
 class VoiceDirectionNode(Node):
@@ -101,117 +120,118 @@ class VoiceDirectionNode(Node):
         self.get_logger().info('Starting audio processing thread')
         
         try:
-            with MicArray(self.RATE, self.CHANNELS, self.RATE * self.VAD_FRAMES / 1000, direction_offset=self.config['array']['direction_offset']) as mic:
-                for chunk in mic.read_chunks():
-                    if not self.running:
-                        break
+            with suppress_alsa_warnings():
+                with MicArray(self.RATE, self.CHANNELS, self.RATE * self.VAD_FRAMES / 1000, direction_offset=self.config['array']['direction_offset']) as mic:
+                    for chunk in mic.read_chunks():
+                        if not self.running:
+                            break
                     
-                    current_time = time.time()
-                    
-                    # Calculate chunk amplitude - exactly from vad_doa.py
-                    chunk_amplitude = self.calculate_rms(chunk)
-                    
-                    # Update peak amplitude tracker - exactly from vad_doa.py
-                    if chunk_amplitude > self.recent_peak_amplitude:
-                        self.recent_peak_amplitude = chunk_amplitude
-                    else:
-                        self.recent_peak_amplitude *= self.amplitude_decay_rate
-                    
-                    # Use single channel audio to detect voice activity - exactly from vad_doa.py
-                    if self.vad.is_speech(chunk[0::self.CHANNELS].tobytes(), self.RATE):
-                        self.speech_count += 1
-                        self.last_speech_time = current_time
-                        # Skip the sys.stdout.write('1') from vad_doa.py
-                    else:
-                        # Skip the sys.stdout.write('0') from vad_doa.py
-                        pass
-
-                    # Turn off LEDs if no speech for configured timeout - exactly from vad_doa.py
-                    if current_time - self.last_speech_time > self.config['vad']['timeout'] and self.leds_on:
-                        pixel_ring.off()
-                        self.leds_on = False
-                        self.direction_history.clear()  # Clear history when speech stops
-
-                    self.chunks.append(chunk)
-                    if len(self.chunks) == self.doa_chunks:
-                        # Calculate average amplitude over the DOA window - exactly from vad_doa.py
-                        frames = np.concatenate(self.chunks)
-                        avg_amplitude = self.calculate_rms(frames)
+                        current_time = time.time()
                         
-                        # Only process DOA if we have enough speech and sufficient amplitude - exactly from vad_doa.py
-                        if self.speech_count > (self.doa_chunks * self.config['vad']['speech_ratio']):
-                            # Check if amplitude is sufficient for reliable DOA - exactly from vad_doa.py
-                            amplitude_ratio = avg_amplitude / max(self.recent_peak_amplitude, self.MIN_AMPLITUDE_THRESHOLD)
+                        # Calculate chunk amplitude - exactly from vad_doa.py
+                        chunk_amplitude = self.calculate_rms(chunk)
+                        
+                        # Update peak amplitude tracker - exactly from vad_doa.py
+                        if chunk_amplitude > self.recent_peak_amplitude:
+                            self.recent_peak_amplitude = chunk_amplitude
+                        else:
+                            self.recent_peak_amplitude *= self.amplitude_decay_rate
+                        
+                        # Use single channel audio to detect voice activity - exactly from vad_doa.py
+                        if self.vad.is_speech(chunk[0::self.CHANNELS].tobytes(), self.RATE):
+                            self.speech_count += 1
+                            self.last_speech_time = current_time
+                            # Skip the sys.stdout.write('1') from vad_doa.py
+                        else:
+                            # Skip the sys.stdout.write('0') from vad_doa.py
+                            pass
+
+                        # Turn off LEDs if no speech for configured timeout - exactly from vad_doa.py
+                        if current_time - self.last_speech_time > self.config['vad']['timeout'] and self.leds_on:
+                            pixel_ring.off()
+                            self.leds_on = False
+                            self.direction_history.clear()  # Clear history when speech stops
+
+                        self.chunks.append(chunk)
+                        if len(self.chunks) == self.doa_chunks:
+                            # Calculate average amplitude over the DOA window - exactly from vad_doa.py
+                            frames = np.concatenate(self.chunks)
+                            avg_amplitude = self.calculate_rms(frames)
                             
-                            if avg_amplitude > self.MIN_AMPLITUDE_THRESHOLD and amplitude_ratio > self.PEAK_AMPLITUDE_RATIO:
-                                direction = mic.get_direction(frames)
+                            # Only process DOA if we have enough speech and sufficient amplitude - exactly from vad_doa.py
+                            if self.speech_count > (self.doa_chunks * self.config['vad']['speech_ratio']):
+                                # Check if amplitude is sufficient for reliable DOA - exactly from vad_doa.py
+                                amplitude_ratio = avg_amplitude / max(self.recent_peak_amplitude, self.MIN_AMPLITUDE_THRESHOLD)
                                 
-                                # Print raw direction if debugging enabled - from vad_doa.py (but skip print)
-                                if self.config['debug'].get('print_raw_direction', False) and direction is not None:
-                                    pass  # Skip print for ROS
-                                
-                                # Add to direction history - exactly from vad_doa.py
-                                if direction is not None:
-                                    # Skip stability filtering if disabled for debugging - exactly from vad_doa.py
-                                    if self.config['debug'].get('disable_stability_filter', False):
-                                        pixel_ring.set_direction(int(direction))
-                                        self.leds_on = True
-                                        self.last_direction = int(direction)
-                                        
-                                        # Publish for ROS (instead of print)
-                                        self.publish_voice_direction(direction)
-                                        
-                                        if self.config['debug']['print_amplitude']:
-                                            self.get_logger().info(f'{int(direction)}° (amplitude: {int(avg_amplitude)}, ratio: {amplitude_ratio:.2f}) [NO FILTER]')
-                                        else:
-                                            self.get_logger().info(f'{int(direction)}° [NO FILTER]')
-                                    else:
-                                        # Apply stability filtering as before - exactly from vad_doa.py
-                                        self.direction_history.append(direction)
-                                        if len(self.direction_history) > self.history_size:
-                                            self.direction_history.pop(0)
+                                if avg_amplitude > self.MIN_AMPLITUDE_THRESHOLD and amplitude_ratio > self.PEAK_AMPLITUDE_RATIO:
+                                    direction = mic.get_direction(frames)
                                     
-                                    # Only update display if we have enough consistent readings - exactly from vad_doa.py
-                                    if len(self.direction_history) >= 2:
-                                        # Check for consistency (handle wraparound at 0/360) - exactly from vad_doa.py
-                                        angles = np.array(self.direction_history)
-                                        # Convert to unit vectors to handle wraparound
-                                        x_coords = np.cos(np.radians(angles))
-                                        y_coords = np.sin(np.radians(angles))
-                                        # Calculate average direction
-                                        avg_x = np.mean(x_coords)
-                                        avg_y = np.mean(y_coords)
-                                        avg_direction = np.degrees(np.arctan2(avg_y, avg_x))
-                                        if avg_direction < 0:
-                                            avg_direction += 360
-                                        
-                                        # Calculate angular standard deviation
-                                        angular_std = np.degrees(np.sqrt(-np.log(avg_x**2 + avg_y**2)))
-                                        
-                                        # Only update if directions are reasonably consistent - exactly from vad_doa.py
-                                        if angular_std < self.max_angular_std:  # Within configured standard deviation
-                                            pixel_ring.set_direction(int(avg_direction))
+                                    # Print raw direction if debugging enabled - from vad_doa.py (but skip print)
+                                    if self.config['debug'].get('print_raw_direction', False) and direction is not None:
+                                        pass  # Skip print for ROS
+                                    
+                                    # Add to direction history - exactly from vad_doa.py
+                                    if direction is not None:
+                                        # Skip stability filtering if disabled for debugging - exactly from vad_doa.py
+                                        if self.config['debug'].get('disable_stability_filter', False):
+                                            pixel_ring.set_direction(int(direction))
                                             self.leds_on = True
-                                            self.last_direction = int(avg_direction)
+                                            self.last_direction = int(direction)
                                             
                                             # Publish for ROS (instead of print)
-                                            self.publish_voice_direction(avg_direction)
+                                            self.publish_voice_direction(direction)
                                             
                                             if self.config['debug']['print_amplitude']:
-                                                self.get_logger().info(f'{int(avg_direction)}° (amplitude: {int(avg_amplitude)}, ratio: {amplitude_ratio:.2f})')
+                                                self.get_logger().info(f'{int(direction)}° (amplitude: {int(avg_amplitude)}, ratio: {amplitude_ratio:.2f}) [NO FILTER]')
                                             else:
-                                                self.get_logger().info(f'{int(avg_direction)}°')
+                                                self.get_logger().info(f'{int(direction)}° [NO FILTER]')
                                         else:
-                                            self.get_logger().debug(f'[Unstable: std={angular_std:.1f}°]')
-                                    else:
-                                        # First reading, just store it - from vad_doa.py
-                                        self.get_logger().debug('[Acquiring direction...]')
-                            else:
-                                # Signal too weak for reliable DOA - exactly from vad_doa.py
-                                self.get_logger().debug(f'[Weak signal: amplitude={int(avg_amplitude)}, ratio={amplitude_ratio:.2f}]')
-                        
-                        self.speech_count = 0
-                        self.chunks = []
+                                            # Apply stability filtering as before - exactly from vad_doa.py
+                                            self.direction_history.append(direction)
+                                            if len(self.direction_history) > self.history_size:
+                                                self.direction_history.pop(0)
+                                        
+                                        # Only update display if we have enough consistent readings - exactly from vad_doa.py
+                                        if len(self.direction_history) >= 2:
+                                            # Check for consistency (handle wraparound at 0/360) - exactly from vad_doa.py
+                                            angles = np.array(self.direction_history)
+                                            # Convert to unit vectors to handle wraparound
+                                            x_coords = np.cos(np.radians(angles))
+                                            y_coords = np.sin(np.radians(angles))
+                                            # Calculate average direction
+                                            avg_x = np.mean(x_coords)
+                                            avg_y = np.mean(y_coords)
+                                            avg_direction = np.degrees(np.arctan2(avg_y, avg_x))
+                                            if avg_direction < 0:
+                                                avg_direction += 360
+                                            
+                                            # Calculate angular standard deviation
+                                            angular_std = np.degrees(np.sqrt(-np.log(avg_x**2 + avg_y**2)))
+                                            
+                                            # Only update if directions are reasonably consistent - exactly from vad_doa.py
+                                            if angular_std < self.max_angular_std:  # Within configured standard deviation
+                                                pixel_ring.set_direction(int(avg_direction))
+                                                self.leds_on = True
+                                                self.last_direction = int(avg_direction)
+                                                
+                                                # Publish for ROS (instead of print)
+                                                self.publish_voice_direction(avg_direction)
+                                                
+                                                if self.config['debug']['print_amplitude']:
+                                                    self.get_logger().info(f'{int(avg_direction)}° (amplitude: {int(avg_amplitude)}, ratio: {amplitude_ratio:.2f})')
+                                                else:
+                                                    self.get_logger().info(f'{int(avg_direction)}°')
+                                            else:
+                                                self.get_logger().debug(f'[Unstable: std={angular_std:.1f}°]')
+                                        else:
+                                            # First reading, just store it - from vad_doa.py
+                                            self.get_logger().debug('[Acquiring direction...]')
+                                else:
+                                    # Signal too weak for reliable DOA - exactly from vad_doa.py
+                                    self.get_logger().debug(f'[Weak signal: amplitude={int(avg_amplitude)}, ratio={amplitude_ratio:.2f}]')
+                            
+                            self.speech_count = 0
+                            self.chunks = []
 
         except Exception as e:
             self.get_logger().error(f'Error in audio processing: {e}')
