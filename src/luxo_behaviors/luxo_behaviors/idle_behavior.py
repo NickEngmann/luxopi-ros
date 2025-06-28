@@ -36,7 +36,7 @@ class IdleBehavior:
         
         # Idle head variation tracking
         self.idle_head_variation_enabled = False  # Will be set by hardware interface
-        self.idle_head_variation_interval = 10.0  # Maximum interval - actual will be random 1.0 to this value
+        self.idle_head_variation_interval = 7.0  # Maximum interval - actual will be random 1.0 to this value
         self.idle_head_base_rotation_range = 0.3
         self.idle_head_look_up_range = 0.4
         self.idle_head_look_down_range = 0.1

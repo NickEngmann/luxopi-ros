@@ -142,8 +142,8 @@ class AnimationCommandActionServer(Node):
         self.last_movement_source_change = self.get_clock().now()
         
         # DEMA control integration
-        self.declare_parameter('enable_dema_integration', True)
-        self.enable_dema_integration = True
+        self.declare_parameter('enable_dema_integration', False)
+        self.enable_dema_integration = False
         
         # Create publisher for movement type
         if self.enable_dema_integration:

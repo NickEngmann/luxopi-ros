@@ -83,9 +83,9 @@ class RoArmHardwareInterface(Node):
         
         # Add idle head variation parameters
         self.declare_parameter('enable_idle_head_variation', True)
-        self.declare_parameter('idle_head_variation_interval', 10.0)  # Time between subtle movements
+        self.declare_parameter('idle_head_variation_interval', 7.0)  # Time between subtle movements
         self.declare_parameter('idle_head_base_rotation_range', 0.3)  # Max base rotation in radians
-        self.declare_parameter('idle_head_look_up_range', 0.7)  # How much to look up (shoulder adjustment)
+        self.declare_parameter('idle_head_look_up_range', 0.8)  # How much to look up (shoulder adjustment)
         self.declare_parameter('idle_head_look_down_range', 0.2)  # How much to look down
         self.declare_parameter('idle_head_variation_speed', 3.5)  # Acceleration for head movements (reduced from 8.0)
         self.enable_idle_head_variation = self.get_parameter('enable_idle_head_variation').value
