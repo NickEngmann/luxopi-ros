@@ -19,11 +19,13 @@ import numpy as np
 # Import shared utilities
 from luxo_behaviors.shared_utils import (
     PositionUtils, MovementSourcePublisher, CollisionStatusTracker,
-    TimeUtils, SafetyLimits, AnimationTracker, IdleAnimationConfig
+    TimeUtils, SafetyLimits, AnimationTracker, IdleAnimationConfig,
+    MovementValidator, CollisionMath
 )
 
+from luxo_behaviors.petting_behavior import PettingBehavior
 
-class CollisionAvoidance:
+class CollisionAvoidance(PettingBehavior):
     """Class to handle collision avoidance logic for the RoArm hardware interface."""
     
     def __init__(self, node, send_safe_joint_command_callback, publish_actual_joint_states_callback):
@@ -173,27 +175,6 @@ class CollisionAvoidance:
         self.animation_allow_interruption = True
         self.animation_progress = 0.0
         self.animation_lock = threading.Lock()
-
-        # Petting behavior tracking
-        self.petting_active = False
-        self.petting_start_time = None
-        self.petting_intensity = 0
-        self.last_petting_animation_time = self.node.get_clock().now()
-        self.petting_animation_cooldown = 8.0  # seconds between petting animations
-        self.petting_animation_active = False  # Track if petting animation is running
-        self.petting_animation_goal_handle = None  # Track current petting animation goal
-        # Add petting state tracking
-        self.last_petting_message_time = self.node.get_clock().now()
-        self.petting_message_timeout = 5.0  # seconds - if no petting messages for this long, consider stopped
-        self.petting_animations = self.idle_config.petting_animations
-        
-        # Subscribe to petting detection
-        self.petting_sub = self.node.create_subscription(
-            String,
-            '/collision/petting_events',
-            self.petting_callback,
-            10
-        )
         
         # Track if we've preempted an animation
         self.animation_preempted = False
@@ -255,7 +236,8 @@ class CollisionAvoidance:
             PlayAnimation,
             'play_animation'
         )
-
+        # Initialize petting behavior after all other attributes are set
+        self.setup_petting_behavior()
         # Voice following parameters
         self.node.declare_parameter('enable_voice_following', True)
         self.node.declare_parameter('voice_follow_speed', 0.3)
@@ -749,58 +731,27 @@ class CollisionAvoidance:
         Returns:
             Tuple of (is_safe, adjusted_keyframe, severity)
         """
-        # Make a copy to potentially adjust
-        adjusted_keyframe = keyframe.copy()
-        is_safe = True
-        severity = "safe"
-        adjustments_made = []
+        # Use MovementValidator to check safety
+        is_safe, reason = MovementValidator.check_movement_safety(
+            self.current_joints, keyframe, self.collision_status
+        )
         
+        # Validate and adjust the keyframe
+        adjusted_keyframe = MovementValidator.validate_position(keyframe, self.safety_limits)
+        
+        # Determine severity based on collision status
+        severity = "safe"
         with self.collision_lock:
-            # Check front collision impact on shoulder/elbow
-            if self.collision_status['front']['active']:
-                front_severity = self.collision_status['front']['severity']
-                
-                if front_severity == 'danger':
-                    # Don't allow forward movement
-                    if len(keyframe) > 1 and adjusted_keyframe[1] < self.current_joints[1]:  # Shoulder forward
-                        adjusted_keyframe[1] = max(adjusted_keyframe[1], self.current_joints[1])
-                        adjustments_made.append("shoulder_limited")
-                        is_safe = False
-                        severity = "danger"
-                    
-                    if len(keyframe) > 2 and adjusted_keyframe[2] < self.current_joints[2]:  # Elbow extend
-                        adjusted_keyframe[2] = max(adjusted_keyframe[2], self.current_joints[2])
-                        adjustments_made.append("elbow_limited")
-                        is_safe = False
-                        severity = "danger"
-                        
-                elif front_severity == 'warning' and self.animation_progress < 0.8:
-                    # For warnings, only limit if animation isn't almost done
-                    reduction_factor = 0.5
-                    if len(keyframe) > 1 and adjusted_keyframe[1] < self.current_joints[1]:
-                        delta = self.current_joints[1] - adjusted_keyframe[1]
-                        adjusted_keyframe[1] += delta * reduction_factor
-                        adjustments_made.append("shoulder_reduced")
-                        severity = "warning" if severity == "safe" else severity
-            
-            # Check side collisions impact on base rotation
-            if self.collision_status['left']['active'] and len(keyframe) > 0:
-                if adjusted_keyframe[0] > self.current_joints[0] + 0.1:  # Rotating right
-                    adjusted_keyframe[0] = self.current_joints[0] + 0.1  # Allow small movement
-                    adjustments_made.append("base_right_limited")
-                    is_safe = False
-                    severity = "warning" if severity == "safe" else severity
-                    
-            if self.collision_status['right']['active'] and len(keyframe) > 0:
-                if adjusted_keyframe[0] < self.current_joints[0] - 0.1:  # Rotating left
-                    adjusted_keyframe[0] = self.current_joints[0] - 0.1  # Allow small movement
-                    adjustments_made.append("base_left_limited")
-                    is_safe = False
-                    severity = "warning" if severity == "safe" else severity
+            for direction, status in self.collision_status.items():
+                if status['active'] and status['severity'] == 'danger':
+                    severity = "danger"
+                    break
+                elif status['active'] and status['severity'] == 'warning':
+                    severity = "warning"
         
         # Log adjustments if any were made
-        if adjustments_made:
-            self.node.get_logger().debug(f"Animation keyframe adjusted: {', '.join(adjustments_made)}")
+        if not is_safe:
+            self.node.get_logger().debug(f"Animation keyframe adjusted: {reason}")
         
         return is_safe, adjusted_keyframe, severity
     
@@ -1045,13 +996,20 @@ class CollisionAvoidance:
             old_distance = self.collision_status[direction]['distance']
             self.collision_status[direction]['distance'] = distance
             
+            # Use CollisionMath to calculate severity
+            severity = CollisionMath.calculate_severity(
+                distance, 
+                danger_threshold=self.hard_limit_distance,
+                warning_threshold=self.soft_limit_distance
+            )
+            self.collision_status[direction]['severity'] = severity
+            
             # Fast reaction path: If distance is critically low and we haven't reacted recently
             current_time = self.node.get_clock().now()
             
             # Enhanced trigger conditions: react when distance DECREASES below threshold
-            # This ensures we react when approaching, not when moving away
             distance_getting_smaller = old_distance == float('inf') or distance < old_distance
-            time_since_collision = (current_time - self.last_collision_time).nanoseconds / 1e9
+            time_since_collision = TimeUtils.get_elapsed_time(self.node, self.last_collision_time)
             
             if (distance <= self.hard_limit_distance and 
                 distance_getting_smaller and
@@ -1067,12 +1025,9 @@ class CollisionAvoidance:
                 # Release lock before potentially long operation
                 self.collision_lock.release()
                 try:
-                    # Immediate emergency avoidance without waiting for timer
                     self.node.get_logger().warn(f"EMERGENCY: {direction} distance {distance:.2f}cm below hard limit")
-                    # Force reaction by setting active and triggering emergency avoidance
                     self.perform_collision_avoidance(direction, distance, emergency=True)
                 finally:
-                    # Re-acquire lock after operation
                     self.collision_lock.acquire()
     
     def update_severity(self, direction, severity):
@@ -1091,7 +1046,6 @@ class CollisionAvoidance:
                         self.persistent_head_collision_last_log = current_time
                         self.node.get_logger().info("Started tracking persistent head collision due to danger severity")
                 else:
-                    # Reset persistent head collision tracking if previously active
                     if self.persistent_head_collision_active:
                         self.node.get_logger().info("Persistent head collision cleared (severity changed)")
                         self.persistent_head_collision_active = False
@@ -1099,9 +1053,8 @@ class CollisionAvoidance:
             # Fast reaction path: If severity changed to danger, react immediately
             if severity == 'danger' and old_severity != 'danger':
                 current_time = self.node.get_clock().now()
-                time_since_collision = (current_time - self.last_collision_time).nanoseconds / 1e9
+                time_since_collision = TimeUtils.get_elapsed_time(self.node, self.last_collision_time)
                 if time_since_collision > 0.25:  # Prevent too rapid reactions
-                    # Update for tracking
                     self.last_collision_time = current_time
                     self.collision_status[direction]['active'] = True
                     
@@ -1112,189 +1065,14 @@ class CollisionAvoidance:
                     self.collision_lock.release()
                     try:
                         self.node.get_logger().warn(f"EMERGENCY: {direction} severity changed to 'danger'")
-                        # Immediate emergency avoidance without waiting for timer
                         self.perform_collision_avoidance(direction, self.collision_status[direction]['distance'], emergency=True)
                     finally:
-                        # Re-acquire lock after operation
                         self.collision_lock.acquire()
 
     def _at_home_position(self, current_pos, home_pos, tolerance):
         """Check if robot is at a home position, ignoring base joint."""
         return self.position_utils.at_home_position(current_pos, home_pos, tolerance, ignore_base=True)
     
-    def _trigger_petting_animation(self):
-        """Trigger a petting response animation"""
-        try:
-            # Don't trigger if action client not ready
-            if not self._idle_animation_client.wait_for_server(timeout_sec=0.5):
-                self.node.get_logger().info("Animation action server not available for petting animation")
-                return
-            
-            # Don't trigger if we already have a petting animation running
-            if self.petting_animation_active:
-                self.node.get_logger().info("Petting animation already active - skipping")
-                return
-            
-            # Select a random petting animation
-            selected_animation = random.choice(self.petting_animations)
-            
-            # Create goal for petting animation
-            goal = PlayAnimation.Goal()
-            goal.animation_name = selected_animation
-            goal.speed_multiplier = random.uniform(0.9, 1.1)  # Slower, more gentle movements
-            goal.allow_interruption = False  # Don't allow interruption of petting animations
-            goal.use_hardware_feedback = False
-            
-            self.node.get_logger().info(f"Triggering petting animation: {selected_animation}")
-            
-            # Mark petting animation as active
-            self.petting_animation_active = True
-            
-            # Send goal asynchronously
-            future = self._idle_animation_client.send_goal_async(goal)
-            future.add_done_callback(self._petting_animation_goal_response_callback)
-            
-            # Update last animation time
-            self.last_petting_animation_time = self.node.get_clock().now()
-
-        except Exception as e:
-            self.node.get_logger().error(f"Error triggering petting animation: {e}")
-            self.petting_animation_active = False
-
-    def _petting_animation_goal_response_callback(self, future):
-        """Handle the petting animation goal response."""
-        try:
-            goal_handle = future.result()
-            if not goal_handle.accepted:
-                self.node.get_logger().debug("Petting animation goal rejected")
-                self.petting_animation_active = False
-                return
-            
-            self.node.get_logger().debug("Petting animation goal accepted")
-            self.petting_animation_goal_handle = goal_handle
-            
-            # Get the result future and add callback for completion
-            result_future = goal_handle.get_result_async()
-            result_future.add_done_callback(self._petting_animation_result_callback)
-            
-        except Exception as e:
-            self.node.get_logger().error(f"Error in petting animation goal response: {e}")
-            self.petting_animation_active = False
-
-    def _petting_animation_result_callback(self, future):
-        """Handle petting animation completion."""
-        try:
-            result = future.result()
-            self.node.get_logger().info(f"Petting animation completed with status: {result.status}")
-            
-            # Mark petting animation as completed
-            self.petting_animation_active = False
-            self.petting_animation_goal_handle = None
-            
-            # Check if we should transition out of PETTING state
-            self._check_petting_state_transition()
-            
-        except Exception as e:
-            self.node.get_logger().error(f"Error in petting animation result: {e}")
-            self.petting_animation_active = False
-            self.petting_animation_goal_handle = None
-
-    def _check_petting_state_transition(self):
-        """Check if we should transition out of PETTING state."""
-        try:
-            # Only transition out if BOTH conditions are met:
-            # 1. Petting is no longer active
-            # 2. No petting animation is currently running
-            if (self._is_in_state(LuxoState.PETTING) and 
-                not self.petting_active and 
-                not self.petting_animation_active):
-                
-                self.node.get_logger().info("Petting stopped and animation complete - transitioning to IDLE")
-                self._transition_to_state(LuxoState.IDLE)
-                
-        except Exception as e:
-            self.node.get_logger().error(f"Error checking petting state transition: {e}")
-
-    def petting_callback(self, msg):
-        """Handle petting detection messages."""
-        try:
-            # Parse the string message format: "petting_started:pressure" or "petting_stopped:0"
-            parts = msg.data.split(':')
-            if len(parts) != 2:
-                self.node.get_logger().warn(f"Invalid petting message format: {msg.data}")
-                return
-                
-            action = parts[0]
-            pressure = int(parts[1]) if parts[1].isdigit() else 0
-            
-            # Don't process petting during initialization or if system not ready
-            if self._is_in_state(LuxoState.INITIALIZING):
-                self.node.get_logger().debug(f"Ignoring petting during initialization: {msg.data}")
-                return
-                
-            # Prevent false positives during startup
-            current_time = self.node.get_clock().now()
-            time_since_startup = (current_time - self._startup_time).nanoseconds / 1e9
-            if time_since_startup < 10.0:  # Ignore petting for first 10 seconds
-                self.node.get_logger().debug(f"Ignoring petting during startup period ({time_since_startup:.1f}s): {msg.data}")
-                return
-            
-            # Update last message time
-            self.last_petting_message_time = current_time
-            
-            # Determine if petting is active
-            new_petting_state = (action == "petting_started" and pressure > 1)
-            was_petting = self.petting_active
-            
-            if new_petting_state:
-                # Update petting state
-                self.petting_active = True
-                self.petting_intensity = pressure
-                
-                # Only transition to PETTING state if we weren't already petting
-                if not was_petting:
-                    self.node.get_logger().info(f"Petting started (pressure: {pressure}) - transitioning to PETTING state")
-                    self.petting_start_time = current_time
-                    
-                    # Only transition if we're in a valid state for petting
-                    if self._is_in_state(LuxoState.IDLE, LuxoState.ANIMATING, LuxoState.EMOTION_REACTING):
-                        self._transition_to_state(LuxoState.PETTING)
-                        
-                        # Trigger immediate petting response
-                        self._trigger_petting_animation()
-                    else:
-                        self.node.get_logger().warn(f"Cannot transition to petting from current state: {self._get_current_state().name}")
-                        self.petting_active = False  # Reset since we can't transition
-                else:
-                    # Already petting, just update intensity
-                    self.node.get_logger().debug(f"Petting continues with pressure: {pressure}")
-                    self.petting_intensity = pressure
-                    
-                    # Check if we should trigger another animation (with cooldown)
-                    time_since_last_animation = (current_time - self.last_petting_animation_time).nanoseconds / 1e9
-                    if (time_since_last_animation > self.petting_animation_cooldown and 
-                        not self.petting_animation_active and
-                        self._is_in_state(LuxoState.PETTING)):
-                        
-                        self.node.get_logger().info(f"Triggering additional petting animation after {time_since_last_animation:.1f}s")
-                        self._trigger_petting_animation()
-                        
-            elif action == "petting_stopped":
-                # Explicit stop message
-                if was_petting:
-                    self.node.get_logger().info("Petting explicitly stopped - waiting for animation to complete")
-                    self.petting_active = False
-                    self.petting_start_time = None
-                    self.petting_intensity = 0
-                    
-                    # Check if we can transition (animation might already be done)
-                    self._check_petting_state_transition()
-                
-        except Exception as e:
-            self.node.get_logger().error(f"Error in petting callback: {e}")
-            import traceback
-            self.node.get_logger().error(f"Stack trace: {traceback.format_exc()}")
-
     def safety_monitor_callback(self):
         """Periodic callback to monitor safety and adjust motion if needed"""
         if not self.enable_collision_avoidance:
@@ -1306,40 +1084,9 @@ class CollisionAvoidance:
             current_time = self.node.get_clock().now()
             
             # Handle petting state updates and timeout detection
-            if self._is_in_state(LuxoState.PETTING):
-                # Check for petting timeout (no messages received recently)
-                time_since_petting_message = (current_time - self.last_petting_message_time).nanoseconds / 1e9
-                
-                if time_since_petting_message > self.petting_message_timeout:
-                    # Petting timed out
-                    if self.petting_active:
-                        self.node.get_logger().info(f"Petting timed out after {time_since_petting_message:.1f}s - stopping petting")
-                        self.petting_active = False
-                        self.petting_start_time = None
-                        self.petting_intensity = 0
-                        
-                        # Check if we can transition out
-                        self._check_petting_state_transition()
-                
-                if self.petting_active:
-                    # Check if we should trigger another petting animation
-                    time_since_last_animation = (current_time - self.last_petting_animation_time).nanoseconds / 1e9
-                    
-                    if time_since_last_animation > self.petting_animation_cooldown and not self.petting_animation_active:
-                        # Trigger another gentle animation if still being petted and no animation running
-                        self._trigger_petting_animation()
-                        
-                    # Don't perform other safety checks while being petted
-                    # Petting has high priority and should not be interrupted by idle timeouts
-                    return
-                else:
-                    # Petting state but no active petting - check if we can transition
-                    self._check_petting_state_transition()
-                    
-                    # If we're still in petting state after check, don't do other safety operations
-                    if self._is_in_state(LuxoState.PETTING):
-                        return
-        
+            if self.check_petting_timeout(current_time):
+                return
+            
             # Check if target override is stuck (not in RETURNING_HOME state)
             if self.target_override_active and not self._is_in_state(LuxoState.RETURNING_HOME):
                 # Don't clear voice following overrides too quickly
@@ -1612,11 +1359,13 @@ class CollisionAvoidance:
         # Update activity time when performing collision avoidance
         current_time = self.node.get_clock().now()
         self.last_activity_time = current_time
+        
         if emergency and self.should_preempt_animation("danger"):
             with self.animation_lock:
                 self.animation_preempted = True
-                self.animation_preemption_time = self.node.get_clock().now()
+                self.animation_preemption_time = current_time
                 self.node.get_logger().warn(f"Animation '{self.current_animation_name}' should be preempted due to {direction} collision")
+        
         self.node.get_logger().debug(f"Activity timestamp updated due to collision avoidance action")
         
         # Report collision movement source for DEMA coordination
@@ -1630,125 +1379,78 @@ class CollisionAvoidance:
             consecutive_count = self.collision_status[direction]['consecutive_count']
             severity = self.collision_status[direction]['severity']
             
-            # Determine acceleration based on severity and emergency status
-            if emergency or severity == 'danger':
-                # Maximum acceleration for emergency situations
-                acceleration = 22.5
-                self.node.get_logger().warn(f"Using maximum acceleration (22.5) for emergency {direction} collision")
-            elif severity == 'warning':
-                # Higher minimum acceleration for warnings
-                acceleration = 16.0
-                self.node.get_logger().info(f"Using warning acceleration (16.0) for {direction} collision")
-            else:
-                # Default acceleration for other cases
-                acceleration = 12.0
-                self.node.get_logger().debug(f"Using default acceleration (12.0) for {direction} collision")
+            # Use CollisionMath to calculate acceleration and magnitude
+            acceleration = CollisionMath.calculate_acceleration(
+                severity, consecutive_count, base_acceleration=12.5
+            )
             
-            # Further increase acceleration for persistent collisions
-            if consecutive_count > 5:
-                # Add extra acceleration for persistent collisions, but cap at maximum
-                acceleration = min(22.5, acceleration + (consecutive_count - 5) * 1.0)
-                self.node.get_logger().warn(f"Increased acceleration to {acceleration} for persistent collision (count: {consecutive_count})")
+            magnitude = CollisionMath.calculate_avoidance_magnitude(
+                severity, consecutive_count, emergency
+            )
             
-            # Determine adjustment magnitude based on consecutive count
-            if consecutive_count > 8:
-                magnitude = 2.5
-                self.node.get_logger().warn(f"DRAMATIC avoidance for persistent {direction} collision (count: {consecutive_count})")
-            elif consecutive_count > 5:
-                magnitude = 2.0
-                self.node.get_logger().warn(f"Strong avoidance for persistent {direction} collision (count: {consecutive_count})")
-            elif emergency:
-                magnitude = 1.5
-            else:
-                magnitude = 0.8
-            
-            # Add some variation to avoid getting stuck in repeating patterns
-            variation = random.uniform(0.9, 1.1)
-            magnitude *= variation
+            self.node.get_logger().info(f"Using acceleration {acceleration} and magnitude {magnitude:.2f} for {direction} collision")
             
             # Get current base position and check limits
             current_base = new_position[0]
-            near_min_limit = abs(current_base - self.base_min_limit) < np.deg2rad(20.0)
-            near_max_limit = abs(current_base - self.base_max_limit) < np.deg2rad(20.0)
-            at_min_limit = abs(current_base - self.base_min_limit) < np.deg2rad(5.0)
-            at_max_limit = abs(current_base - self.base_max_limit) < np.deg2rad(5.0)
+            near_min_limit = self.safety_limits.is_near_base_limit(current_base) == 'min'
+            near_max_limit = self.safety_limits.is_near_base_limit(current_base) == 'max'
+            at_min_limit = self.safety_limits.is_at_base_limit(current_base) == 'min'
+            at_max_limit = self.safety_limits.is_at_base_limit(current_base) == 'max'
             
             if direction == 'front':
                 # Pull back shoulder and elbow
                 new_position[1] -= 0.6 * magnitude  # Shoulder back
                 new_position[2] += 0.4 * magnitude  # Elbow fold
                 
-                # Add rotation with limit awareness
+                # Use CollisionMath for escape rotation
                 if consecutive_count > 5:
                     # For persistent collisions, use smarter rotation with wraparound support
                     if at_max_limit and self.enable_base_wraparound:
-                        # At max limit, try wraparound to min side
-                        rotation = -(abs(current_base - self.base_min_limit) * 0.8)  # Jump toward min limit
+                        rotation = -(abs(current_base - self.base_min_limit) * 0.8)
                         self.node.get_logger().warn(f"Front collision at max limit - attempting wraparound")
                     elif at_min_limit and self.enable_base_wraparound:
-                        # At min limit, try wraparound to max side  
-                        rotation = (abs(current_base - self.base_max_limit) * 0.8)  # Jump toward max limit
+                        rotation = (abs(current_base - self.base_max_limit) * 0.8)
                         self.node.get_logger().warn(f"Front collision at min limit - attempting wraparound")
-                    elif near_max_limit:
-                        # Near max limit, rotate toward min
-                        rotation = -0.5 * magnitude
-                    elif near_min_limit:
-                        # Near min limit, rotate toward max
-                        rotation = 0.5 * magnitude
                     else:
-                        # Not near limit, use consistent rotation direction
-                        rotation = 0.5 * magnitude if consecutive_count % 2 == 0 else -0.5 * magnitude
+                        rotation = CollisionMath.calculate_escape_rotation(direction, 0.5, magnitude)
                 else:
-                    # Normal rotation for non-persistent collisions
+                    rotation = CollisionMath.calculate_escape_rotation(direction, 0.3, magnitude)
                     if near_max_limit:
-                        rotation = -random.uniform(0.3, 0.7) * magnitude  # Bias toward min
+                        rotation = -abs(rotation)  # Force toward min
                     elif near_min_limit:
-                        rotation = random.uniform(0.3, 0.7) * magnitude   # Bias toward max
-                    else:
-                        rotation = random.uniform(-0.7, 0.7) * magnitude
-                    
+                        rotation = abs(rotation)   # Force toward max
+                        
                 new_position[0] += rotation
                 
             elif direction == 'left':
-                # Check base limits before rotating
-                if at_min_limit:
-                    if self.enable_base_wraparound:
-                        # Wraparound to max side
-                        new_position[0] = self.base_max_limit - 0.2
-                        self.node.get_logger().info("Left collision at min limit - wraparound to max side")
-                    else:
-                        # Can't rotate left more, try rotating right instead
-                        new_position[0] += 0.6 * magnitude  # Rotate right more aggressively
-                        self.node.get_logger().info("Left collision at min limit - rotating RIGHT instead")
-                elif near_min_limit:
-                    # Near min limit, be more conservative
-                    new_position[0] -= 0.2 * magnitude  # Smaller left rotation
+                rotation = CollisionMath.calculate_escape_rotation(direction, 0.4, magnitude)
+                if at_min_limit and self.enable_base_wraparound:
+                    new_position[0] = self.base_max_limit - 0.2
+                    self.node.get_logger().info("Left collision at min limit - wraparound to max side")
+                elif at_min_limit:
+                    new_position[0] += abs(rotation) * 1.5  # Force opposite direction
+                    self.node.get_logger().info("Left collision at min limit - rotating RIGHT instead")
                 else:
-                    # Normal left collision response - rotate left
-                    new_position[0] -= 0.4 * magnitude
-                new_position[1] += 0.1 * magnitude  # Slight shoulder back
+                    new_position[0] += rotation
+                new_position[1] += 0.1 * magnitude
                 
             elif direction == 'right':
-                # Check base limits before rotating
-                if at_max_limit:
-                    if self.enable_base_wraparound:
-                        # Wraparound to min side
-                        new_position[0] = self.base_min_limit + 0.2
-                        self.node.get_logger().info("Right collision at max limit - wraparound to min side")
-                    else:
-                        # Can't rotate right more, try rotating left instead
-                        new_position[0] -= 0.6 * magnitude  # Rotate left more aggressively
-                        self.node.get_logger().info("Right collision at max limit - rotating LEFT instead")
-                elif near_max_limit:
-                    # Near max limit, be more conservative
-                    new_position[0] += 0.2 * magnitude  # Smaller right rotation
+                rotation = CollisionMath.calculate_escape_rotation(direction, 0.4, magnitude)
+                if at_max_limit and self.enable_base_wraparound:
+                    new_position[0] = self.base_min_limit + 0.2
+                    self.node.get_logger().info("Right collision at max limit - wraparound to min side")
+                elif at_max_limit:
+                    new_position[0] += rotation * 1.5  # Force opposite direction
+                    self.node.get_logger().info("Right collision at max limit - rotating LEFT instead")
                 else:
-                    # Normal right collision response - rotate right
-                    new_position[0] += 0.4 * magnitude
-                new_position[1] += 0.1 * magnitude  # Slight shoulder back
+                    new_position[0] += rotation
+                new_position[1] += 0.1 * magnitude
             
-            # Final safety check - ensure base position is within hard limits
-            new_position[0] = np.clip(new_position[0], self.base_min_limit, self.base_max_limit)
+            # Use SafetyLimits to clamp base position
+            new_position[0] = self.safety_limits.clamp_base_angle(new_position[0])
+            
+            # Validate the entire position
+            new_position = MovementValidator.validate_position(new_position, self.safety_limits)
             
             # Add acceleration to the position array for the command
             new_position_with_acceleration = new_position.copy() + [acceleration]
@@ -1756,17 +1458,14 @@ class CollisionAvoidance:
             # Send command with high priority and dynamic acceleration
             self.send_safe_joint_command(new_position_with_acceleration, f"Collision avoidance (count: {consecutive_count}, accel: {acceleration})")
             
-            # MODIFIED: Create a more persistent override that won't be easily cleared
+            # Create a persistent override
             self.target_override_active = True
-            self.target_override_time = self.node.get_clock().now()
+            self.target_override_time = current_time
             self.target_override_joints = new_position.copy()
             self.target_override_reason = f"Collision avoidance for {direction} at {distance:.1f}cm (accel: {acceleration})"
-            # MODIFIED: Make this the new "normal" target position
-            self.target_joints = new_position.copy()  # Update our target to the safe position
-            self.node.get_logger().info(f"Created persistent collision override: {self.target_override_reason}")
+            self.target_joints = new_position.copy()
             
-            # If emergency and avoidance doesn't work after multiple attempts,
-            # schedule a return to rest position
+            # If emergency and avoidance doesn't work after multiple attempts, schedule rest return
             if emergency and consecutive_count > self.escape_threshold:
                 self.node.get_logger().warn(f"Multiple path adjustments failed, will return to rest position")
                 self.go_to_rest_position("Emergency rest return")
@@ -1895,8 +1594,11 @@ class CollisionAvoidance:
         if self._is_in_state(LuxoState.RETURNING_HOME):
             return positions
             
-        # Get a copy of the target positions
-        safe_positions = positions.copy()
+        # Use MovementValidator to validate the position
+        validated_positions = MovementValidator.validate_position(positions, self.safety_limits)
+        
+        # Additional collision-based restrictions
+        safe_positions = validated_positions.copy()
         
         # Check for front collisions (primarily affects shoulder, elbow, wrist)
         if self.collision_status['front']['active']:
@@ -1910,9 +1612,8 @@ class CollisionAvoidance:
                 
             elif severity == 'warning' or distance <= self.soft_limit_distance:
                 # Apply soft limits - partial restriction
-                # Calculate how much we're allowing change (0.0 = none, 1.0 = full)
                 limit_factor = min(1.0, (distance - self.hard_limit_distance) / 
-                                  (self.soft_limit_distance - self.hard_limit_distance))
+                                (self.soft_limit_distance - self.hard_limit_distance))
                 
                 # Apply graduated limits
                 if safe_positions[1] < self.current_joints[1]:  # If moving shoulder forward
@@ -1930,10 +1631,8 @@ class CollisionAvoidance:
             
             # Limits on clockwise rotation (positive direction)
             if (severity == 'danger' or distance <= self.hard_limit_distance) and safe_positions[0] > self.current_joints[0]:
-                # Hard limit - prevent further rotation right
                 safe_positions[0] = self.current_joints[0]
             elif (severity == 'warning' or distance <= self.soft_limit_distance) and safe_positions[0] > self.current_joints[0]:
-                # Soft limit - partial restriction
                 limit_factor = min(1.0, (distance - self.hard_limit_distance) / 
                                 (self.soft_limit_distance - self.hard_limit_distance))
                 delta = safe_positions[0] - self.current_joints[0]
@@ -1946,20 +1645,12 @@ class CollisionAvoidance:
             
             # Limits on counter-clockwise rotation (negative direction)
             if (severity == 'danger' or distance <= self.hard_limit_distance) and safe_positions[0] < self.current_joints[0]:
-                # Hard limit - prevent further rotation left
                 safe_positions[0] = self.current_joints[0]
             elif (severity == 'warning' or distance <= self.soft_limit_distance) and safe_positions[0] < self.current_joints[0]:
-                # Soft limit - partial restriction
                 limit_factor = min(1.0, (distance - self.hard_limit_distance) / 
                                 (self.soft_limit_distance - self.hard_limit_distance))
                 delta = self.current_joints[0] - safe_positions[0]
                 safe_positions[0] = self.current_joints[0] - (delta * limit_factor)
-        
-        # Add additional check for escape mode
-        if self._is_in_state(LuxoState.ESCAPE_MODE):
-            # In escape mode, we relax some limits to allow more dramatic movements
-            # We'll only apply hard limits here, no soft limits
-            pass  # Continue with existing logic, but with modified thresholds
         
         return safe_positions
     
@@ -2189,21 +1880,28 @@ class CollisionAvoidance:
     
     def calculate_adjustment_factor(self, status):
         """Calculate adjustment factor (0.0-1.0) based on collision status."""
+        # Use CollisionMath to determine severity if not already set
+        if 'severity' not in status or not status['severity']:
+            severity = CollisionMath.calculate_severity(
+                status['distance'],
+                danger_threshold=self.hard_limit_distance,
+                warning_threshold=self.soft_limit_distance
+            )
+        else:
+            severity = status['severity']
+        
         # Always return a strong value for danger severity regardless of distance
-        if status['severity'] == 'danger':
+        if severity == 'danger':
             return 1.0
         
         # For other cases, check activity and distance
-        if status['active'] or status['severity'] == 'warning':
+        if status['active'] or severity == 'warning':
             if status['distance'] <= self.hard_limit_distance:
-                # Hard limit - strong adjustment
                 return 1.0
             elif status['distance'] <= self.soft_limit_distance:
-                # Soft limit - graduated adjustment
                 # Linear interpolation between 0.0 and 1.0
                 range_fraction = (self.soft_limit_distance - status['distance']) / \
                                 (self.soft_limit_distance - self.hard_limit_distance)
-                # Ensure a minimum adjustment factor for active collisions
                 return max(0.1, min(1.0, range_fraction))
         
         return 0.0
@@ -2511,55 +2209,58 @@ class CollisionAvoidance:
         """Execute an escape maneuver for a specific direction."""
         new_position = self.current_joints.copy()
         
-        # Make the escape movement more dramatic than regular avoidance
+        # Use CollisionMath to calculate escape parameters
         escape_magnitude = min(2.0, 1.0 + (self.escape_attempts * 0.3))
         
         # Get current base position and check limits
         current_base = new_position[0]
-        at_min_limit = abs(current_base - self.base_min_limit) < np.deg2rad(5.0)
-        at_max_limit = abs(current_base - self.base_max_limit) < np.deg2rad(5.0)
+        at_min_limit = self.safety_limits.is_at_base_limit(current_base) == 'min'
+        at_max_limit = self.safety_limits.is_at_base_limit(current_base) == 'max'
         
         if direction == 'front':
             # Pull back arm dramatically
             new_position[1] -= 0.6 * escape_magnitude  # Shoulder back
             new_position[2] += 0.4 * escape_magnitude  # Elbow fold
             
-            # Add rotation with wraparound support
+            # Use CollisionMath for escape rotation with wraparound support
             if at_max_limit and self.enable_base_wraparound:
-                # Wraparound to the other side
                 new_position[0] = self.base_min_limit + 0.5
                 self.node.get_logger().warn("Escape: wraparound from max to min limit")
             elif at_min_limit and self.enable_base_wraparound:
-                # Wraparound to the other side
                 new_position[0] = self.base_max_limit - 0.5
                 self.node.get_logger().warn("Escape: wraparound from min to max limit")
             else:
-                # Use consistent rotation based on attempt # to avoid oscillation
+                rotation = CollisionMath.calculate_escape_rotation(direction, 0.8, escape_magnitude)
                 if self.escape_attempts % 2 == 0:
-                    new_position[0] += 0.8 * escape_magnitude  # Rotate right
+                    new_position[0] += abs(rotation)  # Rotate right
                 else:
-                    new_position[0] -= 0.8 * escape_magnitude  # Rotate left
+                    new_position[0] -= abs(rotation)  # Rotate left
                 
         elif direction == 'left':
-            # Escape to the RIGHT (positive rotation) with limit awareness
+            # Escape to the RIGHT with limit awareness
             if at_min_limit and self.enable_base_wraparound:
                 new_position[0] = self.base_max_limit - 0.3
                 self.node.get_logger().warn("Left escape: wraparound to max limit")
             else:
-                new_position[0] += 0.8 * escape_magnitude
+                rotation = CollisionMath.calculate_escape_rotation(direction, 0.8, escape_magnitude)
+                new_position[0] += rotation  # Positive rotation for left collision
             new_position[1] += 0.3 * escape_magnitude  # Pull back
             
         elif direction == 'right':
-            # Escape to the LEFT (negative rotation) with limit awareness
+            # Escape to the LEFT with limit awareness
             if at_max_limit and self.enable_base_wraparound:
                 new_position[0] = self.base_min_limit + 0.3
                 self.node.get_logger().warn("Right escape: wraparound to min side")
             else:
-                new_position[0] -= 0.8 * escape_magnitude
+                rotation = CollisionMath.calculate_escape_rotation(direction, 0.8, escape_magnitude)
+                new_position[0] += rotation  # Negative rotation for right collision
             new_position[1] += 0.3 * escape_magnitude  # Pull back
         
-        # Ensure we stay within hard limits
-        new_position[0] = np.clip(new_position[0], self.base_min_limit, self.base_max_limit)
+        # Use SafetyLimits to ensure we stay within hard limits
+        new_position[0] = self.safety_limits.clamp_base_angle(new_position[0])
+        
+        # Validate the entire position
+        new_position = MovementValidator.validate_position(new_position, self.safety_limits)
         
         # Send the escape command with high priority
         self.send_safe_joint_command(new_position, f"Escape maneuver ({direction}, attempt {self.escape_attempts})")
@@ -2582,19 +2283,25 @@ class CollisionAvoidance:
             new_position[1] -= 0.5 * escape_magnitude  # Shoulder back
             new_position[2] += 0.3 * escape_magnitude  # Elbow fold
             
-            # Small rotation
+            # Use CollisionMath for small rotation
+            rotation = CollisionMath.calculate_escape_rotation(direction, 0.3, escape_magnitude)
             if self.escape_attempts % 2 == 0:
-                new_position[0] += 0.3 * escape_magnitude
+                new_position[0] += abs(rotation)
             else:
-                new_position[0] -= 0.3 * escape_magnitude
+                new_position[0] -= abs(rotation)
                 
         elif direction == 'left':
-            # REVERSED: Smaller rotation to RIGHT
-            new_position[0] += 0.4 * escape_magnitude
+            # Smaller rotation to RIGHT
+            rotation = CollisionMath.calculate_escape_rotation(direction, 0.4, escape_magnitude)
+            new_position[0] += rotation
             
         elif direction == 'right':
-            # REVERSED: Smaller rotation to LEFT
-            new_position[0] -= 0.4 * escape_magnitude
+            # Smaller rotation to LEFT
+            rotation = CollisionMath.calculate_escape_rotation(direction, 0.4, escape_magnitude)
+            new_position[0] += rotation
+        
+        # Validate the position
+        new_position = MovementValidator.validate_position(new_position, self.safety_limits)
         
         # Send command with note about animation-aware escape
         self.send_safe_joint_command(new_position, f"Animation-safe escape ({direction})")

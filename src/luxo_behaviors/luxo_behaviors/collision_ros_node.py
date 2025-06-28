@@ -38,7 +38,7 @@ class CollisionNode(Node):
         # Add petting state tracking to prevent spam
         self.petting_currently_active = False
         self.last_petting_publish_time = self.get_clock().now()
-        self.petting_publish_rate = 0.5  # seconds between petting messages when continuously pressed
+        self.petting_publish_rate = 0.75  # seconds between petting messages when continuously pressed
         
         # Track last received data time for timeout detection
         self.last_proximity_time = self.get_clock().now()

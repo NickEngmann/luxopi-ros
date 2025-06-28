@@ -267,7 +267,7 @@ class I2CDeviceManager(Node):
         self.declare_parameter('enable_vl53_right', True)
         self.declare_parameter('enable_ads7830', True)
         self.declare_parameter('ads7830_address', 0x38)
-        self.declare_parameter('publish_rate', 5.0)  # Hz
+        self.declare_parameter('publish_rate', 2.0)  # Hz
         self.declare_parameter('recovery_interval', 3.0)  # seconds
         self.declare_parameter('max_init_attempts', 10)
         
