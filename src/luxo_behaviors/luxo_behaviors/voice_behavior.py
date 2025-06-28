@@ -402,7 +402,7 @@ class VoiceBehavior:
         if self.last_voice_time:
             time_since_voice = (current_time - self.last_voice_time).nanoseconds / 1e9
             if time_since_voice > 0.5:  # Start decaying after 0.5 seconds
-                self.voice_influence *= 0.9  # Gradual decay
+                self.voice_influence *= 0.6  # Gradual decay
                 if self.voice_influence < 0.1:
                     # Clear voice state
                     self.voice_influence = 0.0
