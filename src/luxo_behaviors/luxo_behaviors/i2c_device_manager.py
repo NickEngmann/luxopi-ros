@@ -112,8 +112,8 @@ class VL53L4CDSensor(I2CSensor):
         try:
             self.device = adafruit_vl53l4cd.VL53L4CD(i2c_bus, self.address)
             # Increase timing for more stable readings
-            self.device.inter_measurement = 100  # Increased from 50ms
-            self.device.timing_budget = 100  # Increased from 50ms for better accuracy
+            self.device.inter_measurement = 50
+            self.device.timing_budget = 50
             self.device.start_ranging()
             self.active = True
             self.reading_history = []  # Clear history on init
@@ -267,7 +267,7 @@ class I2CDeviceManager(Node):
         self.declare_parameter('enable_vl53_right', True)
         self.declare_parameter('enable_ads7830', True)
         self.declare_parameter('ads7830_address', 0x38)
-        self.declare_parameter('publish_rate', 2.0)  # Hz
+        self.declare_parameter('publish_rate', 15.0)  # Hz
         self.declare_parameter('recovery_interval', 3.0)  # seconds
         self.declare_parameter('max_init_attempts', 10)
         

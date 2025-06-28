@@ -67,4 +67,4 @@ while True:
     for name, sensor in sensors.items():
         distance_msgs.append(f"{name.capitalize()} Distance: {sensor.distance} cm")
     print(", ".join(distance_msgs))
-    time.sleep(0.5)
+    time.sleep(0.1)

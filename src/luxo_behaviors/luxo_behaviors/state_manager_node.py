@@ -145,7 +145,7 @@ class StateManagerNode(Node):
         
         # Timers
         self.update_timer = self.create_timer(0.1, self.update)  # 10Hz update
-        self.publish_timer = self.create_timer(0.5, self.publish_state)  # 2Hz state publishing
+        self.publish_timer = self.create_timer(0.25, self.publish_state)  # 4Hz state publishing
         self.diagnostics_timer = self.create_timer(1.0, self.publish_diagnostics)  # 1Hz diagnostics
         self.cleanup_timer = self.create_timer(5.0, self.cleanup_inactive_nodes)  # Cleanup every 5s
         

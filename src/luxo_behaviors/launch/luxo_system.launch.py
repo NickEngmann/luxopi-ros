@@ -333,7 +333,7 @@ def generate_launch_description():
             {'enable_apds9960': True},
             {'enable_vl53_left': True},
             {'enable_vl53_right': True},
-            {'publish_rate': 2.0}  # 5Hz update rate
+            {'publish_rate': 15.0}  
         ],
         condition=IfCondition(PythonExpression(["'", use_hardware, "' == 'true' and '", sense_collision, "' == 'true'"]))
     )
