@@ -204,7 +204,8 @@ class BehaviorCoordinator(PettingBehavior, IdleBehavior, VoiceBehavior, Collisio
             request = RequestStateTransition.Request()
             request.requested_state = new_state.name
             request.requesting_node = "behavior_coordinator"
-            request.priority = 5  # Medium priority for collision avoidance
+            request.priority = 100  # High priority
+
             request.force = False
             
             future = self.request_state_transition_client.call_async(request)
@@ -214,18 +215,40 @@ class BehaviorCoordinator(PettingBehavior, IdleBehavior, VoiceBehavior, Collisio
             self.node.get_logger().error(f"Error requesting state transition: {e}")
             return False
     
+    def _can_process_voice_command(self) -> bool:
+        """Check if current state allows voice command processing."""
+        current_state = self._get_current_state()
+        
+        # States that allow voice following
+        allowed_states = [
+            LuxoState.IDLE,
+            LuxoState.VOICE_FOLLOWING,
+            LuxoState.ANIMATING,  # Allow during animations
+            LuxoState.PETTING,    # Allow during petting
+            LuxoState.EMOTION_REACTING  # Allow during emotion reactions
+        ]
+        
+        return current_state in allowed_states
+
     def apply_voice_following(self, positions):
-        """Apply voice following using the VoiceBehavior mixin, with idle head variation fallback."""
-        # First try voice following
-        voice_result = super().apply_voice_following(positions)
+        """Apply voice following with state-aware handling."""
+        current_state = self._get_current_state()
         
-        # If voice following didn't change anything (voice influence < 0.1), 
-        # check for idle head variation
-        if (hasattr(self, 'voice_influence') and self.voice_influence < 0.1 and
-            hasattr(self, 'idle_head_variation_active') and self.idle_head_variation_active):
-            return self.apply_idle_head_variation(voice_result)
+        # Always apply voice following if we're in VOICE_FOLLOWING state
+        if current_state == LuxoState.VOICE_FOLLOWING:
+            return super().apply_voice_following(positions)
         
-        return voice_result
+        # For other states, only apply if voice influence is very high
+        if hasattr(self, 'voice_influence') and self.voice_influence > 0.7:
+            return super().apply_voice_following(positions)
+        
+        # Fall back to idle head variation for non-voice states
+        if (hasattr(self, 'idle_head_variation_active') and 
+            self.idle_head_variation_active and
+            current_state == LuxoState.IDLE):
+            return self.apply_idle_head_variation(positions)
+        
+        return positions
 
     def set_active_animation(self, animation_name, allow_interruption=True):
         """Track the currently active animation."""

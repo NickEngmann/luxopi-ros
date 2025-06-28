@@ -77,7 +77,7 @@ class LuxoStateMachine:
         
         # From IDLE
         self.add_transition(LuxoState.IDLE, LuxoState.ANIMATING)
-        self.add_transition(LuxoState.IDLE, LuxoState.VOICE_FOLLOWING)  # New: Can follow voice from idle
+        self.add_transition(LuxoState.IDLE, LuxoState.VOICE_FOLLOWING)
         self.add_transition(LuxoState.IDLE, LuxoState.COLLISION_AVOIDING)
         self.add_transition(LuxoState.IDLE, LuxoState.USER_CONTROL)
         self.add_transition(LuxoState.IDLE, LuxoState.EMOTION_REACTING)
@@ -86,26 +86,27 @@ class LuxoStateMachine:
         
         # From ANIMATING
         self.add_transition(LuxoState.ANIMATING, LuxoState.IDLE)
-        self.add_transition(LuxoState.ANIMATING, LuxoState.VOICE_FOLLOWING)  # New: Can follow voice during animation
+        self.add_transition(LuxoState.ANIMATING, LuxoState.VOICE_FOLLOWING)
         self.add_transition(LuxoState.ANIMATING, LuxoState.COLLISION_AVOIDING)
         self.add_transition(LuxoState.ANIMATING, LuxoState.ESCAPE_MODE)
         self.add_transition(LuxoState.ANIMATING, LuxoState.RETURNING_HOME)
         self.add_transition(LuxoState.ANIMATING, LuxoState.PETTING)
         
-        # New: From VOICE_FOLLOWING
+        # From VOICE_FOLLOWING - can return to any state
         self.add_transition(LuxoState.VOICE_FOLLOWING, LuxoState.IDLE)
         self.add_transition(LuxoState.VOICE_FOLLOWING, LuxoState.ANIMATING)
-        self.add_transition(LuxoState.VOICE_FOLLOWING, LuxoState.COLLISION_AVOIDING)  # Voice following can be interrupted by collision
+        self.add_transition(LuxoState.VOICE_FOLLOWING, LuxoState.PETTING)
+        self.add_transition(LuxoState.VOICE_FOLLOWING, LuxoState.EMOTION_REACTING)
+        self.add_transition(LuxoState.VOICE_FOLLOWING, LuxoState.COLLISION_AVOIDING)
         self.add_transition(LuxoState.VOICE_FOLLOWING, LuxoState.ESCAPE_MODE)
         self.add_transition(LuxoState.VOICE_FOLLOWING, LuxoState.RETURNING_HOME)
-        self.add_transition(LuxoState.VOICE_FOLLOWING, LuxoState.PETTING)
         
         # From COLLISION_AVOIDING
         self.add_transition(LuxoState.COLLISION_AVOIDING, LuxoState.IDLE)
         self.add_transition(LuxoState.COLLISION_AVOIDING, LuxoState.ESCAPE_MODE)
         self.add_transition(LuxoState.COLLISION_AVOIDING, LuxoState.RETURNING_HOME)
         self.add_transition(LuxoState.COLLISION_AVOIDING, LuxoState.PETTING)
-        # Note: NO transition from COLLISION_AVOIDING to VOICE_FOLLOWING
+        # Note: NO transition from COLLISION_AVOIDING to VOICE_FOLLOWING for safety
         
         # From ESCAPE_MODE
         self.add_transition(LuxoState.ESCAPE_MODE, LuxoState.IDLE)
@@ -125,16 +126,16 @@ class LuxoStateMachine:
         
         # From EMOTION_REACTING
         self.add_transition(LuxoState.EMOTION_REACTING, LuxoState.IDLE)
-        self.add_transition(LuxoState.EMOTION_REACTING, LuxoState.VOICE_FOLLOWING)  # New: Can follow voice during emotion
+        self.add_transition(LuxoState.EMOTION_REACTING, LuxoState.VOICE_FOLLOWING)
         self.add_transition(LuxoState.EMOTION_REACTING, LuxoState.COLLISION_AVOIDING)
         self.add_transition(LuxoState.EMOTION_REACTING, LuxoState.PETTING)
         
-        # From PETTING - Can return to most states or continue petting
+        # From PETTING
         self.add_transition(LuxoState.PETTING, LuxoState.IDLE)
         self.add_transition(LuxoState.PETTING, LuxoState.ANIMATING)
         self.add_transition(LuxoState.PETTING, LuxoState.VOICE_FOLLOWING)
         self.add_transition(LuxoState.PETTING, LuxoState.EMOTION_REACTING)
-        self.add_transition(LuxoState.PETTING, LuxoState.COLLISION_AVOIDING)  # Safety still takes priority
+        self.add_transition(LuxoState.PETTING, LuxoState.COLLISION_AVOIDING)
         
         # From ERROR - can transition to most states for recovery
         self.add_transition(LuxoState.ERROR, LuxoState.IDLE)
@@ -346,4 +347,3 @@ class LuxoStateMachine:
         """Check if currently in any of the given states."""
         with self._state_lock:
             return self._current_state in states
-    

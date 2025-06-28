@@ -63,13 +63,19 @@ class VoiceBehavior:
         self.last_voice_variation_time = None
         self.current_voice_variation = None
         self.voice_neutral_position = [-0.55, 1.2, 1.0, 2.0]  # Baseline position (shoulder, elbow, wrist, hand - excluding base)
-        self.voice_on_target_threshold = 3.0  # seconds to wait before starting variations
+        self.voice_on_target_threshold = 2.0  # seconds to wait before starting variations
         
         # Voice command cooldown and direction filtering
         self.voice_command_cooldown = 2.5  # seconds between voice commands
         self.last_voice_command_time = None  # Initialize to None to allow immediate first command
         self.last_acted_voice_direction = None  # Last direction we actually sent a command for
         self.voice_direction_filter_threshold = 5.0  # degrees - ignore directions within this range
+        
+        # Voice state management
+        self.voice_following_state_requested = False
+        self.voice_following_previous_state = None
+        self.voice_completion_timer = None
+        self.voice_completion_timeout = 3.0  # seconds of no voice activity before completing
         
         # Create subscribers for voice data
         self.voice_direction_sub = self.node.create_subscription(
@@ -96,6 +102,14 @@ class VoiceBehavior:
         # Extract voice direction
         voice_direction = msg.data  # Angle in degrees
         current_time = self.node.get_clock().now()
+        
+        # Request transition to VOICE_FOLLOWING state if not already there
+        current_state = self._get_current_state()
+        if current_state != LuxoState.VOICE_FOLLOWING and not self.voice_following_state_requested:
+            self.voice_following_previous_state = current_state
+            self.voice_following_state_requested = True
+            self._transition_to_voice_following_state()
+            self.node.get_logger().info(f"Voice command received - transitioning from {current_state.name} to VOICE_FOLLOWING")
         
         # Check if we can process voice commands based on current state
         if not self._can_process_voice_command():
@@ -206,12 +220,23 @@ class VoiceBehavior:
         
         # Send direct command to follow voice
         self._send_voice_following_command()
+        
+        # Reset completion timer since we received new voice input
+        self.voice_completion_timer = current_time
     
     def voice_active_callback(self, msg):
         """Handle voice activity status."""
         self.voice_active = msg.data
+        current_time = self.node.get_clock().now()
         
-        if not self.voice_active:
+        if self.voice_active:
+            # Voice is active, reset completion timer
+            self.voice_completion_timer = current_time
+        else:
+            # Voice stopped, start completion timer if not already set
+            if self.voice_completion_timer is None:
+                self.voice_completion_timer = current_time
+            
             # Voice stopped, start decay
             self.voice_influence *= 0.5  # Quick initial drop
             if self.voice_influence < 0.1:
@@ -229,7 +254,9 @@ class VoiceBehavior:
         allowed_states = [
             LuxoState.IDLE,
             LuxoState.VOICE_FOLLOWING,
-            LuxoState.ANIMATING  # Allow during animations
+            LuxoState.ANIMATING,  # Allow during animations
+            LuxoState.PETTING,    # Allow during petting
+            LuxoState.EMOTION_REACTING  # Allow during emotion reactions
         ]
         
         return current_state in allowed_states
@@ -305,6 +332,95 @@ class VoiceBehavior:
         )
         
         return varied_position
+    
+    def _transition_to_voice_following_state(self):
+        """Request transition to VOICE_FOLLOWING state."""
+        try:
+            if hasattr(self, '_transition_to_state'):
+                success = self._transition_to_state(LuxoState.VOICE_FOLLOWING)
+                if success:
+                    self.node.get_logger().info("Successfully transitioned to VOICE_FOLLOWING state")
+                else:
+                    self.node.get_logger().warn("Failed to transition to VOICE_FOLLOWING state")
+            elif hasattr(self, 'request_state_transition_client'):
+                # Use the service client directly if available
+                self._request_voice_following_state_via_service()
+            else:
+                self.node.get_logger().warn("No state transition method available")
+        except Exception as e:
+            self.node.get_logger().error(f"Error transitioning to VOICE_FOLLOWING state: {e}")
+    
+    def _request_voice_following_state_via_service(self):
+        """Request VOICE_FOLLOWING state via service client."""
+        try:
+            from luxo_interfaces.srv import RequestStateTransition
+            
+            if not self.request_state_transition_client.wait_for_service(timeout_sec=0.1):
+                self.node.get_logger().debug("State manager service not available")
+                return
+            
+            request = RequestStateTransition.Request()
+            request.requested_state = 'VOICE_FOLLOWING'
+            request.requesting_node = 'voice_following'
+            request.priority = 75  # High priority for voice commands
+            request.force = False
+            
+            future = self.request_state_transition_client.call_async(request)
+            self.node.get_logger().info("Requested transition to VOICE_FOLLOWING state")
+            
+        except Exception as e:
+            self.node.get_logger().error(f"Error requesting voice following state: {e}")
+    
+    def _complete_voice_following(self):
+        """Complete voice following and return to previous state."""
+        try:
+            # Determine return state
+            if self.voice_following_previous_state and self.voice_following_previous_state != LuxoState.VOICE_FOLLOWING:
+                return_state = self.voice_following_previous_state
+            else:
+                return_state = LuxoState.IDLE  # Default fallback
+            
+            self.node.get_logger().info(f"Voice following completed - returning to {return_state.name}")
+            
+            # Reset voice following state tracking
+            self.voice_following_state_requested = False
+            self.voice_following_previous_state = None
+            self.voice_completion_timer = None
+            
+            # Clear voice following state
+            self.voice_influence = 0.0
+            self.target_voice_angle = None
+            self.voice_on_target_start_time = None
+            self.last_voice_variation_time = None
+            self.current_voice_variation = None
+            
+            # Request transition back to previous state
+            if hasattr(self, '_transition_to_state'):
+                self._transition_to_state(return_state)
+            elif hasattr(self, 'request_state_transition_client'):
+                self._request_completion_state_via_service(return_state)
+            
+        except Exception as e:
+            self.node.get_logger().error(f"Error completing voice following: {e}")
+    
+    def _request_completion_state_via_service(self, return_state):
+        """Request completion transition via service client."""
+        try:
+            from luxo_interfaces.srv import RequestStateTransition
+            
+            request = RequestStateTransition.Request()
+            request.requested_state = return_state.name
+            request.requesting_node = 'voice_behavior'
+            request.priority = 75
+            request.force = False
+            if hasattr(request, 'completion'):
+                request.completion = True
+            
+            future = self.request_state_transition_client.call_async(request)
+            self.node.get_logger().info(f"Voice following completed - returning to {return_state.name}")
+            
+        except Exception as e:
+            self.node.get_logger().error(f"Error requesting completion state: {e}")
     
     def _send_voice_following_command(self):
         """Send direct voice following command to target angle with optional variation."""
@@ -399,6 +515,17 @@ class VoiceBehavior:
     
     def update_voice_decay(self, current_time):
         """Update voice influence decay over time."""
+        # Check for voice following completion
+        if (self.voice_following_state_requested and 
+            self.voice_completion_timer and 
+            self._get_current_state() == LuxoState.VOICE_FOLLOWING):
+            
+            time_since_last_voice = (current_time - self.voice_completion_timer).nanoseconds / 1e9
+            if time_since_last_voice > self.voice_completion_timeout:
+                self.node.get_logger().info(f"Voice inactive for {time_since_last_voice:.1f}s - completing voice following")
+                self._complete_voice_following()
+                return
+        
         if self.last_voice_time:
             time_since_voice = (current_time - self.last_voice_time).nanoseconds / 1e9
             if time_since_voice > 0.5:  # Start decaying after 0.5 seconds

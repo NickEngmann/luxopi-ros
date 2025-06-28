@@ -44,11 +44,11 @@ class StateManagerNode(Node):
         self._node_priorities = {
             'behavior_coordinator': 100,  # Highest priority - safety first
             'escape_mode': 90,
-            'petting': 80,
-            'user_control': 70,
-            'emotion': 60,
-            'animation': 50,
-            'voice_following': 40,
+            'user_control': 80,
+            'voice_following': 75,  # High priority for voice commands
+            'petting': 60,
+            'emotion': 50,
+            'animation': 40,
             'idle': 30,  # Lowest priority
             'system': 50  # Default system priority
         }
@@ -168,7 +168,7 @@ class StateManagerNode(Node):
             from luxo_behaviors.neopixel_control import NeoPixelController
             self._neopixel_controller = NeoPixelController(
                 pixel_count=76,
-                brightness=0.1,
+                brightness=0.2,
                 logger=self.get_logger()
             )
             if self._neopixel_controller.is_initialized():
