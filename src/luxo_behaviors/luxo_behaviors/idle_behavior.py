@@ -85,7 +85,7 @@ class IdleBehavior:
             voice_very_active = time_since_voice < 2.0  # Only consider very recent voice activity
         
         if voice_very_active:
-            self.node.get_logger().info("Very recent voice activity - allowing idle animations to coexist")
+            self.node.get_logger().debug("Very recent voice activity - allowing idle animations to coexist")
         
         # If we've been idle for a while and enough time has passed since last animation
         if (time_since_activity > self.min_idle_time_before_animation and 
@@ -183,6 +183,7 @@ class IdleBehavior:
         Check if we should apply idle head variation.
         Returns True if variation is active.
         """
+        self.node.get_logger().info(f"Checking idle head variation: enabled={self.idle_head_variation_enabled}, voice_influence={getattr(self, 'voice_influence', 0.0)}")
         # Only apply idle head variations in IDLE state
         if not self._is_in_state(LuxoState.IDLE):
             self.idle_head_variation_active = False

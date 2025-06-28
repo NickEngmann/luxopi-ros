@@ -25,8 +25,9 @@ from luxo_behaviors.shared_utils import (
 
 from luxo_behaviors.petting_behavior import PettingBehavior
 from luxo_behaviors.idle_behavior import IdleBehavior
+from luxo_behaviors.voice_behavior import VoiceBehavior
 
-class CollisionAvoidance(PettingBehavior, IdleBehavior):
+class CollisionAvoidance(PettingBehavior, IdleBehavior, VoiceBehavior):
     """Class to handle collision avoidance logic for the RoArm hardware interface."""
     
     def __init__(self, node, send_safe_joint_command_callback, publish_actual_joint_states_callback):
@@ -216,66 +217,9 @@ class CollisionAvoidance(PettingBehavior, IdleBehavior):
         self.setup_idle_behavior()
         # Initialize petting behavior after all other attributes are set
         self.setup_petting_behavior()
+        # Initialize voice behavior after all other attributes are set
+        self.setup_voice_behavior()
 
-        # Voice following parameters
-        self.node.declare_parameter('enable_voice_following', True)
-        self.node.declare_parameter('voice_follow_speed', 0.3)
-        self.node.declare_parameter('voice_follow_deadzone', 15.0)
-        self.node.declare_parameter('voice_follow_smoothing', 0.3)
-        # Add voice variation parameters
-        self.node.declare_parameter('voice_variation_enabled', True)
-        self.node.declare_parameter('voice_direction_tolerance', 5.0)
-        self.node.declare_parameter('voice_variation_interval', 2.0)
-        self.node.declare_parameter('voice_look_up_range', 1.0)  # How far up to look
-        self.node.declare_parameter('voice_look_down_range', 0.2)  # How far down to look
-        
-        self.voice_follow_enabled = self.node.get_parameter('enable_voice_following').value
-        self.voice_follow_speed = self.node.get_parameter('voice_follow_speed').value
-        self.voice_follow_deadzone = self.node.get_parameter('voice_follow_deadzone').value
-        self.voice_follow_smoothing = self.node.get_parameter('voice_follow_smoothing').value
-        self.voice_variation_enabled = self.node.get_parameter('voice_variation_enabled').value
-        self.voice_direction_tolerance = self.node.get_parameter('voice_direction_tolerance').value
-        self.voice_variation_interval = self.node.get_parameter('voice_variation_interval').value
-        self.voice_look_up_range = self.node.get_parameter('voice_look_up_range').value
-        self.voice_look_down_range = self.node.get_parameter('voice_look_down_range').value
-        
-        # Voice tracking state
-        self.last_voice_direction = None
-        self.last_voice_time = self.node.get_clock().now()
-        self.voice_influence = 0.0
-        self.target_voice_angle = None
-        self.voice_active = False
-        
-        # Voice variation tracking
-        self.voice_on_target_start_time = None
-        self.last_voice_variation_time = None
-        self.current_voice_variation = None
-        self.voice_neutral_position = [-0.55, 1.2, 1.0, -2.0, 10.0]  # Baseline position (excluding base)
-        self.voice_on_target_threshold = 3.0  # seconds to wait before starting variations
-        
-        # NEW: Voice command cooldown and direction filtering
-        self.voice_command_cooldown = 2.5  # seconds between voice commands
-        # Initialize to None to allow immediate first command
-        self.last_voice_command_time = None
-        self.last_acted_voice_direction = None  # Last direction we actually sent a command for
-        self.voice_direction_filter_threshold = 5.0  # degrees - ignore directions within this range
-        
-        # Create subscribers for voice data
-        self.voice_direction_sub = self.node.create_subscription(
-            Float32,
-            '/voice/follow_direction',
-            self.voice_direction_callback,
-            10
-        )
-        
-        self.voice_active_sub = self.node.create_subscription(
-            Bool,
-            '/voice/active', 
-            self.voice_active_callback,
-            10
-        )
-        
-        self.node.get_logger().info(f"Voice following enabled: {self.voice_follow_enabled}")
 
     def _state_info_callback(self, msg):
         """Callback for state info updates."""
@@ -317,322 +261,19 @@ class CollisionAvoidance(PettingBehavior, IdleBehavior):
             self.node.get_logger().error(f"Error requesting state transition: {e}")
             return False
 
-    def voice_active_callback(self, msg):
-        """Handle voice activity status"""
-        self.voice_active = msg.data
-        if not msg.data:
-            # Start decay when voice stops
-            self.voice_influence *= 0.8
-    
-    def voice_direction_callback(self, msg):
-        """Handle voice direction updates with intelligent wraparound and variation"""
-        if not self.voice_follow_enabled:
-            return
-            
-        # Only process if in appropriate state
-        if not self._is_in_state(LuxoState.IDLE, LuxoState.ANIMATING, LuxoState.EMOTION_REACTING):
-            return
-        
-        current_time = self.node.get_clock().now()
-        voice_direction = msg.data
-        
-        # Check cooldown timer - don't process if we sent a command too recently
-        if self.last_voice_command_time is not None:
-            time_since_last_command = (current_time - self.last_voice_command_time).nanoseconds / 1e9
-            if time_since_last_command < self.voice_command_cooldown:
-                remaining_cooldown = self.voice_command_cooldown - time_since_last_command
-                self.node.get_logger().debug(
-                    f"Voice command on cooldown - {remaining_cooldown:.2f}s remaining "
-                    f"(last command: {time_since_last_command:.2f}s ago)"
-                )
-                return
-        
-        # Check if direction is too similar to last acted-upon direction
-        if self.last_acted_voice_direction is not None:
-            direction_diff = abs(voice_direction - self.last_acted_voice_direction)
-            # Handle wraparound case (e.g., 359° vs 1°)
-            if direction_diff > 180:
-                direction_diff = 360 - direction_diff
-                
-            if direction_diff <= self.voice_direction_filter_threshold:
-                self.node.get_logger().debug(
-                    f"Ignoring similar voice direction: {voice_direction:.1f}° "
-                    f"(last: {self.last_acted_voice_direction:.1f}°, diff: {direction_diff:.1f}°)"
-                )
-                # Still update tracking but don't send command
-                self.last_voice_direction = voice_direction
-                self.last_voice_time = current_time
-                return
-        
-        # Update voice tracking
-        self.last_voice_direction = voice_direction
-        self.last_voice_time = current_time
-        
-        # Increase voice influence more aggressively
-        self.voice_influence = min(1.0, self.voice_influence + 0.8)  # Very aggressive following
-        
-        # Convert voice direction to target angle with intelligent wraparound
-        target_angle_rad = np.deg2rad(voice_direction)
-        target_angle = self.position_utils.normalize_angle(target_angle_rad)
-        
-        # Check if we need wraparound due to base limits
-        if target_angle > self.base_max_limit:
-            if self.enable_base_wraparound:
-                # Calculate wraparound path
-                wraparound_target = target_angle - 2 * np.pi
-                if wraparound_target >= self.base_min_limit:
-                    self.target_voice_angle = wraparound_target
-                    self.node.get_logger().info(
-                        f"Voice at {voice_direction}° beyond max limit - "
-                        f"using wraparound to {np.rad2deg(wraparound_target):.1f}°"
-                    )
-                else:
-                    # Even wraparound doesn't work, clamp to nearest reachable
-                    self.target_voice_angle = self.base_max_limit
-                    self.node.get_logger().warn(
-                        f"Voice at {voice_direction}° unreachable - clamping to max limit"
-                    )
-            else:
-                self.target_voice_angle = self.base_max_limit
-                self.node.get_logger().warn(f"Voice beyond max limit - clamping (wraparound disabled)")
-        elif target_angle < self.base_min_limit:
-            if self.enable_base_wraparound:
-                # Calculate wraparound path
-                wraparound_target = target_angle + 2 * np.pi
-                if wraparound_target <= self.base_max_limit:
-                    self.target_voice_angle = wraparound_target
-                    self.node.get_logger().info(
-                        f"Voice at {voice_direction}° beyond min limit - "
-                        f"using wraparound to {np.rad2deg(wraparound_target):.1f}°"
-                    )
-                else:
-                    # Even wraparound doesn't work, clamp to nearest reachable
-                    self.target_voice_angle = self.base_min_limit
-                    self.node.get_logger().warn(
-                        f"Voice at {voice_direction}° unreachable - clamping to min limit"
-                    )
-            else:
-                self.target_voice_angle = self.base_min_limit
-                self.node.get_logger().warn(f"Voice beyond min limit - clamping (wraparound disabled)")
-        else:
-            # Target is within normal range
-            self.target_voice_angle = target_angle
-        
-        self.node.get_logger().info(
-            f"Voice detected at {voice_direction:.1f}°, "
-            f"target angle: {np.rad2deg(self.target_voice_angle):.1f}°, "
-            f"sending direct command (influence: {self.voice_influence:.2f})"
-        )
-        
-        # SEND COMMAND IMMEDIATELY with the calculated target
-        self._send_voice_following_command()
-        
-        # Update tracking for cooldown and filtering
-        self.last_voice_command_time = current_time
-        self.last_acted_voice_direction = voice_direction
-
-    def _check_voice_on_target(self):
-        """Check if robot is pointing at voice direction and start variation timer"""
-        if not self.voice_variation_enabled or self.target_voice_angle is None:
-            return False
-            
-        current_base = self.current_joints[0] if self.current_joints else 0.0
-        angle_diff = abs(self.position_utils.normalize_angle(self.target_voice_angle - current_base))
-        angle_diff_deg = np.rad2deg(angle_diff)
-        
-        current_time = self.node.get_clock().now()
-        
-        if angle_diff_deg <= self.voice_direction_tolerance:
-            # We're on target
-            if self.voice_on_target_start_time is None:
-                self.voice_on_target_start_time = current_time
-                self.node.get_logger().info(f"Voice on target - starting variation timer (diff: {angle_diff_deg:.1f}°)")
-            return True
-        else:
-            # We're not on target, reset timer
-            if self.voice_on_target_start_time is not None:
-                self.node.get_logger().debug(f"Voice off target - resetting timer (diff: {angle_diff_deg:.1f}°)")
-            self.voice_on_target_start_time = None
-            self.current_voice_variation = None
-            return False
-
-    def _should_add_voice_variation(self):
-        """Check if we should add variation to voice following"""
-        if not self.voice_variation_enabled:
-            return False
-            
-        if not self._check_voice_on_target():
-            return False
-            
-        current_time = self.node.get_clock().now()
-        
-        # Check if we've been on target long enough
-        if self.voice_on_target_start_time is None:
-            return False
-            
-        time_on_target = (current_time - self.voice_on_target_start_time).nanoseconds / 1e9
-        if time_on_target < self.voice_on_target_threshold:
-            return False
-        
-        # Check if enough time has passed since last variation
-        if self.last_voice_variation_time is not None:
-            time_since_variation = (current_time - self.last_voice_variation_time).nanoseconds / 1e9
-            if time_since_variation < self.voice_variation_interval:
-                return False
-        
-        return True
-
-    def _generate_voice_variation(self):
-        """Generate semi-random up/down movement for voice following"""
-        current_time = self.node.get_clock().now()
-        
-        # Generate random variation - bias towards looking up for face detection
-        # 70% chance to look up, 20% chance to look down, 10% chance to return to neutral
-        variation_type = random.random()
-        
-        if variation_type < 0.85:  # Look up (85% chance)
-            # Look up with some randomness - semi dramatic but not too much
-            shoulder_variation = random.uniform(0.2, self.voice_look_up_range)
-            elbow_variation = random.uniform(-0.2, 0.2)  # Small elbow adjustment
-            wrist_variation = random.uniform(-0.4, 0.0)  # Slight wrist adjustment to help with head angle
-            variation_description = "looking up"
-        elif variation_type < 0.95:  # Look down (10% chance)
-            # Look down slightly
-            shoulder_variation = random.uniform(-self.voice_look_down_range, -0.05)
-            elbow_variation = random.uniform(-0.05, 0.05)
-            wrist_variation = random.uniform(0.0, 0.1)
-            variation_description = "looking down"
-        else:  # Return to neutral (5% chance)
-            shoulder_variation = 0.0
-            elbow_variation = 0.0
-            wrist_variation = 0.0
-            variation_description = "returning to neutral"
-        
-        # Create varied position based on neutral
-        varied_position = self.voice_neutral_position.copy()
-        varied_position[0] += shoulder_variation  # Shoulder (index 1 in full array)
-        varied_position[1] += elbow_variation     # Elbow (index 2 in full array)
-        varied_position[2] += wrist_variation     # Wrist (index 3 in full array)
-        # Keep hand and acceleration the same
-        
-        self.current_voice_variation = varied_position
-        self.last_voice_variation_time = current_time
-        
-        self.node.get_logger().info(
-            f"Voice variation: {variation_description} "
-            f"(shoulder: {shoulder_variation:+.2f}, elbow: {elbow_variation:+.2f}, wrist: {wrist_variation:+.2f})"
-        )
-        
-        return varied_position
-
-    def _send_voice_following_command(self):
-        """Send direct voice following command to target angle with optional variation"""
-        if not self.voice_follow_enabled or self.voice_influence < 0.1:
-            return
-            
-        if self.target_voice_angle is None:
-            return
-        
-        # Create position with DIRECT target angle - no adjustments
-        voice_position = self.current_joints.copy()
-        voice_position[0] = self.target_voice_angle  # Set base directly to target
-        
-        # Check if we should add variation
-        if self._should_add_voice_variation():
-            variation = self._generate_voice_variation()
-            # Apply variation to joints 1-4 (shoulder, elbow, wrist, hand)
-            for i in range(1, min(5, len(voice_position))):
-                if i-1 < len(variation):
-                    voice_position[i] = variation[i-1]
-            self.node.get_logger().info("Applied voice following variation for face detection")
-        elif self.current_voice_variation is not None:
-            # Continue using current variation if we have one
-            for i in range(1, min(5, len(voice_position))):
-                if i-1 < len(self.current_voice_variation):
-                    voice_position[i] = self.current_voice_variation[i-1]
-        else:
-            # Use neutral position for non-base joints
-            for i in range(1, min(5, len(voice_position))):
-                if i-1 < len(self.voice_neutral_position):
-                    voice_position[i] = self.voice_neutral_position[i-1]
-        
-        # Ensure we only have 5 joint positions, then add acceleration as 6th element
-        if len(voice_position) > 5:
-            voice_position = voice_position[:5]  # Truncate to 5 joints
-        
-        # Add acceleration as the 6th element
-        voice_position_with_accel = voice_position + [7.0]
-        
-        self.node.get_logger().info(
-            f"Sending voice command: base to {np.rad2deg(self.target_voice_angle):.1f}° "
-            f"with position: {[round(p, 2) for p in voice_position]}"
-        )
-        
-        # Send the command with high priority
-        self.send_safe_joint_command(voice_position_with_accel, "Voice following with variation")
-        
-        # Set this as a target override to prevent other systems from interfering
-        self.target_override_active = True
-        self.target_override_time = self.node.get_clock().now()
-        self.target_override_joints = voice_position.copy()
-        self.target_override_reason = "Voice following with face detection"
-        self.target_override_timeout = 3.0  # Short timeout for voice following
-        
-        # REMOVED: Do not update activity time for voice following
-        # This prevents voice following from interfering with idle animation timing
     
     def apply_voice_following(self, positions):
-        """Apply direct voice following to joint positions with variation support"""
-        if not self.voice_follow_enabled or self.voice_influence < 0.1:
-            # Replace the existing idle head variation code with:
-            return self.apply_idle_head_variation(positions)
-            
-        # Check if in escape mode or returning home - don't apply voice following
-        if self._is_in_state(LuxoState.ESCAPE_MODE, LuxoState.RETURNING_HOME):
-            return positions
+        """Apply voice following using the VoiceBehavior mixin, with idle head variation fallback."""
+        # First try voice following
+        voice_result = super().apply_voice_following(positions)
         
-        # Clear any idle head variation when voice following starts
-        if self.idle_head_variation_active:
-            self.idle_head_variation_active = False
-            self.current_idle_head_target = None
-            self.node.get_logger().debug("Cleared idle head variation for voice following")
-            
-        # Check voice timeout
-        if self.last_voice_time:
-            current_time = self.node.get_clock().now()
-            time_since_voice = (current_time - self.last_voice_time).nanoseconds / 1e9
-            
-            if time_since_voice > 2.0:  # 2 second timeout
-                self.voice_influence = 0.0
-                self.target_voice_angle = None
-                self.voice_on_target_start_time = None
-                self.current_voice_variation = None
-                return positions
+        # If voice following didn't change anything (voice influence < 0.1), 
+        # check for idle head variation
+        if (hasattr(self, 'voice_influence') and self.voice_influence < 0.1 and
+            hasattr(self, 'idle_head_variation_active') and self.idle_head_variation_active):
+            return self.apply_idle_head_variation(voice_result)
         
-        # Apply DIRECT voice following - no gradual adjustment
-        if self.target_voice_angle is not None:
-            adjusted_positions = positions.copy()
-            
-            # Set base joint DIRECTLY to target angle
-            adjusted_positions[0] = self.target_voice_angle
-            
-            # Apply variation if we have one
-            if self.current_voice_variation is not None:
-                for i in range(1, min(5, len(adjusted_positions))):
-                    if i-1 < len(self.current_voice_variation):
-                        adjusted_positions[i] = self.current_voice_variation[i-1]
-            
-            # Check if we've reached the target
-            current_base = self.current_joints[0] if self.current_joints else 0.0
-            angle_diff = abs(self.position_utils.normalize_angle(self.target_voice_angle - current_base))
-            
-            if angle_diff < 0.1:  # Within ~6 degrees
-                # Don't immediately clear - let variation system handle it
-                self.node.get_logger().debug("Voice target reached, maintaining for variation")
-                
-            return adjusted_positions
-            
-        return positions
+        return voice_result
 
     def set_active_animation(self, animation_name, allow_interruption=True):
         """Track the currently active animation."""
@@ -1053,6 +694,9 @@ class CollisionAvoidance(PettingBehavior, IdleBehavior):
             # Get current time for this check cycle
             current_time = self.node.get_clock().now()
             
+            # Update voice decay first (this reduces voice_influence over time)
+            self.update_voice_decay(current_time)
+            
             # Handle petting state updates and timeout detection
             if self.check_petting_timeout(current_time):
                 return
@@ -1157,8 +801,13 @@ class CollisionAvoidance(PettingBehavior, IdleBehavior):
 
             # Check for idle head variation
             if self.check_idle_head_variation(current_time):
-                pass  # Continue with other checks
-
+                # If we generated a new variation, apply it
+                if self.current_idle_head_target:
+                    self.target_override_active = True
+                    self.target_override_time = current_time
+                    self.target_override_joints = self.current_idle_head_target.copy()
+                    self.target_override_reason = "idle head variation"
+                    self.send_safe_joint_command(self.current_idle_head_target, "Idle head variation")
             # Check for extended idle timeout
             if self.check_extended_idle_timeout(current_time):
                 return  # Skip other checks if returning home
@@ -1446,7 +1095,9 @@ class CollisionAvoidance(PettingBehavior, IdleBehavior):
         # Regular override handling
         if not self.target_override_active or self.target_override_joints is None:
             # VOICE FOLLOWING ADDITION: Apply voice following to the original target
-            return self.apply_voice_following(original_target)
+            voice_applied = self.apply_voice_following(original_target)
+            # IDLE HEAD VARIATION: Apply idle head variation if voice following isn't active
+            return self.apply_idle_head_variation(voice_applied)
         
         # MODIFIED: Only clear override for SIGNIFICANT target changes, not just any difference
         # Check if we have a genuinely NEW target that's significantly different from our current override position
