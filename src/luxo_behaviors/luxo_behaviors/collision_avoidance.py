@@ -24,8 +24,9 @@ from luxo_behaviors.shared_utils import (
 )
 
 from luxo_behaviors.petting_behavior import PettingBehavior
+from luxo_behaviors.idle_behavior import IdleBehavior
 
-class CollisionAvoidance(PettingBehavior):
+class CollisionAvoidance(PettingBehavior, IdleBehavior):
     """Class to handle collision avoidance logic for the RoArm hardware interface."""
     
     def __init__(self, node, send_safe_joint_command_callback, publish_actual_joint_states_callback):
@@ -112,7 +113,6 @@ class CollisionAvoidance(PettingBehavior):
         self.movement_publisher = MovementSourcePublisher()
         self.collision_tracker = CollisionStatusTracker()
         self.animation_tracker = AnimationTracker()
-        self.idle_config = IdleAnimationConfig()
         self.time_utils = TimeUtils()
         
         # Collision tracking with ROS time
@@ -212,32 +212,11 @@ class CollisionAvoidance(PettingBehavior):
         # Timer for idle reset (will be created when needed)
         self.idle_reset_timer = None
 
-        self.idle_animations = self.idle_config.idle_animations
-        self.last_idle_animation = None
-        self.min_idle_time_before_animation = 5.0  # seconds before first idle animation
-        self.idle_animation_interval = random.uniform(10.0, 60.0)  # time between animations
-        self.last_idle_animation_time = self.node.get_clock().now()
-        
-        # Add idle head variation tracking
-        self.idle_head_variation_enabled = False  # Will be set by hardware interface
-        self.idle_head_variation_interval = 10.0  # Maximum interval - actual will be random 1.0 to this value
-        self.idle_head_base_rotation_range = 0.3
-        self.idle_head_look_up_range = 0.4
-        self.idle_head_look_down_range = 0.1
-        self.idle_head_variation_speed = 4.0
-        self.last_idle_head_variation_time = self.node.get_clock().now()
-        self.current_idle_head_target = None
-        self.idle_head_variation_active = False
-        self.idle_base_position = [0.0, -0.55, 1.2, 1.0, 2.0]  # Standard idle position
-        
-        # Create action client for triggering animations
-        self._idle_animation_client = ActionClient(
-            self.node,
-            PlayAnimation,
-            'play_animation'
-        )
+        # Initialize idle behavior after all other attributes are set
+        self.setup_idle_behavior()
         # Initialize petting behavior after all other attributes are set
         self.setup_petting_behavior()
+
         # Voice following parameters
         self.node.declare_parameter('enable_voice_following', True)
         self.node.declare_parameter('voice_follow_speed', 0.3)
@@ -388,9 +367,6 @@ class CollisionAvoidance(PettingBehavior):
         # Update voice tracking
         self.last_voice_direction = voice_direction
         self.last_voice_time = current_time
-        
-        # REMOVED: Voice following should NOT reset idle timeout
-        # This allows idle animations to still trigger while voice following is active
         
         # Increase voice influence more aggressively
         self.voice_influence = min(1.0, self.voice_influence + 0.8)  # Very aggressive following
@@ -608,14 +584,8 @@ class CollisionAvoidance(PettingBehavior):
     def apply_voice_following(self, positions):
         """Apply direct voice following to joint positions with variation support"""
         if not self.voice_follow_enabled or self.voice_influence < 0.1:
-            # If no voice following, check if we should maintain idle head variation
-            if (self.idle_head_variation_active and 
-                self.current_idle_head_target and 
-                self._is_in_state(LuxoState.IDLE)):
-                
-                # Continue using the idle head variation target
-                return self.current_idle_head_target.copy()
-            return positions
+            # Replace the existing idle head variation code with:
+            return self.apply_idle_head_variation(positions)
             
         # Check if in escape mode or returning home - don't apply voice following
         if self._is_in_state(LuxoState.ESCAPE_MODE, LuxoState.RETURNING_HOME):
@@ -1122,68 +1092,39 @@ class CollisionAvoidance(PettingBehavior):
                 if self.target_override_active and self.target_override_joints is not None:
                     # Check if we're in stage 1 and at home_position_1
                     if self.home_position_stage == 1:
-                        # Calculate current position difference from home_position_1
-                        # Preserve base position when comparing
-                        mod_home_1 = self.home_position_1.copy()
-                        mod_home_1[0] = self.current_joints[0]  # Use current base position
-                        
                         if self._at_home_position(self.current_joints, self.home_position_1, self.home_position_tolerance):
-                            # Initialize stage change time if not set
-                            if not hasattr(self, '_stage1_reached_time'):
-                                self._stage1_reached_time = current_time
-                                self.node.get_logger().info(f"Reached home_position_1, waiting {self.home_position_stage_timeout}s before stage 2")
-                            
-                            # Check if we've waited long enough
-                            time_at_stage1 = (current_time - self._stage1_reached_time).nanoseconds / 1e9
-                            if time_at_stage1 >= self.home_position_stage_timeout:
-                                self.node.get_logger().info(f"Transitioning to home_position_2 after {time_at_stage1:.1f}s at position 1")
-                                
-                                # Transition to stage 2
+                            # Check if enough time has passed at stage 1
+                            time_at_stage_1 = (current_time - self.home_position_stage_change_time).nanoseconds / 1e9
+                            if time_at_stage_1 > self.home_position_stage_timeout:
+                                self.node.get_logger().info("Moving from home position stage 1 to stage 2")
                                 self.home_position_stage = 2
-                                delattr(self, '_stage1_reached_time')  # Clean up the timer
+                                self.home_position_stage_change_time = current_time
                                 
-                                # Preserve current base position
-                                mod_home_2 = self.home_position_2.copy()
-                                mod_home_2[0] = self.current_joints[0]
-                                
-                                # Add slight random variation
+                                # Add variation to home_position_2
                                 noise_range = 0.05
                                 home_with_variation = [
-                                    mod_home_2[i] + (0 if i == 0 else random.uniform(-noise_range, noise_range))
-                                    for i in range(len(mod_home_2))
+                                    pos + random.uniform(-noise_range, noise_range) 
+                                    for pos in self.home_position_2
                                 ]
                                 
-                                # Update target override
+                                # Update target override to stage 2
                                 self.target_override_joints = home_with_variation
                                 self.target_override_time = current_time
-                                self.target_override_reason = "Home position sequence stage 2"
+                                self.target_override_reason = "Home position stage 2"
                                 
                                 # Send command to move to stage 2
-                                self.send_safe_joint_command(home_with_variation, "Home position stage 2")
-                        else:
-                            # Not at position 1, reset timer
-                            if hasattr(self, '_stage1_reached_time'):
-                                delattr(self, '_stage1_reached_time')
-                    
-                    # Check if we're in stage 2 and at home_position_2
-                    elif self.home_position_stage == 2:
-                        mod_home_2 = self.home_position_2.copy()
-                        mod_home_2[0] = self.current_joints[0]  # Use current base position
+                                self.send_safe_joint_command(home_with_variation, "Moving to home position stage 2")
+                            else:
+                                self.node.get_logger().debug(f"At home position stage 1, waiting {self.home_position_stage_timeout - time_at_stage_1:.1f}s before stage 2")
                         
+                    elif self.home_position_stage == 2:
                         if self._at_home_position(self.current_joints, self.home_position_2, self.home_position_tolerance):
-                            self.node.get_logger().info("Successfully reached final home position (stage 2)")
-                            # Clear all flags
+                            self.node.get_logger().info("Successfully reached final home position - transitioning to IDLE")
+                            # Clear the override and transition back to IDLE
                             self.target_override_active = False
                             self.target_override_joints = None
-                            self.persistent_head_collision_active = False
-                            self.is_returning_to_rest = False
-                            # Transition back to IDLE
+                            self.home_position_stage = 1  # Reset for next time
                             self._transition_to_state(LuxoState.IDLE)
-                            # Reset collision counters
-                            with self.collision_lock:
-                                for direction in self.collision_status:
-                                    self.collision_status[direction]['consecutive_count'] = 0
-                
                 return  # Skip other checks when returning to home
             
             # Check persistent head collision duration
@@ -1211,56 +1152,16 @@ class CollisionAvoidance(PettingBehavior):
                         return  # Skip remaining checks as we're already taking action
             
             # Check idle timeout for idle animations
-            if self.idle_check_active and not any(status['active'] for status in self.collision_status.values()):
-                time_since_activity = (current_time - self.last_activity_time).nanoseconds / 1e9
-                time_since_last_animation = (current_time - self.last_idle_animation_time).nanoseconds / 1e9
-                
-                # UPDATED: Voice following should not prevent idle animations
-                # Only log when voice is very active (multiple recent detections)
-                voice_very_active = False
-                if hasattr(self, 'voice_active') and self.voice_active and hasattr(self, 'last_voice_time'):
-                    if self.last_voice_time is not None:
-                        time_since_voice = (current_time - self.last_voice_time).nanoseconds / 1e9
-                    else:
-                        # If no voice time recorded yet, set to a large value to allow voice
-                        time_since_voice = float('inf')
-                    voice_very_active = time_since_voice < 2.0  # Only consider very recent voice activity
-                
-                if voice_very_active:
-                    self.node.get_logger().debug("Very recent voice activity - allowing idle animations to coexist")
-                
-                # Check if we're already at or very close to home positions
-                already_at_home2 = self._at_position(self.current_joints, self.home_position_2, self.home_position_tolerance)
-                
-                # If we've been idle for a while and enough time has passed since last animation
-                if (time_since_activity > self.min_idle_time_before_animation and 
-                    time_since_last_animation > self.idle_animation_interval and
-                    self._is_in_state(LuxoState.IDLE) and
-                    getattr(self, 'idle_animations_enabled', True)):  # Check if enabled
-                    
-                    self.node.get_logger().info(f"Device idle for {time_since_activity:.1f}s - triggering idle animation (voice influence: {getattr(self, 'voice_influence', 0.0):.2f})")
-                    
-                    # Trigger a random idle animation
-                    self.trigger_idle_animation()
-                    
-                    # Update timers
-                    self.last_idle_animation_time = current_time
-                    self.idle_animation_interval = random.uniform(10.0, 60.0)  # Random interval for next animation
-                    
-                # Still check for extended idle to return home eventually
-                elif time_since_activity > 120.0 and not already_at_home2:  # 2 minutes
-                    self.node.get_logger().info(f"Extended idle timeout - returning to home position")
-                    self._transition_to_state(LuxoState.RETURNING_HOME)
-                    self.returning_to_home_start_time = current_time
-                    self.go_to_home_position("Extended idle timeout")
-                    return
-                
-                # Check for idle head variation (only if no major idle animations are happening AND no active voice following)
-                elif (self._should_apply_idle_head_variation() and 
-                      time_since_last_animation > 5.0 and
-                      not (hasattr(self, 'voice_influence') and self.voice_influence > 0.1)):  # Don't conflict with voice following
-                    self.trigger_idle_head_variation()
-            
+            if self.check_idle_animations(current_time):
+                return  # Skip other checks if animation was triggered
+
+            # Check for idle head variation
+            if self.check_idle_head_variation(current_time):
+                pass  # Continue with other checks
+
+            # Check for extended idle timeout
+            if self.check_extended_idle_timeout(current_time):
+                return  # Skip other checks if returning home
             # Fast path: Check if there are any active collisions or we're in escape mode
             with self.collision_lock:
                 any_collision_active = any(status['active'] for status in self.collision_status.values())
@@ -2076,66 +1977,6 @@ class CollisionAvoidance(PettingBehavior):
             self._transition_to_state(LuxoState.IDLE)
             return False
 
-    def trigger_idle_animation(self):
-        """Trigger a random idle animation."""
-        try:
-            # Don't trigger if not in IDLE state or action client not ready
-            if not self._is_in_state(LuxoState.IDLE):
-                return
-                
-            if not self._idle_animation_client.wait_for_server(timeout_sec=1.0):
-                self.node.get_logger().warn("Animation action server not available for idle animation")
-                return
-            
-            # UPDATED: Only clear idle head variation, not voice following
-            if self.idle_head_variation_active:
-                self.idle_head_variation_active = False
-                self.current_idle_head_target = None
-                self.node.get_logger().debug("Cleared idle head variation for animation")
-            
-            # Allow voice following to continue during idle animations
-            current_voice_influence = getattr(self, 'voice_influence', 0.0)
-            if current_voice_influence > 0.1:
-                self.node.get_logger().info(f"Triggering idle animation while voice following active (influence: {current_voice_influence:.2f})")
-            
-            # Select a random animation, avoiding the last one
-            available_animations = [a for a in self.idle_animations if a != self.last_idle_animation]
-            if not available_animations:
-                available_animations = self.idle_animations
-                
-            selected_animation = random.choice(available_animations)
-            self.last_idle_animation = selected_animation
-            
-            # Create goal for idle animation
-            goal = PlayAnimation.Goal()
-            goal.animation_name = selected_animation
-            goal.speed_multiplier = random.uniform(0.8, 1.2)  # Slight speed variation
-            goal.allow_interruption = True  # Always allow interruption for idle animations
-            goal.use_hardware_feedback = False
-            
-            self.node.get_logger().info(f"Triggering idle animation: {selected_animation} (speed: {goal.speed_multiplier:.1f})")
-            
-            # Send goal asynchronously
-            future = self._idle_animation_client.send_goal_async(goal)
-            future.add_done_callback(self._idle_animation_response_callback)
-            
-            # Update activity time to prevent immediate re-triggering
-            self.last_activity_time = self.node.get_clock().now()
-            
-        except Exception as e:
-            self.node.get_logger().error(f"Error triggering idle animation: {e}")
-    
-    def _idle_animation_response_callback(self, future):
-        """Handle the response from idle animation goal."""
-        try:
-            goal_handle = future.result()
-            if not goal_handle.accepted:
-                self.node.get_logger().debug("Idle animation goal rejected")
-            else:
-                self.node.get_logger().debug("Idle animation goal accepted")
-        except Exception as e:
-            self.node.get_logger().error(f"Error in idle animation response: {e}")
-
     def move_to_safe_position(self, position, description="Proactive avoidance movement", override_checks=False):
         """Move to a position with collision checking."""
         try:
@@ -2348,115 +2189,6 @@ class CollisionAvoidance(PettingBehavior):
             getattr(self.node, 'movement_source_publisher', None)
         )
 
-    def trigger_idle_head_variation(self):
-        """Trigger subtle head movements during idle periods."""
-        try:
-            # Don't trigger if not enabled or not in IDLE state
-            if not self.idle_head_variation_enabled or not self._is_in_state(LuxoState.IDLE):
-                return
-                
-            # UPDATED: Don't interfere with ACTIVE voice following, but allow coexistence
-            # Only prevent if voice is very recently active (within last 1 second)
-            if hasattr(self, 'voice_active') and self.voice_active and hasattr(self, 'last_voice_time'):
-                time_since_voice = (self.node.get_clock().now() - self.last_voice_time).nanoseconds / 1e9
-                if time_since_voice < 1.0:  # Very recent voice activity
-                    self.node.get_logger().debug("Very recent voice activity - skipping idle head variation")
-                    return
-                
-            # Don't interfere with collision avoidance
-            if any(status['active'] for status in self.collision_status.values()):
-                return
-            
-            current_time = self.node.get_clock().now()
-            
-            # Generate a subtle head variation target
-            variation_target = self._generate_idle_head_variation()
-            
-            if variation_target:
-                self.current_idle_head_target = variation_target
-                self.idle_head_variation_active = True
-                self.last_idle_head_variation_time = current_time
-                
-                # Ensure we only have exactly 5 joint positions
-                if len(variation_target) > 5:
-                    variation_target = variation_target[:5]
-                
-                # Create target with acceleration - use list() + [acceleration] to avoid repeated concatenation
-                target_with_accel = list(variation_target) + [self.idle_head_variation_speed]
-                
-                # Send the gentle movement command
-                self.send_safe_joint_command(target_with_accel, "Idle head variation")
-                
-                # Set a gentle override to maintain the movement (without acceleration for internal tracking)
-                self.target_override_active = True
-                self.target_override_time = current_time
-                self.target_override_joints = variation_target.copy()
-                self.target_override_reason = "Idle head variation"
-                self.target_override_timeout = 2.0  # Short timeout for gentle movements
-                
-                self.node.get_logger().info(f"Applied idle head variation: {[round(p, 2) for p in variation_target]}")
-                
-        except Exception as e:
-            self.node.get_logger().error(f"Error in idle head variation: {e}")
-    
-    def _generate_idle_head_variation(self):
-        """Generate a subtle head movement variation based on idle position."""
-        try:
-            # Start with the CURRENT position, not the base idle position
-            variation = self.current_joints.copy()
-            
-            # Ensure we only work with 5 joints maximum
-            if len(variation) > 5:
-                variation = variation[:5]
-            
-            # Add subtle base rotation (looking left/right slightly) RELATIVE to current position
-            base_variation = random.uniform(-self.idle_head_base_rotation_range, self.idle_head_base_rotation_range)
-            variation[0] += base_variation  # Apply variation to current base position
-            
-            # For other joints, use the idle base position as reference but apply relative variations
-            # Add vertical look variation (primarily through shoulder adjustment)
-            # Bias towards looking up (70% chance) as it appears more alert/curious
-            look_type = random.random()
-            if look_type < 0.7:  # Look up
-                shoulder_variation = random.uniform(0.1, self.idle_head_look_up_range)
-                variation[1] = self.idle_base_position[1] - shoulder_variation  # More positive = looking up
-                variation_description = f"looking up (+{shoulder_variation:.2f})"
-            elif look_type < 0.9:  # Look down slightly
-                shoulder_variation = random.uniform(0.0, self.idle_head_look_down_range)
-                variation[1] = self.idle_base_position[1] + shoulder_variation  # More negative = looking down
-                variation_description = f"looking down (-{shoulder_variation:.2f})"
-            else:  # Stay neutral
-                variation[1] = self.idle_base_position[1]  # Use base idle position
-                variation_description = "staying neutral"
-            
-            # Use base idle position for elbow, wrist, hand with small variations
-            variation[2] = self.idle_base_position[2]  # Start with base idle elbow
-            variation[3] = self.idle_base_position[3]  # Start with base idle wrist
-            variation[4] = self.idle_base_position[4]  # Start with base idle hand
-            
-            # Add tiny variations to other joints for naturalness, but keep neck straighter
-            # Only add elbow variation 30% of the time to keep neck less crooked
-            if random.random() < 0.3:
-                variation[2] += random.uniform(-0.02, 0.02)  # Reduced elbow adjustment
-            # Only add wrist variation 20% of the time 
-            if random.random() < 0.2:
-                variation[3] += random.uniform(-0.01, 0.01)  # Reduced wrist adjustment
-            # Keep hand position stable
-            
-            # Ensure we return exactly 5 elements
-            variation = variation[:5]
-            
-            self.node.get_logger().info(
-                f"Generated idle head variation: base {base_variation:+.2f} (current: {np.rad2deg(self.current_joints[0]):.1f}° -> {np.rad2deg(variation[0]):.1f}°), {variation_description}"
-            )
-            
-            return variation
-            
-        except Exception as e:
-            self.node.get_logger().error(f"Error generating idle head variation: {e}")
-            return None
-    
-    def _should_apply_idle_head_variation(self):
         """Check if we should apply idle head variation."""
         if not self.idle_head_variation_enabled:
             return False
