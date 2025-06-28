@@ -42,7 +42,7 @@ class StateManagerNode(Node):
         
         # Priority management for state requests
         self._node_priorities = {
-            'collision_avoidance': 100,  # Highest priority - safety first
+            'behavior_coordinator': 100,  # Highest priority - safety first
             'escape_mode': 90,
             'petting': 80,
             'user_control': 70,

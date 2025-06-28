@@ -405,6 +405,7 @@ class VoiceBehavior:
                 self.voice_influence *= 0.9  # Gradual decay
                 if self.voice_influence < 0.1:
                     # Clear voice state
+                    self.voice_influence = 0.0
                     self.target_voice_angle = None
                     self.voice_on_target_start_time = None
                     self.last_voice_variation_time = None

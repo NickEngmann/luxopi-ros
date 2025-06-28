@@ -91,7 +91,7 @@
         
         <!-- Collision Avoidance -->
         <rect x="630" y="30" width="180" height="100" fill="#ffcc80" stroke="#e65100" stroke-width="2" rx="5" ry="5" />
-        <text x="720" y="55" font-family="Arial" font-size="14" text-anchor="middle">CollisionAvoidance</text>
+        <text x="720" y="55" font-family="Arial" font-size="14" text-anchor="middle">BehaviorCoordinator</text>
         <text x="720" y="75" font-family="Arial" font-size="10" text-anchor="middle">Proactive Behavior</text>
         <text x="720" y="90" font-family="Arial" font-size="10" text-anchor="middle">Idle Animations</text>
         <text x="720" y="105" font-family="Arial" font-size="10" text-anchor="middle">Escape Sequences</text>

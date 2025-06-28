@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-#collision_avoidance.py
+#behavior_coordinator.py
 
 import random
 import time
@@ -27,12 +27,12 @@ from luxo_behaviors.petting_behavior import PettingBehavior
 from luxo_behaviors.idle_behavior import IdleBehavior
 from luxo_behaviors.voice_behavior import VoiceBehavior
 
-class CollisionAvoidance(PettingBehavior, IdleBehavior, VoiceBehavior):
+class BehaviorCoordinator(PettingBehavior, IdleBehavior, VoiceBehavior):
     """Class to handle collision avoidance logic for the RoArm hardware interface."""
     
     def __init__(self, node, send_safe_joint_command_callback, publish_actual_joint_states_callback):
         """
-        Initialize the CollisionAvoidance system.
+        Initialize the BehaviorCoordinator system.
         
         Args:
             node: The ROS node that owns this system (for logging and parameters)
@@ -250,7 +250,7 @@ class CollisionAvoidance(PettingBehavior, IdleBehavior, VoiceBehavior):
         try:
             request = RequestStateTransition.Request()
             request.requested_state = new_state.name
-            request.requesting_node = "collision_avoidance"
+            request.requesting_node = "behavior_coordinator"
             request.priority = 5  # Medium priority for collision avoidance
             request.force = False
             
@@ -696,7 +696,7 @@ class CollisionAvoidance(PettingBehavior, IdleBehavior, VoiceBehavior):
             
             # Update voice decay first (this reduces voice_influence over time)
             self.update_voice_decay(current_time)
-            
+
             # Handle petting state updates and timeout detection
             if self.check_petting_timeout(current_time):
                 return

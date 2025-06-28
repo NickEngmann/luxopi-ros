@@ -10,7 +10,7 @@ import time
 import random
 import numpy as np
 from luxo_behaviors.serial_manager import SerialManager
-from luxo_behaviors.collision_avoidance import CollisionAvoidance
+from luxo_behaviors.behavior_coordinator import BehaviorCoordinator
 from luxo_behaviors.state_machine import LuxoState  # Import for state enum only
 from luxo_behaviors.shared_utils import StateUtils  # Import shared state utilities
 from luxo_interfaces.srv import RequestStateTransition
@@ -225,33 +225,33 @@ class RoArmHardwareInterface(Node):
         
         if self.connection_active:
             # Initialize the collision avoidance system (no state machine passed)
-            self.collision_avoidance = CollisionAvoidance(
+            self.behavior_coordinator = BehaviorCoordinator(
                 self,  # Pass this node to the collision system
                 self.send_safe_joint_command,  # Callback to send joint commands
                 self.publish_actual_joint_states,  # Callback to publish joint states
             )
             
             # Pass idle animation parameters to collision avoidance
-            self.collision_avoidance.idle_animations_enabled = self.get_parameter('enable_idle_animations').value
-            self.collision_avoidance.min_idle_time_before_animation = self.get_parameter('idle_time_before_animation').value
-            self.collision_avoidance.idle_animation_interval = random.uniform(
+            self.behavior_coordinator.idle_animations_enabled = self.get_parameter('enable_idle_animations').value
+            self.behavior_coordinator.min_idle_time_before_animation = self.get_parameter('idle_time_before_animation').value
+            self.behavior_coordinator.idle_animation_interval = random.uniform(
                 self.get_parameter('idle_animation_min_interval').value,
                 self.get_parameter('idle_animation_max_interval').value
             )
             
             # Pass idle head variation parameters to collision avoidance
-            self.collision_avoidance.idle_head_variation_enabled = self.enable_idle_head_variation
-            self.collision_avoidance.idle_head_variation_interval = self.idle_head_variation_interval
-            self.collision_avoidance.idle_head_base_rotation_range = self.idle_head_base_rotation_range
-            self.collision_avoidance.idle_head_look_up_range = self.idle_head_look_up_range
-            self.collision_avoidance.idle_head_look_down_range = self.idle_head_look_down_range
-            self.collision_avoidance.idle_head_variation_speed = self.idle_head_variation_speed
+            self.behavior_coordinator.idle_head_variation_enabled = self.enable_idle_head_variation
+            self.behavior_coordinator.idle_head_variation_interval = self.idle_head_variation_interval
+            self.behavior_coordinator.idle_head_base_rotation_range = self.idle_head_base_rotation_range
+            self.behavior_coordinator.idle_head_look_up_range = self.idle_head_look_up_range
+            self.behavior_coordinator.idle_head_look_down_range = self.idle_head_look_down_range
+            self.behavior_coordinator.idle_head_variation_speed = self.idle_head_variation_speed
             
             # Import and create animation command server with collision avoidance
             try:
                 from luxo_behaviors.animation_command import AnimationCommandActionServer
                 self.animation_command_server = AnimationCommandActionServer()
-                self.animation_command_server.set_collision_avoidance(self.collision_avoidance)
+                self.animation_command_server.set_collision_avoidance(self.behavior_coordinator)
                 self.animation_command_server.set_node(self)  # Pass node instead of state machine
                 self.get_logger().info("Animation command server integrated with hardware interface")
             except Exception as e:
@@ -562,9 +562,9 @@ class RoArmHardwareInterface(Node):
     
     def publish_collision_status(self):
         """Publish current collision status for animation system."""
-        if hasattr(self, 'collision_avoidance'):
+        if hasattr(self, 'behavior_coordinator'):
             status_msg = String()
-            status_msg.data = self.collision_avoidance.get_animation_collision_status()
+            status_msg.data = self.behavior_coordinator.get_animation_collision_status()
             self.collision_status_publisher.publish(status_msg)
             
     def safety_timer_watchdog(self):
@@ -633,7 +633,7 @@ class RoArmHardwareInterface(Node):
             import traceback
             self.get_logger().error(f"Stack trace: {traceback.format_exc()}")
 
-    # Collision detection callbacks - delegate to collision_avoidance system
+    # Collision detection callbacks - delegate to behavior_coordinator system
     def right_collision_callback(self, msg):
         if self.is_in_state(LuxoState.INITIALIZING):
             self.get_logger().debug("Ignoring collision during initialization phase")
@@ -641,7 +641,7 @@ class RoArmHardwareInterface(Node):
         # Store what we interrupted if collision is detected
         if msg.data and not self.is_in_state(LuxoState.COLLISION_AVOIDING):
             self.collision_interrupted_state = self.get_current_state()
-        self.collision_avoidance.handle_collision('right', msg.data)
+        self.behavior_coordinator.handle_collision('right', msg.data)
 
     def left_collision_callback(self, msg):
         if self.is_in_state(LuxoState.INITIALIZING):
@@ -650,7 +650,7 @@ class RoArmHardwareInterface(Node):
         # Store what we interrupted if collision is detected
         if msg.data and not self.is_in_state(LuxoState.COLLISION_AVOIDING):
             self.collision_interrupted_state = self.get_current_state()
-        self.collision_avoidance.handle_collision('left', msg.data)
+        self.behavior_coordinator.handle_collision('left', msg.data)
 
     def front_collision_callback(self, msg):
         if self.is_in_state(LuxoState.INITIALIZING):
@@ -659,43 +659,43 @@ class RoArmHardwareInterface(Node):
         # Store what we interrupted if collision is detected
         if msg.data and not self.is_in_state(LuxoState.COLLISION_AVOIDING):
             self.collision_interrupted_state = self.get_current_state()
-        self.collision_avoidance.handle_collision('front', msg.data)
+        self.behavior_coordinator.handle_collision('front', msg.data)
 
     def front_proximity_callback(self, msg):
         # Don't process proximity during initialization
         if self.is_in_state(LuxoState.INITIALIZING):
             return
-        self.collision_avoidance.update_distance('front', msg.data, is_proximity=True)
+        self.behavior_coordinator.update_distance('front', msg.data, is_proximity=True)
 
     def left_distance_callback(self, msg):
         # Don't process distance during initialization
         if self.is_in_state(LuxoState.INITIALIZING):
             return
-        self.collision_avoidance.update_distance('left', msg.data)
+        self.behavior_coordinator.update_distance('left', msg.data)
     
     def right_distance_callback(self, msg):
         # Don't process distance during initialization
         if self.is_in_state(LuxoState.INITIALIZING):
             return
-        self.collision_avoidance.update_distance('right', msg.data)
+        self.behavior_coordinator.update_distance('right', msg.data)
     
     def front_severity_callback(self, msg):
         # Don't process severity during initialization
         if self.is_in_state(LuxoState.INITIALIZING):
             return
-        self.collision_avoidance.update_severity('front', msg.data)
+        self.behavior_coordinator.update_severity('front', msg.data)
     
     def left_severity_callback(self, msg):
         # Don't process severity during initialization
         if self.is_in_state(LuxoState.INITIALIZING):
             return
-        self.collision_avoidance.update_severity('left', msg.data)
+        self.behavior_coordinator.update_severity('left', msg.data)
     
     def right_severity_callback(self, msg):
         # Don't process severity during initialization
         if self.is_in_state(LuxoState.INITIALIZING):
             return
-        self.collision_avoidance.update_severity('right', msg.data)
+        self.behavior_coordinator.update_severity('right', msg.data)
 
     def safety_monitor_callback(self):
         """Periodic callback to monitor safety and adjust motion if needed"""
@@ -740,10 +740,10 @@ class RoArmHardwareInterface(Node):
                         self.get_logger().debug(f"DEMA re-enable pending: waiting for arm to be still (time since command: {time_since_command:.2f}s)")
                         self.last_dema_pending_log = current_time
         
-        # Delegate collision avoidance monitoring to the collision_avoidance system
+        # Delegate collision avoidance monitoring to the behavior_coordinator system
         try:
             # Update current joints in collision avoidance before safety check
-            self.collision_avoidance.update_current_joints(self.current_joints)
+            self.behavior_coordinator.update_current_joints(self.current_joints)
             
             # Check activity time
             now = self.get_clock().now()
@@ -752,7 +752,7 @@ class RoArmHardwareInterface(Node):
             # If we've published recently, update last activity time in collision avoidance,
             # but only if last_publish was due to a significant change
             if time_since_publish < 0.5 and getattr(self, 'significant_publish', False):
-                self.collision_avoidance.last_activity_time = now
+                self.behavior_coordinator.last_activity_time = now
                 self.get_logger().debug("Activity timestamp updated due to recent publish")
                 
             # If we've received commands recently, also update activity time,
@@ -760,7 +760,7 @@ class RoArmHardwareInterface(Node):
             time_since_command = (now - self.last_command_time).nanoseconds / 1e9
             
             if time_since_command < 1.0 and getattr(self, 'significant_command', False):
-                self.collision_avoidance.last_activity_time = now
+                self.behavior_coordinator.last_activity_time = now
                 self.get_logger().debug("Activity timestamp updated due to recent command")
             
             # Check if we're returning to home - this check should be prioritized
@@ -773,14 +773,14 @@ class RoArmHardwareInterface(Node):
                     self.dynamic_adaptation_pending_resume = True
                 
                 # Ensure the home position override is enforced
-                if self.collision_avoidance.target_override_active and self.collision_avoidance.target_override_joints is not None:
+                if self.behavior_coordinator.target_override_active and self.behavior_coordinator.target_override_joints is not None:
                     self.send_safe_joint_command(
-                        self.collision_avoidance.target_override_joints,
+                        self.behavior_coordinator.target_override_joints,
                         "Enforcing home position"
                     )
             
             # Run the regular safety monitor callback
-            self.collision_avoidance.safety_monitor_callback()
+            self.behavior_coordinator.safety_monitor_callback()
         except Exception as e:
             self.get_logger().error(f"Error in collision avoidance callback: {e}")
             
@@ -821,7 +821,7 @@ class RoArmHardwareInterface(Node):
         self.current_joints = self.target_joints.copy()
         
         # Update the collision avoidance system with current velocities
-        self.collision_avoidance.update_joint_velocities(self.joint_velocities)
+        self.behavior_coordinator.update_joint_velocities(self.joint_velocities)
     
     def is_connected(self):
         """Check if the serial connection is active"""
@@ -899,17 +899,17 @@ class RoArmHardwareInterface(Node):
             # Check if we're in RETURNING_HOME state - add timeout check
             if self.is_in_state(LuxoState.RETURNING_HOME):
                 # Check for stuck RETURNING_HOME state
-                if hasattr(self.collision_avoidance, 'returning_to_home_start_time'):
+                if hasattr(self.behavior_coordinator, 'returning_to_home_start_time'):
                     current_time = self.get_clock().now()
-                    time_in_returning_home = (current_time - self.collision_avoidance.returning_to_home_start_time).nanoseconds / 1e9
+                    time_in_returning_home = (current_time - self.behavior_coordinator.returning_to_home_start_time).nanoseconds / 1e9
                     
                     # If stuck in RETURNING_HOME for more than 30 seconds, force clear
                     if time_in_returning_home > 30.0:
                         self.get_logger().warn(f"Stuck in RETURNING_HOME state for {time_in_returning_home:.1f}s - force clearing")
                         # Force clear collision avoidance flags
-                        self.collision_avoidance.target_override_active = False
-                        self.collision_avoidance.target_override_joints = None
-                        self.collision_avoidance.home_position_stage = 1
+                        self.behavior_coordinator.target_override_active = False
+                        self.behavior_coordinator.target_override_joints = None
+                        self.behavior_coordinator.home_position_stage = 1
                         # Force transition to IDLE
                         self.request_state_transition(LuxoState.IDLE, priority=100, force=True)
                     else:
@@ -930,7 +930,7 @@ class RoArmHardwareInterface(Node):
                 self.recent_command_times.pop(0)
             
             # Explicitly update the collision avoidance system's recent command times
-            self.collision_avoidance.recent_command_times = self.recent_command_times.copy()
+            self.behavior_coordinator.recent_command_times = self.recent_command_times.copy()
             
             # Extract joint positions (in radians)
             names = msg.name
@@ -951,14 +951,14 @@ class RoArmHardwareInterface(Node):
                         StateUtils.request_state_transition(self, LuxoState.ANIMATING, priority=50)
                     # Animation name is no longer passed via effort field
                     # Just notify collision avoidance that an animation is active
-                    self.collision_avoidance.set_active_animation("unknown_animation")
+                    self.behavior_coordinator.set_active_animation("unknown_animation")
                     
                     # IMPORTANT: Clear any stuck flags when animation starts
-                    if hasattr(self.collision_avoidance, 'target_override_active'):
-                        if self.collision_avoidance.target_override_active:
+                    if hasattr(self.behavior_coordinator, 'target_override_active'):
+                        if self.behavior_coordinator.target_override_active:
                             self.get_logger().info("Clearing target override for animation start")
-                            self.collision_avoidance.target_override_active = False
-                            self.collision_avoidance.target_override_joints = None
+                            self.behavior_coordinator.target_override_active = False
+                            self.behavior_coordinator.target_override_joints = None
                     
                 elif encoded_source == 2:
                     movement_source = "collision"
@@ -975,7 +975,7 @@ class RoArmHardwareInterface(Node):
                 elif encoded_source == 0:
                     movement_source = "idle"
                     # Clear any active animation tracking
-                    self.collision_avoidance.clear_active_animation()
+                    self.behavior_coordinator.clear_active_animation()
                     
                     # Use completion transition when returning from states
                     if self.is_in_state(LuxoState.ANIMATING):
@@ -1068,11 +1068,11 @@ class RoArmHardwareInterface(Node):
             
             # Only update activity time if significant change
             if is_significant:
-                self.collision_avoidance.last_activity_time = self.get_clock().now()
+                self.behavior_coordinator.last_activity_time = self.get_clock().now()
                 self.get_logger().debug(f"Activity timestamp updated due to significant joint position change")
             
             # Update the collision avoidance system with new target (only joint positions)
-            self.collision_avoidance.update_target_joints(target_positions[:5])
+            self.behavior_coordinator.update_target_joints(target_positions[:5])
             
             # Log the incoming command
             accel_info = f", accel: {acceleration}" if acceleration is not None else ""
@@ -1081,10 +1081,10 @@ class RoArmHardwareInterface(Node):
             # If movement source is animation, validate with collision system
             if movement_source == "animation" and self.enable_collision_avoidance:
                 # Get animation name if available
-                animation_name = self.collision_avoidance.current_animation_name
+                animation_name = self.behavior_coordinator.current_animation_name
                 
                 # Validate the target positions (only joint positions)
-                is_safe, adjusted_positions, severity = self.collision_avoidance.validate_animation_keyframe(
+                is_safe, adjusted_positions, severity = self.behavior_coordinator.validate_animation_keyframe(
                     target_positions[:5], 
                     animation_name
                 )
@@ -1095,11 +1095,11 @@ class RoArmHardwareInterface(Node):
                     target_positions[:5] = adjusted_positions
                     
                     # Check if we should notify about preemption
-                    if severity == "danger" and self.collision_avoidance.animation_preempted:
+                    if severity == "danger" and self.behavior_coordinator.animation_preempted:
                         self.get_logger().warn(f"Animation interrupted due to {severity} collision")
             
             # Calculate the safe target position using collision avoidance (only joint positions)
-            safe_positions = self.collision_avoidance.get_effective_target_position(target_positions[:5])
+            safe_positions = self.behavior_coordinator.get_effective_target_position(target_positions[:5])
             
             # Add acceleration back if it was provided
             if acceleration is not None:
@@ -1270,7 +1270,7 @@ class RoArmHardwareInterface(Node):
 
         # Apply collision avoidance safety limits
         if self.enable_collision_avoidance:
-            safe_positions = self.collision_avoidance.apply_safety_limits(safe_positions)
+            safe_positions = self.behavior_coordinator.apply_safety_limits(safe_positions)
         
         try:
             # Only disable DEMA if it's active and the command is something other than regular joint control
@@ -1324,7 +1324,7 @@ class RoArmHardwareInterface(Node):
             self.current_joints = list(safe_positions)
             
             # Update the collision avoidance system with the current joint state
-            self.collision_avoidance.update_current_joints(self.current_joints)
+            self.behavior_coordinator.update_current_joints(self.current_joints)
             
             # Publish the actual safe positions for visualization and monitoring
             self.publish_actual_joint_states(safe_positions)
@@ -1425,33 +1425,33 @@ class RoArmHardwareInterface(Node):
                 self.publish_actual_joint_states(self.current_joints)
                 
                 # Update current joints in collision avoidance
-                self.collision_avoidance.update_current_joints(self.current_joints)
+                self.behavior_coordinator.update_current_joints(self.current_joints)
                 
                 # Check if we've reached home position when returning to home
                 if (self.is_in_state(LuxoState.RETURNING_HOME) and 
-                    self.collision_avoidance.target_override_active and 
-                    self.collision_avoidance.target_override_joints is not None):
+                    self.behavior_coordinator.target_override_active and 
+                    self.behavior_coordinator.target_override_joints is not None):
                     
                     # Check if we're close to home position
                     if all(abs(a - b) < 0.1 for a, b in zip(
                         self.current_joints, 
-                        self.collision_avoidance.target_override_joints)):
+                        self.behavior_coordinator.target_override_joints)):
                         
                         # Add throttling for stage 1 logging
-                        if self.collision_avoidance.home_position_stage == 1:
+                        if self.behavior_coordinator.home_position_stage == 1:
                             # Force the collision avoidance system to check for stage transition
                             # by calling get_effective_target_position which contains the transition logic
-                            _ = self.collision_avoidance.get_effective_target_position(
-                                self.collision_avoidance.target_joints
+                            _ = self.behavior_coordinator.get_effective_target_position(
+                                self.behavior_coordinator.target_joints
                             )
-                        elif self.collision_avoidance.home_position_stage == 2:
+                        elif self.behavior_coordinator.home_position_stage == 2:
                             self.get_logger().info("Successfully reached final home position (stage 2)")
                             # Transition back to IDLE state
                             self.request_state_transition(LuxoState.IDLE, priority=30)
-                            self.collision_avoidance.persistent_head_collision_active = False
+                            self.behavior_coordinator.persistent_head_collision_active = False
                             
                             # Reset the activity timer to prevent immediately triggering idle timeout
-                            self.collision_avoidance.last_activity_time = self.get_clock().now()
+                            self.behavior_coordinator.last_activity_time = self.get_clock().now()
         except Exception as e:
             self.get_logger().error(f"Error in direct publish timer: {e}")
 
@@ -1772,7 +1772,7 @@ class RoArmHardwareInterface(Node):
                 self.current_joints = positions
                 
                 # Update collision avoidance system with current position
-                self.collision_avoidance.update_current_joints(positions)
+                self.behavior_coordinator.update_current_joints(positions)
                 
                 # Critical for DEMA: If in dynamic adaptation mode and position changed significantly
                 # but we didn't issue the command ourselves, then this is user movement
@@ -1793,7 +1793,7 @@ class RoArmHardwareInterface(Node):
                 # Also update collision avoidance target if we're in physical teaching mode (DEMA)
                 if self.dynamic_adaptation_active:
                     # In DEMA mode, update both target and current to match physical position
-                    self.collision_avoidance.update_target_joints(positions)
+                    self.behavior_coordinator.update_target_joints(positions)
                     self.target_joints = positions.copy()
                 
         except Exception as e:

@@ -93,7 +93,7 @@ class AnimationCommandActionServer(Node):
         self.current_positions = [0.0, 0.0, 0.0, 0.0, 0.0, 10.0]  # base, shoulder, elbow, wrist, hand, acceleration
         self.target_positions = self.current_positions.copy()
 
-        self.collision_avoidance = None
+        self.behavior_coordinator = None
         self.node = None  # Will be set by hardware interface (replaces state_machine)
 
         # Track current state (received from global state manager)
@@ -232,9 +232,9 @@ class AnimationCommandActionServer(Node):
         """Request a state transition from the global state manager"""
         return StateUtils.request_state_transition(self, requested_state, priority, force)
     
-    def set_collision_avoidance(self, collision_avoidance):
+    def set_collision_avoidance(self, behavior_coordinator):
         """Set the collision avoidance reference from hardware interface."""
-        self.collision_avoidance = collision_avoidance
+        self.behavior_coordinator = behavior_coordinator
         self.get_logger().info("Collision avoidance reference set in animation command")
     
     def set_node(self, node):
@@ -609,26 +609,26 @@ class AnimationCommandActionServer(Node):
         self.is_animating = False  # Reset before setting true
         
         # NEW: Force clear collision avoidance stuck flags
-        if self.collision_avoidance:
+        if self.behavior_coordinator:
             self.get_logger().info("Clearing potential stuck flags before animation")
             # Clear target override that might be blocking animation
-            if self.collision_avoidance.target_override_active:
-                self.get_logger().info(f"Clearing active target override: {self.collision_avoidance.target_override_reason}")
-                self.collision_avoidance.target_override_active = False
-                self.collision_avoidance.target_override_joints = None
+            if self.behavior_coordinator.target_override_active:
+                self.get_logger().info(f"Clearing active target override: {self.behavior_coordinator.target_override_reason}")
+                self.behavior_coordinator.target_override_active = False
+                self.behavior_coordinator.target_override_joints = None
             
             # Clear home position related flags
-            if self.collision_avoidance.is_returning_to_rest:
+            if self.behavior_coordinator.is_returning_to_rest:
                 self.get_logger().info("Clearing is_returning_to_rest flag")
-                self.collision_avoidance.is_returning_to_rest = False
+                self.behavior_coordinator.is_returning_to_rest = False
             
             # Clear persistent collision if it's been too long
-            if self.collision_avoidance.persistent_head_collision_active:
+            if self.behavior_coordinator.persistent_head_collision_active:
                 current_time = self.node.get_clock().now()
-                collision_duration = (current_time - self.collision_avoidance.persistent_head_collision_start).nanoseconds / 1e9
+                collision_duration = (current_time - self.behavior_coordinator.persistent_head_collision_start).nanoseconds / 1e9
                 if collision_duration > 60.0:  # 1 minute timeout
                     self.get_logger().info(f"Clearing persistent head collision after {collision_duration:.1f}s")
-                    self.collision_avoidance.persistent_head_collision_active = False
+                    self.behavior_coordinator.persistent_head_collision_active = False
         
         # Cancel any active return to home operation
         if self.is_in_state(LuxoState.RETURNING_HOME):
@@ -636,9 +636,9 @@ class AnimationCommandActionServer(Node):
             # Request transition out of RETURNING_HOME
             self.request_state_transition(LuxoState.IDLE, priority=60, force=True)
             # Clear collision avoidance flags
-            if self.collision_avoidance:
-                self.collision_avoidance.target_override_active = False
-                self.collision_avoidance.home_position_stage = 1
+            if self.behavior_coordinator:
+                self.behavior_coordinator.target_override_active = False
+                self.behavior_coordinator.home_position_stage = 1
         
         # NEW: Force clear any stuck DEMA flags
         if hasattr(self.node, 'enable_dynamic_adaptation') and self.node.enable_dynamic_adaptation:
@@ -711,8 +711,8 @@ class AnimationCommandActionServer(Node):
                 self.idle_reset_timer = None
             
             # Use collision avoidance to schedule home if available
-            if self.collision_avoidance:
-                self.collision_avoidance.schedule_home_after_animation(delay=0.1)
+            if self.behavior_coordinator:
+                self.behavior_coordinator.schedule_home_after_animation(delay=0.1)
             else:
                 # Just set to idle state
                 self.get_logger().info("Setting movement source to idle (collision avoidance not available)")

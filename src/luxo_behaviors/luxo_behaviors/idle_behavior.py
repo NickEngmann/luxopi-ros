@@ -183,7 +183,7 @@ class IdleBehavior:
         Check if we should apply idle head variation.
         Returns True if variation is active.
         """
-        self.node.get_logger().info(f"Checking idle head variation: enabled={self.idle_head_variation_enabled}, voice_influence={getattr(self, 'voice_influence', 0.0)}")
+        self.node.get_logger().debug(f"Checking idle head variation: enabled={self.idle_head_variation_enabled}, voice_influence={getattr(self, 'voice_influence', 0.0)}")
         # Only apply idle head variations in IDLE state
         if not self._is_in_state(LuxoState.IDLE):
             self.idle_head_variation_active = False
