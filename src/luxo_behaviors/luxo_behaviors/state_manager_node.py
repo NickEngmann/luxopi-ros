@@ -167,7 +167,7 @@ class StateManagerNode(Node):
         try:
             from luxo_behaviors.neopixel_control import NeoPixelController
             self._neopixel_controller = NeoPixelController(
-                pixel_count=76,
+                pixel_count=60,
                 brightness=0.2,
                 logger=self.get_logger()
             )

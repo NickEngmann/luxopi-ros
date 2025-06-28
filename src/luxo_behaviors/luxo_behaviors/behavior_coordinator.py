@@ -91,7 +91,7 @@ class BehaviorCoordinator(PettingBehavior, IdleBehavior, VoiceBehavior, Collisio
             # Fallback values if not available
             self.safety_limits = SafetyLimits()
             self.base_min_limit = np.deg2rad(-260.0)
-            self.base_max_limit = np.deg2rad(135.0)
+            self.base_max_limit = np.deg2rad(140.0)
             self.base_soft_min = self.base_min_limit + np.deg2rad(10.0)
             self.base_soft_max = self.base_max_limit - np.deg2rad(10.0)
             self.enable_base_wraparound = True
