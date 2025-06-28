@@ -12,7 +12,7 @@ import numpy as np
 from luxo_behaviors.serial_manager import SerialManager
 from luxo_behaviors.behavior_coordinator import BehaviorCoordinator
 from luxo_behaviors.state_machine import LuxoState  # Import for state enum only
-from luxo_behaviors.shared_utils import StateUtils  # Import shared state utilities
+from luxo_behaviors.shared_utils import StateUtils, TimeUtils  # Import shared utilities
 from luxo_interfaces.srv import RequestStateTransition
 
 class RoArmHardwareInterface(Node):
@@ -713,7 +713,7 @@ class RoArmHardwareInterface(Node):
             # Only check for re-enabling if we have a pending resume request and we're in IDLE state
             if self.dynamic_adaptation_pending_resume and self.is_in_state(LuxoState.IDLE):
                 # Check if there's been no significant movement for a while
-                time_since_command = (current_time - self.last_command_time).nanoseconds / 1e9
+                time_since_command = TimeUtils.get_time_since(self, self.last_command_time)
                 
                 # Only re-enable DEMA if the arm has been still for a while (3 seconds)
                 # This indicates the movement that required DEMA off has completed
@@ -1362,7 +1362,7 @@ class RoArmHardwareInterface(Node):
                 # 2. Check if we're close to our target position
                 
                 # Calculate time since last command
-                time_since_command = (current_time - self.last_command_time).nanoseconds / 1e9
+                time_since_command = TimeUtils.get_time_since(self, self.last_command_time)
                 
                 # Check if target and current positions are close (settled)
                 is_settled = True
