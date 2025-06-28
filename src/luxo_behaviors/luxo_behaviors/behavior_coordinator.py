@@ -441,7 +441,7 @@ class BehaviorCoordinator(PettingBehavior, IdleBehavior, VoiceBehavior):
                 # For non-collision overrides, use the original logic
                 distance = self.position_utils.calculate_position_distance(joints, self.target_override_joints)
                 if distance > 0.1:
-                    self.node.get_logger().info(f"New target received - clearing non-collision override")
+                    self.node.get_logger().debug(f"New target received - clearing non-collision override")
                     self.target_override_active = False
                     self.target_override_joints = None
         
