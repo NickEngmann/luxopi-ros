@@ -449,6 +449,40 @@ class NeckStretchAnimation(AnimationPlugin):
         
         return keyframes, durations
 
+class SleepAnimation(AnimationPlugin):
+    """Folded sleepy dog - folds into C-shape """
+    
+    @property
+    def name(self) -> str:
+        return "sleep"
+    
+    @property
+    def description(self) -> str:
+        return "Folded C-shape with neck movements like a sleepy dog"
+
+    def get_category(self) -> str:
+        return "idle"
+    
+    def get_keyframe_names(self) -> Optional[List[str]]:
+        return [
+            "Initial fold", "Deep C-curve", 
+            "Content right", "Blissful left"
+        ]
+    
+    def get_keyframes(self) -> Tuple[List[List[float]], List[float]]:
+        base_pos = 0.0
+        
+        keyframes = [
+            [base_pos, -1.3, 1.4, 0.8, -2.2, 10.0],        # Initial fold - starting to curve
+            [base_pos, -1.6, 1.8, 1.2, -2.8, 8.0],         # Deep C-curve - folded position
+            [base_pos+0.4, -1.75, 1.95, 1.5, -2.5, 9.5],   # Content right - deeper fold
+            [base_pos-0.4, -1.8, 2.0, 1.6, -3.0, 8.0],     # Blissful left - maximum fold
+        ]
+        
+        # Smooth neck movement durations - 15% faster
+        durations = [0.85, 1.02, 0.68, 0.77]
+        
+        return keyframes, durations
 
 class YawningStretchAnimation(AnimationPlugin):
     """Big yawning stretch with full body extension."""

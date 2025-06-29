@@ -448,10 +448,15 @@ class IdleAnimationConfig:
     DEFAULT_PETTING_ANIMATIONS = [
         'folded_wiggle'
     ]
+
+    DEFAULT_SLEEPING_ANIMATIONS = [
+        'sleep'
+    ]
     
     def __init__(self):
         self.idle_animations = self.DEFAULT_IDLE_ANIMATIONS.copy()
         self.petting_animations = self.DEFAULT_PETTING_ANIMATIONS.copy()
+        self.sleeping_animations = self.DEFAULT_SLEEPING_ANIMATIONS.copy()
         self.min_idle_time_before_animation = 5.0  # seconds
         self.idle_animation_interval_min = 10.0
         self.idle_animation_interval_max = 60.0
