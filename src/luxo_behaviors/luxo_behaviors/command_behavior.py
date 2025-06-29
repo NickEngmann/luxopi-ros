@@ -57,25 +57,25 @@ class CommandBehavior:
         # Command mapping
         self.command_mappings = {
             # Turn off light commands
-            104: 'turn_off_light',
-            106: 'turn_off_light', 
-            108: 'turn_off_light',
+            104: 'turn_off_light', # "Turn off the light"
+            106: 'turn_off_light', # "Dim the light"
+            108: 'turn_off_light', # "Adjust brightness to minimum"
             
             # Turn on light commands
-            107: 'turn_on_light',
-            103: 'turn_on_light',
+            103: 'turn_on_light',  # "Turn on the light"
+            105: 'turn_on_light',  # "Brighten the light"
+            107: 'turn_on_light',  # "Adjust brightness to maximum"
             
             # Wake up commands
-            113: 'wake_up',
-            115: 'wake_up',
-            128: 'wake_up',
-            80: 'wake_up',
+            80: 'wake_up', # "Start oscillating"
+            113: 'wake_up', # "Daylight mode"
+            115: 'wake_up', # "Color mode"
             
             # Go to sleep commands
-            114: 'go_to_sleep',
-            81: 'go_to_sleep',
-            82: 'go_to_sleep',
-            93: 'go_to_sleep'
+            81: 'go_to_sleep', # "Stop oscillating"
+            82: 'go_to_sleep', # "Reset"
+            93: 'go_to_sleep' # "Stop playing"
+            114: 'go_to_sleep', # "Moonlight mode"
         }
         
         # Light state tracking
