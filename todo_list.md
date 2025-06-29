@@ -1,13 +1,8 @@
 # Issues (Needs Stabability)
-- [] Minimize hardware_interface.py by using shared_utils.py
-
-- [] Print a protective case for APDS-9960 (all 3 of them?)
-- [] Remove the small LED ring (max out at 60 LEDs)
 - [] Fix Wraparound Logic
 [hardware_interface-2] [INFO] [1751133255.983744664] [hardware_interface]: Voice at -188.13833618164062° beyond max limit - using wraparound to -188.1°
 [hardware_interface-2] [INFO] [1751133255.984738354] [hardware_interface]: Sending voice command: base to -188.1° with position: [-3.28, -0.55, 1.2, 1.0, 2.0]
-
-
+- [] Larger Front Cover Replacement
 - [] Camera back on and cleanup its interactions (make it farrr less annoying)
 
 # New Features
