@@ -228,10 +228,10 @@ class AnimationCommandActionServer(Node):
         with self.state_lock:
             return self.current_state
 
-    def request_state_transition(self, requested_state: LuxoState, priority: int = 50, force: bool = False):
+    def request_state_transition(self, requested_state: LuxoState, priority: int = 50, force: bool = False, completion: bool = False):
         """Request a state transition from the global state manager"""
-        return StateUtils.request_state_transition(self, requested_state, priority, force)
-    
+        return StateUtils.request_state_transition(self, requested_state, priority, force, completion)
+
     def set_collision_avoidance(self, behavior_coordinator):
         """Set the collision avoidance reference from hardware interface."""
         self.behavior_coordinator = behavior_coordinator
@@ -506,7 +506,7 @@ class AnimationCommandActionServer(Node):
             actual_duration = time.time() - start_time
             
             # Transition to IDLE state after animation completes
-            self.request_state_transition(LuxoState.IDLE, priority=30)
+            self.request_state_transition(LuxoState.IDLE, priority=30, completion=True)
             self.get_logger().info(f"Animation {final_state} - requesting transition to IDLE")
             
             # Create result
@@ -695,9 +695,9 @@ class AnimationCommandActionServer(Node):
                 self.idle_reset_timer.cancel()
                 self.idle_reset_timer = None
             
-            # Request transition to IDLE state
-            self.request_state_transition(LuxoState.IDLE, priority=30)
-            self.get_logger().info("Simple animation completed - requesting transition to IDLE")
+            # Request transition to IDLE state using completion flag
+            StateUtils.request_state_transition(self, LuxoState.IDLE, priority=30, completion=True)
+            self.get_logger().info("Simple animation completed - requesting completion transition to IDLE")
                     
         except Exception as e:
             self.get_logger().error(f"Error transitioning to idle after simple animation: {e}")

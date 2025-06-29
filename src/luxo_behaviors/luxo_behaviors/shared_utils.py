@@ -131,7 +131,6 @@ class StateUtils:
             request.requesting_node = node.get_name()
             request.priority = priority
             request.force = force
-            # Note: completion field needs to be added to the service definition
             if hasattr(request, 'completion'):
                 request.completion = completion
             

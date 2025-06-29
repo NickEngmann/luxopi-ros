@@ -342,6 +342,8 @@ class StateManagerNode(Node):
         if self._current_state == LuxoState.IDLE:
             return True
         
+        if requesting_node == "animation_command" and priority == 30:
+            return True
         # Check against current state requester's priority
         current_priority = self._get_current_priority()
         
@@ -640,6 +642,7 @@ class StateManagerNode(Node):
         
         # From EMOTION_REACTING
         self.add_transition(LuxoState.EMOTION_REACTING, LuxoState.IDLE)
+        self.add_transition(LuxoState.EMOTION_REACTING, LuxoState.ANIMATING)
         self.add_transition(LuxoState.EMOTION_REACTING, LuxoState.VOICE_FOLLOWING)
         self.add_transition(LuxoState.EMOTION_REACTING, LuxoState.COLLISION_AVOIDING)
         self.add_transition(LuxoState.EMOTION_REACTING, LuxoState.PETTING)
