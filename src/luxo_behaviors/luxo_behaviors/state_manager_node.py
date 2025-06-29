@@ -12,7 +12,7 @@ from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSHistoryPolicy
 from luxo_behaviors.state_machine import LuxoState, StateTransition
 
 # ROS2 message imports
-from std_msgs.msg import String, Header
+from std_msgs.msg import Bool, String, Header
 from geometry_msgs.msg import Twist
 from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus, KeyValue
 
@@ -75,6 +75,9 @@ class StateManagerNode(Node):
         self._on_state_callbacks: Dict[LuxoState, List[Callable]] = {
             state: [] for state in LuxoState
         }
+        
+        # Light control state
+        self._lights_enabled = True  # Track light state
         
         # Initialize NeoPixel controller
         self._neopixel_controller = None
@@ -143,6 +146,14 @@ class StateManagerNode(Node):
             10
         )
         
+        # Add subscription for light control
+        self.light_control_sub = self.create_subscription(
+            Bool,
+            '/luxo/light_control',
+            self.light_control_callback,
+            10
+        )
+
         # Timers
         self.update_timer = self.create_timer(0.1, self.update)  # 10Hz update
         self.publish_timer = self.create_timer(0.25, self.publish_state)  # 4Hz state publishing
@@ -168,7 +179,7 @@ class StateManagerNode(Node):
             from luxo_behaviors.neopixel_control import NeoPixelController
             self._neopixel_controller = NeoPixelController(
                 pixel_count=60,
-                brightness=0.8,
+                brightness=0.1,
                 logger=self.get_logger()
             )
             if self._neopixel_controller.is_initialized():
@@ -413,11 +424,90 @@ class StateManagerNode(Node):
         self._current_animation_duration = duration
         self.get_logger().debug(f"NeoPixel animation timer started - {duration} second minimum duration for {state.name}")
     
+    def light_control_callback(self, msg):
+        """Handle light control commands from voice commands."""
+        try:
+            previous_state = self._lights_enabled
+            self._lights_enabled = msg.data
+            
+            state = "ON" if msg.data else "OFF"
+            self.get_logger().info(f"Light control command received: {state}")
+            
+            if not self._lights_enabled:
+                # Lights turned OFF - forcefully stop animations and clear NeoPixels
+                if self._neopixel_controller:
+                    self.get_logger().info("Lights OFF - stopping animations and clearing NeoPixels")
+                    
+                    # Force stop any running animations/effects
+                    self._neopixel_controller.stop_effect()
+                    time.sleep(0.25)  # Allow time for effects to stop
+                    # Clear all pixels immediately
+                    self._neopixel_controller.clear_all()
+                    time.sleep(0.25)
+                    
+                    # Set override to prevent any new updates
+                    self._neopixel_override_active = True
+                    
+                    # Clear all timing variables to prevent pending updates
+                    self._neopixel_animation_start_time = None
+                    self._neopixel_pending_state = None
+                    self._current_animation_duration = None
+                    self._neopixel_last_visual_state = None
+                    
+                    # Force another clear after a brief delay to ensure animation threads are stopped
+                    import threading
+                    def delayed_clear():
+                        time.sleep(0.25)  # Wait for animation threads to stop
+                        if not self._lights_enabled:  # Check again in case lights were turned back on
+                            self._neopixel_controller.clear_all()
+                            self.get_logger().debug("Secondary clear completed")
+                    
+                    clear_thread = threading.Thread(target=delayed_clear, daemon=True)
+                    clear_thread.start()
+                    
+            elif previous_state != self._lights_enabled:
+                # Lights turned ON - re-enable NeoPixel updates
+                if self._neopixel_controller:
+                    self.get_logger().info("Lights ON - re-enabling NeoPixel updates")
+                    self._neopixel_override_active = False
+                    
+                    # Force update to current state
+                    self._neopixel_last_visual_state = None  # Reset to force update
+                    self._update_neopixel_for_state(self._current_state)
+                    
+        except Exception as e:
+            self.get_logger().error(f"Error in light control callback: {e}")
+
     def _update_neopixel_for_state(self, state: LuxoState):
         """Update NeoPixel display based on current state"""
-        if not self._neopixel_controller or self._neopixel_override_active:
+        if not self._neopixel_controller:
+            return
+            
+        # Check if lights are disabled - if so, don't update NeoPixels and force clear
+        if not self._lights_enabled:
+            if not self._neopixel_override_active:
+                # First time lights are off, clear and set override
+                self.get_logger().debug("Lights disabled - stopping effects and clearing NeoPixels")
+                self._neopixel_controller.stop_effect()
+                time.sleep(0.25)  # Allow time for any effects to stop
+                self._neopixel_controller.clear_all()
+                time.sleep(0.25)  # Allow time for effects to stop
+                self._neopixel_override_active = True
+            else:
+                # Lights are off and override is active - force clear again to override any running animations
+                self._neopixel_controller.stop_effect()
+                self._neopixel_controller.clear_all()
             return
         
+        # If override was active but lights are now on, clear it
+        if self._neopixel_override_active and self._lights_enabled:
+            self._neopixel_override_active = False
+            self.get_logger().debug("Lights re-enabled - clearing NeoPixel override")
+
+        # Normal override check for animations
+        if self._neopixel_override_active:
+            return
+
         if self._is_neopixel_animation_running():
             self._neopixel_pending_state = state
             self.get_logger().debug(f"NeoPixel animation still running, queuing state {state.name}")
@@ -578,18 +668,6 @@ class StateManagerNode(Node):
         transition = StateTransition(from_state, to_state, condition, action)
         self._transitions[from_state].append(transition)
     
-    def add_automatic_transition(self, from_state: LuxoState, to_state: LuxoState, 
-                               delay_seconds: float, condition: Optional[Callable] = None):
-        """Add an automatic transition that occurs after a specified time."""
-        if from_state not in self._automatic_transitions:
-            self._automatic_transitions[from_state] = []
-        
-        self._automatic_transitions[from_state].append({
-            'to_state': to_state,
-            'delay': delay_seconds,
-            'condition': condition
-        })
-
     def add_automatic_transition(self, from_state: LuxoState, to_state: LuxoState, 
                                delay_seconds: float, condition: Optional[Callable] = None):
         """Add an automatic transition that occurs after a specified time."""

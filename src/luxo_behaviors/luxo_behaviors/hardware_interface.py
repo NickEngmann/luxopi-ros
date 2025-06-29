@@ -368,13 +368,6 @@ class RoArmHardwareInterface(Node):
             # Add a health check timer to ensure safety_timer is still running
             self.timer_health_check = self.create_timer(5.0, self.safety_timer_watchdog)
             
-            # Add subscription for light control
-            self.light_control_sub = self.create_subscription(
-                Bool,
-                '/roarm/light',
-                self.light_control_callback,
-                10
-            )
             
             # Add publisher for light status
             self.light_status_publisher = self.create_publisher(
@@ -533,10 +526,18 @@ class RoArmHardwareInterface(Node):
     
     def _on_enter_user_control(self):
         """Called when entering USER_CONTROL state."""
-        self.get_logger().info("Entering USER_CONTROL state (DEMA enabled)")
+        self.get_logger().info("Entering USER_CONTROL state")
+        
+        # Only enable DEMA for actual user control, not voice commands
+        # Check if this was triggered by a voice command
+        if hasattr(self, 'last_movement_source') and self.last_movement_source == "voice":
+            self.get_logger().info("USER_CONTROL triggered by voice command - not enabling DEMA")
+            return
+        
+        self.get_logger().info("Enabling DEMA for manual control")
         # Enable DEMA
-        if not self.dynamic_adaptation_active:
-            self.enable_dynamic_adaptation_mode()
+        # if not self.dynamic_adaptation_active:
+        #     self.enable_dynamic_adaptation_mode()
     
     def _on_exit_user_control(self):
         """Called when exiting USER_CONTROL state."""
@@ -1679,31 +1680,6 @@ class RoArmHardwareInterface(Node):
             except:
                 pass
 
-    def light_control_callback(self, msg):
-        """Handle incoming light control commands"""
-        try:
-            if not self.is_connected():
-                self.get_logger().warn("Cannot control light: Serial connection is not active")
-                return
-                
-            # Set brightness value based on the boolean message
-            brightness = 255 if msg.data else 0
-            
-            # Use SerialManager's built-in method to control the light
-            success = self.serial_manager.control_light(brightness)
-            
-            if success:
-                # Update our tracked status on successful command
-                self.current_light_status = msg.data
-                state = "ON" if msg.data else "OFF"
-                self.get_logger().info(f"Light turned {state}")
-                
-                # Immediately publish the status change
-                self.publish_light_status()
-            else:
-                self.get_logger().error("Failed to control light")
-        except Exception as e:
-            self.get_logger().error(f"Error in light control callback: {e}")
 
     def delayed_light_on(self):
         """Turn on the light after startup delay"""

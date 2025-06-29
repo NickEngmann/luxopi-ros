@@ -27,8 +27,9 @@ from luxo_behaviors.petting_behavior import PettingBehavior
 from luxo_behaviors.idle_behavior import IdleBehavior
 from luxo_behaviors.voice_behavior import VoiceBehavior
 from luxo_behaviors.collision_behavior import CollisionBehavior
+from luxo_behaviors.command_behavior import CommandBehavior
 
-class BehaviorCoordinator(PettingBehavior, IdleBehavior, VoiceBehavior, CollisionBehavior):
+class BehaviorCoordinator(PettingBehavior, IdleBehavior, VoiceBehavior, CollisionBehavior, CommandBehavior):
     """Class to handle behavior coordination for the Luxo robot."""
     
     def __init__(self, node, send_safe_joint_command_callback, publish_actual_joint_states_callback):
@@ -173,6 +174,7 @@ class BehaviorCoordinator(PettingBehavior, IdleBehavior, VoiceBehavior, Collisio
         self.setup_idle_behavior()       # Initialize idle behavior
         self.setup_petting_behavior()    # Initialize petting behavior
         self.setup_voice_behavior()      # Initialize voice behavior
+        self.setup_command_behavior()    # Initialize command behavior
 
     def _state_info_callback(self, msg):
         """Callback for state info updates."""
@@ -441,6 +443,10 @@ class BehaviorCoordinator(PettingBehavior, IdleBehavior, VoiceBehavior, Collisio
             
             # Update voice decay first (this reduces voice_influence over time)
             self.update_voice_decay(current_time)
+
+            # Check for command completion
+            if self.check_command_completion(current_time):
+                return  # Command completed, skip other checks
 
             # Handle petting state updates and timeout detection
             if self.check_petting_timeout(current_time):
