@@ -172,7 +172,7 @@ class AnimationCommandActionServer(Node):
         
         # Load animation plugins
         self.animation_plugins = self._load_animation_plugins()
-        self.get_logger().info(f'Loaded {len(self.animation_plugins)} animation plugins')
+        self.get_logger().debug(f'Loaded {len(self.animation_plugins)} animation plugins')
         
         # Create action server
         self._action_server = ActionServer(
@@ -304,7 +304,7 @@ class AnimationCommandActionServer(Node):
     
     def goal_callback(self, goal_request):
         """Decide whether to accept or reject a goal request."""
-        self.get_logger().info(f'Received animation goal request: {goal_request.animation_name}')
+        self.get_logger().debug(f'Received animation goal request: {goal_request.animation_name}')
         
         # Check if animation exists
         if goal_request.animation_name not in self.animation_plugins:

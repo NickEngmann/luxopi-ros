@@ -147,7 +147,7 @@ class CollisionBehavior:
                 
                 # If newly active, start fresh
                 if not was_active and is_active:
-                    self.node.get_logger().info(f"{direction.capitalize()} collision warning activated")
+                    self.node.get_logger().debug(f"{direction.capitalize()} collision warning activated")
                     self.collision_status[direction]['active'] = True
                     self.collision_status[direction]['consecutive_count'] = 1
                     
@@ -538,7 +538,7 @@ class CollisionBehavior:
         
         if right_factor > 0.1 and not right_cooldown_active:
             right_multiplier = min(3.0, 1.0 + right_status['consecutive_count'] * 0.1)
-            right_adjustment = right_factor * 0.4 * right_multiplier
+            right_adjustment = right_factor * 0.7 * right_multiplier
             base_adjustment += right_adjustment
             
             adjustment_msgs.append(f"right(rotate right: {right_adjustment:.2f})")
@@ -573,7 +573,7 @@ class CollisionBehavior:
         
         if left_factor > 0.1 and not left_cooldown_active:
             left_multiplier = min(3.0, 1.0 + left_status['consecutive_count'] * 0.1)
-            left_adjustment = -left_factor * 0.4 * left_multiplier
+            left_adjustment = -left_factor * 0.7 * left_multiplier
             base_adjustment += left_adjustment
             
             adjustment_msgs.append(f"left(rotate left: {left_adjustment:.2f})")

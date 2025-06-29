@@ -471,18 +471,18 @@ class RoArmHardwareInterface(Node):
     # State callback implementations
     def _on_enter_initializing(self):
         """Called when entering INITIALIZING state."""
-        self.get_logger().info("Entering INITIALIZING state")
-        self.get_logger().info("Collision avoidance disabled during initialization")
+        self.get_logger().debug("Entering INITIALIZING state")
+        self.get_logger().debug("Collision avoidance disabled during initialization")
         self.initialization_start_time = self.get_clock().now()
 
     def _on_enter_idle(self):
         """Called when entering IDLE state."""
-        self.get_logger().info("Entering IDLE state")
+        self.get_logger().debug("Entering IDLE state")
         self.dynamic_adaptation_pending_resume = False
     
     def _on_enter_animating(self):
         """Called when entering ANIMATING state."""
-        self.get_logger().info("Entering ANIMATING state")
+        self.get_logger().debug("Entering ANIMATING state")
         # Disable DEMA if active
         if self.dynamic_adaptation_active:
             self.disable_dynamic_adaptation_mode()
@@ -490,11 +490,11 @@ class RoArmHardwareInterface(Node):
     
     def _on_exit_animating(self):
         """Called when exiting ANIMATING state."""
-        self.get_logger().info("Exiting ANIMATING state")
+        self.get_logger().debug("Exiting ANIMATING state")
     
     def _on_enter_collision_avoiding(self):
         """Called when entering COLLISION_AVOIDING state."""
-        self.get_logger().info("Entering COLLISION_AVOIDING state")
+        self.get_logger().debug("Entering COLLISION_AVOIDING state")
         # Disable DEMA if active
         if self.dynamic_adaptation_active:
             self.disable_dynamic_adaptation_mode()
@@ -502,7 +502,7 @@ class RoArmHardwareInterface(Node):
     
     def _on_enter_returning_home(self):
         """Called when entering RETURNING_HOME state."""
-        self.get_logger().info("Entering RETURNING_HOME state")
+        self.get_logger().debug("Entering RETURNING_HOME state")
         # Disable DEMA during return to home
         if self.dynamic_adaptation_active:
             self.disable_dynamic_adaptation_mode()
@@ -510,7 +510,7 @@ class RoArmHardwareInterface(Node):
     
     def _on_exit_returning_home(self):
         """Called when exiting RETURNING_HOME state."""
-        self.get_logger().info("Exiting RETURNING_HOME state")
+        self.get_logger().debug("Exiting RETURNING_HOME state")
         # Re-enable DEMA if it was pending
         if self.dynamic_adaptation_pending_resume and self.enable_dynamic_adaptation:
             self.enable_dynamic_adaptation_mode()
@@ -518,7 +518,7 @@ class RoArmHardwareInterface(Node):
     
     def _on_exit_collision_avoiding(self):
         """Called when exiting COLLISION_AVOIDING state."""
-        self.get_logger().info("Exiting COLLISION_AVOIDING state")
+        self.get_logger().debug("Exiting COLLISION_AVOIDING state")
         # Check if we should return to interrupted state
         if hasattr(self, 'collision_interrupted_state') and self.collision_interrupted_state:
             interrupted = self.collision_interrupted_state
@@ -529,7 +529,7 @@ class RoArmHardwareInterface(Node):
     
     def _on_enter_escape_mode(self):
         """Called when entering ESCAPE_MODE state."""
-        self.get_logger().info("Entering ESCAPE_MODE state")
+        self.get_logger().debug("Entering ESCAPE_MODE state")
     
     def _on_enter_user_control(self):
         """Called when entering USER_CONTROL state."""
@@ -1148,20 +1148,20 @@ class RoArmHardwareInterface(Node):
             else:
                 # Hard stop at minimum limit
                 safe_positions[0] = self.base_min_limit + 0.01  # Small buffer
-                self.get_logger().warn(f"Base position clamped to min limit: {np.rad2deg(safe_positions[0]):.1f}°")
+                self.get_logger().debug(f"Base position clamped to min limit: {np.rad2deg(safe_positions[0]):.1f}°")
                 
         elif base_position >= self.base_max_limit:
             limit_reached = True
             if context == "collision" and self.enable_base_wraparound:
                 # For collision avoidance, try wraparound to the other side
                 wraparound_target = self.base_min_limit + 0.2  # Start near min limit
-                self.get_logger().warn(f"Base at max limit ({np.rad2deg(base_position):.1f}°) - wraparound to {np.rad2deg(wraparound_target):.1f}°")
+                self.get_logger().debug(f"Base at max limit ({np.rad2deg(base_position):.1f}°) - wraparound to {np.rad2deg(wraparound_target):.1f}°")
                 safe_positions[0] = wraparound_target
                 wraparound_needed = True
             else:
                 # Hard stop at maximum limit
                 safe_positions[0] = self.base_max_limit - 0.01  # Small buffer
-                self.get_logger().warn(f"Base position clamped to max limit: {np.rad2deg(safe_positions[0]):.1f}°")
+                self.get_logger().debug(f"Base position clamped to max limit: {np.rad2deg(safe_positions[0]):.1f}°")
                 
         # Check soft limits for warnings
         elif base_position <= self.base_soft_min:
@@ -1263,7 +1263,7 @@ class RoArmHardwareInterface(Node):
         safe_positions, wraparound_needed, limit_reached = self.enforce_base_joint_limits(positions, context)
         
         if limit_reached and not wraparound_needed:
-            self.get_logger().warn(f"Base joint limit reached for: {description}")
+            self.get_logger().debug(f"Base joint limit reached for: {description}")
             
         if wraparound_needed:
             self.get_logger().info(f"Executing base wraparound for: {description}")

@@ -197,7 +197,7 @@ class CameraInteraction(Node):
             'sad': ['sad', 'droop'],
             'surprise': ['startled', 'curious'],
             'anger': ['shake', 'think', 'startled'],
-            'neutral': ['idle', 'curious', 'stretch', 'nod']
+            'neutral': ['idle', 'stretch', 'nod']
         }
         
         # Emotion buffer system - using ROS2 time
@@ -1612,7 +1612,7 @@ class CameraInteraction(Node):
                 self.get_logger().warn(f'Animation goal rejected: {animation_name}')
                 return
             
-            self.get_logger().info(f'Animation goal accepted: {animation_name}')
+            self.get_logger().debug(f'Animation goal accepted: {animation_name}')
             self._active_goal_handle = goal_handle
             
             # Get the result asynchronously
