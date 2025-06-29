@@ -36,10 +36,10 @@ class IdleBehavior:
         
         # Idle head variation tracking
         self.idle_head_variation_enabled = False  # Will be set by hardware interface
-        self.idle_head_variation_interval = 7.0  # Maximum interval - actual will be random 1.0 to this value
+        self.idle_head_variation_interval = 5.0  # Maximum interval - actual will be random 1.0 to this value
         self.idle_head_base_rotation_range = 0.3
-        self.idle_head_look_up_range = 0.4
-        self.idle_head_look_down_range = 0.1
+        self.idle_head_look_up_range = 0.6
+        self.idle_head_look_down_range = 0.15
         self.idle_head_variation_speed = 4.0
         self.last_idle_head_variation_time = self.node.get_clock().now()
         self.current_idle_head_target = None
@@ -203,7 +203,7 @@ class IdleBehavior:
         # Check if it's time for a new variation
         time_since_last_variation = (current_time - self.last_idle_head_variation_time).nanoseconds / 1e9
         
-        # Use random interval between 1.0 and idle_head_variation_interval
+        # Use random interval between 0.75 and idle_head_variation_interval
         current_interval = getattr(self, '_current_idle_variation_interval', self.idle_head_variation_interval)
         
         if time_since_last_variation > current_interval:
@@ -211,7 +211,7 @@ class IdleBehavior:
             self._generate_idle_head_variation()
             
             # Set new random interval for next variation
-            self._current_idle_variation_interval = random.uniform(1.0, self.idle_head_variation_interval)
+            self._current_idle_variation_interval = random.uniform(0.75, self.idle_head_variation_interval)
             self.last_idle_head_variation_time = current_time
             
             return True
