@@ -154,70 +154,50 @@ class VoiceBehavior:
         # Increase voice influence more aggressively
         self.voice_influence = min(1.0, self.voice_influence + 0.8)  # Very aggressive following
         
+        # Convert voice direction to target angle with intelligent wraparound
         target_angle_rad = np.deg2rad(voice_direction)
         target_angle = self.position_utils.normalize_angle(target_angle_rad)
-
-        # First, normalize all angles to the same reference frame as your limits
-        # This ensures consistent comparisons
-        def find_equivalent_angle_in_range(angle, min_limit, max_limit):
-            """Find an equivalent angle (by adding/subtracting 2π) that falls within limits if possible."""
-            # Try the direct angle first
-            if min_limit <= angle <= max_limit:
-                return angle, True
-            
-            # Try adding/subtracting multiples of 2π to find a reachable equivalent
-            for k in [-1, 1, -2, 2]:  # Check ±2π and ±4π
-                equivalent = angle + k * 2 * np.pi
-                if min_limit <= equivalent <= max_limit:
-                    return equivalent, True
-            
-            return angle, False  # No equivalent angle works
-
-        # Check if we can reach the target directly or through wraparound
-        reachable_angle, is_reachable = find_equivalent_angle_in_range(
-            target_angle, self.base_min_limit, self.base_max_limit
-        )
-
-        if is_reachable:
-            self.target_voice_angle = reachable_angle
-            if reachable_angle != target_angle:
-                self.node.get_logger().info(
-                    f"Voice at {voice_direction}° - using wraparound path to {np.rad2deg(reachable_angle):.1f}°"
-                )
-        else:
-            # Target is unreachable even with wraparound - clamp to nearest limit
+        
+        # Check if we need wraparound due to base limits
+        if target_angle > self.base_max_limit:
             if self.enable_base_wraparound:
-                # Find which limit is closer considering wraparound
-                dist_to_min = min(
-                    abs(target_angle - self.base_min_limit),
-                    abs(target_angle - self.base_min_limit - 2*np.pi),
-                    abs(target_angle - self.base_min_limit + 2*np.pi)
-                )
-                dist_to_max = min(
-                    abs(target_angle - self.base_max_limit),
-                    abs(target_angle - self.base_max_limit - 2*np.pi),
-                    abs(target_angle - self.base_max_limit + 2*np.pi)
-                )
-                
-                if dist_to_min < dist_to_max:
-                    self.target_voice_angle = self.base_min_limit
-                    self.node.get_logger().warn(
-                        f"Voice at {voice_direction}° unreachable even with wraparound - clamping to min limit"
+                # Calculate wraparound path
+                wraparound_target = target_angle + 2 * np.pi
+                if wraparound_target >= self.base_min_limit:
+                    self.target_voice_angle = wraparound_target
+                    self.node.get_logger().info(
+                        f"Voice at {voice_direction}° beyond max limit - "
+                        f"using wraparound to {np.rad2deg(wraparound_target):.1f}°"
                     )
                 else:
+                    # Even wraparound doesn't work, clamp to nearest reachable
                     self.target_voice_angle = self.base_max_limit
                     self.node.get_logger().warn(
-                        f"Voice at {voice_direction}° unreachable even with wraparound - clamping to max limit"
+                        f"Voice at {voice_direction}° unreachable - clamping to max limit"
                     )
             else:
-                # Wraparound disabled - simple clamping
-                if target_angle < self.base_min_limit:
-                    self.target_voice_angle = self.base_min_limit
+                self.target_voice_angle = self.base_max_limit
+                self.node.get_logger().warn(f"Voice beyond max limit - clamping (wraparound disabled)")
+        elif target_angle < self.base_min_limit:
+            if self.enable_base_wraparound:
+                # Calculate wraparound path
+                wraparound_target = target_angle - 2 * np.pi
+                if wraparound_target <= self.base_max_limit:
+                    self.target_voice_angle = wraparound_target
+                    self.node.get_logger().info(
+                        f"Voice at {voice_direction}° beyond min limit - "
+                        f"using wraparound to {np.rad2deg(wraparound_target):.1f}°"
+                    )
                 else:
-                    self.target_voice_angle = self.base_max_limit
-                self.node.get_logger().warn(
-                    f"Voice at {voice_direction}° outside limits - clamping (wraparound disabled)"
-                )
+                    self.target_voice_angle = self.base_min_limit
+                    self.node.get_logger().warn(
+                        f"Voice at {voice_direction}° unreachable - clamping to min limit"
+                    )
+            else:
+                self.target_voice_angle = self.base_min_limit
+                self.node.get_logger().warn(f"Voice beyond min limit - clamping (wraparound disabled)")
+        else:
+            self.target_voice_angle = target_angle
         
         # Record this as an acted direction and update cooldown
         self.last_acted_voice_direction = voice_direction
