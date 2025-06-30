@@ -341,8 +341,8 @@ class StateManagerNode(Node):
         # Always allow IDLE transitions (they're returns, not interruptions)
         if self._current_state == LuxoState.IDLE:
             return True
-        
-        if requesting_node == "animation_command" and priority == 30:
+
+        if requesting_node == "animation_command" and (priority == 30 or priority == 50):
             return True
         # Check against current state requester's priority
         current_priority = self._get_current_priority()
@@ -441,8 +441,8 @@ class StateManagerNode(Node):
                     self.get_logger().info("Lights OFF - stopping animations and clearing NeoPixels")
                     
                     # Force stop any running animations/effects
-                    self._neopixel_controller.stop_effect()
-                    time.sleep(0.25)  # Allow time for effects to stop
+                    # self._neopixel_controller.stop_effect()
+                    # time.sleep(0.25)  # Allow time for effects to stop
                     # Clear all pixels immediately
                     self._neopixel_controller.clear_all()
                     time.sleep(0.25)
@@ -490,8 +490,8 @@ class StateManagerNode(Node):
             if not self._neopixel_override_active:
                 # First time lights are off, clear and set override
                 self.get_logger().debug("Lights disabled - stopping effects and clearing NeoPixels")
-                self._neopixel_controller.stop_effect()
-                time.sleep(0.25)  # Allow time for any effects to stop
+                # self._neopixel_controller.stop_effect()
+                # time.sleep(0.25)  # Allow time for any effects to stop
                 self._neopixel_controller.clear_all()
                 time.sleep(0.25)  # Allow time for effects to stop
                 self._neopixel_override_active = True
@@ -617,6 +617,7 @@ class StateManagerNode(Node):
         self.add_transition(LuxoState.VOICE_FOLLOWING, LuxoState.ESCAPE_MODE)
         self.add_transition(LuxoState.VOICE_FOLLOWING, LuxoState.RETURNING_HOME)
         self.add_transition(LuxoState.VOICE_FOLLOWING, LuxoState.PETTING)
+        self.add_transition(LuxoState.VOICE_FOLLOWING, LuxoState.USER_CONTROL)
         
         # From COLLISION_AVOIDING
         self.add_transition(LuxoState.COLLISION_AVOIDING, LuxoState.IDLE)
@@ -639,6 +640,9 @@ class StateManagerNode(Node):
         self.add_transition(LuxoState.USER_CONTROL, LuxoState.IDLE)
         self.add_transition(LuxoState.USER_CONTROL, LuxoState.COLLISION_AVOIDING)
         self.add_transition(LuxoState.USER_CONTROL, LuxoState.PETTING)
+        self.add_transition(LuxoState.USER_CONTROL, LuxoState.ANIMATING)
+        self.add_transition(LuxoState.USER_CONTROL, LuxoState.VOICE_FOLLOWING)
+        self.add_transition(LuxoState.USER_CONTROL, LuxoState.RETURNING_HOME)
         
         # From EMOTION_REACTING
         self.add_transition(LuxoState.EMOTION_REACTING, LuxoState.IDLE)

@@ -57,12 +57,12 @@ class RoArmHardwareInterface(Node):
         
         # Add parameters for dynamic adaptation/external force control
         self.declare_parameter('enable_dynamic_adaptation', False)  # Default to disabled
-        self.declare_parameter('dynamic_adaptation_base_limit', 1)  # Default torque limits
-        self.declare_parameter('dynamic_adaptation_shoulder_limit', 1)
-        self.declare_parameter('dynamic_adaptation_elbow_limit', 1)
-        self.declare_parameter('dynamic_adaptation_wrist_limit', 1)
-        self.declare_parameter('dynamic_adaptation_roll_limit', 1)
-        self.declare_parameter('dynamic_adaptation_hand_limit', 1)
+        self.declare_parameter('dynamic_adaptation_base_limit', 60)  # Default torque limits
+        self.declare_parameter('dynamic_adaptation_shoulder_limit', 750)
+        self.declare_parameter('dynamic_adaptation_elbow_limit', 50)
+        self.declare_parameter('dynamic_adaptation_wrist_limit', 50)
+        self.declare_parameter('dynamic_adaptation_roll_limit', 50)
+        self.declare_parameter('dynamic_adaptation_hand_limit', 50)
         self.declare_parameter('dynamic_adaptation_resume_delay', 3.0)  # Changed from 10.0 to 3.0 seconds
         
         # Add a new parameter for the DEMA movement source integration
@@ -476,10 +476,6 @@ class RoArmHardwareInterface(Node):
     def _on_enter_animating(self):
         """Called when entering ANIMATING state."""
         self.get_logger().debug("Entering ANIMATING state")
-        # Disable DEMA if active
-        if self.dynamic_adaptation_active:
-            self.disable_dynamic_adaptation_mode()
-            self.dynamic_adaptation_pending_resume = True
     
     def _on_exit_animating(self):
         """Called when exiting ANIMATING state."""
@@ -488,18 +484,10 @@ class RoArmHardwareInterface(Node):
     def _on_enter_collision_avoiding(self):
         """Called when entering COLLISION_AVOIDING state."""
         self.get_logger().debug("Entering COLLISION_AVOIDING state")
-        # Disable DEMA if active
-        if self.dynamic_adaptation_active:
-            self.disable_dynamic_adaptation_mode()
-            self.dynamic_adaptation_pending_resume = True
     
     def _on_enter_returning_home(self):
         """Called when entering RETURNING_HOME state."""
         self.get_logger().debug("Entering RETURNING_HOME state")
-        # Disable DEMA during return to home
-        if self.dynamic_adaptation_active:
-            self.disable_dynamic_adaptation_mode()
-            self.dynamic_adaptation_pending_resume = True
     
     def _on_exit_returning_home(self):
         """Called when exiting RETURNING_HOME state."""
@@ -533,18 +521,10 @@ class RoArmHardwareInterface(Node):
         if hasattr(self, 'last_movement_source') and self.last_movement_source == "voice":
             self.get_logger().info("USER_CONTROL triggered by voice command - not enabling DEMA")
             return
-        
-        self.get_logger().info("Enabling DEMA for manual control")
-        # Enable DEMA
-        # if not self.dynamic_adaptation_active:
-        #     self.enable_dynamic_adaptation_mode()
     
     def _on_exit_user_control(self):
         """Called when exiting USER_CONTROL state."""
-        self.get_logger().info("Exiting USER_CONTROL state (DEMA disabled)")
-        # Disable DEMA
-        if self.dynamic_adaptation_active:
-            self.disable_dynamic_adaptation_mode()
+        self.get_logger().info("Exiting USER_CONTROL state")
     
     def _on_enter_error(self):
         """Called when entering ERROR state."""
@@ -707,40 +687,6 @@ class RoArmHardwareInterface(Node):
         # Update the last check time at the beginning to track timer operation
         self.last_safety_check_time = self.get_clock().now()
         
-        # Check if dynamic adaptation needs to be restored based on movement completion
-        if self.enable_dynamic_adaptation and not self.dynamic_adaptation_active and self.dynamic_adaptation_pending_resume:
-            current_time = self.get_clock().now()
-            
-            # Only check for re-enabling if we have a pending resume request and we're in IDLE state
-            if self.dynamic_adaptation_pending_resume and self.is_in_state(LuxoState.IDLE):
-                # Check if there's been no significant movement for a while
-                time_since_command = TimeUtils.get_time_since(self, self.last_command_time)
-                
-                # Only re-enable DEMA if the arm has been still for a while (3 seconds)
-                # This indicates the movement that required DEMA off has completed
-                if time_since_command > 3.0:
-                    self.get_logger().info(f"Movement appears complete (no commands for {time_since_command:.2f}s) - re-enabling DEMA")
-                    # Cancel any pending re-enable timer first
-                    if hasattr(self, 'dema_reenable_timer') and self.dema_reenable_timer:
-                        self.dema_reenable_timer.cancel()
-                        self.dema_reenable_timer = None
-                    # Re-enable DEMA
-                    success = self.enable_dynamic_adaptation_mode()
-                    if success:
-                        self.get_logger().info("Successfully re-enabled dynamic adaptation mode")
-                        self.dynamic_adaptation_pending_resume = False
-                    else:
-                        self.get_logger().error("Failed to re-enable dynamic adaptation mode, will retry later")
-                        # Don't adjust the timer - we'll retry on the next callback
-                else:
-                    # Log this less frequently to avoid spamming the logs
-                    if not hasattr(self, 'last_dema_pending_log'):
-                        self.last_dema_pending_log = current_time
-                    time_since_log = (current_time - self.last_dema_pending_log).nanoseconds / 1e9
-                    if time_since_log > 2.0:
-                        self.get_logger().debug(f"DEMA re-enable pending: waiting for arm to be still (time since command: {time_since_command:.2f}s)")
-                        self.last_dema_pending_log = current_time
-        
         # Delegate collision avoidance monitoring to the behavior_coordinator system
         try:
             # Update current joints in collision avoidance before safety check
@@ -828,7 +774,7 @@ class RoArmHardwareInterface(Node):
         """Check if the serial connection is active"""
         return self.serial_manager.is_connected()
     
-    def send_command(self, cmd_str, description=""):
+    def send_command(self, cmd_str, description="", timeout=3.0):
         """Send a command to the robot arm using the serial manager."""
         return self.serial_manager.send_command(cmd_str, description)
     
@@ -1348,7 +1294,12 @@ class RoArmHardwareInterface(Node):
         try:
             if not self.enable_dynamic_adaptation:
                 self.get_logger().warn("Dynamic adaptation is disabled - skipping re-enable check")
+                # Cancel any existing timer since DEMA is disabled
+                if self.dema_reenable_timer:
+                    self.dema_reenable_timer.cancel()
+                    self.dema_reenable_timer = None
                 return
+                
             current_time = self.get_clock().now()
             time_since_disable = (current_time - self.dynamic_adaptation_last_disable_time).nanoseconds / 1e9
             
@@ -1360,6 +1311,7 @@ class RoArmHardwareInterface(Node):
                 # Check if we've been in position for at least 1 second
                 # We'll use two approaches to determine if we're settled:
                 # 1. Check time since last command
+                
                 # 2. Check if we're close to our target position
                 
                 # Calculate time since last command
@@ -1380,32 +1332,33 @@ class RoArmHardwareInterface(Node):
                     if success:
                         self.dynamic_adaptation_pending_resume = False
                         self.get_logger().info("Successfully re-enabled DEMA after settling")
-                    else:
-                        self.get_logger().error("Failed to re-enable DEMA, scheduling another check")
-                        # Cancel any existing timer before creating a new one
+                        # Cancel timer since we're done
                         if self.dema_reenable_timer:
                             self.dema_reenable_timer.cancel()
+                            self.dema_reenable_timer = None
+                    else:
+                        self.get_logger().error("Failed to re-enable DEMA, scheduling another check")
                         # Schedule another check after 0.5 seconds
+                        if self.dema_reenable_timer:
+                            self.dema_reenable_timer.cancel()
                         self.dema_reenable_timer = self.create_timer(
                             0.5, 
                             self.check_dema_reenable
                         )
                 else:
-                    self.get_logger().debug(f"Robot not settled yet (time since command: {time_since_command:.1f}s, is_settled: {is_settled})")
-                    # Cancel any existing timer before creating a new one
-                    if self.dema_reenable_timer:
-                        self.dema_reenable_timer.cancel()
-                    # Schedule another check after 0.5 seconds
-                    self.dema_reenable_timer = self.create_timer(
-                        0.5, 
-                        self.check_dema_reenable
-                    )
+                    self.get_logger().debug(f"Robot not settled yet (time since command: {time_since_command:.1f}s, is_settled: {is_settled}, state: {self.get_current_state().name})")
+                    # Schedule another check after 0.5 seconds only if we don't have an active timer
+                    if not self.dema_reenable_timer:
+                        self.dema_reenable_timer = self.create_timer(
+                            0.5, 
+                            self.check_dema_reenable
+                        )
+            else:
+                # Cancel the timer if we're done
+                if self.dema_reenable_timer:
+                    self.dema_reenable_timer.cancel()
+                    self.dema_reenable_timer = None
                     
-            # Cancel the timer if we're done
-            if self.dema_reenable_timer and (not self.dynamic_adaptation_pending_resume or self.dynamic_adaptation_active):
-                self.dema_reenable_timer.cancel()
-                self.dema_reenable_timer = None
-                
         except Exception as e:
             self.get_logger().error(f"Error in DEMA re-enable check: {e}")
             import traceback
@@ -1624,7 +1577,10 @@ class RoArmHardwareInterface(Node):
         """Disable the dynamic external force adaptation mode"""
         try:
             with self.dynamic_adaptation_lock:
-                
+                # Don't disable if in sleep mode
+                if hasattr(self, '_sleep_mode_active') and self._sleep_mode_active:
+                    self.get_logger().info("Ignoring DEMA disable request - robot is in sleep mode")
+                    return True
                 # Use SerialManager's built-in method to disable
                 success = self.serial_manager.set_dynamic_adaptation(mode=0)
                 
@@ -1765,12 +1721,6 @@ class RoArmHardwareInterface(Node):
                 
                 # Publish the updated joint states
                 self.publish_actual_joint_states(positions)
-                
-                # Also update collision avoidance target if we're in physical teaching mode (DEMA)
-                if self.dynamic_adaptation_active:
-                    # In DEMA mode, update both target and current to match physical position
-                    self.behavior_coordinator.update_target_joints(positions)
-                    self.target_joints = positions.copy()
                 
         except Exception as e:
             self.get_logger().error(f"Error in position feedback callback: {e}")

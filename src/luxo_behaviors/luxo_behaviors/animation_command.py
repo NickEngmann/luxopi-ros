@@ -326,6 +326,7 @@ class AnimationCommandActionServer(Node):
             LuxoState.IDLE,
             LuxoState.ANIMATING,  # Allow if already animating
             LuxoState.EMOTION_REACTING,  # Allow if already reacting
+            LuxoState.USER_CONTROL, # Allow if in user control mode
             LuxoState.RETURNING_HOME  # Allow animations to interrupt return to home
         ]
         

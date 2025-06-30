@@ -10,6 +10,8 @@ import time
 from typing import Optional, Dict, Set
 from std_msgs.msg import Bool
 from luxo_behaviors.state_machine import LuxoState
+from rclpy.action import ActionClient
+from luxo_interfaces.action import PlayAnimation
 import sys
 import os
 
@@ -74,7 +76,7 @@ class CommandBehavior:
             # Go to sleep commands
             81: 'go_to_sleep', # "Stop oscillating"
             82: 'go_to_sleep', # "Reset"
-            93: 'go_to_sleep' # "Stop playing"
+            93: 'go_to_sleep', # "Stop playing"
             114: 'go_to_sleep', # "Moonlight mode"
         }
         
@@ -228,12 +230,28 @@ class CommandBehavior:
         """Execute the specified command."""
         try:
             if command_name == 'turn_on_light':
+                if self.light_state:
+                    self.node.get_logger().info("Lights are already ON")
+                    return
+                self.node.get_logger().info("Executing command: Turn ON light")
                 self._turn_on_light()
             elif command_name == 'turn_off_light':
+                if not self.light_state:
+                    self.node.get_logger().info("Lights are already OFF")
+                    return
+                self.node.get_logger().info("Executing command: Turn OFF light")
                 self._turn_off_light()
             elif command_name == 'wake_up':
+                if not self.sleep_state:
+                    self.node.get_logger().info("Robot is already awake")
+                    return
+                self.node.get_logger().info("Executing command: Wake up robot")
                 self._wake_up()
             elif command_name == 'go_to_sleep':
+                if self.sleep_state:
+                    self.node.get_logger().info("Robot is already asleep")
+                    return
+                self.node.get_logger().info("Executing command: Go to sleep")
                 self._go_to_sleep()
             else:
                 self.node.get_logger().warn(f"Unknown command: {command_name}")
@@ -256,7 +274,7 @@ class CommandBehavior:
     def _turn_on_light(self):
         """Turn on the lights."""
         self.light_state = True
-        self._publish_light_state(True)
+        self._publish_light_state(self.light_state)
         self.node.get_logger().info("Lights turned ON")
         
         # If robot was sleeping, wake it up too
@@ -271,7 +289,7 @@ class CommandBehavior:
     def _turn_off_light(self):
         """Turn off the lights."""
         self.light_state = False
-        self._publish_light_state(False)
+        self._publish_light_state(self.light_state)
         self.node.get_logger().info("Lights turned OFF")
         
         # Schedule completion after a short delay
@@ -280,38 +298,155 @@ class CommandBehavior:
     def _wake_up(self):
         """Wake up the robot."""
         if self.sleep_state:
+            self.node.get_logger().info("Robot waking up - disabling DEMA and turning on lights")
+            
+            # Disable DEMA mode to allow movement
+            if hasattr(self.node, 'disable_dynamic_adaptation_mode'):
+                success = self.node.disable_dynamic_adaptation_mode()
+                if success:
+                    self.node.get_logger().info("DEMA disabled - robot can now move")
+                    # Set up for re-enabling DEMA after wake-up completes
+                    if hasattr(self.node, 'enable_dynamic_adaptation') and self.node.enable_dynamic_adaptation:
+                        self.node.dynamic_adaptation_pending_resume = True
+                        self.node.get_logger().info("DEMA will be re-enabled after wake-up movement completes")
+                else:
+                    self.node.get_logger().warn("Failed to disable DEMA for wake up")
+            
+            # Update sleep state
             self.sleep_state = False
             self.sleep_start_time = None
-            self.light_state = True
-            self._publish_light_state(True)
-            self.node.get_logger().info("Robot waking up - lights ON")
             
-            # Move to a neutral position if we have the functionality
+            # Turn on lights
+            self.light_state = True
+            self._publish_light_state(self.light_state)
+            
+            # Move to a neutral/home position if available
             if hasattr(self, 'go_to_home_position'):
                 self.go_to_home_position("Wake up command")
-            
-            # Schedule completion after movement
-            self._schedule_command_completion(3.0)
+                self._schedule_command_completion(3.0)  # Wait for movement
+            else:
+                self._schedule_command_completion(1.0)
         else:
             self.node.get_logger().info("Robot already awake")
             self._schedule_command_completion(1.0)
     
     def _go_to_sleep(self):
-        """Put the robot to sleep."""
+        """Put the robot to sleep with sleep animation."""
         self.sleep_state = True
         self.sleep_start_time = self.node.get_clock().now()
-        self.light_state = False
-        self._publish_light_state(False)
-        self.node.get_logger().info("Robot going to sleep - lights OFF")
+        self.node.get_logger().info("Robot going to sleep - starting sleep animation")
         
-        # Move to rest position if we have the functionality
-        if hasattr(self, 'go_to_rest_position'):
-            success = self.go_to_rest_position("Sleep command")
-            if success:
-                self._schedule_command_completion(3.0)  # Wait for movement
+        # Turn off lights
+        self.light_state = False
+        self._publish_light_state(self.light_state)
+
+        time.sleep(0.3)  # Short delay before starting animation
+        # First transition to ANIMATING state for the sleep animation
+        if self._transition_to_state(LuxoState.ANIMATING):
+            self.node.get_logger().info("Transitioned to ANIMATING state for sleep animation")
+            
+            # Now start the sleep animation
+            if hasattr(self, '_play_sleep_animation'):
+                success = self._play_sleep_animation()
+                if success:
+                    # Animation will handle completion and DEMA enabling
+                    self._schedule_command_completion(10.0)  # Sleep animation is typically long
+                else:
+                    # If animation fails, proceed with immediate sleep
+                    self._complete_sleep_sequence()
             else:
-                self._schedule_command_completion(1.0)  # Quick completion if movement failed
+                # No animation capability, proceed with immediate sleep
+                self._complete_sleep_sequence()
         else:
+            self.node.get_logger().warn("Failed to transition to ANIMATING state for sleep")
+            # Proceed with immediate sleep sequence
+            self._complete_sleep_sequence()
+    
+    def _play_sleep_animation(self):
+        """Play the sleep animation and set up completion callback."""
+        try:
+            # Create action client if it doesn't exist
+            if not hasattr(self, '_animation_client'):
+                self._animation_client = ActionClient(
+                    self.node, 
+                    PlayAnimation, 
+                    'play_animation'
+                )
+            
+            if not self._animation_client.wait_for_server(timeout_sec=2.0):
+                self.node.get_logger().warn("Animation server not available for sleep command")
+                return False
+            
+            # Create goal for sleep animation
+            goal_msg = PlayAnimation.Goal()
+            goal_msg.animation_name = 'sleep'
+            goal_msg.allow_interruption = False  # Don't allow interruption during sleep
+            
+            # Send goal with completion callback
+            future = self._animation_client.send_goal_async(goal_msg)
+            future.add_done_callback(self._sleep_animation_goal_callback)
+            
+            self.node.get_logger().info("Sleep animation requested")
+            return True
+            
+        except Exception as e:
+            self.node.get_logger().error(f"Error playing sleep animation: {e}")
+            return False
+    
+    def _sleep_animation_goal_callback(self, future):
+        """Handle sleep animation goal response."""
+        try:
+            goal_handle = future.result()
+            if not goal_handle.accepted:
+                self.sleep_state = False
+                self.node.get_logger().warn("Sleep animation goal rejected")
+                self._schedule_command_completion(1.0)
+                return
+            
+            self.node.get_logger().info("Sleep animation goal accepted")
+            
+            # Wait for animation completion
+            result_future = goal_handle.get_result_async()
+            result_future.add_done_callback(self._sleep_animation_result_callback)
+            
+        except Exception as e:
+            self.node.get_logger().error(f"Error in sleep animation goal callback: {e}")
+            self._complete_sleep_sequence()
+    
+    def _sleep_animation_result_callback(self, future):
+        """Handle sleep animation completion."""
+        try:
+            result = future.result()
+            if result.result.success:
+                self.node.get_logger().info("Sleep animation completed successfully")
+            else:
+                self.node.get_logger().warn(f"Sleep animation failed: {result.result.message}")
+            
+            # Complete the sleep sequence regardless of animation success
+            self._complete_sleep_sequence()
+            
+        except Exception as e:
+            self.node.get_logger().error(f"Error in sleep animation result callback: {e}")
+            self._complete_sleep_sequence()
+    
+    def _complete_sleep_sequence(self):
+        """Complete the sleep sequence: enable DEMA and turn off lights."""
+        try:
+            self.node.get_logger().info("Completing sleep sequence - enabling DEMA and turning off lights")
+            
+            # Enable DEMA mode to prevent movement
+            if hasattr(self.node, 'enable_dynamic_adaptation_mode'):
+                success = self.node.enable_dynamic_adaptation_mode()
+                if success:
+                    self.node.get_logger().info("DEMA enabled - robot is now immobilized for sleep")
+                else:
+                    self.node.get_logger().warn("Failed to enable DEMA for sleep mode")
+            
+            # Schedule command completion
+            self._schedule_command_completion(1.0)
+            
+        except Exception as e:
+            self.node.get_logger().error(f"Error completing sleep sequence: {e}")
             self._schedule_command_completion(1.0)
     
     def _publish_light_state(self, state: bool):
