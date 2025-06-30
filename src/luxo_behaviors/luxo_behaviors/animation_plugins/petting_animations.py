@@ -9,7 +9,6 @@ from typing import List, Tuple, Optional
 from luxo_behaviors.animation_plugin_base import AnimationPlugin
 
 
-
 class HappyPetAnimation(AnimationPlugin):
     """Folded blissful dog - folds into C-shape and moves neck back and forth contentedly."""
     
@@ -54,7 +53,7 @@ class HappyPetAnimation(AnimationPlugin):
 
 
 class ShyPetAnimation(AnimationPlugin):
-    """Playful wiggle - energetic full-body wiggle with bouncy movements."""
+    """Playful wiggle - energetic wiggle with bouncy movements while staying compact."""
     
     @property
     def name(self) -> str:
@@ -62,42 +61,44 @@ class ShyPetAnimation(AnimationPlugin):
     
     @property
     def description(self) -> str:
-        return "Energetic playful wiggle leaning backwards with bouncy movements"
+        return "Energetic playful wiggle with controlled movements"
     
     def get_category(self) -> str:
         return "petting"
     
     def get_keyframe_names(self) -> Optional[List[str]]:
         return [
-            "Excited start", "Bounce right", "Wiggle left", "High bounce",
-            "Spiral right", "Twist left", "Double bounce", "Side wiggle",
-            "Settling bounce", "Final calm"
+            "Ready position", "Quick right bounce", "Wiggle left", "Up bounce",
+            "Spiral movement", "Quick shake", "Double bounce", "Side wiggle",
+            "Happy bounce", "Settle wiggle", "Return home 1", "Return home 2"
         ]
     
     def get_keyframes(self) -> Tuple[List[List[float]], List[float]]:
         base_pos = 0.0
         
         keyframes = [
-            [base_pos, -0.1, 0.6, 0.3, -1.0, 16.0],       # Excited start - ready to play
-            [base_pos+0.6, -0.5, 0.4, 0.2, -0.3, 15.0],   # Bounce right - lean back right
-            [base_pos-0.6, -0.3, 0.8, 0.1, -1.8, 14.0],   # Wiggle left - lean back left
-            [base_pos+0.3, -0.7, 0.2, 0.0, 0.2, 16.0],    # High bounce - lean way back
-            [base_pos+0.7, -0.4, 1.2, 0.2, -1.5, 13.0],   # Spiral right - back and right
-            [base_pos-0.7, -0.6, 0.5, 0.1, -0.8, 12.0],   # Twist left - back and left
-            [base_pos+0.2, -0.5, 0.7, 0.3, -0.5, 11.0],   # Double bounce - gentle back lean
-            [base_pos-0.4, -0.3, 1.0, 0.4, -1.3, 8.0],   # Side wiggle - settling back
-            [base_pos+0.1, -0.4, 0.9, 0.6, -1.6, 12.0],   # Settling bounce - calming lean back
-            [base_pos, -0.55, 1.2, 1.0, -2.0, 12.0]       # Final calm - final position
+            [base_pos, -0.3, 0.8, 0.5, -1.5, 17.0],        # Ready position
+            [base_pos+0.4, -0.4, 0.7, 0.4, -1.2, 19.0],    # Quick right bounce
+            [base_pos-0.4, -0.2, 0.9, 0.3, -1.8, 18.0],    # Wiggle left
+            [base_pos+0.2, -0.5, 0.5, 0.6, -0.9, 20.0],    # Up bounce
+            [base_pos+0.5, -0.3, 1.0, 0.4, -2.0, 17.0],    # Spiral movement
+            [base_pos-0.5, -0.4, 0.6, 0.5, -0.8, 21.0],    # Quick shake
+            [base_pos+0.15, -0.35, 0.8, 0.45, -1.7, 19.0], # Double bounce
+            [base_pos-0.3, -0.25, 0.95, 0.55, -1.1, 18.0], # Side wiggle
+            [base_pos+0.1, -0.3, 0.85, 0.6, -1.9, 16.0],   # Happy bounce
+            [base_pos, -0.4, 0.9, 0.7, -1.5, 15.0],        # Settle wiggle
+            [base_pos, 0.2, 1.3, 1.5, -1.5, 15.0],         # Return home 1
+            [base_pos, -0.65, 1.2, 1.0, -1.5, 10.0]        # Return home 2
         ]
         
-        # Quick, energetic durations - 15% faster
-        durations = [0.43, 0.34, 0.51, 0.26, 0.43, 0.34, 0.51, 0.6, 0.85, 1.7]
+        # Snappier playful timing
+        durations = [0.45, 0.55, 0.7, 0.45, 0.7, 0.75, 0.4, 0.45, 0.45, 0.55, 0.6, 0.9]
         
         return keyframes, durations
 
 
 class ContentPetAnimation(AnimationPlugin):
-    """Sleepy lean - gradual melting into relaxed slouch like falling asleep from contentment."""
+    """Sleepy lean - gradual melting into relaxed position with safe parameters."""
     
     @property
     def name(self) -> str:
@@ -105,35 +106,36 @@ class ContentPetAnimation(AnimationPlugin):
     
     @property
     def description(self) -> str:
-        return "Gradual sleepy melting into relaxed slouch from contentment"
+        return "Gradual sleepy melting into relaxed position"
     
     def get_category(self) -> str:
         return "petting"
     
     def get_keyframe_names(self) -> Optional[List[str]]:
         return [
-            "Content start", "Gentle droop", "Sleepy lean", "Drowsy sag",
-            "Heavy eyelids", "Nodding off", "Deep relax", "Almost asleep",
-            "Heavy settle", "Peaceful rest"
+            "Alert start", "Begin relax", "Getting sleepy", "Drooping more",
+            "Heavy eyelids", "Almost asleep", "Deep relax", "Peaceful state",
+            "Contented sigh", "Return home 1", "Return home 2"
         ]
     
     def get_keyframes(self) -> Tuple[List[List[float]], List[float]]:
         base_pos = 0.0
         
         keyframes = [
-            [base_pos, 0.0, 0.5, 0.2, -1.2, 14.0],        # Content start - alert but relaxed
-            [base_pos+0.1, 0.1, 0.7, 0.4, -1.4, 13.0],    # Gentle droop - starting to relax
-            [base_pos+0.05, 0.2, 0.9, 0.6, -1.6, 12.5],   # Sleepy lean - getting drowsy
-            [base_pos-0.05, 0.3, 1.1, 0.7, -1.8, 12.0],   # Drowsy sag - heavier
-            [base_pos+0.02, 0.4, 1.3, 0.8, -1.9, 12.5],   # Heavy eyelids - very sleepy
-            [base_pos-0.03, 0.45, 1.4, 0.85, -1.95, 12.0], # Nodding off - almost asleep
-            [base_pos+0.01, 0.5, 1.5, 0.9, -2.0, 11.5],   # Deep relax - very heavy
-            [base_pos, 0.52, 1.6, 0.95, -2.05, 10.0],     # Almost asleep - nearly there
-            [base_pos, 0.54, 1.8, 0.98, -2.1, 9.5],       # Heavy settle - final droop
-            [base_pos, -0.55, 1.2, 1.0, -2.0, 12.0]       # Peaceful rest - final position
+            [base_pos, -0.2, 0.6, 0.4, -1.5, 15.0],        # Alert start
+            [base_pos+0.05, -0.1, 0.8, 0.5, -1.3, 14.0],   # Begin relax
+            [base_pos, 0.0, 1.0, 0.6, -1.6, 13.0],         # Getting sleepy
+            [base_pos-0.05, 0.1, 1.2, 0.7, -1.4, 12.0],    # Drooping more
+            [base_pos, 0.2, 1.3, 0.8, -1.7, 11.0],         # Heavy eyelids
+            [base_pos, 0.25, 1.4, 0.9, -1.5, 10.5],        # Almost asleep - from home 1 like position
+            [base_pos, 0.3, 1.5, 1.0, -1.8, 10.0],         # Deep relax
+            [base_pos, 0.35, 1.6, 1.1, -1.6, 9.0],         # Peaceful state
+            [base_pos, 0.3, 1.5, 1.0, -1.5, 10.0],         # Contented sigh
+            [base_pos, 0.2, 1.3, 1.5, -1.5, 15.0],         # Return home 1
+            [base_pos, -0.65, 1.2, 1.0, -1.5, 10.0]        # Return home 2
         ]
         
-        # Progressively slower, sleepier durations - 15% faster
-        durations = [0.8, 1.2, 0.8, 0.7, 0.6, 0.8, 1.0, 0.9, 0.7, 1.7]
+        # Slow but not too slow
+        durations = [0.6, 0.7, 0.8, 0.85, 0.9, 1.0, 1.2, 1.3, 1.2, 0.8, 0.9]
         
         return keyframes, durations

@@ -25,30 +25,31 @@ class CuriousLookAnimation(AnimationPlugin):
     
     def get_keyframe_names(self) -> Optional[List[str]]:
         return [
-            "Anticipation", "Notice something", "Adjust focus", "Lean in",
-            "Surprised reaction", "Move to other side", "Intense inspection",
-            "Final examination", "Return to center", "Return home 1", "Return home 2"
+            "Anticipation", "Notice something", "Quick double-take", "Lean in carefully",
+            "Surprised pullback", "Cautious approach", "Close inspection",
+            "Tilt examination", "Final look", "Satisfied nod", "Return home 1", "Return home 2"
         ]
     
     def get_keyframes(self) -> Tuple[List[List[float]], List[float]]:
         base_center = 0.0
         
         keyframes = [
-            [base_center, 0.1, -0.15, -0.1, -1.4, 14.0],    # Anticipation - slight prep
-            [base_center-0.1, 0.2, 0.5, 0.3, -0.8, 17.0],   # Notice something - up and investigate
-            [base_center-0.05, -0.3, 0.8, 0.6, -2.1, 15.0], # Adjust focus - higher up
-            [base_center+0.05, -0.5, 1.1, 0.8, -0.6, 18.0], # Lean in - very high inspection
-            [base_center, -0.2, 0.9, 1.0, -1.9, 16.0],      # Surprised reaction - high alert
-            [base_center+0.1, -0.4, 1.0, 0.5, -0.7, 19.0],  # Move to inspect from above
-            [base_center-0.1, -0.6, 1.2, 0.2, -2.0, 14.0],  # Intense inspection - very high
-            [base_center, -0.3, 1.0, 0.8, -0.9, 17.0],      # Final examination - high position
-            [base_center, 0.0, 0.6, 0.5, -1.5, 13.0],       # Return to center - mid level
-            [base_center, 0.5, 1.3, 1.4, -1.5, 11.0],       # Return home 1 - neutral
-            [base_center, -0.55, 1.2, 1.0, -2.0, 10.0]      # Return home 2 - neutral
+            [base_center, 0.1, 0.8, 0.9, -1.4, 16.0],      # Anticipation - slight prep
+            [base_center-0.1, 0.2, 0.5, 0.3, -0.9, 19.0],  # Notice something - quick look
+            [base_center-0.05, -0.3, 0.3, 0.6, -2.1, 20.0], # Quick double-take
+            [base_center+0.15, -0.5, 0.8, 0.8, -0.8, 17.0], # Lean in carefully
+            [base_center, -0.2, 0.4, 0.5, -1.9, 21.0],      # Surprised pullback
+            [base_center+0.2, -0.6, 1.0, 0.9, -0.85, 16.0], # Cautious approach
+            [base_center+0.1, -0.8, 1.2, 1.1, -2.0, 14.0],  # Close inspection
+            [base_center-0.15, -0.7, 1.1, 1.0, -1.0, 18.0], # Tilt examination
+            [base_center, -0.4, 0.7, 0.7, -1.6, 19.0],      # Final look
+            [base_center, -0.2, 0.9, 0.5, -1.5, 15.0],      # Satisfied nod
+            [base_center, 0.2, 1.3, 1.5, -1.5, 15.0],       # Return home 1 - neutral
+            [base_center, -0.65, 1.2, 1.0, -1.5, 10.0]      # Return home 2 - neutral
         ]
         
-        # Scaled durations (base duration * 10 / acceleration)
-        durations = [0.43, 0.35, 0.53, 0.56, 0.38, 0.63, 1.0, 0.71, 1.23, 0.64, 1.3]
+        # Snappier durations
+        durations = [0.4, 0.6, 0.45, 0.5, 0.35, 0.65, 0.7, 0.45, 0.45, 0.5, 0.6, 0.9]
         
         return keyframes, durations
 
@@ -69,42 +70,35 @@ class ThinkingAnimation(AnimationPlugin):
     
     def get_keyframe_names(self) -> Optional[List[str]]:
         return [
-            "Alert pose", "Processing", "Head tilt", "Contemplation",
-            "Hand on chin", "Deep thought fold", "Deeper thought",
-            "Hold thought", "Hmm movement", "Shift position",
-            "Look up", "Idea forming", "Eureka", "Full extension",
-            "Excitement", "Confirmation nod", "Satisfied bounce", "Final position",
-            "Return home 1", "Return home 2"
+            "Alert", "Processing tilt", "Chin scratch pose", "Deep thought",
+            "Ponder left", "Ponder right", "Hmm moment", "Building idea",
+            "Pre-eureka", "Eureka!", "Excitement bounce", "Pride pose",
+            "Satisfied", "Return home 1", "Return home 2"
         ]
     
     def get_keyframes(self) -> Tuple[List[List[float]], List[float]]:
         base_pos = 0.0
         
         keyframes = [
-            [base_pos, 0.3, 0.7, 0.3, -1.5, 12.0],        # Alert pose - neutral
-            [base_pos+0.05, 0.1, 0.5, 0.4, -1.3, 14.0],   # Processing - slight up
-            [base_pos+0.05, -0.1, 0.3, 0.6, -1.8, 15.0],  # Head tilt - higher thinking
-            [base_pos, -0.3, 0.6, 0.8, -0.9, 16.0],       # Contemplation - vertical pondering
-            [base_pos, -0.2, 0.4, 0.5, -2.0, 13.0],       # Hand on chin - thoughtful position
-            [base_pos, -0.5, 0.8, 0.7, -0.7, 17.0],       # Deep thought - very high
-            [base_pos, -0.6, 1.0, 0.9, -1.9, 18.0],       # Deeper thought - maximum height
-            [base_pos, -0.7, 1.1, 1.0, -0.6, 19.0],       # Hold thought - peak position
-            [base_pos, -0.6, 1.0, 0.8, -1.7, 15.0],       # Hmm movement - slight down
-            [base_pos, -0.4, 0.8, 0.6, -0.8, 16.0],       # Shift position - mid height
-            [base_pos, -0.5, 0.9, 0.9, -2.1, 14.0],       # Look up - high contemplation
-            [base_pos, -0.2, 0.6, 1.1, -0.5, 20.0],       # Idea forming - eureka height
-            [base_pos, -0.4, 0.8, 1.3, -1.8, 17.0],       # Eureka - excited high position
-            [base_pos, -0.5, 1.0, 1.4, -0.7, 19.0],       # Full extension - maximum vertical
-            [base_pos, -0.3, 0.7, 1.2, -1.6, 16.0],       # Excitement - high celebration
-            [base_pos, -0.1, 0.5, 0.9, -1.2, 15.0],       # Confirmation nod - mid celebration
-            [base_pos, 0.0, 0.4, 0.6, -1.7, 14.0],        # Satisfied bounce - settling down
-            [base_pos, 0.2, 0.6, 0.4, -1.5, 13.0],        # Final position - relaxed
-            [base_pos, 0.5, 1.3, 1.4, -1.5, 11.0],        # Return home 1 - neutral
-            [base_pos, -0.55, 1.2, 1.0, -2.0, 10.0]       # Return home 2 - neutral
+            [base_pos, 0.2, 0.7, 0.5, -1.5, 15.0],        # Alert
+            [base_pos+0.05, -0.1, 0.5, 0.7, -1.2, 17.0],  # Processing tilt
+            [base_pos, -0.4, 0.9, 1.0, -1.8, 14.0],       # Chin scratch pose
+            [base_pos-0.1, -0.6, 1.1, 1.2, -0.9, 12.0],   # Deep thought
+            [base_pos+0.2, -0.5, 1.0, 1.1, -2.0, 16.0],   # Ponder left
+            [base_pos-0.2, -0.5, 1.0, 1.1, -1.0, 16.0],   # Ponder right
+            [base_pos, -0.7, 1.2, 1.3, -1.5, 11.0],       # Hmm moment
+            [base_pos, -0.4, 0.8, 0.9, -1.3, 18.0],       # Building idea
+            [base_pos, -0.2, 0.5, 0.6, -1.6, 20.0],       # Pre-eureka
+            [base_pos, -0.1, 0.2, 0.3, -1.5, 22.0],       # Eureka! - quick up
+            [base_pos, 0.1, 0.4, 0.2, -1.4, 21.0],        # Excitement bounce
+            [base_pos, -0.3, 0.6, 0.8, -1.6, 17.0],       # Pride pose
+            [base_pos, 0.0, 0.8, 0.6, -1.5, 15.0],        # Satisfied
+            [base_pos, 0.2, 1.3, 1.5, -1.5, 15.0],        # Return home 1
+            [base_pos, -0.65, 1.2, 1.0, -1.5, 10.0]       # Return home 2
         ]
         
-        # Scaled durations (base duration * 10 / acceleration)
-        durations = [0.83, 0.86, 0.53, 0.63, 1.08, 0.94, 0.56, 0.53, 0.53, 0.88, 0.86, 0.5, 0.47, 0.32, 0.38, 0.53, 0.71, 0.92, 0.64, 1.3]
+        # Faster thinking
+        durations = [0.6, 0.5, 0.7, 0.8, 0.6, 0.6, 0.85, 0.45, 0.35, 0.35, 0.35, 0.45, 0.6, 0.6, 0.9]
         
         return keyframes, durations
 
@@ -118,7 +112,7 @@ class StretchingAnimation(AnimationPlugin):
     
     @property
     def description(self) -> str:
-        return "Satisfying full-body stretch with multiple phases"
+        return "Satisfying full-body stretch with compact-to-extend motion"
     
     def get_category(self) -> str:
         return "action"
@@ -127,35 +121,30 @@ class StretchingAnimation(AnimationPlugin):
         base_pos = 0.0
         
         keyframes = [
-            [base_pos, 0.6, 1.2, -0.2, -1.4, 13.0],        # Tired start - low position
-            [base_pos, 0.5, 1.0, 0.0, -1.8, 14.0],         # Initial movement - slight up
-            [base_pos, 0.4, 0.8, 0.2, -1.0, 15.0],         # Build tension - higher
-            [base_pos, 0.2, 0.6, 0.4, -2.0, 12.0],         # First attempt - mid stretch
-            [base_pos, -0.2, 0.4, 0.6, -0.5, 18.0],        # Bigger contraction - getting higher
-            [base_pos, -0.8, 1.0, 1.2, -2.3, 10.0],        # Compact fold - prepare for big stretch
-            [base_pos, -0.5, 0.8, 1.0, -0.6, 19.0],        # Begin stretch - vertical rise
-            [base_pos, -0.6, 1.0, 1.2, -1.9, 16.0],        # Continue up - higher
-            [base_pos, -0.7, 1.1, 1.4, -0.7, 20.0],        # Maximum stretch - peak vertical
-            [base_pos, -0.75, 1.15, 1.45, -2.1, 11.0],     # Hold wobble - maintain height
-            [base_pos, -0.6, 1.0, 1.3, -0.5, 21.0],        # Stretch variation - high hold
-            [base_pos, -0.65, 1.05, 1.35, -1.8, 17.0],     # Hold variation - sustained height
-            [base_pos, -0.4, 0.8, 1.0, -0.8, 16.0],        # Begin descent - controlled down
-            [base_pos, -0.2, 0.6, 0.8, -2.2, 12.0],        # Continue down - mid level
-            [base_pos, 0.0, 0.4, 0.6, -0.6, 18.0],         # Lower stretch - getting lower
-            [base_pos, 0.2, 0.6, 0.4, -1.7, 15.0],         # Start relaxing - settling
-            [base_pos, 0.1, 0.5, 0.3, -0.9, 17.0],         # Gentle movement - small adjustment
-            [base_pos, 0.0, 0.4, 0.2, -1.9, 14.0],         # Counter movement - balance
-            [base_pos, -0.2, 0.6, 0.8, -0.7, 19.0],        # Final stretch - last vertical
-            [base_pos, 0.0, 0.4, 0.6, -1.6, 13.0],         # Begin relax - settling down
-            [base_pos, 0.1, 0.5, 0.4, -1.3, 14.0],         # Continue relax - gentle
-            [base_pos, 0.2, 0.6, 0.3, -1.7, 15.0],         # Small bounce - final adjustment
-            [base_pos, 0.3, 0.7, 0.2, -1.4, 13.0],         # Final settled - comfortable
-            [base_pos, 0.5, 1.3, 1.4, -1.5, 11.0],         # Return home 1 - neutral
-            [base_pos, -0.55, 1.2, 1.0, -2.0, 10.0]        # Return home 2 - neutral
+            [base_pos, 0.3, 1.4, 0.8, -1.5, 13.0],         # Start tired
+            [base_pos, 0.2, 1.5, 1.0, -1.6, 14.0],         # Begin compression
+            [base_pos, -0.8, 1.8, 1.2, -1.4, 12.0],        # Compress more
+            [base_pos, -1.0, 2.0, 1.0, -1.45, 10.0],       # Near max compact
+            [base_pos, -0.9, 1.6, 0.8, -1.5, 11.0],        # Slight release
+            [base_pos, -0.7, 1.2, 0.6, -1.4, 13.0],        # Build tension
+            [base_pos, -0.4, 0.8, 0.4, -1.45, 16.0],       # Begin stretch
+            [base_pos, -0.2, 0.4, 0.2, -1.45, 19.0],       # Continue up
+            [base_pos, -0.1, 0.2, 0.1, -1.45, 21.0],       # Almost peak
+            [base_pos, 0, 0, 0, -1.45, 8.0],               # Full stretch - straight up!
+            [base_pos, 0, 0.1, 0.05, -1.5, 9.0],           # Hold with wobble
+            [base_pos, -0.05, 0.15, 0.1, -1.4, 10.0],      # Slight wobble
+            [base_pos, -0.2, 0.4, 0.3, -1.5, 14.0],        # Begin descent
+            [base_pos, -0.4, 0.7, 0.6, -1.6, 16.0],        # Continue down
+            [base_pos, -0.5, 1.0, 0.8, -1.5, 15.0],        # Lower more
+            [base_pos, -0.3, 0.8, 0.7, -1.4, 17.0],        # Small bounce
+            [base_pos, -0.1, 0.6, 0.5, -1.5, 18.0],        # Another bounce
+            [base_pos, 0.1, 0.7, 0.4, -1.5, 16.0],         # Settling
+            [base_pos, 0.2, 1.3, 1.5, -1.5, 15.0],         # Return home 1
+            [base_pos, -0.65, 1.2, 1.0, -1.5, 10.0]        # Return home 2
         ]
         
-        # Scaled durations (base duration * 10 / acceleration)
-        durations = [0.77, 0.43, 0.53, 0.83, 0.67, 1.4, 0.53, 0.75, 0.7, 2.18, 0.76, 1.18, 0.75, 1.17, 0.89, 0.8, 0.47, 0.57, 0.84, 0.77, 0.86, 0.53, 1.08, 0.64, 1.3]
+        # Faster stretch
+        durations = [0.7, 0.7, 0.8, 0.9, 0.85, 0.7, 0.6, 0.45, 0.35, 1.2, 0.9, 0.8, 0.7, 0.6, 0.6, 0.5, 0.45, 0.6, 0.6, 0.9]
         
         return keyframes, durations
 
@@ -178,29 +167,26 @@ class DancingAnimation(AnimationPlugin):
         base_pos = 0.0
         
         keyframes = [
-            [base_pos, 0.3, 0.7, 0.3, -1.5, 14.0],        # Ready - neutral
-            [base_pos, 0.4, 0.8, 0.2, -1.2, 16.0],        # Bounce down - slight right
-            [base_pos+0.3, 0.15, 0.5, 0.6, -1.8, 17.0],   # Bounce right - left to balance
-            [base_pos+0.35, 0.1, 0.45, 0.65, -0.7, 19.0], # Overshoot - right extreme to balance
-            [base_pos+0.3, 0.5, 0.9, 0.1, -2.0, 15.0],    # Down right - left extreme
-            [base_pos-0.3, 0.15, 0.5, 0.6, -0.6, 20.0],   # Bounce left - right extreme to balance
-            [base_pos-0.35, 0.1, 0.45, 0.65, -1.9, 18.0], # Overshoot - left
-            [base_pos-0.3, 0.5, 0.9, 0.1, -0.8, 17.0],    # Down left - right to balance
-            [base_pos, 0.3, 0.7, 0.7, -2.1, 13.0],        # Twist middle - left extreme
-            [base_pos+0.1, 0.25, 0.65, 0.75, -0.5, 21.0], # Follow through - right extreme to balance
-            [base_pos+0.5, 0.2, 0.6, 0.5, -1.7, 16.0],    # Spin right - left
-            [base_pos-0.5, 0.2, 0.6, 0.5, -0.9, 18.0],    # Spin left - right to balance
-            [base_pos, 0.6, 1.0, 0.0, -2.2, 12.0],        # Dip down - left extreme
-            [base_pos, 0.1, 0.4, 0.9, -0.6, 20.0],        # Pop up - right extreme to balance
-            [base_pos+0.2, 0.2, 0.5, 0.7, -1.8, 16.0],    # Finale pose - left
-            [base_pos+0.2, 0.2, 0.5, 0.7, -1.5, 12.0],    # Hold finale - neutral
-            [base_pos, 0.3, 0.7, 0.3, -1.5, 13.0],        # Return - neutral
-            [base_pos, 0.5, 1.3, 1.4, -1.5, 11.0],        # Return home 1 - neutral
-            [base_pos, -0.55, 1.2, 1.0, -2.0, 10.0]       # Return home 2 - neutral
+            [base_pos, 0.2, 0.7, 0.4, -1.5, 17.0],        # Ready
+            [base_pos+0.3, 0.3, 0.8, 0.3, -1.2, 20.0],    # Right bounce
+            [base_pos+0.4, -0.2, 0.5, 0.6, -1.8, 21.0],   # Right high
+            [base_pos+0.2, 0.1, 0.9, 0.5, -0.9, 19.0],    # Right low
+            [base_pos-0.3, 0.3, 0.8, 0.3, -2.1, 20.0],    # Left bounce
+            [base_pos-0.4, -0.2, 0.5, 0.6, -0.8, 21.0],   # Left high
+            [base_pos-0.2, 0.1, 0.9, 0.5, -1.9, 19.0],    # Left low
+            [base_pos, -0.4, 0.6, 0.7, -1.5, 22.0],       # Center pop
+            [base_pos+0.2, -0.3, 0.7, 0.8, -1.0, 18.0],   # Twist right
+            [base_pos-0.2, -0.3, 0.7, 0.8, -2.0, 18.0],   # Twist left
+            [base_pos, 0.4, 1.2, 0.2, -1.5, 15.0],        # Dip down
+            [base_pos, -0.5, 0.3, 0.9, -1.5, 22.0],       # Pop up
+            [base_pos+0.1, -0.2, 0.5, 0.6, -1.6, 20.0],   # Finale pose
+            [base_pos, 0.0, 0.7, 0.5, -1.5, 16.0],        # Cool down
+            [base_pos, 0.2, 1.3, 1.5, -1.5, 15.0],        # Return home 1
+            [base_pos, -0.65, 1.2, 1.0, -1.5, 10.0]       # Return home 2
         ]
         
-        # Scaled durations (base duration * 10 / acceleration)
-        durations = [0.57, 0.38, 0.47, 0.32, 0.53, 0.4, 0.33, 0.47, 0.62, 0.29, 0.63, 0.56, 0.67, 0.3, 0.38, 1.0, 1.08, 0.64, 1.3]
+        # Snappy dance timing
+        durations = [0.45, 0.35, 0.5, 0.35, 0.6, 0.5, 0.35, 0.35, 0.45, 0.45, 0.6, 0.65, 0.35, 0.6, 0.6, 0.9]
         
         return keyframes, durations
 
@@ -220,33 +206,31 @@ class IdleAnimation(AnimationPlugin):
         return "action"
     
     def get_keyframes(self) -> Tuple[List[List[float]], List[float]]:
-        # Add subtle variations around home 2 position
-        base_var = random.uniform(-0.05, 0.05)  # Much smaller horizontal movement
-        shoulder_var = random.uniform(-0.6, -0.5)  # Stay close to home 2 shoulder position
-        elbow_var = random.uniform(1.1, 1.3)  # Stay close to home 2 elbow position
-        wrist_var = random.uniform(0.9, 1.1)  # Stay close to home 2 wrist position
+        # Small variations around home 2 position
+        base_var = random.uniform(-0.05, 0.05)
+        shoulder_var = random.uniform(-0.7, -0.6)
+        elbow_var = random.uniform(1.1, 1.3)
+        wrist_var = random.uniform(0.9, 1.1)
         
-        # Much smaller look amounts
+        # Small look amounts
         look_right = random.uniform(0.05, 0.1)
         look_left = random.uniform(0.05, 0.1)
         
-        # Roll variations within smaller range around home 2
-        roll_start = random.uniform(-2.1, -1.9)
-        roll_right = random.uniform(-1.8, -1.6)    # Slight right tilt
-        roll_left = random.uniform(-2.2, -2.0)     # Slight left tilt
-        roll_center = random.uniform(-2.0, -1.9)   # Return toward home 2 center
+        # Hand variations within safe range
+        hand_idle = random.uniform(-1.6, -1.4)
+        hand_right = random.uniform(-1.3, -1.1)
+        hand_left = random.uniform(-1.7, -1.9)
         
         keyframes = [
-            [base_var, shoulder_var, elbow_var, wrist_var, roll_start, 13.0],           # Idle position - near home 2
-            [base_var, shoulder_var + 0.05, elbow_var - 0.05, wrist_var, roll_right, 15.0],  # Slight adjustment
-            [base_var + look_right, shoulder_var, elbow_var, wrist_var - 0.05, roll_left, 16.0], # Small look right
-            [base_var, shoulder_var - 0.03, elbow_var + 0.03, wrist_var, roll_center, 14.0],    # Center
-            [base_var - look_left, shoulder_var, elbow_var, wrist_var + 0.05, roll_right, 15.0], # Small look left
-            [base_var, shoulder_var, elbow_var, wrist_var, -2.0, 12.0],                # Final - close to home 2
-            [0.0, -0.55, 1.2, 1.0, -2.0, 10.0]                                        # Return home 2 - neutral
+            [base_var, shoulder_var, elbow_var, wrist_var, hand_idle, 13.0],
+            [base_var + look_right, shoulder_var + 0.05, elbow_var - 0.05, wrist_var, hand_right, 16.0],
+            [base_var, shoulder_var - 0.03, elbow_var + 0.03, wrist_var + 0.05, -1.5, 15.0],
+            [base_var - look_left, shoulder_var, elbow_var, wrist_var - 0.05, hand_left, 16.0],
+            [base_var, shoulder_var, elbow_var, wrist_var, -1.5, 14.0],
+            [0.0, -0.65, 1.2, 1.0, -1.5, 10.0]  # Return home 2
         ]
         
-        # Scaled durations (base duration * 10 / acceleration)
-        durations = [1.54, 0.93, 0.63, 0.57, 0.67, 1.0, 1.3]
+        # Gentle, relaxed timing
+        durations = [1.2, 0.7, 0.6, 0.7, 0.85, 0.9]
         
         return keyframes, durations
