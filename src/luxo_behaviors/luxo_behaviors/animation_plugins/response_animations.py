@@ -79,18 +79,18 @@ class HeadShakeAnimation(AnimationPlugin):
         base_pos = 0.0
         
         keyframes = [
-            [base_pos, -0.2, 0.8, 0.6, -1.5, 14.0],       # Neutral
-            [base_pos-0.1, -0.3, 0.9, 0.7, -1.4, 16.0],   # Wind up
-            [base_pos+0.35, -0.4, 0.9, 0.8, -2.1, 21.0],  # Big shake right
-            [base_pos-0.4, -0.4, 0.9, 0.8, -0.9, 22.0],   # Big shake left
-            [base_pos+0.3, -0.35, 0.85, 0.75, -2.0, 22.5], # Fast shake right
-            [base_pos-0.35, -0.35, 0.85, 0.75, -1.0, 22.0], # Fast shake left
-            [base_pos+0.25, -0.3, 0.8, 0.7, -1.9, 20.0],  # Medium shake right
-            [base_pos-0.25, -0.3, 0.8, 0.7, -1.1, 20.0],  # Medium shake left
-            [base_pos+0.15, -0.25, 0.75, 0.65, -1.7, 18.0], # Small shake right
-            [base_pos-0.15, -0.25, 0.75, 0.65, -1.3, 18.0], # Small shake left
-            [base_pos, -0.2, 0.7, 0.6, -1.5, 16.0],       # Tiny shake
-            [base_pos, -0.3, 0.9, 0.7, -1.5, 14.0],       # Settle
+            [base_pos, -0.3, 0.8, 0.6, -1.5, 14.0],       # Neutral - back
+            [base_pos-0.1, -0.4, 0.9, 0.7, -1.4, 16.0],   # Wind up - back
+            [base_pos+0.35, -0.5, 0.9, 0.8, -2.1, 21.0],  # Big shake right - back
+            [base_pos-0.4, -0.5, 0.9, 0.8, -0.9, 22.0],   # Big shake left - back
+            [base_pos+0.3, -0.45, 0.85, 0.75, -2.0, 22.5], # Fast shake right - back
+            [base_pos-0.35, -0.45, 0.85, 0.75, -1.0, 22.0], # Fast shake left - back
+            [base_pos+0.25, -0.4, 0.8, 0.7, -1.9, 20.0],  # Medium shake right - back
+            [base_pos-0.25, -0.4, 0.8, 0.7, -1.1, 20.0],  # Medium shake left - back
+            [base_pos+0.15, -0.35, 0.75, 0.65, -1.7, 18.0], # Small shake right - back
+            [base_pos-0.15, -0.35, 0.75, 0.65, -1.3, 18.0], # Small shake left - back
+            [base_pos, -0.3, 0.7, 0.6, -1.5, 16.0],       # Tiny shake - back
+            [base_pos, -0.4, 0.9, 0.7, -1.5, 14.0],       # Settle - back
             [base_pos, 0.2, 1.3, 1.5, -1.5, 15.0],        # Return home 1
             [base_pos, -0.65, 1.2, 1.0, -1.5, 10.0]       # Return home 2
         ]

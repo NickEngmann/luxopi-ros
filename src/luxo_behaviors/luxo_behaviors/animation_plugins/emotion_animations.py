@@ -36,22 +36,22 @@ class ExcitedHopAnimation(AnimationPlugin):
         base_pos = 0.0
         
         keyframes = [
-            [base_pos+0.15, 0.1, 0.7, 0.5, -1.3, 17.0],    # Initial wiggle
-            [base_pos-0.15, 0.05, 0.65, 0.55, -1.7, 18.0], # Opposite wiggle
-            [base_pos, 0.3, 1.2, 0.3, -1.5, 16.0],         # Crouch prep
-            [base_pos, 0.4, 1.4, 0.1, -1.2, 15.0],         # Compress
-            [base_pos, -0.8, 1.6, 0.5, -1.8, 13.0],        # Spring load
-            [base_pos, -0.5, 0.4, 1.2, -0.9, 22.0],        # Launch up
-            [base_pos+0.2, -0.6, 0.3, 1.3, -2.0, 21.0],    # Air wiggle
-            [base_pos-0.1, -0.7, 0.2, 1.4, -0.8, 20.0],    # Peak joy
-            [base_pos, -0.4, 0.5, 1.1, -1.6, 18.0],        # Descent begin
-            [base_pos, -0.1, 0.8, 0.8, -1.2, 17.0],        # Impact prep
-            [base_pos, 0.35, 1.5, 0.2, -1.8, 14.0],        # Land compress
-            [base_pos, -0.2, 0.9, 0.9, -1.0, 19.0],        # Bounce back
-            [base_pos+0.1, -0.4, 0.6, 1.1, -1.7, 20.0],    # Secondary hop
-            [base_pos, 0.1, 1.0, 0.6, -1.3, 16.0],         # Mini bounce
-            [base_pos-0.2, -0.3, 0.8, 0.8, -1.9, 18.0],    # Victory wiggle
-            [base_pos, -0.1, 0.9, 0.7, -1.5, 15.0],        # Settle down
+            [base_pos+0.15, -0.1, 0.7, 0.5, -1.3, 17.0],   # Initial wiggle - back
+            [base_pos-0.15, -0.15, 0.65, 0.55, -1.7, 18.0], # Opposite wiggle - back
+            [base_pos, 0.2, 1.2, 0.3, -1.5, 16.0],         # Crouch prep - forward OK
+            [base_pos, 0.3, 1.4, 0.1, -1.2, 15.0],         # Compress - forward OK
+            [base_pos, -0.9, 1.6, 0.5, -1.8, 13.0],        # Spring load - far back
+            [base_pos, -0.6, 0.4, 1.2, -0.9, 22.0],        # Launch up - back
+            [base_pos+0.2, -0.7, 0.3, 1.3, -2.0, 21.0],    # Air wiggle - back
+            [base_pos-0.1, -0.8, 0.2, 1.4, -0.8, 20.0],    # Peak joy - back
+            [base_pos, -0.5, 0.5, 1.1, -1.6, 18.0],        # Descent begin - back
+            [base_pos, -0.2, 0.8, 0.8, -1.2, 17.0],        # Impact prep - back
+            [base_pos, 0.25, 1.5, 0.2, -1.8, 14.0],        # Land compress - forward OK
+            [base_pos, -0.3, 0.9, 0.9, -1.0, 19.0],        # Bounce back - back
+            [base_pos+0.1, -0.5, 0.6, 1.1, -1.7, 20.0],    # Secondary hop - back
+            [base_pos, -0.1, 1.0, 0.6, -1.3, 16.0],        # Mini bounce - back
+            [base_pos-0.2, -0.4, 0.8, 0.8, -1.9, 18.0],    # Victory wiggle - back
+            [base_pos, -0.2, 0.9, 0.7, -1.5, 15.0],        # Settle down - back
             [base_pos, 0.2, 1.3, 1.5, -1.5, 15.0],         # Return home 1
             [base_pos, -0.65, 1.2, 1.0, -1.5, 10.0]        # Return home 2
         ]
@@ -88,19 +88,19 @@ class SadDroopAnimation(AnimationPlugin):
         base_pos = 0.0
         
         keyframes = [
-            [base_pos, -0.1, 0.6, 0.4, -1.5, 13.0],        # Normal state
-            [base_pos, 0.0, 0.7, 0.3, -1.3, 12.0],         # Feel sadness
-            [base_pos-0.1, 0.1, 0.9, 0.2, -1.7, 11.0],     # Begin droop
-            [base_pos-0.1, 0.2, 1.1, 0.1, -1.4, 10.0],     # Weight increases
-            [base_pos-0.15, 0.3, 1.3, 0.0, -1.8, 10.0],    # Shoulders sag
-            [base_pos-0.2, 0.4, 1.5, -0.1, -1.5, 9.0],     # Head drops (start from home 1-like)
+            [base_pos, -0.2, 0.6, 0.4, -1.5, 13.0],        # Normal state - back
+            [base_pos, -0.1, 0.7, 0.3, -1.3, 12.0],        # Feel sadness - back
+            [base_pos-0.1, 0.0, 0.9, 0.2, -1.7, 11.0],     # Begin droop - neutral
+            [base_pos-0.1, 0.1, 1.1, 0.1, -1.4, 10.0],     # Weight increases - slight forward
+            [base_pos-0.15, 0.2, 1.3, 0.0, -1.8, 10.0],    # Shoulders sag - forward
+            [base_pos-0.2, 0.3, 1.5, -0.1, -1.5, 9.0],     # Head drops - forward OK
             [base_pos-0.2, 0.3, 2.0, 0.0, -1.9, 8.0],      # Deep sadness (proper slouch)
             [base_pos-0.2, 0.3, 2.1, 0.0, -1.6, 8.0],      # Hold sadness
             [base_pos-0.15, 0.25, 2.0, 0.1, -1.8, 9.0],    # Small sigh
             [base_pos-0.15, 0.3, 2.0, 0.0, -1.5, 9.0],     # Another sigh
-            [base_pos-0.1, -0.2, 1.8, 0.2, -1.7, 10.0],    # Begin recovery (shoulder first)
-            [base_pos, -0.4, 1.5, 0.5, -1.5, 11.0],        # Slow lift
-            [base_pos, -0.1, 1.2, 0.8, -1.5, 12.0],        # Almost there
+            [base_pos-0.1, -0.3, 1.8, 0.2, -1.7, 10.0],    # Begin recovery - back
+            [base_pos, -0.5, 1.5, 0.5, -1.5, 11.0],        # Slow lift - back
+            [base_pos, -0.2, 1.2, 0.8, -1.5, 12.0],        # Almost there - back
             [base_pos, 0.2, 1.3, 1.5, -1.5, 15.0],         # Return home 1
             [base_pos, -0.65, 1.2, 1.0, -1.5, 10.0]        # Return home 2
         ]
@@ -138,22 +138,22 @@ class PlayfulBounceAnimation(AnimationPlugin):
         base_pos = 0.0
         
         keyframes = [
-            [base_pos, 0.0, 0.8, 0.6, -1.5, 16.0],         # Ready stance
-            [base_pos+0.2, -0.1, 0.75, 0.65, -1.2, 18.0],  # Wind up wiggle
-            [base_pos, 0.3, 1.3, 0.2, -1.8, 15.0],         # Compress down
-            [base_pos, -0.7, 1.6, 0.6, -1.0, 14.0],        # Spring load
-            [base_pos, -0.5, 0.3, 1.3, -2.0, 22.0],        # Explosive jump
-            [base_pos+0.3, -0.6, 0.2, 1.4, -0.8, 21.0],    # Air dance 1
-            [base_pos-0.3, -0.6, 0.2, 1.4, -2.1, 21.0],    # Air dance 2
-            [base_pos, -0.7, 0.1, 1.5, -1.0, 20.0],        # Peak twist
-            [base_pos, -0.3, 0.5, 1.1, -1.7, 18.0],        # Fall begin
-            [base_pos, 0.1, 1.0, 0.5, -1.3, 16.0],         # Impact ready
-            [base_pos, 0.4, 1.6, 0.1, -1.9, 14.0],         # Bounce compress
-            [base_pos, -0.6, 1.0, 0.8, -0.9, 19.0],        # Spring again
-            [base_pos+0.1, -0.4, 0.4, 1.2, -1.8, 20.0],    # Second jump
-            [base_pos, 0.2, 1.2, 0.4, -1.2, 17.0],         # Quick land
-            [base_pos-0.15, -0.2, 0.9, 0.7, -2.0, 18.0],   # Happy shake
-            [base_pos, -0.1, 0.8, 0.8, -1.5, 16.0],        # Final bounce
+            [base_pos, -0.1, 0.8, 0.6, -1.5, 16.0],        # Ready stance - back
+            [base_pos+0.2, -0.2, 0.75, 0.65, -1.2, 18.0],  # Wind up wiggle - back
+            [base_pos, 0.2, 1.3, 0.2, -1.8, 15.0],         # Compress down - forward OK
+            [base_pos, -0.8, 1.6, 0.6, -1.0, 14.0],        # Spring load - far back
+            [base_pos, -0.6, 0.3, 1.3, -2.0, 22.0],        # Explosive jump - back
+            [base_pos+0.3, -0.7, 0.2, 1.4, -0.8, 21.0],    # Air dance 1 - back
+            [base_pos-0.3, -0.7, 0.2, 1.4, -2.1, 21.0],    # Air dance 2 - back
+            [base_pos, -0.8, 0.1, 1.5, -1.0, 20.0],        # Peak twist - far back
+            [base_pos, -0.4, 0.5, 1.1, -1.7, 18.0],        # Fall begin - back
+            [base_pos, -0.1, 1.0, 0.5, -1.3, 16.0],        # Impact ready - back
+            [base_pos, 0.3, 1.6, 0.1, -1.9, 14.0],         # Bounce compress - forward OK
+            [base_pos, -0.7, 1.0, 0.8, -0.9, 19.0],        # Spring again - back
+            [base_pos+0.1, -0.5, 0.4, 1.2, -1.8, 20.0],    # Second jump - back
+            [base_pos, 0.1, 1.2, 0.4, -1.2, 17.0],         # Quick land - slight forward
+            [base_pos-0.15, -0.3, 0.9, 0.7, -2.0, 18.0],   # Happy shake - back
+            [base_pos, -0.2, 0.8, 0.8, -1.5, 16.0],        # Final bounce - back
             [base_pos, 0.2, 1.3, 1.5, -1.5, 15.0],         # Return home 1
             [base_pos, -0.65, 1.2, 1.0, -1.5, 10.0]        # Return home 2
         ]
@@ -190,22 +190,22 @@ class StartledJumpAnimation(AnimationPlugin):
         base_pos = 0.0
         
         keyframes = [
-            [base_pos, -0.2, 0.8, 0.5, -1.5, 14.0],        # Calm state
-            [base_pos, -0.15, 0.75, 0.45, -1.3, 15.0],     # Tiny tension
-            [base_pos, -0.8, 1.4, 0.3, -1.9, 13.0],        # WHAT?! - compress
-            [base_pos-0.4, -0.4, 0.2, 1.5, -0.8, 22.5],    # Jump back
-            [base_pos-0.5, -0.5, 0.1, 1.6, -2.1, 22.0],    # Peak startle
-            [base_pos-0.6, -0.45, 0.15, 1.55, -0.75, 21.0], # Shake left
-            [base_pos-0.4, -0.45, 0.15, 1.55, -2.2, 21.0],  # Shake right
-            [base_pos-0.3, -0.3, 0.6, 1.0, -1.0, 18.0],     # Cautious look
-            [base_pos-0.2, 0.0, 0.9, 0.7, -1.8, 16.0],      # Is it safe?
-            [base_pos-0.5, -0.1, 0.85, 0.75, -1.2, 17.0],   # Check left
-            [base_pos+0.3, -0.1, 0.85, 0.75, -1.9, 17.0],   # Check right
-            [base_pos-0.1, -0.2, 0.9, 0.6, -1.3, 15.0],     # Still nervous
-            [base_pos, -0.3, 1.0, 0.5, -1.7, 14.0],         # Calming down
-            [base_pos, -0.4, 1.1, 0.4, -1.5, 13.0],         # Almost okay
-            [base_pos+0.1, -0.35, 1.05, 0.45, -1.6, 14.0],  # Final check
-            [base_pos, -0.3, 1.0, 0.5, -1.5, 13.0],         # All clear
+            [base_pos, -0.3, 0.8, 0.5, -1.5, 14.0],        # Calm state - back
+            [base_pos, -0.25, 0.75, 0.45, -1.3, 15.0],     # Tiny tension - back
+            [base_pos, -0.9, 1.4, 0.3, -1.9, 13.0],        # WHAT?! - compress - far back
+            [base_pos-0.4, -0.5, 0.2, 1.5, -0.8, 22.5],    # Jump back - back
+            [base_pos-0.5, -0.6, 0.1, 1.6, -2.1, 22.0],    # Peak startle - back
+            [base_pos-0.6, -0.55, 0.15, 1.55, -0.75, 21.0], # Shake left - back
+            [base_pos-0.4, -0.55, 0.15, 1.55, -2.2, 21.0],  # Shake right - back
+            [base_pos-0.3, -0.4, 0.6, 1.0, -1.0, 18.0],     # Cautious look - back
+            [base_pos-0.2, -0.1, 0.9, 0.7, -1.8, 16.0],     # Is it safe? - back
+            [base_pos-0.5, -0.2, 0.85, 0.75, -1.2, 17.0],   # Check left - back
+            [base_pos+0.3, -0.2, 0.85, 0.75, -1.9, 17.0],   # Check right - back
+            [base_pos-0.1, -0.3, 0.9, 0.6, -1.3, 15.0],     # Still nervous - back
+            [base_pos, -0.4, 1.0, 0.5, -1.7, 14.0],         # Calming down - back
+            [base_pos, -0.5, 1.1, 0.4, -1.5, 13.0],         # Almost okay - back
+            [base_pos+0.1, -0.45, 1.05, 0.45, -1.6, 14.0],  # Final check - back
+            [base_pos, -0.4, 1.0, 0.5, -1.5, 13.0],         # All clear - back
             [base_pos, 0.2, 1.3, 1.5, -1.5, 15.0],          # Return home 1
             [base_pos, -0.65, 1.2, 1.0, -1.5, 10.0]         # Return home 2
         ]

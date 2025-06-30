@@ -77,16 +77,16 @@ class ShyPetAnimation(AnimationPlugin):
         base_pos = 0.0
         
         keyframes = [
-            [base_pos, -0.3, 0.8, 0.5, -1.5, 17.0],        # Ready position
-            [base_pos+0.4, -0.4, 0.7, 0.4, -1.2, 19.0],    # Quick right bounce
-            [base_pos-0.4, -0.2, 0.9, 0.3, -1.8, 18.0],    # Wiggle left
-            [base_pos+0.2, -0.5, 0.5, 0.6, -0.9, 20.0],    # Up bounce
-            [base_pos+0.5, -0.3, 1.0, 0.4, -2.0, 17.0],    # Spiral movement
-            [base_pos-0.5, -0.4, 0.6, 0.5, -0.8, 21.0],    # Quick shake
-            [base_pos+0.15, -0.35, 0.8, 0.45, -1.7, 19.0], # Double bounce
-            [base_pos-0.3, -0.25, 0.95, 0.55, -1.1, 18.0], # Side wiggle
-            [base_pos+0.1, -0.3, 0.85, 0.6, -1.9, 16.0],   # Happy bounce
-            [base_pos, -0.4, 0.9, 0.7, -1.5, 15.0],        # Settle wiggle
+            [base_pos, -0.4, 0.8, 0.5, -1.5, 17.0],        # Ready position - back
+            [base_pos+0.4, -0.5, 0.7, 0.4, -1.2, 19.0],    # Quick right bounce - back
+            [base_pos-0.4, -0.3, 0.9, 0.3, -1.8, 18.0],    # Wiggle left - back
+            [base_pos+0.2, -0.6, 0.5, 0.6, -0.9, 20.0],    # Up bounce - back
+            [base_pos+0.5, -0.4, 1.0, 0.4, -2.0, 17.0],    # Spiral movement - back
+            [base_pos-0.5, -0.5, 0.6, 0.5, -0.8, 21.0],    # Quick shake - back
+            [base_pos+0.15, -0.45, 0.8, 0.45, -1.7, 19.0], # Double bounce - back
+            [base_pos-0.3, -0.35, 0.95, 0.55, -1.1, 18.0], # Side wiggle - back
+            [base_pos+0.1, -0.4, 0.85, 0.6, -1.9, 16.0],   # Happy bounce - back
+            [base_pos, -0.5, 0.9, 0.7, -1.5, 15.0],        # Settle wiggle - back
             [base_pos, 0.2, 1.3, 1.5, -1.5, 15.0],         # Return home 1
             [base_pos, -0.65, 1.2, 1.0, -1.5, 10.0]        # Return home 2
         ]
@@ -122,15 +122,15 @@ class ContentPetAnimation(AnimationPlugin):
         base_pos = 0.0
         
         keyframes = [
-            [base_pos, -0.2, 0.6, 0.4, -1.5, 15.0],        # Alert start
-            [base_pos+0.05, -0.1, 0.8, 0.5, -1.3, 14.0],   # Begin relax
-            [base_pos, 0.0, 1.0, 0.6, -1.6, 13.0],         # Getting sleepy
-            [base_pos-0.05, 0.1, 1.2, 0.7, -1.4, 12.0],    # Drooping more
-            [base_pos, 0.2, 1.3, 0.8, -1.7, 11.0],         # Heavy eyelids
-            [base_pos, 0.25, 1.4, 0.9, -1.5, 10.5],        # Almost asleep - from home 1 like position
-            [base_pos, 0.3, 1.5, 1.0, -1.8, 10.0],         # Deep relax
-            [base_pos, 0.35, 1.6, 1.1, -1.6, 9.0],         # Peaceful state
-            [base_pos, 0.3, 1.5, 1.0, -1.5, 10.0],         # Contented sigh
+            [base_pos, -0.3, 0.6, 0.4, -1.5, 15.0],        # Alert start - back
+            [base_pos+0.05, -0.2, 0.8, 0.5, -1.3, 14.0],   # Begin relax - back
+            [base_pos, -0.1, 1.0, 0.6, -1.6, 13.0],        # Getting sleepy - back
+            [base_pos-0.05, 0.0, 1.2, 0.7, -1.4, 12.0],    # Drooping more - neutral
+            [base_pos, 0.1, 1.3, 0.8, -1.7, 11.0],         # Heavy eyelids - slight forward
+            [base_pos, 0.15, 1.4, 0.9, -1.5, 10.5],        # Almost asleep - slight forward
+            [base_pos, 0.2, 1.5, 1.0, -1.8, 10.0],         # Deep relax - forward OK
+            [base_pos, 0.25, 1.6, 1.1, -1.6, 9.0],         # Peaceful state - forward OK
+            [base_pos, 0.2, 1.5, 1.0, -1.5, 10.0],         # Contented sigh
             [base_pos, 0.2, 1.3, 1.5, -1.5, 15.0],         # Return home 1
             [base_pos, -0.65, 1.2, 1.0, -1.5, 10.0]        # Return home 2
         ]

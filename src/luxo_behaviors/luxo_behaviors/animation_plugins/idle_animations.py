@@ -235,20 +235,20 @@ class PlayfulBobAnimation(AnimationPlugin):
         
         keyframes = [
             [base_pos, -0.65, 1.2, 1.0, -1.5, 14.0],                          # Home 2
-            [base_pos, -0.5, 1.55, 0.95, -1.2, 18.0],                         # Deep anticipation
-            [base_pos + 0.05, -0.45, 1.6, 0.9, -1.9, 20.0],                   # Coiled spring
+            [base_pos, -0.6, 1.55, 0.95, -1.2, 18.0],                         # Deep anticipation - back
+            [base_pos + 0.05, -0.55, 1.6, 0.9, -1.9, 20.0],                   # Coiled spring - back
             [base_pos - 0.1, -1.0 * energy, 0.85, 1.75, -0.8, 22.5],          # Explosive jump (at limit)
             [base_pos + 0.15, -0.95 * energy, 0.8, 1.8, -2.2, 22.0],          # Peak of jump
-            [base_pos, -0.35, 1.45, 0.85, -0.85, 16.0],                        # Soft landing
-            [base_pos - 0.45, -0.75, 1.15, 1.55, -1.8, 17.5],                 # Hip sway left
-            [base_pos - 0.4, -0.8, 1.1, 1.5, -0.9, 18.5],                     # Shoulder shimmy
-            [base_pos + 0.45, -0.75, 1.15, 1.55, -2.0, 17.0],                 # Hip sway right
-            [base_pos, -0.55, 1.35, 1.1, -0.75, 19.0],                         # Prep double bounce
-            [base_pos + 0.1, -0.9, 1.0, 1.6, -1.7, 21.0],                     # Quick pop up
-            [base_pos - 0.1, -0.6, 1.3, 1.2, -1.0, 20.5],                     # Quick drop
-            [base_pos + 0.25, -0.72, 1.18, 1.42, -1.9, 18.0],                 # Wiggle right
-            [base_pos - 0.25, -0.75, 1.2, 1.45, -0.85, 17.5],                  # And left
-            [base_pos, -0.8, 1.25, 1.38, -1.6, 13.0],                         # Happy settling
+            [base_pos, -0.45, 1.45, 0.85, -0.85, 16.0],                        # Soft landing - back
+            [base_pos - 0.45, -0.85, 1.15, 1.55, -1.8, 17.5],                 # Hip sway left - back
+            [base_pos - 0.4, -0.9, 1.1, 1.5, -0.9, 18.5],                     # Shoulder shimmy - back
+            [base_pos + 0.45, -0.85, 1.15, 1.55, -2.0, 17.0],                 # Hip sway right - back
+            [base_pos, -0.65, 1.35, 1.1, -0.75, 19.0],                         # Prep double bounce - back
+            [base_pos + 0.1, -1.0, 1.0, 1.6, -1.7, 21.0],                     # Quick pop up - far back
+            [base_pos - 0.1, -0.7, 1.3, 1.2, -1.0, 20.5],                     # Quick drop - back
+            [base_pos + 0.25, -0.82, 1.18, 1.42, -1.9, 18.0],                 # Wiggle right - back
+            [base_pos - 0.25, -0.85, 1.2, 1.45, -0.85, 17.5],                  # And left - back
+            [base_pos, -0.9, 1.25, 1.38, -1.6, 13.0],                         # Happy settling - back
             [base_pos, -0.65, 1.2, 1.0, -1.5, 14.0]                           # Home 2
         ]
         
@@ -655,10 +655,10 @@ class ContentedSighAnimation(AnimationPlugin):
             [base_pos, -1.0, 1.1, 1.6, -1.8, 10.0],                     # Deep inhale
             [base_pos, -1.05, 1.08, 1.62, -1.0, 10.0],                  # Hold at peak
             [base_pos, -0.9, 1.2, 1.5, -1.9, 11.0],                     # Begin exhale
-            [base_pos, -0.5, 1.4, 1.2, -1.2, 12.0],                     # Deep sigh out
-            [base_pos, -0.3, 1.5, 1.0, -1.7, 11.0],                     # Shoulders drop
-            [base_pos, -0.2, 1.6, 0.8, -1.5, 10.0],                     # Full relaxation
-            [base_pos, -0.4, 1.5, 0.9, -1.6, 10.0],                     # Settle into comfort
+            [base_pos, -0.6, 1.4, 1.2, -1.2, 12.0],                     # Deep sigh out - back
+            [base_pos, -0.4, 1.5, 1.0, -1.7, 11.0],                     # Shoulders drop - back
+            [base_pos, -0.3, 1.6, 0.8, -1.5, 10.0],                     # Full relaxation - back
+            [base_pos, -0.5, 1.5, 0.9, -1.6, 10.0],                     # Settle into comfort - back
             [base_pos, -0.75, 1.3, 1.1, -1.5, 11.0],                    # Content final state
             [base_pos, -0.65, 1.2, 1.0, -1.5, 12.0]                     # Home 2
         ]
@@ -693,16 +693,16 @@ class HeadBobbingAnimation(AnimationPlugin):
         
         keyframes = [
             [base_pos, -0.65, 1.2, 1.0, -1.5, 16.0],                    # Home 2
-            [base_pos, -0.55, 1.25, 0.85, -1.3, 18.0],                  # Beat down
-            [base_pos, -0.7, 1.15, 1.15, -1.7, 18.0],                   # Beat up
-            [base_pos, -0.58, 1.22, 0.9, -1.4, 20.0],                   # Quick beat 1
-            [base_pos, -0.68, 1.18, 1.1, -1.6, 20.0],                   # Quick beat 2
-            [base_pos, -0.5, 1.3, 0.8, -1.2, 19.0],                     # Strong beat down
-            [base_pos, -0.75, 1.1, 1.2, -1.8, 18.0],                    # Beat up
-            [base_pos - 0.2, -0.6, 1.2, 0.95, -1.0, 17.0],              # Groove left
-            [base_pos + 0.2, -0.6, 1.2, 0.95, -2.0, 17.0],              # Groove right
-            [base_pos, -0.55, 1.25, 0.85, -1.5, 16.0],                  # Final beat
-            [base_pos, -0.7, 1.2, 1.05, -1.5, 15.0],                    # Cool down
+            [base_pos, -0.65, 1.25, 0.85, -1.3, 18.0],                  # Beat down - back
+            [base_pos, -0.8, 1.15, 1.15, -1.7, 18.0],                   # Beat up - back
+            [base_pos, -0.68, 1.22, 0.9, -1.4, 20.0],                   # Quick beat 1 - back
+            [base_pos, -0.78, 1.18, 1.1, -1.6, 20.0],                   # Quick beat 2 - back
+            [base_pos, -0.6, 1.3, 0.8, -1.2, 19.0],                     # Strong beat down - back
+            [base_pos, -0.85, 1.1, 1.2, -1.8, 18.0],                    # Beat up - back
+            [base_pos - 0.2, -0.7, 1.2, 0.95, -1.0, 17.0],              # Groove left - back
+            [base_pos + 0.2, -0.7, 1.2, 0.95, -2.0, 17.0],              # Groove right - back
+            [base_pos, -0.65, 1.25, 0.85, -1.5, 16.0],                  # Final beat - back
+            [base_pos, -0.8, 1.2, 1.05, -1.5, 15.0],                    # Cool down - back
             [base_pos, -0.65, 1.2, 1.0, -1.5, 14.0]                     # Home 2
         ]
         
@@ -781,16 +781,16 @@ class PonderingAnimation(AnimationPlugin):
         keyframes = [
             [base_pos, -0.65, 1.2, 1.0, -1.5, 12.0],                    # Home 2
             [base_pos, -0.75, 1.15, 1.2, -1.3, 13.0],                   # Initial thought
-            [base_pos, -0.4, 0.9, 0.8, -1.7, 11.0],                     # Chin stroke position
-            [base_pos - 0.1, -0.35, 0.85, 0.75, -1.0, 10.0],            # Deep ponder
-            [base_pos, -0.9, 0.8, 1.5, -1.8, 11.0],                     # Look up thinking
-            [base_pos + 0.3, -0.6, 1.0, 1.1, -0.9, 12.0],               # Side glance
-            [base_pos, -0.45, 0.95, 0.85, -2.0, 10.0],                  # Hmm moment
-            [base_pos - 0.25, -0.5, 1.0, 0.9, -1.2, 11.0],              # Another angle
-            [base_pos, -0.55, 1.05, 0.95, -1.6, 10.0],                  # Processing
-            [base_pos, -0.6, 1.1, 1.0, -1.4, 13.0],                     # Slight understanding nod
-            [base_pos, -0.7, 1.15, 1.15, -1.8, 12.0],                   # Final think
-            [base_pos, -0.75, 1.2, 1.2, -1.5, 14.0],                    # Resolution
+            [base_pos, -0.5, 0.9, 0.8, -1.7, 11.0],                     # Chin stroke position - back
+            [base_pos - 0.1, -0.45, 0.85, 0.75, -1.0, 10.0],            # Deep ponder - back
+            [base_pos, -1.0, 0.8, 1.5, -1.8, 11.0],                     # Look up thinking - far back
+            [base_pos + 0.3, -0.7, 1.0, 1.1, -0.9, 12.0],               # Side glance - back
+            [base_pos, -0.55, 0.95, 0.85, -2.0, 10.0],                  # Hmm moment - back
+            [base_pos - 0.25, -0.6, 1.0, 0.9, -1.2, 11.0],              # Another angle - back
+            [base_pos, -0.65, 1.05, 0.95, -1.6, 10.0],                  # Processing - back
+            [base_pos, -0.7, 1.1, 1.0, -1.4, 13.0],                     # Slight understanding nod - back
+            [base_pos, -0.8, 1.15, 1.15, -1.8, 12.0],                   # Final think - back
+            [base_pos, -0.85, 1.2, 1.2, -1.5, 14.0],                    # Resolution - back
             [base_pos, -0.65, 1.2, 1.0, -1.5, 12.0]                     # Home 2
         ]
         
