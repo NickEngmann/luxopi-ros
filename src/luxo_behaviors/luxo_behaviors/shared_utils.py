@@ -442,11 +442,12 @@ class IdleAnimationConfig:
         'gentle_sway', 'curious_exploration', 'breathing', 
         'attentive_listening', 'playful_bob', 'scanning_watch',
         'settling_adjust', 'dreamy_drift', 'neck_stretch',
-        'yawning_stretch', 'shoulder_shimmy', 'look_around_casual'
+        'yawning_stretch', 'shoulder_shimmy', 'look_around_casual',
+        'pondering', 'tail_wag', 'head_bobbing', 'contented_sigh'
     ]
     
     DEFAULT_PETTING_ANIMATIONS = [
-        'folded_wiggle'
+        'folded_wiggle', 'bouncy_wiggle', 'sleepy_melt'
     ]
 
     DEFAULT_SLEEPING_ANIMATIONS = [

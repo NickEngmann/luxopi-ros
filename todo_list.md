@@ -1,16 +1,7 @@
 # Issues (Needs Stabability)
-- [] Fix Wraparound Logic
-[hardware_interface-2] [INFO] [1751133255.983744664] [hardware_interface]: Voice at -188.13833618164062° beyond max limit - using wraparound to -188.1°
-[hardware_interface-2] [INFO] [1751133255.984738354] [hardware_interface]: Sending voice command: base to -188.1° with position: [-3.28, -0.55, 1.2, 1.0, 2.0]
-- [] Larger Front Cover Replacement
-- [] Camera back on and cleanup its interactions (make it farrr less annoying)
+- [] Voice following is a little bit off (this is called parallax or coordinate systems being off. Right now it is off by 7cm in the x direction. This can easily be fixed)
 
-# New Features
 - [] Update to DepthAI 3.0 (update model as well for more interactions)
-- [] Audio Commands
--- Turn on/off light
--- go to rest position (sleep with LEDs off)
--- wake up - move around and stretch
 
 # Later Priorities
 ## High Priority
