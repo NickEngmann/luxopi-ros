@@ -12,12 +12,11 @@ import random
 import argparse
 
 # Configuration
-PIXEL_COUNT = 76
+PIXEL_COUNT = 60
 # Using proper SPI MOSI pin (GPIO 10, Physical Pin 19)
 print("Using GPIO 10 (MOSI - Pin 19) for NeoPixel SPI")
 
 BRIGHTNESS = 0.5     # 0.0 to 1.0 (start dim for safety)
-SPI_FREQUENCY = 100000  # 100kHz for stability
 
 def init_pixels():
     """Initialize pixels with RGBW color order"""
@@ -34,11 +33,10 @@ def init_pixels():
             brightness=BRIGHTNESS,
             auto_write=False,
             pixel_order=neopixel_spi.RGBW,
-            bpp=3
+            bpp=4
         )
         
-        print(f"NeoPixel SPI initialized: {PIXEL_COUNT} LEDs, Color order: GRB")
-        print(f"SPI Frequency: {SPI_FREQUENCY}Hz for stability")
+        print(f"NeoPixel SPI initialized: {PIXEL_COUNT} LEDs, Color order: RGBW")
         return True
         
     except Exception as e:
@@ -53,44 +51,54 @@ if not init_pixels():
 
 def clear_all():
     """Turn off all LEDs"""
-    pixels.fill((0, 0, 0))
+    pixels.fill((0, 0, 0, 0))  # Added W=0 for RGBW
     pixels.show()
 
-def set_pixel_color(index, r, g, b):
-    """Set a single pixel color"""
-    pixels[index] = (r, g, b)
+def set_pixel_color(index, r, g, b, w=0):
+    """Set a single pixel color - now supports RGBW"""
+    pixels[index] = (r, g, b, w)
 
-def fill_all(r, g, b):
-    """Fill all pixels with color"""
-    pixels.fill((r, g, b))
+def fill_all(r, g, b, w=0):
+    """Fill all pixels with color - now supports RGBW"""
+    pixels.fill((r, g, b, w))
     pixels.show()
 
 def simple_test():
     """Simple test to verify basic functionality"""
-    print(f"\n=== Running SPI NeoPixel Test ===")
+    print(f"\n=== Running SPI NeoPixel Test (RGBW) ===")
     
     try:
         # Test individual colors
         print("Testing individual colors...")
         
         # Red
-        print("Testing RED (255,0,0)...")
-        fill_all(255, 0, 0)
+        print("Testing RED (255,0,0,0)...")
+        fill_all(255, 0, 0, 0)  # R=255, G=0, B=0, W=0
         time.sleep(2)
         
         # Green
-        print("Testing GREEN (0,255,0)...")
-        fill_all(0, 255, 0)
+        print("Testing GREEN (0,255,0,0)...")
+        fill_all(0, 255, 0, 0)  # R=0, G=255, B=0, W=0
         time.sleep(2)
         
         # Blue
-        print("Testing BLUE (0,0,255)...")
-        fill_all(0, 0, 255)
+        print("Testing BLUE (0,0,255,0)...")
+        fill_all(0, 0, 255, 0)  # R=0, G=0, B=255, W=0
         time.sleep(2)
         
-        # White (dimmed for safety)
-        print("Testing WHITE (100,100,100)...")
-        fill_all(100, 100, 100)
+        # White LED (using the dedicated white channel)
+        print("Testing WHITE LED (0,0,0,200)...")
+        fill_all(0, 0, 0, 200)  # R=0, G=0, B=0, W=200
+        time.sleep(2)
+        
+        # RGB White (mixing colors)
+        print("Testing RGB WHITE (100,100,100,0)...")
+        fill_all(200, 200, 200, 0)  # R=100, G=100, B=100, W=0
+        time.sleep(2)
+        
+        # Warm white (RGB + W)
+        print("Testing WARM WHITE (50,50,50,150)...")
+        fill_all(50, 50, 50, 200)  # R=50, G=50, B=50, W=150
         time.sleep(2)
         
         # Test a few pixels individually
@@ -99,7 +107,7 @@ def simple_test():
         
         # Light up every 10th pixel in red
         for i in range(0, PIXEL_COUNT, 10):
-            set_pixel_color(i, 255, 0, 0)
+            set_pixel_color(i, 255, 0, 0, 0)  # Red
         pixels.show()
         time.sleep(1)
         
@@ -107,32 +115,61 @@ def simple_test():
         print("Turning OFF...")
         clear_all()
         
-        print("✅ SPI test completed!")
+        print("[SUCCESS] RGBW SPI test completed!")
         return True
         
     except Exception as e:
-        print(f"❌ SPI test failed: {e}")
+        print(f"[ERROR] SPI test failed: {e}")
         return False
 
 def color_wipe(color, delay=0.03):
     """Light up LEDs one by one with specified color"""
-    r, g, b = color
-    print(f"Color wipe: {color}")
+    if len(color) == 3:
+        r, g, b = color
+        w = 0
+    else:
+        r, g, b, w = color
+    
+    print(f"Color wipe: RGBW({r}, {g}, {b}, {w})")
     for i in range(PIXEL_COUNT):
-        set_pixel_color(i, r, g, b)
+        set_pixel_color(i, r, g, b, w)
         pixels.show()
         time.sleep(delay)
 
-def spinning_dot(color=(255, 255, 255), cycles=3, delay=0.04):
+def spinning_dot(color=(255, 255, 255, 0), cycles=3, delay=0.04):
     """Single dot spinning around the ring"""
-    r, g, b = color
-    print(f"Spinning dot: {color}")
+    if len(color) == 3:
+        r, g, b = color
+        w = 0
+    else:
+        r, g, b, w = color
+        
+    print(f"Spinning dot: RGBW({r}, {g}, {b}, {w})")
     for cycle in range(cycles):
         for i in range(PIXEL_COUNT):
             clear_all()
-            set_pixel_color(i, r, g, b)
+            set_pixel_color(i, r, g, b, w)
             pixels.show()
             time.sleep(delay)
+
+def hold_color(r, g, b, w, color_name):
+    """Hold a solid color until interrupted"""
+    print(f"Setting all LEDs to {color_name} RGBW({r}, {g}, {b}, {w})")
+    print("Press Ctrl+C to stop")
+    
+    # Set the color once
+    fill_all(r, g, b, w)
+    
+    # Add a small delay to ensure data is fully transmitted
+    time.sleep(0.1)
+    
+    try:
+        while True:
+            time.sleep(1)
+                
+    except KeyboardInterrupt:
+        print(f"\n[STOP] {color_name} mode stopped")
+        clear_all()
 
 def rainbow_cycle(cycles=2, delay=0.01):
     """Generate rainbow colors across all LEDs"""
@@ -264,19 +301,6 @@ def hold_color(r, g, b, color_name):
     
     # Set the color once
     fill_all(r, g, b)
-    
-    # Add a small delay to ensure data is fully transmitted
-    time.sleep(0.1)
-    
-    try:
-        # Simply wait indefinitely without refreshing
-        # The LEDs will maintain their state
-        while True:
-            time.sleep(1)  # Sleep for 1 second intervals
-                
-    except KeyboardInterrupt:
-        print(f"\n🛑 {color_name} mode stopped")
-        clear_all()
 
 def main():
     """Main test sequence with argparse"""
@@ -298,27 +322,28 @@ def main():
 
     try:
         if args.mode == 'white':
-            hold_color(255, 255, 255, "WHITE")
+            hold_color(0, 0, 0, 255, "WHITE")  # Pure white LED
         elif args.mode == 'red':
-            hold_color(255, 0, 0, "RED")
+            hold_color(255, 0, 0, 0, "RED")
         elif args.mode == 'green':
-            hold_color(0, 255, 0, "GREEN")
+            hold_color(0, 255, 0, 0, "GREEN")
         elif args.mode == 'blue':
-            hold_color(0, 0, 255, "BLUE")
+            hold_color(0, 0, 255, 0, "BLUE")
         elif args.mode == 'simple':
             simple_test()
         elif args.mode == 'wipe':
-            color_wipe((255, 0, 0), args.delay)
-            color_wipe((0, 255, 0), args.delay)
-            color_wipe((0, 0, 255), args.delay)
+            color_wipe((255, 0, 0, 0), args.delay)  # Red
+            color_wipe((0, 255, 0, 0), args.delay)  # Green
+            color_wipe((0, 0, 255, 0), args.delay)  # Blue
+            color_wipe((0, 0, 0, 200), args.delay)  # White LED
         elif args.mode == 'spin':
-            spinning_dot((255, 255, 255), args.cycles, args.delay)
+            spinning_dot((255, 255, 255, 0), args.cycles, args.delay)
         elif args.mode == 'rainbow':
             rainbow_cycle(args.cycles, args.delay)
         elif args.mode == 'chase':
-            theater_chase((255, 0, 0), args.cycles, args.delay)
+            theater_chase((255, 0, 0, 0), args.cycles, args.delay)
         elif args.mode == 'breathe':
-            breathing_effect((255, 100, 0), args.cycles)
+            breathing_effect((255, 100, 0, 0), args.cycles)
         elif args.mode == 'wave':
             wave_effect(args.cycles, args.delay)
         elif args.mode == 'sparkle':
@@ -328,10 +353,10 @@ def main():
         elif args.mode == 'full':
             # Run full test sequence
             if not simple_test():
-                print("\n❌ Basic test failed!")
+                print("\n[ERROR] Basic test failed!")
                 return
                 
-            print("\n✅ Basic test successful! Running extended tests...")
+            print("\n[SUCCESS] Basic test successful! Running extended tests...")
             
             effect_count = 0
             while effect_count < args.cycles:
@@ -342,17 +367,17 @@ def main():
                 time.sleep(0.5)
 
                 # Basic color wipes
-                color_wipe((255, 0, 0), 0.01)
+                color_wipe((255, 0, 0, 0), 0.01)
                 time.sleep(0.5)
-                color_wipe((0, 255, 0), 0.01)
+                color_wipe((0, 255, 0, 0), 0.01)
                 time.sleep(0.5)
-                color_wipe((0, 0, 255), 0.01)
+                color_wipe((0, 0, 255, 0), 0.01)
                 time.sleep(0.5)
                 
                 # Dynamic effects
-                spinning_dot((255, 0, 255), 2, 0.02)
-                theater_chase((0, 255, 255), 2)
-                breathing_effect((255, 100, 0), 1)
+                spinning_dot((255, 0, 255, 0), 2, 0.02)
+                theater_chase((0, 255, 255, 0), 2)
+                breathing_effect((255, 100, 0, 0), 1)
                 wave_effect(1)
                 rainbow_cycle(1)
                 random_sparkle(3)
@@ -363,14 +388,14 @@ def main():
                 time.sleep(2)
 
     except KeyboardInterrupt:
-        print("\n\n🛑 Test stopped by user")
+        print("\n\n[STOP] Test stopped by user")
         clear_all()
-        print("✅ All LEDs turned off safely")
+        print("[SUCCESS] All LEDs turned off safely")
         
     except Exception as e:
-        print(f"\n❌ Error during test: {e}")
+        print(f"\n[ERROR] Error during test: {e}")
         clear_all()
-        print("✅ All LEDs turned off safely")
+        print("[SUCCESS] All LEDs turned off safely")
 
 
 if __name__ == "__main__":
