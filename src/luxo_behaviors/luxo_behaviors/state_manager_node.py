@@ -90,20 +90,20 @@ class StateManagerNode(Node):
         
         self._initialize_neopixel()
         
-        # State color mappings
+        # State color mappings - Updated to use different white modes strategically
         self._state_colors = {
-            LuxoState.IDLE: (255, 255, 255),
-            LuxoState.INITIALIZING: (0, 100, 255),
-            LuxoState.ANIMATING: (255, 255, 255),
-            LuxoState.VOICE_FOLLOWING: (255, 255, 255),
-            LuxoState.COLLISION_AVOIDING: (255, 128, 0),
-            LuxoState.RETURNING_HOME: (255, 255, 255),
-            LuxoState.ESCAPE_MODE: (255, 0, 0),
-            LuxoState.USER_CONTROL: (255, 255, 255),
-            LuxoState.EMOTION_REACTING: (255, 255, 255),
-            LuxoState.PETTING: (255, 0, 180),
-            LuxoState.ERROR: (255, 0, 0),
-            LuxoState.SHUTDOWN: (128, 128, 128)
+            LuxoState.IDLE: (0, 0, 0, 200),                    # Pure white LED (lowest power)
+            LuxoState.INITIALIZING: (0, 100, 255, 0),          # Blue
+            LuxoState.ANIMATING: (50, 50, 50, 200),           # RGB white (vibrant for animations)
+            LuxoState.VOICE_FOLLOWING: (80, 80, 80, 120),      # Warm white (welcoming RGB + W)
+            LuxoState.COLLISION_AVOIDING: (255, 128, 0, 0),    # Orange (warning)
+            LuxoState.RETURNING_HOME: (200, 255, 100, 100),    # Light green with white
+            LuxoState.ESCAPE_MODE: (255, 0, 0, 0),             # Red (danger)
+            LuxoState.USER_CONTROL: (255, 255, 0, 0),          # Yellow (user input)
+            LuxoState.EMOTION_REACTING: (255, 100, 255, 0),    # Purple (emotional)
+            LuxoState.PETTING: (255, 0, 180, 0),               # Pink (affection)
+            LuxoState.ERROR: (255, 0, 0, 0),                   # Red (error)
+            LuxoState.SHUTDOWN: (50, 50, 50, 0)                # Dim gray
         }
         
         # ROS2 Publishers
@@ -179,7 +179,7 @@ class StateManagerNode(Node):
             from luxo_behaviors.neopixel_control import NeoPixelController
             self._neopixel_controller = NeoPixelController(
                 pixel_count=60,
-                brightness=0.1,
+                brightness=0.5,
                 logger=self.get_logger()
             )
             if self._neopixel_controller.is_initialized():
@@ -493,7 +493,7 @@ class StateManagerNode(Node):
                 # self._neopixel_controller.stop_effect()
                 # time.sleep(0.25)  # Allow time for any effects to stop
                 self._neopixel_controller.clear_all()
-                time.sleep(0.25)  # Allow time for effects to stop
+                time.sleep(0.1)  # Allow time for effects to stop
                 self._neopixel_override_active = True
             else:
                 # Lights are off and override is active - force clear again to override any running animations
@@ -520,14 +520,16 @@ class StateManagerNode(Node):
             return
         
         try:
-            if self._neopixel_last_visual_state is not None:
-                self._neopixel_controller.clear_all()
-                time.sleep(0.1)
-                self.get_logger().debug(f"Cleared pixels for state switch: {self._neopixel_last_visual_state.name} -> {state.name}")
+            # if self._neopixel_last_visual_state is not None:
+            #     pass
+                # self._neopixel_controller.clear_all()
+                # time.sleep(0.1)
+                # self.get_logger().debug(f"Cleared pixels for state switch: {self._neopixel_last_visual_state.name} -> {state.name}")
             
             self._neopixel_controller.stop_effect()
             
-            color = self._state_colors.get(state, (255, 255, 255))
+            # Get RGBW color for state
+            color = self._state_colors.get(state, (0, 0, 0, 255))  # Default to pure white
             needs_animation_timer = False
             
             if state == LuxoState.ERROR:
@@ -535,7 +537,7 @@ class StateManagerNode(Node):
                 self._neopixel_controller.breathing_effect(color, cycles=3, blocking=False)
                 needs_animation_timer = True
             elif state == LuxoState.COLLISION_AVOIDING:
-                self.get_logger().debug("NeoPixel: Orange spinning dot for COLLISION_AVOIDING state")
+                self.get_logger().debug("NeoPixel: Orange spinning group for COLLISION_AVOIDING state")
                 self._neopixel_controller.spinning_group(color, group_size=36, cycles=1, 
                                                        delay_first_60=0.03, delay_last_16=0.06, 
                                                        blocking=False)
@@ -545,7 +547,7 @@ class StateManagerNode(Node):
                 self._neopixel_controller.spinning_dot(color, cycles=3, delay=0.05, blocking=False)
                 needs_animation_timer = True
             elif state == LuxoState.ANIMATING:
-                self.get_logger().debug("NeoPixel: White spinning group for ANIMATING state")
+                self.get_logger().debug("NeoPixel: Warm white spinning group for ANIMATING state")
                 self._neopixel_controller.spinning_group(color, group_size=48, cycles=1, 
                                                        delay_first_60=0.03, delay_last_16=0.06, 
                                                        blocking=False)
@@ -558,11 +560,13 @@ class StateManagerNode(Node):
                 needs_animation_timer = True
             elif state == LuxoState.SHUTDOWN:
                 self.get_logger().debug("NeoPixel: Fading to black for SHUTDOWN state")
-                self._neopixel_controller.breathing_effect((0, 0, 0), cycles=1, blocking=True)
+                self._neopixel_controller.breathing_effect((0, 0, 0, 0), cycles=1, blocking=True)
                 needs_animation_timer = True
             else:
-                self.get_logger().debug(f"NeoPixel: White solid for {state.name} state")
-                self._neopixel_controller.set_solid_color(*color)
+                # For static states, use the RGBW color directly
+                r, g, b, w = color
+                self.get_logger().debug(f"NeoPixel: RGBW({r}, {g}, {b}, {w}) solid for {state.name} state")
+                self._neopixel_controller.set_solid_color(r, g, b, w)
                 needs_animation_timer = False
             
             if needs_animation_timer:

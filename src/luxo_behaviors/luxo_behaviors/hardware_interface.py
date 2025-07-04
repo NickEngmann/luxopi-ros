@@ -379,11 +379,6 @@ class RoArmHardwareInterface(Node):
             # Initialize light status
             self.current_light_status = False
             
-            # Add timer to turn on the light after X seconds
-            self.light_timer = self.create_timer(60.0, self.delayed_light_on)
-            self.get_logger().info("Light will automatically turn on in 60 seconds")
-            
-            self.get_logger().info("RoArm hardware interface initialized")
             
         else:
             self.get_logger().error("Failed to initialize hardware interface")
@@ -1637,28 +1632,6 @@ class RoArmHardwareInterface(Node):
                 pass
 
 
-    def delayed_light_on(self):
-        """Turn on the light after startup delay"""
-        try:
-            self.get_logger().info("Auto-enabling light after startup delay")
-            # Use SerialManager's built-in method to control the light
-            success = self.serial_manager.control_light(255)  # Full brightness
-            
-            if success:
-                # Update our tracked status on successful command
-                self.current_light_status = True
-                self.get_logger().info("Light turned ON automatically")
-                
-                # Immediately publish the status change
-                self.publish_light_status()
-            else:
-                self.get_logger().error("Failed to turn on light automatically")
-                
-            # Cancel the timer so it doesn't fire again
-            self.light_timer.cancel()
-            
-        except Exception as e:
-            self.get_logger().error(f"Error in delayed light control: {e}")
 
     def publish_light_status(self):
         """Publish the current light status."""
