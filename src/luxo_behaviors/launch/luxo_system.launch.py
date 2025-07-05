@@ -305,13 +305,20 @@ def generate_launch_description():
             {'enable_torque': True},
             {'read_throttle': 0.1},
             {'enable_dynamic_adaptation': enable_dynamic_adaptation},
-            {'dynamic_adaptation_base_limit': 60},
-            {'dynamic_adaptation_shoulder_limit': 750},
+            # better values for actually moving the robot
+            # {'dynamic_adaptation_base_limit': 60},
+            # {'dynamic_adaptation_shoulder_limit': 750},
+            # {'dynamic_adaptation_elbow_limit': 50}, 
+            # {'dynamic_adaptation_wrist_limit': 50},
+            # {'dynamic_adaptation_roll_limit': 50},
+            # {'dynamic_adaptation_hand_limit': 50},
+            # values for sleep mode
+            {'dynamic_adaptation_base_limit': 50},
+            {'dynamic_adaptation_shoulder_limit': 50},
             {'dynamic_adaptation_elbow_limit': 50}, 
             {'dynamic_adaptation_wrist_limit': 50},
             {'dynamic_adaptation_roll_limit': 50},
             {'dynamic_adaptation_hand_limit': 50},
-            {'dynamic_adaptation_resume_delay': 10.0},
             {'enable_movement_source_integration': True},  # Explicitly enable movement source integration
             {'ros__parameters': {'log_level': 'error'}},
             {'enable_voice_following': LaunchConfiguration('enable_voice')},
