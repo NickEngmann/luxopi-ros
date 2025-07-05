@@ -563,6 +563,21 @@ class StateManagerNode(Node):
                                                        delay_first_60=0.03, delay_last_16=0.06, 
                                                        blocking=False)
                 needs_animation_timer = True
+            elif state == LuxoState.USER_CONTROL:
+                self.get_logger().debug("NeoPixel: Bouncing direction indicator for USER_CONTROL state")
+                # Create a bouncing direction indicator effect
+                # White primary with blue secondary for wake word detection
+                primary_color = (255, 255, 255, 0)  # White for active listening
+                secondary_color = (0, 100, 255, 0)  # Blue for surrounding
+                self._neopixel_controller.bouncing_direction_indicator(
+                    primary_color=primary_color,
+                    secondary_color=secondary_color,
+                    bounce_range=8,  # Bounce by 8 pixels
+                    start_position=0,  # Start at top of lamp
+                    speed=0.05,  # 50ms between frames for smooth animation
+                    blocking=False
+                )
+                needs_animation_timer = True
             elif state == LuxoState.SHUTDOWN:
                 self.get_logger().debug("NeoPixel: Fading to black for SHUTDOWN state")
                 self._neopixel_controller.breathing_effect((0, 0, 0, 0), cycles=1, blocking=True)

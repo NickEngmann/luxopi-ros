@@ -508,16 +508,25 @@ class RoArmHardwareInterface(Node):
     def _on_enter_user_control(self):
         """Called when entering USER_CONTROL state."""
         self.get_logger().info("Entering USER_CONTROL state")
-        
-        # Only enable DEMA for actual user control, not voice commands
-        # Check if this was triggered by a voice command
-        if hasattr(self, 'last_movement_source') and self.last_movement_source == "voice":
-            self.get_logger().info("USER_CONTROL triggered by voice command - not enabling DEMA")
-            return
+        # Store the position we want to maintain
+        self.user_control_position = self.current_joints.copy() if hasattr(self, 'current_joints') and self.current_joints else None
+        # Start a timer to maintain position during USER_CONTROL
+        if not hasattr(self, 'user_control_timer') or self.user_control_timer is None:
+            self.user_control_timer = self.create_timer(0.1, self._maintain_user_control_position)
     
     def _on_exit_user_control(self):
         """Called when exiting USER_CONTROL state."""
         self.get_logger().info("Exiting USER_CONTROL state")
+        # Stop the position maintenance timer
+        if hasattr(self, 'user_control_timer') and self.user_control_timer is not None:
+            self.user_control_timer.cancel()
+            self.user_control_timer = None
+    
+    def _maintain_user_control_position(self):
+        """Maintain robot position during USER_CONTROL state."""
+        if self.is_in_state(LuxoState.USER_CONTROL) and hasattr(self, 'user_control_position') and self.user_control_position:
+            # Send the stored position to maintain it
+            self.send_safe_joint_command(self.user_control_position, "USER_CONTROL position maintenance")
     
     def _on_enter_error(self):
         """Called when entering ERROR state."""

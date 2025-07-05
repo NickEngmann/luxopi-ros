@@ -722,6 +722,101 @@ class NeoPixelController:
         """Set a solid color across all pixels"""
         return self.fill_all(r, g, b, w)
     
+    def set_direction_indicator(self, position: int = 0, primary_color: Tuple[int, int, int, int] = (255, 255, 255, 0),
+                               secondary_color: Tuple[int, int, int, int] = (0, 0, 255, 0)) -> bool:
+        """
+        Create a direction indicator effect similar to pixel_ring
+        
+        Args:
+            position: Primary LED position (0 to pixel_count-1)
+            primary_color: Color for the main indicator (default white)
+            secondary_color: Color for surrounding LEDs (default blue)
+        """
+        with self._lock:
+            if not self._is_initialized:
+                return False
+            
+            try:
+                # Clear all pixels first
+                for i in range(self.pixel_count):
+                    self._pixel_cache[i] = (0, 0, 0, 0)
+                
+                # Set primary position
+                self.set_pixel_color(position, *primary_color)
+                
+                # Set adjacent pixels with secondary color
+                # Handle wraparound for circular strip
+                prev_pos = (position - 1) % self.pixel_count
+                next_pos = (position + 1) % self.pixel_count
+                
+                self.set_pixel_color(prev_pos, *secondary_color)
+                self.set_pixel_color(next_pos, *secondary_color)
+                
+                # Optional: Add dimmer secondary colors further out
+                prev_prev = (position - 2) % self.pixel_count
+                next_next = (position + 2) % self.pixel_count
+                
+                # Dim the secondary color for outer ring
+                dim_r = secondary_color[0] // 3
+                dim_g = secondary_color[1] // 3
+                dim_b = secondary_color[2] // 3
+                dim_w = secondary_color[3] // 3
+                
+                self.set_pixel_color(prev_prev, dim_r, dim_g, dim_b, dim_w)
+                self.set_pixel_color(next_next, dim_r, dim_g, dim_b, dim_w)
+                
+                # Update the display
+                return self.show()
+                
+            except Exception as e:
+                self._log(f"Failed to set direction indicator: {e}", "error")
+                return False
+    
+    def bouncing_direction_indicator(self, primary_color: Tuple[int, int, int, int] = (255, 255, 255, 0),
+                                   secondary_color: Tuple[int, int, int, int] = (0, 100, 255, 0),
+                                   bounce_range: int = 8, start_position: int = 0,
+                                   speed: float = 0.05, blocking: bool = False) -> bool:
+        """
+        Create a bouncing direction indicator effect
+        
+        Args:
+            primary_color: Color for the main indicator (default white)
+            secondary_color: Color for surrounding LEDs (default blue)
+            bounce_range: Number of pixels to bounce (default 8)
+            start_position: Starting position (default 0)
+            speed: Delay between frames in seconds (default 0.05)
+            blocking: Whether to block execution (default False)
+        """
+        def _bouncing_effect():
+            position = start_position
+            direction = 1  # 1 for forward, -1 for backward
+            
+            while not self._stop_event.is_set():
+                # Update the direction indicator at current position
+                self.set_direction_indicator(position, primary_color, secondary_color)
+                
+                # Wait for next frame
+                time.sleep(speed)
+                
+                # Move to next position
+                position += direction
+                
+                # Check bounds and reverse direction if needed
+                if position >= start_position + bounce_range:
+                    position = start_position + bounce_range - 1
+                    direction = -1
+                elif position < start_position:
+                    position = start_position
+                    direction = 1
+            
+            self._current_mode = NeoPixelMode.OFF
+        
+        if blocking:
+            _bouncing_effect()
+        else:
+            self._run_effect(_bouncing_effect)
+        return True
+    
     def get_current_mode(self) -> NeoPixelMode:
         """Get the current mode"""
         return self._current_mode

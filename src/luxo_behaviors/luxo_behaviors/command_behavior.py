@@ -55,9 +55,14 @@ class CommandBehavior:
         self.current_command_id = None
         self.command_in_progress = False
         self.command_completion_time = None
+        self.last_processed_command_id = None  # Track last command to avoid re-processing
         
         # Command mapping
         self.command_mappings = {
+            # Wake word commands
+            1: 'wake_word',  # Custom wake word
+            2: 'wake_word',  # "Hello robot"
+            
             # Turn off light commands
             104: 'turn_off_light', # "Turn off the light"
             106: 'turn_off_light', # "Dim the light"
@@ -84,6 +89,11 @@ class CommandBehavior:
         self.light_state = True  # Assume lights start on
         self.sleep_state = False  # Track if robot is sleeping
         self.sleep_start_time = None
+        
+        # Wake word state tracking
+        self.wake_word_active = False
+        self.wake_word_time = None
+        self.wake_word_timeout = 1.0  # Seconds to stay in USER_CONTROL after wake word
         
         # Threading for sensor polling
         self.command_thread = None
@@ -163,7 +173,13 @@ class CommandBehavior:
                     command_id = self.dfrobot_sensor.get_CMDID()
                     
                     if command_id != 0:  # 0 means no command
-                        self._handle_voice_command(command_id)
+                        # Only process if it's a new command (not the same as last processed)
+                        if command_id != self.last_processed_command_id:
+                            self._handle_voice_command(command_id)
+                            self.last_processed_command_id = command_id
+                    else:
+                        # Reset when no command is detected
+                        self.last_processed_command_id = None
                 
                 # Sleep for the check interval
                 time.sleep(self.command_check_interval)
@@ -177,9 +193,9 @@ class CommandBehavior:
         with self.command_lock:
             current_time = self.node.get_clock().now()
             
-            # Check cooldown
+            # Check cooldown (but allow wake words through)
             time_since_last = (current_time - self.last_command_time).nanoseconds / 1e9
-            if time_since_last < self.command_cooldown:
+            if time_since_last < self.command_cooldown and command_id not in [1, 2]:
                 self.node.get_logger().info(f"Command {command_id} ignored due to cooldown")
                 return
             
@@ -212,6 +228,12 @@ class CommandBehavior:
                 self.node.get_logger().warn(f"Cannot execute command in {current_state.name} state")
                 return False
             
+            # If already in USER_CONTROL, just mark command in progress
+            if current_state == LuxoState.USER_CONTROL:
+                self.command_in_progress = True
+                self.node.get_logger().info("Already in USER_CONTROL state")
+                return True
+            
             # Request transition with high priority
             success = self._transition_to_state(LuxoState.USER_CONTROL)
             if success:
@@ -229,7 +251,10 @@ class CommandBehavior:
     def _execute_command(self, command_name: str, command_id: int):
         """Execute the specified command."""
         try:
-            if command_name == 'turn_on_light':
+            if command_name == 'wake_word':
+                self.node.get_logger().info("Wake word detected! Entering USER_CONTROL mode")
+                self._handle_wake_word()
+            elif command_name == 'turn_on_light':
                 if self.light_state:
                     self.node.get_logger().info("Lights are already ON")
                     return
@@ -271,6 +296,22 @@ class CommandBehavior:
             self.node.get_logger().error(f"Error executing command {command_name}: {e}")
             self._complete_command()
     
+    def _handle_wake_word(self):
+        """Handle wake word detection - enter USER_CONTROL state with visual feedback."""
+        # Reset wake word timer even if already active (to extend timeout)
+        was_already_active = self.wake_word_active
+        self.wake_word_active = True
+        self.wake_word_time = self.node.get_clock().now()
+        # Make sure command_in_progress is True for proper tracking
+        self.command_in_progress = True
+        
+        if was_already_active:
+            self.node.get_logger().info(f"Wake word timeout reset to {self.wake_word_timeout} seconds")
+        else:
+            # The state transition has already been done in _request_user_control_state
+            # We just need to set up the timeout
+            self.node.get_logger().info(f"Wake word active - will remain in USER_CONTROL for {self.wake_word_timeout} seconds")
+    
     def _turn_on_light(self):
         """Turn on the lights."""
         self.light_state = True
@@ -283,8 +324,13 @@ class CommandBehavior:
             self.sleep_start_time = None
             self.node.get_logger().info("Robot waking up due to light command")
         
-        # Schedule completion after a short delay
-        self._schedule_command_completion(1.0)
+        # If wake word is active, complete immediately to exit USER_CONTROL
+        if self.wake_word_active:
+            self.node.get_logger().info("Exiting USER_CONTROL after light command")
+            self._schedule_command_completion(0.5)
+        else:
+            # Normal completion for non-wake-word initiated commands
+            self._schedule_command_completion(1.0)
     
     def _turn_off_light(self):
         """Turn off the lights."""
@@ -292,8 +338,13 @@ class CommandBehavior:
         self._publish_light_state(self.light_state)
         self.node.get_logger().info("Lights turned OFF")
         
-        # Schedule completion after a short delay
-        self._schedule_command_completion(1.0)
+        # If wake word is active, complete immediately to exit USER_CONTROL
+        if self.wake_word_active:
+            self.node.get_logger().info("Exiting USER_CONTROL after light command")
+            self._schedule_command_completion(0.5)
+        else:
+            # Normal completion for non-wake-word initiated commands
+            self._schedule_command_completion(1.0)
     
     def _wake_up(self):
         """Wake up the robot."""
@@ -478,28 +529,68 @@ class CommandBehavior:
         """Complete the current command and return to previous state."""
         with self.command_lock:
             if not self.command_in_progress:
+                self.node.get_logger().debug("_complete_command called but no command in progress")
                 return
             
+            self.node.get_logger().info("Completing voice command - clearing state")
             self.command_in_progress = False
             self.current_command_id = None
             self.command_completion_time = None
+            self.wake_word_active = False
+            self.wake_word_time = None
             
-            # Return to IDLE state
-            self._transition_to_state(LuxoState.IDLE)
-            self.node.get_logger().info("Voice command completed - returned to IDLE")
+        # Release lock before transition to avoid deadlock
+        self.node.get_logger().info("Requesting transition to IDLE state")
+        # Try requesting with higher priority and force
+        try:
+            # Use the node's request method directly if available
+            if hasattr(self.node, 'request_state_transition'):
+                success = self.node.request_state_transition(LuxoState.IDLE, priority=150, force=True)
+                if success:
+                    self.node.get_logger().info("Voice command completed - transition to IDLE requested via node method")
+                else:
+                    self.node.get_logger().error("Failed to request transition to IDLE state via node method")
+            else:
+                # Fall back to the mixin method
+                success = self._transition_to_state(LuxoState.IDLE)
+                if success:
+                    self.node.get_logger().info("Voice command completed - transition to IDLE requested via mixin method")
+                else:
+                    self.node.get_logger().error("Failed to request transition to IDLE state via mixin method")
+        except Exception as e:
+            self.node.get_logger().error(f"Exception requesting transition to IDLE: {e}")
     
     def check_command_completion(self, current_time):
         """Check if command should be completed (called from safety monitor)."""
+        should_complete = False
+        
         with self.command_lock:
-            if (self.command_in_progress and 
-                self.command_completion_time and 
-                self._is_in_state(LuxoState.USER_CONTROL)):
-                
-                # Check if enough time has passed
+            # Handle wake word timeout differently
+            if self.wake_word_active and self._is_in_state(LuxoState.USER_CONTROL):
+                time_since_wake = (current_time - self.wake_word_time).nanoseconds / 1e9
+                if time_since_wake > self.wake_word_timeout:
+                    self.node.get_logger().info("Wake word timeout - exiting USER_CONTROL")
+                    should_complete = True
+                    # Don't clear wake_word_active here - let _complete_command do it
+            elif (self.command_in_progress and 
+                  self.command_completion_time and 
+                  self._is_in_state(LuxoState.USER_CONTROL)):
+                # Normal command completion
                 time_since_completion = (current_time - self.command_completion_time).nanoseconds / 1e9
                 if time_since_completion > 0.5:  # 500ms grace period
-                    self._complete_command()
-                    return True
+                    should_complete = True
+        
+        # Call _complete_command outside the lock to avoid deadlock
+        if should_complete:
+            self.node.get_logger().info("Calling _complete_command from check_command_completion")
+            try:
+                self._complete_command()
+                self.node.get_logger().info("_complete_command returned successfully")
+                return True
+            except Exception as e:
+                self.node.get_logger().error(f"Exception in _complete_command: {e}")
+                return False
+        
         return False
     
     def is_sleeping(self) -> bool:
