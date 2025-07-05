@@ -88,6 +88,10 @@ class StateManagerNode(Node):
         self._neopixel_pending_state = None
         self._current_animation_duration = None
         
+        # Color and brightness state
+        self._default_white_color = (255, 255, 255, 100)  # Default neutral white RGBW
+        self._color_mode = None  # Track if we're in a specific color mode
+        
         # NeoPixel update rate limiting
         self._neopixel_last_update_check = 0
         self._neopixel_update_interval = 0.25  # Check at 4Hz instead of 10Hz
@@ -155,6 +159,27 @@ class StateManagerNode(Node):
             Bool,
             '/luxo/light_control',
             self.light_control_callback,
+            10
+        )
+        
+        self.brightness_control_sub = self.create_subscription(
+            String,
+            '/luxo/brightness_control',
+            self.brightness_control_callback,
+            10
+        )
+        
+        self.color_temp_control_sub = self.create_subscription(
+            String,
+            '/luxo/color_temp_control',
+            self.color_temp_control_callback,
+            10
+        )
+        
+        self.color_control_sub = self.create_subscription(
+            String,
+            '/luxo/color_control',
+            self.color_control_callback,
             10
         )
 
@@ -484,6 +509,104 @@ class StateManagerNode(Node):
                     
         except Exception as e:
             self.get_logger().error(f"Error in light control callback: {e}")
+    
+    def brightness_control_callback(self, msg):
+        """Handle brightness control commands."""
+        try:
+            # Parse brightness value from message (format: "brightness:0.5")
+            if msg.data.startswith("brightness:"):
+                brightness_str = msg.data.split(":")[1]
+                brightness = float(brightness_str)
+                
+                if self._neopixel_controller:
+                    success = self._neopixel_controller.set_brightness(brightness)
+                    if success:
+                        self.get_logger().info(f"NeoPixel brightness set to {brightness:.1%}")
+                    else:
+                        self.get_logger().error("Failed to set NeoPixel brightness")
+        except Exception as e:
+            self.get_logger().error(f"Error in brightness control callback: {e}")
+    
+    def color_temp_control_callback(self, msg):
+        """Handle color temperature control commands."""
+        try:
+            # Parse color temperature from message (format: "color_temp:0.5")
+            if msg.data.startswith("color_temp:"):
+                temp_str = msg.data.split(":")[1]
+                color_temp = float(temp_str)
+                
+                # Calculate RGB values based on color temperature
+                # 0.0 = cool (more blue), 1.0 = warm (more red/yellow)
+                if color_temp <= 0.5:
+                    # Cool to neutral: blend from blue-white to neutral white
+                    blend = color_temp * 2  # 0 to 1
+                    r = int(200 + (55 * blend))  # 200 to 255
+                    g = int(200 + (55 * blend))  # 200 to 255
+                    b = int(255)  # Keep blue high
+                    w = int(50 * blend)  # 0 to 50
+                else:
+                    # Neutral to warm: blend from neutral white to warm white
+                    blend = (color_temp - 0.5) * 2  # 0 to 1
+                    r = int(255)  # Keep red high
+                    g = int(255 - (55 * blend))  # 255 to 200
+                    b = int(255 - (105 * blend))  # 255 to 150
+                    w = int(50 + (100 * blend))  # 50 to 150
+                
+                # Store the temperature-based white color
+                self._default_white_color = (r, g, b, w)
+                
+                # If lights are on and not in a specific color mode, apply the new temperature
+                if self._lights_enabled and self._neopixel_controller:
+                    # Only apply if we're currently showing white/default colors
+                    if not hasattr(self, '_color_mode') or self._color_mode is None:
+                        self._update_neopixel_for_state(self._current_state)
+                        
+                self.get_logger().info(f"Color temperature set to {color_temp:.1%} (RGBW: {r}, {g}, {b}, {w})")
+                
+        except Exception as e:
+            self.get_logger().error(f"Error in color temperature control callback: {e}")
+    
+    def color_control_callback(self, msg):
+        """Handle color control commands."""
+        try:
+            # Parse color from message (format: "color:red")
+            if msg.data.startswith("color:"):
+                color_name = msg.data.split(":")[1]
+                
+                # Define color mappings (RGBW format)
+                color_map = {
+                    'red': (255, 0, 0, 0),
+                    'orange': (255, 128, 0, 0),
+                    'yellow': (255, 255, 0, 0),
+                    'green': (0, 255, 0, 0),
+                    'cyan': (0, 255, 255, 0),
+                    'blue': (0, 0, 255, 0),
+                    'purple': (128, 0, 255, 0),
+                    'white': None  # Use stored default white
+                }
+                
+                if color_name == 'white':
+                    # Return to default white mode
+                    self._color_mode = None
+                    if hasattr(self, '_default_white_color'):
+                        color = self._default_white_color
+                    else:
+                        color = (255, 255, 255, 100)  # Default neutral white
+                else:
+                    # Set specific color mode
+                    self._color_mode = color_name
+                    color = color_map.get(color_name, (255, 255, 255, 0))
+                
+                # Apply the color if lights are on
+                if self._lights_enabled and self._neopixel_controller and color:
+                    success = self._neopixel_controller.set_solid_color(*color)
+                    if success:
+                        self.get_logger().info(f"NeoPixel color set to {color_name}")
+                    else:
+                        self.get_logger().error(f"Failed to set NeoPixel color to {color_name}")
+                        
+        except Exception as e:
+            self.get_logger().error(f"Error in color control callback: {e}")
 
     def _update_neopixel_for_state(self, state: LuxoState):
         """Update NeoPixel display based on current state"""
@@ -534,7 +657,32 @@ class StateManagerNode(Node):
             self._neopixel_controller.stop_effect()
             
             # Get RGBW color for state
-            color = self._state_colors.get(state, (0, 0, 0, 255))  # Default to pure white
+            # Check if we're in a specific color mode
+            if self._color_mode is not None:
+                # Use the color mode color for all states except ERROR
+                if state != LuxoState.ERROR:
+                    color_map = {
+                        'red': (255, 0, 0, 0),
+                        'orange': (255, 128, 0, 0),
+                        'yellow': (255, 255, 0, 0),
+                        'green': (0, 255, 0, 0),
+                        'cyan': (0, 255, 255, 0),
+                        'blue': (0, 0, 255, 0),
+                        'purple': (128, 0, 255, 0)
+                    }
+                    color = color_map.get(self._color_mode, self._default_white_color)
+                else:
+                    # ERROR state always uses red
+                    color = self._state_colors.get(state, (255, 0, 0, 0))
+            else:
+                # Use state-based colors, but apply color temperature to white states
+                default_color = self._state_colors.get(state, (0, 0, 0, 255))
+                # If it's a white-ish color (high white component), use our temperature-adjusted white
+                if default_color[3] > 50:  # Has significant white component
+                    color = self._default_white_color
+                else:
+                    color = default_color
+            
             needs_animation_timer = False
             
             if state == LuxoState.ERROR:

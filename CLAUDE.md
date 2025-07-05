@@ -143,7 +143,7 @@ The main launch file `luxo_system.launch.py` supports these parameters:
 
 The system uses a DFRobot DF2301Q voice recognition module connected via I2C (bus 3).
 
-### Available Commands (17 total)
+### Available Commands (29 total)
 
 #### Wake Word Commands
 - Command ID 1: Custom wake word (user-programmed)
@@ -151,16 +151,32 @@ The system uses a DFRobot DF2301Q voice recognition module connected via I2C (bu
 
 These wake words activate USER_CONTROL mode for 10 seconds (or until the next command), displaying a bouncing white/blue direction indicator on the NeoPixels that moves back and forth by 8 pixels.
 
-#### Light Control Commands
-**Turn OFF light:**
-- Command ID 104: "Turn off the light"
-- Command ID 106: "Dim the light"
-- Command ID 108: "Adjust brightness to minimum"
-
-**Turn ON light:**
+#### Basic Light Control Commands
+**Turn OFF/ON light:**
 - Command ID 103: "Turn on the light"
-- Command ID 105: "Brighten the light"
-- Command ID 107: "Adjust brightness to maximum"
+- Command ID 104: "Turn off the light"
+
+#### Brightness Control Commands
+- Command ID 105: "Brighten the light" - Increases brightness by 20%
+- Command ID 106: "Dim the light" - Decreases brightness by 20%
+- Command ID 107: "Adjust brightness to maximum" - Sets brightness to 100%
+- Command ID 108: "Adjust brightness to minimum" - Sets brightness to 10%
+
+#### Color Temperature Commands
+- Command ID 109: "Increase color temperature" - Makes light warmer (more red/yellow)
+- Command ID 110: "Decrease color temperature" - Makes light cooler (more blue)
+- Command ID 111: "Adjust color temperature to maximum" - Sets warmest temperature
+- Command ID 112: "Adjust color temperature to minimum" - Sets coolest temperature
+
+#### Color Setting Commands
+- Command ID 116: "Set to red"
+- Command ID 117: "Set to orange"
+- Command ID 118: "Set to yellow"
+- Command ID 119: "Set to green"
+- Command ID 120: "Set to cyan"
+- Command ID 121: "Set to blue"
+- Command ID 122: "Set to purple"
+- Command ID 123: "Set to white" - Returns to default white with current temperature
 
 #### Wake Up Commands
 - Command ID 80: "Start oscillating"
@@ -175,15 +191,25 @@ These wake words activate USER_CONTROL mode for 10 seconds (or until the next co
 
 ### Command Execution Flow
 1. Voice command detected by DFRobot sensor
-2. Command ID mapped to action (wake_word, turn_on_light, turn_off_light, wake_up, go_to_sleep)
+2. Command ID mapped to action (wake_word, light control, brightness, color temp, color, wake_up, go_to_sleep)
 3. State machine transitions to USER_CONTROL state
 4. Command executed with appropriate actions:
    - Wake words: Enter listening mode for 10 seconds with bouncing direction indicator visual
-   - Light commands: Control NeoPixel LEDs (exits USER_CONTROL immediately if wake word initiated)
+   - Basic light commands: Turn NeoPixel LEDs on/off (exits USER_CONTROL immediately if wake word initiated)
+   - Brightness commands: Adjust global LED brightness (0.1 to 1.0 range)
+   - Color temperature: Adjust white color from cool blue-white to warm yellow-white
+   - Color commands: Set specific colors, overriding state-based colors (except ERROR state)
    - Wake up: Disable DEMA mode, enable torque, turn on lights
    - Sleep: Play sleep animation, enable DEMA mode, turn off lights
 5. Confirmation sound played
 6. Return to IDLE state after completion (timeout or next command for wake words)
+
+### Light Control Details
+- **Brightness**: Ranges from 0.1 (10%) to 1.0 (100%), adjustable in 20% steps
+- **Color Temperature**: 0.0 = coolest (blue-white), 1.0 = warmest (yellow-white)
+- **Color Modes**: When a specific color is set, it overrides state-based colors
+- **Smart Transitions**: When adjusting temperature while in color mode, system returns to white first
+- **State Priority**: ERROR state always displays red regardless of color settings
 
 ### Configuration
 - Default volume: 7/20

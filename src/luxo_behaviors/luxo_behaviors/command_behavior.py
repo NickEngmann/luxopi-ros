@@ -8,7 +8,7 @@ Handles DFRobot voice recognition commands for lighting and robot control.
 import threading
 import time
 from typing import Optional, Dict, Set
-from std_msgs.msg import Bool
+from std_msgs.msg import Bool, String
 from luxo_behaviors.state_machine import LuxoState
 from rclpy.action import ActionClient
 from luxo_interfaces.action import PlayAnimation
@@ -65,13 +65,31 @@ class CommandBehavior:
             
             # Turn off light commands
             104: 'turn_off_light', # "Turn off the light"
-            106: 'turn_off_light', # "Dim the light"
-            108: 'turn_off_light', # "Adjust brightness to minimum"
             
             # Turn on light commands
             103: 'turn_on_light',  # "Turn on the light"
-            105: 'turn_on_light',  # "Brighten the light"
-            107: 'turn_on_light',  # "Adjust brightness to maximum"
+            
+            # Brightness control commands
+            105: 'increase_brightness',  # "Brighten the light"
+            106: 'decrease_brightness',  # "Dim the light"
+            107: 'set_brightness_max',   # "Adjust brightness to maximum"
+            108: 'set_brightness_min',   # "Adjust brightness to minimum"
+            
+            # Color temperature commands
+            109: 'increase_color_temp',  # "Increase color temperature" (warmer)
+            110: 'decrease_color_temp',  # "Decrease color temperature" (cooler)
+            111: 'set_color_temp_max',   # "Adjust color temperature to maximum" (warmest)
+            112: 'set_color_temp_min',   # "Adjust color temperature to minimum" (coolest)
+            
+            # Color setting commands
+            116: 'set_color_red',     # "Set to red"
+            117: 'set_color_orange',  # "Set to orange"
+            118: 'set_color_yellow',  # "Set to yellow"
+            119: 'set_color_green',   # "Set to green"
+            120: 'set_color_cyan',    # "Set to cyan"
+            121: 'set_color_blue',    # "Set to blue"
+            122: 'set_color_purple',  # "Set to purple"
+            123: 'set_color_white',   # "Set to white"
             
             # Wake up commands
             80: 'wake_up', # "Start oscillating"
@@ -90,10 +108,15 @@ class CommandBehavior:
         self.sleep_state = False  # Track if robot is sleeping
         self.sleep_start_time = None
         
+        # Brightness and color tracking
+        self.current_brightness = 0.8  # Track current brightness level (0.0-1.0)
+        self.current_color_temp = 0.5  # Track color temperature (0.0=coolest, 1.0=warmest)
+        self.color_mode = None  # Track if we're in a specific color mode
+        
         # Wake word state tracking
         self.wake_word_active = False
         self.wake_word_time = None
-        self.wake_word_timeout = 1.0  # Seconds to stay in USER_CONTROL after wake word
+        self.wake_word_timeout = 10.0  # Seconds to stay in USER_CONTROL after wake word
         
         # Threading for sensor polling
         self.command_thread = None
@@ -108,6 +131,25 @@ class CommandBehavior:
         self.light_control_publisher = self.node.create_publisher(
             Bool,
             '/luxo/light_control',
+            10
+        )
+        
+        # Create publishers for advanced light control
+        self.brightness_control_publisher = self.node.create_publisher(
+            String,
+            '/luxo/brightness_control',
+            10
+        )
+        
+        self.color_temp_control_publisher = self.node.create_publisher(
+            String,
+            '/luxo/color_temp_control',
+            10
+        )
+        
+        self.color_control_publisher = self.node.create_publisher(
+            String,
+            '/luxo/color_control',
             10
         )
         
@@ -278,6 +320,57 @@ class CommandBehavior:
                     return
                 self.node.get_logger().info("Executing command: Go to sleep")
                 self._go_to_sleep()
+            # Brightness control commands
+            elif command_name == 'increase_brightness':
+                self.node.get_logger().info("Executing command: Increase brightness")
+                self._adjust_brightness(increase=True)
+            elif command_name == 'decrease_brightness':
+                self.node.get_logger().info("Executing command: Decrease brightness")
+                self._adjust_brightness(increase=False)
+            elif command_name == 'set_brightness_max':
+                self.node.get_logger().info("Executing command: Set brightness to maximum")
+                self._set_brightness(1.0)
+            elif command_name == 'set_brightness_min':
+                self.node.get_logger().info("Executing command: Set brightness to minimum")
+                self._set_brightness(0.1)
+            # Color temperature commands
+            elif command_name == 'increase_color_temp':
+                self.node.get_logger().info("Executing command: Increase color temperature (warmer)")
+                self._adjust_color_temperature(increase=True)
+            elif command_name == 'decrease_color_temp':
+                self.node.get_logger().info("Executing command: Decrease color temperature (cooler)")
+                self._adjust_color_temperature(increase=False)
+            elif command_name == 'set_color_temp_max':
+                self.node.get_logger().info("Executing command: Set color temperature to maximum (warmest)")
+                self._set_color_temperature(1.0)
+            elif command_name == 'set_color_temp_min':
+                self.node.get_logger().info("Executing command: Set color temperature to minimum (coolest)")
+                self._set_color_temperature(0.0)
+            # Color setting commands
+            elif command_name == 'set_color_red':
+                self.node.get_logger().info("Executing command: Set color to red")
+                self._set_color('red')
+            elif command_name == 'set_color_orange':
+                self.node.get_logger().info("Executing command: Set color to orange")
+                self._set_color('orange')
+            elif command_name == 'set_color_yellow':
+                self.node.get_logger().info("Executing command: Set color to yellow")
+                self._set_color('yellow')
+            elif command_name == 'set_color_green':
+                self.node.get_logger().info("Executing command: Set color to green")
+                self._set_color('green')
+            elif command_name == 'set_color_cyan':
+                self.node.get_logger().info("Executing command: Set color to cyan")
+                self._set_color('cyan')
+            elif command_name == 'set_color_blue':
+                self.node.get_logger().info("Executing command: Set color to blue")
+                self._set_color('blue')
+            elif command_name == 'set_color_purple':
+                self.node.get_logger().info("Executing command: Set color to purple")
+                self._set_color('purple')
+            elif command_name == 'set_color_white':
+                self.node.get_logger().info("Executing command: Set color to white")
+                self._set_color('white')
             else:
                 self.node.get_logger().warn(f"Unknown command: {command_name}")
                 return
@@ -613,6 +706,102 @@ class CommandBehavior:
                 'sleep_state': self.sleep_state,
                 'last_command_time': self.last_command_time
             }
+    
+    def _adjust_brightness(self, increase: bool):
+        """Adjust brightness up or down by steps."""
+        step = 0.2  # 20% steps
+        if increase:
+            self.current_brightness = min(1.0, self.current_brightness + step)
+        else:
+            self.current_brightness = max(0.1, self.current_brightness - step)  # Min 0.1 to keep some light
+        
+        self._publish_brightness_control(self.current_brightness)
+        self.node.get_logger().info(f"Brightness adjusted to {self.current_brightness:.1%}")
+        self._schedule_command_completion(0.5)
+    
+    def _set_brightness(self, level: float):
+        """Set brightness to a specific level."""
+        self.current_brightness = max(0.0, min(1.0, level))  # Clamp between 0.0 and 1.0
+        self._publish_brightness_control(self.current_brightness)
+        self.node.get_logger().info(f"Brightness set to {self.current_brightness:.1%}")
+        self._schedule_command_completion(0.5)
+    
+    def _adjust_color_temperature(self, increase: bool):
+        """Adjust color temperature warmer or cooler."""
+        step = 0.2  # 20% steps
+        if increase:  # Warmer
+            self.current_color_temp = min(1.0, self.current_color_temp + step)
+        else:  # Cooler
+            self.current_color_temp = max(0.0, self.current_color_temp - step)
+        
+        # If we're in a color mode, transition back to white first
+        if self.color_mode is not None:
+            self.color_mode = None
+            self._publish_color_control('white')
+            time.sleep(0.1)  # Brief pause for color change
+        
+        self._publish_color_temperature(self.current_color_temp)
+        self.node.get_logger().info(f"Color temperature adjusted to {self.current_color_temp:.1%} (0=cool, 1=warm)")
+        self._schedule_command_completion(0.5)
+    
+    def _set_color_temperature(self, level: float):
+        """Set color temperature to a specific level."""
+        self.current_color_temp = max(0.0, min(1.0, level))  # Clamp between 0.0 and 1.0
+        
+        # If we're in a color mode, transition back to white first
+        if self.color_mode is not None:
+            self.color_mode = None
+            self._publish_color_control('white')
+            time.sleep(0.1)  # Brief pause for color change
+        
+        self._publish_color_temperature(self.current_color_temp)
+        self.node.get_logger().info(f"Color temperature set to {self.current_color_temp:.1%} (0=cool, 1=warm)")
+        self._schedule_command_completion(0.5)
+    
+    def _set_color(self, color: str):
+        """Set the LED color."""
+        if color == 'white':
+            # Return to white mode with current color temperature
+            self.color_mode = None
+            self._publish_color_control('white')
+            # Re-apply current color temperature
+            self._publish_color_temperature(self.current_color_temp)
+        else:
+            self.color_mode = color
+            self._publish_color_control(color)
+        
+        self.node.get_logger().info(f"Color set to {color}")
+        self._schedule_command_completion(0.5)
+    
+    def _publish_brightness_control(self, brightness: float):
+        """Publish brightness control message."""
+        try:
+            msg = String()
+            msg.data = f"brightness:{brightness}"
+            self.brightness_control_publisher.publish(msg)
+            self.node.get_logger().info(f"Published brightness control: {brightness}")
+        except Exception as e:
+            self.node.get_logger().error(f"Error publishing brightness: {e}")
+    
+    def _publish_color_temperature(self, temp: float):
+        """Publish color temperature control message."""
+        try:
+            msg = String()
+            msg.data = f"color_temp:{temp}"
+            self.color_temp_control_publisher.publish(msg)
+            self.node.get_logger().info(f"Published color temperature control: {temp}")
+        except Exception as e:
+            self.node.get_logger().error(f"Error publishing color temperature: {e}")
+    
+    def _publish_color_control(self, color: str):
+        """Publish color control message."""
+        try:
+            msg = String()
+            msg.data = f"color:{color}"
+            self.color_control_publisher.publish(msg)
+            self.node.get_logger().info(f"Published color control: {color}")
+        except Exception as e:
+            self.node.get_logger().error(f"Error publishing color: {e}")
     
     def cleanup_command_behavior(self):
         """Clean up command behavior resources."""
