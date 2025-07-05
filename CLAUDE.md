@@ -18,15 +18,18 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **ROS2**: Jazzy distribution
 - **Communication**: Serial JSON protocol at 115200 baud
 - **Vision**: DepthAI for face/emotion detection
-- **Audio**: Voice command recognition and direction detection
+- **Audio**: DFRobot DF2301Q voice recognition + ReSpeaker 2-mic array for direction
+- **Display**: Framebuffer display with system metrics and state visualization
 
 ## Core Architecture Principles
 
 1. **Centralized State Management**: `state_manager.py` coordinates all behaviors through a priority-based state machine
 2. **Modular Behaviors**: Each behavior (collision, voice, emotion, etc.) is a separate node communicating via ROS2
-3. **Hardware Abstraction**: `hardware_interface.py` provides thread-safe robot control with DEMA support
-4. **Safety First**: Multi-layer collision detection with graceful degradation
-5. **Animation System**: Disney-principles based with frame interpolation and priority handling
+3. **Mixin-Based Architecture**: Behaviors are implemented as mixins combined in `behavior_coordinator.py`
+4. **Hardware Abstraction**: `hardware_interface.py` provides thread-safe robot control with DEMA support
+5. **Safety First**: Multi-layer collision detection with graceful degradation
+6. **Animation System**: Disney-principles based with frame interpolation and priority handling
+7. **Shared Utilities**: Common functionality in `shared_utils.py` for consistency
 
 ## Build and Run Commands
 
@@ -136,14 +139,50 @@ The main launch file `luxo_system.launch.py` supports these parameters:
 #### Petting Animations (3)
 `folded_wiggle`, `bouncy_wiggle`, `sleepy_melt`
 
-## Voice Commands (DFRobot)
+## Voice Command System (DFRobot DF2301Q)
 
-### Light Control
-- "Turn on/off the light", "Dim/Brighten the light", "Adjust brightness to min/max"
+The system uses a DFRobot DF2301Q voice recognition module connected via I2C (bus 3).
 
-### Sleep/Wake
-- Wake: "Start oscillating", "Daylight mode", "Color mode"
-- Sleep: "Stop oscillating", "Reset", "Stop playing", "Moonlight mode"
+### Available Commands (15 total)
+
+#### Light Control Commands
+**Turn OFF light:**
+- Command ID 104: "Turn off the light"
+- Command ID 106: "Dim the light"
+- Command ID 108: "Adjust brightness to minimum"
+
+**Turn ON light:**
+- Command ID 103: "Turn on the light"
+- Command ID 105: "Brighten the light"
+- Command ID 107: "Adjust brightness to maximum"
+
+#### Wake Up Commands
+- Command ID 80: "Start oscillating"
+- Command ID 113: "Daylight mode"
+- Command ID 115: "Color mode"
+
+#### Go to Sleep Commands
+- Command ID 81: "Stop oscillating"
+- Command ID 82: "Reset"
+- Command ID 93: "Stop playing"
+- Command ID 114: "Moonlight mode"
+
+### Command Execution Flow
+1. Voice command detected by DFRobot sensor
+2. Command ID mapped to action (turn_on_light, turn_off_light, wake_up, go_to_sleep)
+3. State machine transitions to USER_CONTROL state
+4. Command executed with appropriate actions:
+   - Light commands: Control NeoPixel LEDs
+   - Wake up: Disable DEMA mode, enable torque, turn on lights
+   - Sleep: Play sleep animation, enable DEMA mode, turn off lights
+5. Confirmation sound played
+6. Return to IDLE state after completion
+
+### Configuration
+- Default volume: 7/20
+- Wake time: 20 seconds
+- Command check interval: 100ms
+- Cooldown between commands: 2 seconds
 
 ## State Machine
 
@@ -293,24 +332,113 @@ luxo_behaviors/
 ```
 
 ### Key Modules
+
+#### Core System
 - `state_manager.py`: Central coordinator, state machine
 - `hardware_interface.py`: Robot control, safety limits
 - `animation_command.py`: Animation engine, interpolation
+- `behavior_coordinator.py`: Combines all behavior mixins
+
+#### Behavior Modules (Mixins)
 - `command_behavior.py`: Voice commands, behavior mapping
-- `collision_ros_node.py`: Collision logic, escape strategies
+- `petting_behavior.py`: Touch sensor responses (3 animations)
+- `collision_behavior.py`: Three-layer collision detection and avoidance
+- `voice_behavior.py`: Voice direction tracking with face visibility optimization
+- `idle_behavior.py`: Autonomous idle animations and head variations
+
+#### Hardware Communication
+- `serial_manager.py`: Thread-safe serial communication with heartbeat
+- `i2c_device_manager.py`: I2C sensor management (APDS9960, VL53L4CD)
+- `DFRobot_DF2301Q.py`: Voice recognition hardware driver
+
+#### Vision & Audio
 - `camera_interaction.py`: Vision, emotion detection
 - `voice_direction_node.py`: Voice tracking with motor awareness
-- `idle_behavior.py`: Autonomous behavior system
-- `i2c_device_manager.py`: Sensor management
+- `mic_array.py`: ReSpeaker microphone array interface
+- `gcc_phat.py`: Audio localization algorithm
+- `pixel_ring.py`: LED ring control for ReSpeaker
 
-## Voice Direction System Details
+#### Display & Monitoring
+- `framebuffer_display.py`: System status display with state visualization
+- `system_monitor.py`: CPU, RAM, temperature monitoring
 
-The voice direction system (`voice_direction_node.py`) includes:
+#### Utilities
+- `shared_utils.py`: Central utility classes:
+  - PositionUtils: Joint manipulation
+  - StateUtils: State transitions
+  - MovementSourcePublisher: DEMA coordination
+  - CollisionStatusTracker: Multi-directional tracking
+  - TimeUtils: ROS time operations
+  - SafetyLimits: Joint boundaries
+  - AnimationTracker: Animation state
+  - CollisionMath: Collision calculations
+  - MovementValidator: Safety validation
+
+## Behavior System Details
+
+### Voice Direction System (`voice_direction_node.py`)
 - **Motor awareness**: Compensates for motor noise during movement
 - **Parallax correction**: Adjusts for microphone array position (10cm behind, 15cm up)
 - **Direction mapping**: Front=-30°, Right=-120°, Back=150°, Left=60°
 - **Smooth tracking**: Configurable speed and deadzone
 - **Face visibility optimization**: Varies neck position for better detection
+
+### Petting Behavior (`petting_behavior.py`)
+- **Touch Detection**: Via `/collision/petting_events` topic
+- **Animations**: folded_wiggle, bouncy_wiggle, sleepy_melt
+- **Cooldown**: 8 seconds between animations
+- **Timeout**: 5 seconds to detect petting cessation
+- **State Integration**: Only from IDLE, ANIMATING, or VOICE_FOLLOWING
+
+### Collision Behavior (`collision_behavior.py`)
+- **Three-Layer Response**:
+  1. Path adjustment (warning: <15cm)
+  2. Avoidance maneuvers (danger: <10cm)
+  3. Escape mode (persistent collisions)
+- **Escape Threshold**: 10 consecutive collisions
+- **Base Rotation Awareness**: Handles -90° to 90° limits with wraparound
+- **Safe Zone Recording**: Avoids known obstacles
+
+### Idle Behavior (`idle_behavior.py`)
+- **Animation Timing**: Random 10-60 second intervals
+- **Head Variations**: Subtle movements every 1-5 seconds
+- **Extended Idle**: Returns home after prolonged inactivity
+- **16 Idle Animations**: From gentle_sway to pondering
+
+### Behavior Coordinator (`behavior_coordinator.py`)
+- **Priority System**: Collision > Petting > Voice > Idle
+- **Target Arbitration**: Resolves conflicts between behaviors
+- **Two-Stage Home**: Safe return sequence
+- **Animation Validation**: Ensures keyframe safety
+
+## Additional Infrastructure
+
+### Display System (`framebuffer_display.py`)
+- Direct framebuffer access for small screen
+- System metrics: CPU, RAM, temperature
+- State visualization with friendly descriptions
+- Emotion and face detection overlays
+- Touch sensor visualization
+- Collision sensor status
+- Joint position display
+- Special effects: Pink filter for petting, red for anger
+
+### Audio Processing
+- **ReSpeaker 4-mic array**: Direction of Arrival calculation
+- **GCC-PHAT algorithm**: Time delay estimation for localization
+- **LED ring animations**: Listen, speak, think, spin patterns
+
+### Scripts and Tools
+- `start_luxopi.sh`: Smart launch with health monitoring
+- `stop_luxopi.sh`: Graceful shutdown with close animation
+- `INSTALL.sh`: System setup and dependencies
+- `diagnostic_checker.py`: System health monitoring
+
+### Message Types
+- `StateInfo.msg`: State machine information
+- `ConfigureI2CSensor.srv`: Sensor configuration
+- `RequestStateTransition.srv`: State transitions
+- `PlayAnimation.action`: Animation control with progress
 
 ## Testing and Development
 
@@ -402,6 +530,34 @@ screen /dev/ttyAMA0 115200
 
 # Test I2C devices
 i2cdetect -y 1
+
+# Monitor system metrics
+ros2 topic echo /system/cpu_usage
+ros2 topic echo /system/ram_usage
+ros2 topic echo /system/temperature
+
+# Check voice command detection
+ros2 topic echo /voice_command/detected
+
+# Monitor behavior coordination
+ros2 topic echo /luxo/target_override
+ros2 topic echo /luxo/movement_source
 ```
+
+## Error Recovery
+
+1. **Serial Connection Lost**: Automatic reconnection with heartbeat
+2. **I2C Sensor Failure**: Health monitoring and re-initialization
+3. **State Machine Error**: ERROR state with recovery mechanisms
+4. **Collision Persistence**: Escape mode with multiple strategies
+5. **Animation Failures**: Preemption and safety validation
+
+## Resource Locations
+
+- **Voice Commands Documentation**: `src/luxo_behaviors/resource/voice_command.md`
+- **Animation Guidelines**: `animation_guidelines.md`
+- **Robot API**: `ROBOT_ARM_API.md`
+- **Architecture Diagram**: `architecture_diagram.svg`
+- **Service Files**: `luxopi.service`, `luxopi-ros.service`
 
 System uses ROS2 Jazzy on Ubuntu 24.04. Python packages require `--break-system-packages` flag.
