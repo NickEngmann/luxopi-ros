@@ -51,7 +51,7 @@ class RoArmHardwareInterface(Node):
         
         # Base joint limit parameters (in degrees, converted to radians internally)
         self.declare_parameter('base_min_limit_deg', -260.0)  # Minimum base rotation in degrees
-        self.declare_parameter('base_max_limit_deg', 140.0)   # Maximum base rotation in degrees
+        self.declare_parameter('base_max_limit_deg', 160.0)   # Maximum base rotation in degrees
         self.declare_parameter('base_limit_buffer_deg', 10.0) # Buffer zone before hard limit in degrees
         self.declare_parameter('enable_base_wraparound', True) # Enable wraparound for collision avoidance
         
@@ -63,7 +63,6 @@ class RoArmHardwareInterface(Node):
         self.declare_parameter('dynamic_adaptation_wrist_limit', 50)
         self.declare_parameter('dynamic_adaptation_roll_limit', 50)
         self.declare_parameter('dynamic_adaptation_hand_limit', 50)
-        self.declare_parameter('dynamic_adaptation_resume_delay', 3.0)  # Changed from 10.0 to 3.0 seconds
         
         # Add a new parameter for the DEMA movement source integration
         self.declare_parameter('enable_movement_source_integration', True)
@@ -131,7 +130,6 @@ class RoArmHardwareInterface(Node):
         self.dynamic_adaptation_wrist_limit = self.get_parameter('dynamic_adaptation_wrist_limit').value
         self.dynamic_adaptation_roll_limit = self.get_parameter('dynamic_adaptation_roll_limit').value
         self.dynamic_adaptation_hand_limit = self.get_parameter('dynamic_adaptation_hand_limit').value
-        self.dynamic_adaptation_resume_delay = self.get_parameter('dynamic_adaptation_resume_delay').value
         
         # Get initialization parameters
         self.use_hardware_position_on_init = self.get_parameter('use_hardware_position_on_init').value

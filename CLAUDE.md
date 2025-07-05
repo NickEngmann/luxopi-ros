@@ -143,7 +143,13 @@ The main launch file `luxo_system.launch.py` supports these parameters:
 
 The system uses a DFRobot DF2301Q voice recognition module connected via I2C (bus 3).
 
-### Available Commands (15 total)
+### Available Commands (17 total)
+
+#### Wake Word Commands
+- Command ID 1: Custom wake word (user-programmed)
+- Command ID 2: "Hello robot"
+
+These wake words activate USER_CONTROL mode for 10 seconds (or until the next command), displaying a bouncing white/blue direction indicator on the NeoPixels that moves back and forth by 8 pixels.
 
 #### Light Control Commands
 **Turn OFF light:**
@@ -169,14 +175,15 @@ The system uses a DFRobot DF2301Q voice recognition module connected via I2C (bu
 
 ### Command Execution Flow
 1. Voice command detected by DFRobot sensor
-2. Command ID mapped to action (turn_on_light, turn_off_light, wake_up, go_to_sleep)
+2. Command ID mapped to action (wake_word, turn_on_light, turn_off_light, wake_up, go_to_sleep)
 3. State machine transitions to USER_CONTROL state
 4. Command executed with appropriate actions:
-   - Light commands: Control NeoPixel LEDs
+   - Wake words: Enter listening mode for 10 seconds with bouncing direction indicator visual
+   - Light commands: Control NeoPixel LEDs (exits USER_CONTROL immediately if wake word initiated)
    - Wake up: Disable DEMA mode, enable torque, turn on lights
    - Sleep: Play sleep animation, enable DEMA mode, turn off lights
 5. Confirmation sound played
-6. Return to IDLE state after completion
+6. Return to IDLE state after completion (timeout or next command for wake words)
 
 ### Configuration
 - Default volume: 7/20
