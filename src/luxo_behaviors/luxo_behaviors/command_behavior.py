@@ -304,6 +304,9 @@ class CommandBehavior:
             if hasattr(self.node, 'disable_dynamic_adaptation_mode'):
                 success = self.node.disable_dynamic_adaptation_mode()
                 if success:
+                    time.sleep(0.2)  # Allow time for DEMA to disable
+                    self.node.enable_torque()
+                    self.node.get_logger().info("Torque enabled for wake up")
                     self.node.get_logger().info("DEMA disabled - robot can now move")
                     # Set up for re-enabling DEMA after wake-up completes
                     if hasattr(self.node, 'enable_dynamic_adaptation') and self.node.enable_dynamic_adaptation:
@@ -439,6 +442,8 @@ class CommandBehavior:
                 success = self.node.enable_dynamic_adaptation_mode()
                 if success:
                     self.node.get_logger().info("DEMA enabled - robot is now immobilized for sleep")
+                    self.node.disable_torque()  # Disable torque to prevent movement
+                    self.node.get_logger().info("Torque disabled for sleep mode")
                 else:
                     self.node.get_logger().warn("Failed to enable DEMA for sleep mode")
             
