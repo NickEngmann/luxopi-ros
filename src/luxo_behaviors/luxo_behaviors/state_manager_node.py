@@ -88,6 +88,10 @@ class StateManagerNode(Node):
         self._neopixel_pending_state = None
         self._current_animation_duration = None
         
+        # NeoPixel update rate limiting
+        self._neopixel_last_update_check = 0
+        self._neopixel_update_interval = 0.25  # Check at 4Hz instead of 10Hz
+        
         self._initialize_neopixel()
         
         # State color mappings - Updated to use different white modes strategically
@@ -180,7 +184,8 @@ class StateManagerNode(Node):
             self._neopixel_controller = NeoPixelController(
                 pixel_count=60,
                 brightness=0.5,
-                logger=self.get_logger()
+                logger=self.get_logger(),
+                max_fps=15.0  # Limit to 15 FPS for long-term stability
             )
             if self._neopixel_controller.is_initialized():
                 self.get_logger().info("NeoPixel desk lamp state visualization enabled")
@@ -818,7 +823,11 @@ class StateManagerNode(Node):
             current = self._current_state
             current_duration = self.get_state_duration()
         
-        self._check_pending_neopixel_update()
+        # Rate limit NeoPixel update checks
+        current_time = time.time()
+        if current_time - self._neopixel_last_update_check >= self._neopixel_update_interval:
+            self._neopixel_last_update_check = current_time
+            self._check_pending_neopixel_update()
         
         if current in self._automatic_transitions:
             for auto_transition in self._automatic_transitions[current]:

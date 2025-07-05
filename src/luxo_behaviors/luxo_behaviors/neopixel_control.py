@@ -31,7 +31,7 @@ class NeoPixelController:
     """
     
     def __init__(self, pixel_count: int = 60, brightness: float = 0.2, 
-                 logger=None):
+                 logger=None, max_fps: float = 20.0):
         """
         Initialize NeoPixel controller
         
@@ -39,10 +39,13 @@ class NeoPixelController:
             pixel_count: Number of pixels in the strip
             brightness: Brightness level (0.0 to 1.0)
             logger: Optional logger instance for debugging
+            max_fps: Maximum frames per second for animations (default 20)
         """
         self.pixel_count = pixel_count
         self.brightness = brightness
         self.logger = logger
+        self.max_fps = max_fps
+        self.min_frame_time = 1.0 / max_fps  # Minimum time between updates
         
         # Thread safety
         self._lock = threading.RLock()
@@ -53,6 +56,24 @@ class NeoPixelController:
         self._current_mode = NeoPixelMode.OFF
         self._current_color = (0, 0, 0, 0)  # RGBW
         self._is_initialized = False
+        
+        # Frame rate limiting
+        self._last_update_time = 0
+        self._frame_skip_count = 0
+        self._total_frames = 0
+        
+        # SPI health monitoring
+        self._spi_error_count = 0
+        self._consecutive_errors = 0
+        self._total_spi_transactions = 0
+        self._spi_health_check_interval = 60.0  # Check health every minute
+        self._last_health_check = time.time()
+        self._health_status = "healthy"
+        self._adaptive_fps_enabled = True
+        
+        # Pixel state tracking for optimization
+        self._pixel_cache = [(0, 0, 0, 0)] * pixel_count
+        self._pixels_changed = True
         
         # Initialize pixels
         self._initialize_pixels()
@@ -120,6 +141,37 @@ class NeoPixelController:
         """Check if NeoPixels are properly initialized"""
         return self._is_initialized
     
+    def _reinitialize_spi(self) -> bool:
+        """Attempt to reinitialize just the SPI connection without full reset"""
+        try:
+            # Try to clear and reset the current pixel state
+            if hasattr(self, 'pixels'):
+                try:
+                    # Clear pixels first
+                    self.pixels.fill((0, 0, 0, 0))
+                    # Add small delay
+                    time.sleep(0.05)
+                except:
+                    pass
+            
+            # Get the SPI bus
+            spi = board.SPI()
+            
+            # Try to reset the bus
+            try:
+                if spi.try_lock():
+                    spi.unlock()
+                    time.sleep(0.01)
+            except:
+                pass
+            
+            self._log("SPI connection reset attempted", "debug")
+            return True
+            
+        except Exception as e:
+            self._log(f"Failed to reinitialize SPI: {e}", "error")
+            return False
+    
     def set_brightness(self, brightness: float):
         """Set global brightness (0.0 to 1.0)"""
         with self._lock:
@@ -136,64 +188,254 @@ class NeoPixelController:
                 return False
     
     def clear_all(self):
-        """Turn off all LEDs"""
+        """Turn off all LEDs with optimization"""
         with self._lock:
             if not self._is_initialized:
                 return False
             
+            # Check if already cleared
+            clear_color = (0, 0, 0, 0)
+            if all(pixel == clear_color for pixel in self._pixel_cache):
+                self._current_mode = NeoPixelMode.OFF
+                self._current_color = clear_color
+                return True
+            
             try:
-                self.pixels.fill((0, 0, 0, 0))  # RGBW
+                self.pixels.fill(clear_color)  # RGBW
                 self.pixels.show()
                 time.sleep(0.01)  # Small delay to ensure clearing takes effect
+                # Update cache
+                self._pixel_cache = [clear_color] * self.pixel_count
+                self._pixels_changed = False  # Reset since we just updated
                 self._current_mode = NeoPixelMode.OFF
-                self._current_color = (0, 0, 0, 0)  # RGBW
+                self._current_color = clear_color
                 return True
             except Exception as e:
                 self._log(f"Failed to clear pixels: {e}", "error")
                 return False
     
     def set_pixel_color(self, index: int, r: int, g: int, b: int, w: int = 0):
-        """Set a single pixel color with RGBW support"""
+        """Set a single pixel color with RGBW support and change tracking"""
         with self._lock:
             if not self._is_initialized or index >= self.pixel_count:
                 return False
             
             try:
-                self.pixels[index] = (r, g, b, w)
+                new_color = (r, g, b, w)
+                # Check if this is actually a change
+                if self._pixel_cache[index] != new_color:
+                    self.pixels[index] = new_color
+                    self._pixel_cache[index] = new_color
+                    self._pixels_changed = True
                 return True
             except Exception as e:
                 self._log(f"Failed to set pixel {index}: {e}", "error")
                 return False
     
     def fill_all(self, r: int, g: int, b: int, w: int = 0, show: bool = True):
-        """Fill all pixels with RGBW color"""
+        """Fill all pixels with RGBW color with retry logic"""
         with self._lock:
             if not self._is_initialized:
                 return False
             
-            try:
-                self.pixels.fill((r, g, b, w))
-                if show:
-                    self.pixels.show()
+            max_retries = 3
+            base_delay = 0.001
+            
+            new_color = (r, g, b, w)
+            # Check if all pixels are already this color
+            if all(pixel == new_color for pixel in self._pixel_cache):
+                self._log("Fill skipped - pixels already at target color", "debug")
                 self._current_mode = NeoPixelMode.SOLID
-                self._current_color = (r, g, b, w)
+                self._current_color = new_color
                 return True
-            except Exception as e:
-                self._log(f"Failed to fill pixels: {e}", "error")
-                return False
+            
+            for attempt in range(max_retries):
+                try:
+                    self.pixels.fill(new_color)
+                    # Update cache
+                    self._pixel_cache = [new_color] * self.pixel_count
+                    self._pixels_changed = True
+                    if show:
+                        # Use our enhanced show method with retry
+                        if not self.show():
+                            if attempt < max_retries - 1:
+                                time.sleep(base_delay * (2 ** attempt))
+                                continue
+                            else:
+                                return False
+                    self._current_mode = NeoPixelMode.SOLID
+                    self._current_color = (r, g, b, w)
+                    return True
+                except Exception as e:
+                    if attempt < max_retries - 1:
+                        delay = base_delay * (2 ** attempt)
+                        self._log(f"Fill error (attempt {attempt + 1}/{max_retries}): {e}. Retrying in {delay:.3f}s", "warn")
+                        time.sleep(delay)
+                    else:
+                        self._log(f"Failed to fill pixels after {max_retries} attempts: {e}", "error")
+                        return False
+            
+            return False
     
     def show(self):
-        """Update the strip with current pixel values"""
+        """Update the strip with current pixel values with retry logic"""
         with self._lock:
             if not self._is_initialized:
                 return False
             
-            try:
-                self.pixels.show()
-                return True
-            except Exception as e:
-                self._log(f"Failed to show pixels: {e}", "error")
-                return False
+            # Retry with exponential backoff
+            max_retries = 3
+            base_delay = 0.001  # 1ms base delay
+            
+            for attempt in range(max_retries):
+                try:
+                    self.pixels.show()
+                    # Track successful transaction
+                    self._total_spi_transactions += 1
+                    # Reset error counts on success
+                    self._spi_error_count = 0
+                    self._consecutive_errors = 0
+                    return True
+                except Exception as e:
+                    if attempt < max_retries - 1:
+                        # Exponential backoff
+                        delay = base_delay * (2 ** attempt)
+                        self._log(f"SPI show error (attempt {attempt + 1}/{max_retries}): {e}. Retrying in {delay:.3f}s", "warn")
+                        time.sleep(delay)
+                        
+                        # Try to reinitialize on second retry
+                        if attempt == 1:
+                            self._log("Attempting SPI reinitialization", "warn")
+                            self._reinitialize_spi()
+                    else:
+                        # Track failed transaction
+                        self._total_spi_transactions += 1
+                        # Track consecutive errors
+                        self._spi_error_count += 1
+                        self._consecutive_errors += 1
+                        
+                        self._log(f"Failed to show pixels after {max_retries} attempts: {e}", "error")
+                        
+                        # If too many consecutive errors, try full reinit
+                        if self._spi_error_count > 10:
+                            self._log("Too many SPI errors, attempting full reinitialization", "error")
+                            self._initialize_pixels()
+                            self._spi_error_count = 0
+                        
+                        return False
+            
+            return False
+    
+    def _should_skip_frame(self) -> bool:
+        """Check if we should skip this frame based on rate limiting"""
+        current_time = time.time()
+        time_since_last = current_time - self._last_update_time
+        
+        # If SPI errors are high, reduce frame rate further
+        if self._consecutive_errors > 5:
+            adjusted_min_time = self.min_frame_time * 2  # Half the frame rate
+        elif self._consecutive_errors > 2:
+            adjusted_min_time = self.min_frame_time * 1.5
+        else:
+            adjusted_min_time = self.min_frame_time
+        
+        if time_since_last < adjusted_min_time:
+            self._frame_skip_count += 1
+            return True
+        
+        return False
+    
+    def show_rate_limited(self) -> bool:
+        """Show with frame rate limiting and change detection"""
+        # Skip if no changes
+        if not self._pixels_changed:
+            return True
+        
+        if self._should_skip_frame():
+            return True  # Pretend success but skip the actual update
+        
+        # Update timing
+        self._last_update_time = time.time()
+        self._total_frames += 1
+        
+        # Log frame skip stats periodically
+        if self._total_frames % 100 == 0 and self._frame_skip_count > 0:
+            skip_rate = (self._frame_skip_count / self._total_frames) * 100
+            self._log(f"Frame stats: {self._total_frames} total, {self._frame_skip_count} skipped ({skip_rate:.1f}%)", "debug")
+        
+        result = self.show()
+        if result:
+            self._pixels_changed = False  # Reset change flag after successful update
+        
+        # Periodic health check
+        self._check_spi_health()
+        
+        return result
+    
+    def _check_spi_health(self):
+        """Monitor SPI health and adapt behavior if needed"""
+        current_time = time.time()
+        
+        # Only check periodically
+        if current_time - self._last_health_check < self._spi_health_check_interval:
+            return
+        
+        self._last_health_check = current_time
+        
+        # Calculate error rate
+        if self._total_spi_transactions > 0:
+            error_rate = self._spi_error_count / self._total_spi_transactions
+        else:
+            error_rate = 0
+        
+        # Determine health status and adapt
+        previous_status = self._health_status
+        
+        if error_rate < 0.01:  # Less than 1% errors
+            self._health_status = "healthy"
+            if self._adaptive_fps_enabled and self.max_fps < 20:
+                # Gradually increase FPS if healthy
+                self.max_fps = min(20, self.max_fps * 1.1)
+                self.min_frame_time = 1.0 / self.max_fps
+                self._log(f"SPI health good - increased max FPS to {self.max_fps:.1f}", "info")
+                
+        elif error_rate < 0.05:  # 1-5% errors
+            self._health_status = "degraded"
+            if self._adaptive_fps_enabled and self.max_fps > 15:
+                # Reduce FPS slightly
+                self.max_fps = 15
+                self.min_frame_time = 1.0 / self.max_fps
+                self._log(f"SPI health degraded ({error_rate:.1%} errors) - reduced max FPS to {self.max_fps}", "warn")
+                
+        else:  # More than 5% errors
+            self._health_status = "poor"
+            if self._adaptive_fps_enabled:
+                # Significantly reduce FPS
+                self.max_fps = 10
+                self.min_frame_time = 1.0 / self.max_fps
+                self._log(f"SPI health poor ({error_rate:.1%} errors) - reduced max FPS to {self.max_fps}", "error")
+        
+        # Log health status change
+        if previous_status != self._health_status:
+            self._log(f"SPI health status changed: {previous_status} -> {self._health_status}", "info")
+            self._log(f"Stats: {self._total_spi_transactions} transactions, {self._spi_error_count} errors ({error_rate:.1%})", "info")
+        
+        # Reset counters periodically to track recent performance
+        if self._total_spi_transactions > 10000:
+            self._spi_error_count = int(self._spi_error_count * 0.1)  # Keep 10% weight
+            self._total_spi_transactions = int(self._total_spi_transactions * 0.1)
+    
+    def get_health_status(self) -> dict:
+        """Get current SPI health status"""
+        error_rate = self._spi_error_count / max(1, self._total_spi_transactions)
+        return {
+            "status": self._health_status,
+            "error_rate": error_rate,
+            "total_transactions": self._total_spi_transactions,
+            "total_errors": self._spi_error_count,
+            "consecutive_errors": self._consecutive_errors,
+            "current_fps": self.max_fps
+        }
     
     def stop_effect(self):
         """Stop any running effect"""
@@ -272,7 +514,7 @@ class NeoPixelController:
                         break
                     self.clear_all()
                     self.set_pixel_color(i, r, g, b, w)
-                    self.show()
+                    self.show_rate_limited()  # Use rate-limited version
                     time.sleep(delay)
             
             self._current_mode = NeoPixelMode.SPINNING_DOT
@@ -326,8 +568,8 @@ class NeoPixelController:
                     for pixel_idx in current_group_positions:
                         self.set_pixel_color(pixel_idx, r, g, b, w)
                     
-                    # Update the display only once
-                    self.show()
+                    # Update the display only once with rate limiting
+                    self.show_rate_limited()
                     
                     # Store current positions for next iteration
                     prev_group_positions = current_group_positions
