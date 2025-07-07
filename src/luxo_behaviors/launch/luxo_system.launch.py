@@ -128,6 +128,24 @@ def generate_launch_description():
         default_value='true',
         description='Enable system monitoring (CPU, RAM, temperature)'
     )
+    
+    declare_watchdog = DeclareLaunchArgument(
+        'enable_watchdog',
+        default_value='true',
+        description='Enable watchdog for detecting stuck nodes'
+    )
+    
+    declare_watchdog_state_timeout = DeclareLaunchArgument(
+        'watchdog_state_timeout',
+        default_value='30.0',
+        description='Seconds without state updates before triggering recovery'
+    )
+    
+    declare_watchdog_joint_timeout = DeclareLaunchArgument(
+        'watchdog_joint_timeout',
+        default_value='25.0',
+        description='Seconds without joint updates before triggering recovery'
+    )
     # ==========================================================================
     # LOGGING ACTIONS
     # ==========================================================================
@@ -345,6 +363,23 @@ def generate_launch_description():
         condition=IfCondition(PythonExpression(["'", use_hardware, "' == 'true' and '", sense_collision, "' == 'true'"]))
     )
     
+    # Watchdog node for monitoring system health
+    watchdog_node = Node(
+        package='luxo_behaviors',
+        executable='watchdog',
+        name='watchdog',
+        output='screen',
+        parameters=[
+            {'state_timeout': LaunchConfiguration('watchdog_state_timeout')},
+            {'joint_timeout': LaunchConfiguration('watchdog_joint_timeout')},
+            {'recovery_delay': 10.0},  # seconds between recovery attempts
+            {'max_recovery_attempts': 3},
+            {'enable_node_restart': False},  # Start with safe mode (no killing nodes)
+            {'enable_state_recovery': True},  # Try state transitions for recovery
+        ],
+        condition=IfCondition(LaunchConfiguration('enable_watchdog'))
+    )
+    
     voice_direction_node = Node(
         package='luxo_behaviors',
         executable='voice_direction_node',
@@ -495,6 +530,9 @@ def generate_launch_description():
         declare_camera_rotation,
         declare_enable_dynamic_adaptation,
         declare_system_monitor,
+        declare_watchdog,
+        declare_watchdog_state_timeout,
+        declare_watchdog_joint_timeout,
         
         # Launch info and banners
         startup_banner,
@@ -524,6 +562,7 @@ def generate_launch_description():
         i2c_device_manager_node,
         collision_logic_node,
         camera_interaction_node,
+        watchdog_node,
         # Final info
         completion_message,
         show_nodes_cmd

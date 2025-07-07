@@ -37,6 +37,7 @@ setup(
             'state_manager = luxo_behaviors.state_manager_node:main',
             'collision_detection = luxo_behaviors.collision_detection:main',
             'animation_action_client = luxo_behaviors.animation_action_client:main',
+            'watchdog = luxo_behaviors.watchdog_node:main',
         ],
     },
 )

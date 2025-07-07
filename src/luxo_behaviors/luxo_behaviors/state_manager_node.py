@@ -189,6 +189,13 @@ class StateManagerNode(Node):
         self.diagnostics_timer = self.create_timer(1.0, self.publish_diagnostics)  # 1Hz diagnostics
         self.cleanup_timer = self.create_timer(5.0, self.cleanup_inactive_nodes)  # Cleanup every 5s
         
+        # Health monitoring
+        self._last_update_time = time.time()
+        self._last_publish_time = time.time()
+        self._update_count = 0
+        self._publish_count = 0
+        self.health_timer = self.create_timer(30.0, self.check_health)  # Health check every 30s
+        
         # Initialize state machine
         self._setup_default_transitions()
         self._enter_state(self._current_state)
@@ -383,6 +390,9 @@ class StateManagerNode(Node):
     def publish_state(self):
         """Publish current state information"""
         try:
+            # Health monitoring
+            self._last_publish_time = time.time()
+            self._publish_count += 1
             # Simple state name publication
             state_msg = String()
             state_msg.data = self._current_state.name
@@ -982,28 +992,36 @@ class StateManagerNode(Node):
     
     def update(self):
         """Call this periodically to execute state callbacks and check automatic transitions."""
-        with self._state_lock:
-            current = self._current_state
-            current_duration = self.get_state_duration()
-        
-        # Rate limit NeoPixel update checks
-        current_time = time.time()
-        if current_time - self._neopixel_last_update_check >= self._neopixel_update_interval:
-            self._neopixel_last_update_check = current_time
-            self._check_pending_neopixel_update()
-        
-        if current in self._automatic_transitions:
-            for auto_transition in self._automatic_transitions[current]:
-                if current_duration >= auto_transition['delay']:
-                    if auto_transition['condition'] is None or auto_transition['condition']():
-                        self.transition_to(auto_transition['to_state'])
-                        break
-        
-        for callback in self._on_state_callbacks[current]:
-            try:
-                callback()
-            except Exception as e:
-                self.get_logger().error(f"Error in state callback for {current.name}: {e}")
+        try:
+            # Health monitoring
+            self._last_update_time = time.time()
+            self._update_count += 1
+            
+            with self._state_lock:
+                current = self._current_state
+                current_duration = self.get_state_duration()
+            
+            # Rate limit NeoPixel update checks
+            current_time = time.time()
+            if current_time - self._neopixel_last_update_check >= self._neopixel_update_interval:
+                self._neopixel_last_update_check = current_time
+                self._check_pending_neopixel_update()
+            
+            if current in self._automatic_transitions:
+                for auto_transition in self._automatic_transitions[current]:
+                    if current_duration >= auto_transition['delay']:
+                        if auto_transition['condition'] is None or auto_transition['condition']():
+                            self.transition_to(auto_transition['to_state'])
+                            break
+            
+            for callback in self._on_state_callbacks[current]:
+                try:
+                    callback()
+                except Exception as e:
+                    self.get_logger().error(f"Error in state callback for {current.name}: {e}")
+                    
+        except Exception as e:
+            self.get_logger().error(f"Critical error in update loop: {e}")
     
     def get_state_history(self, limit: int = 10) -> List[Dict]:
         """Get recent state history."""
@@ -1019,6 +1037,35 @@ class StateManagerNode(Node):
         """Clean up resources"""
         if self._neopixel_controller:
             self._neopixel_controller.cleanup()
+    
+    def check_health(self):
+        """Periodic health check to detect stuck timers"""
+        current_time = time.time()
+        
+        # Check update timer health
+        update_age = current_time - self._last_update_time
+        if update_age > 2.0:  # Should update at 10Hz, so 2s is way too long
+            self.get_logger().error(f"Update timer appears stuck! Last update {update_age:.1f}s ago")
+            # Log diagnostics
+            self.get_logger().error(f"Update count: {self._update_count}, Current state: {self._current_state.name}")
+            
+            # Try to recover by transitioning to IDLE
+            if self._current_state not in [LuxoState.ERROR, LuxoState.SHUTDOWN]:
+                self.get_logger().warning("Attempting recovery by transitioning to IDLE")
+                try:
+                    self.transition_to(LuxoState.IDLE)
+                except Exception as e:
+                    self.get_logger().error(f"Recovery transition failed: {e}")
+        
+        # Check publish timer health  
+        publish_age = current_time - self._last_publish_time
+        if publish_age > 5.0:  # Should publish at 4Hz, so 5s is way too long
+            self.get_logger().error(f"Publish timer appears stuck! Last publish {publish_age:.1f}s ago")
+            self.get_logger().error(f"Publish count: {self._publish_count}")
+        
+        # Log health status periodically
+        self.get_logger().info(f"Health check - Updates: {self._update_count}, Publishes: {self._publish_count}")
+        self.get_logger().info(f"Update age: {update_age:.1f}s, Publish age: {publish_age:.1f}s")
 
 
 def main(args=None):

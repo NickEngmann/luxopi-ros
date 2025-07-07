@@ -287,6 +287,11 @@ class RoArmHardwareInterface(Node):
             # Add a direct publishing timer to ensure we're sending messages regularly
             self.direct_pub_timer = self.create_timer(0.1, self.publish_current_joint_states)
             
+            # Health monitoring for joint state publishing
+            self._last_joint_publish_time = time.time()
+            self._joint_publish_count = 0
+            self._joint_publish_health_timer = self.create_timer(30.0, self.check_joint_publish_health)
+            
             # Publisher for collision status that animations can monitor
             self.collision_status_publisher = self.create_publisher(
                 String,
@@ -1377,6 +1382,10 @@ class RoArmHardwareInterface(Node):
                 # Record the publish time with ROS time
                 self.last_publish_time = self.get_clock().now()
                 
+                # Health monitoring
+                self._last_joint_publish_time = time.time()
+                self._joint_publish_count += 1
+                
                 # Always publish the joint states (important for ROS control)
                 self.publish_actual_joint_states(self.current_joints)
                 
@@ -1706,6 +1715,28 @@ class RoArmHardwareInterface(Node):
             self.get_logger().error(f"Error in position feedback callback: {e}")
             import traceback
             self.get_logger().error(traceback.format_exc())
+
+    def check_joint_publish_health(self):
+        """Check if joint states are being published regularly"""
+        current_time = time.time()
+        
+        # Check publish timer health
+        publish_age = current_time - self._last_joint_publish_time
+        if publish_age > 3.0:  # Should publish at 10Hz, so 3s is way too long
+            self.get_logger().error(f"Joint state publishing appears stuck! Last publish {publish_age:.1f}s ago")
+            self.get_logger().error(f"Joint publish count: {self._joint_publish_count}")
+            
+            # Try to recover by requesting state transition
+            if self.is_in_state(LuxoState.IDLE, LuxoState.ANIMATING):
+                self.get_logger().warning("Attempting recovery by requesting RETURNING_HOME state")
+                try:
+                    self.request_state_transition(LuxoState.RETURNING_HOME, 'hardware_interface', 70, False)
+                except Exception as e:
+                    self.get_logger().error(f"Recovery state transition failed: {e}")
+        
+        # Log health status periodically
+        self.get_logger().info(f"Joint publish health check - Count: {self._joint_publish_count}, Age: {publish_age:.1f}s")
+
 
 def main(args=None):
     rclpy.init(args=args)

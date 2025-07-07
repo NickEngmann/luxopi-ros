@@ -326,7 +326,81 @@ self.hardware.safe_move_joints({"j1": 45, "j2": 90})
 self.hardware.move_to_position(x=150, y=0, z=150)
 ```
 
+## Watchdog System
+
+The system includes a comprehensive watchdog node to detect and recover from the "silent failure mode" where nodes stop publishing after prolonged usage (4+ hours).
+
+### Topics Monitored
+- **Core Topics**: 
+  - `/luxo/current_state` (30s timeout)
+  - `/joint_states` (25s timeout)
+- **Animation System**:
+  - `/roarm/animation_command` (60s timeout)
+  - `/animation_action/_action/status`
+- **Serial Communication**:
+  - `/roarm/position` (5s timeout for feedback)
+- **Movement Coordination**:
+  - `/luxo/movement_source` (30s timeout)
+
+### Detection Mechanisms
+1. **Timeout Detection**: Topics not publishing within expected intervals
+2. **Content Validation**: 
+   - Stuck state detection (5 minutes in same non-IDLE state)
+   - Stuck joints detection (2 minutes without movement in active states)
+3. **Cross-Topic Correlation**:
+   - Silent failure: System metrics update but no animation commands
+   - Correlation failures: Joint updates without serial feedback
+
+### Recovery Mechanisms
+1. **Self-recovery in nodes**: 
+   - State manager: Health checks every 30s with auto-recovery
+   - Hardware interface: Joint publish health monitoring
+2. **Watchdog recovery strategies**:
+   - State timeout → Request IDLE transition
+   - Joint timeout → Request RETURNING_HOME
+   - Animation timeout → Trigger idle animation
+   - Serial timeout → Force RETURNING_HOME
+   - Stuck system → ERROR → IDLE cycle
+   - Silent failure → ERROR → wait 2s → IDLE
+3. **Node restart**: Optional (disabled by default for safety)
+
+### Status Information
+The watchdog publishes detailed status to `/watchdog/status`:
+- Topic ages (State, Joint, Anim, Serial)
+- Current state and duration
+- Joint stillness duration
+- Active failures (STATE, JOINT, ANIM, SERIAL, STUCK_STATE, STUCK_JOINT, SILENT_FAIL)
+- Recovery attempt counts
+- Watchdog self-health
+
+### Launch Parameters
+```bash
+# Monitor watchdog status
+./monitor_watchdog.sh
+
+# Disable watchdog
+ros2 launch luxo_behaviors luxo_system.launch.py enable_watchdog:=false
+
+# Adjust timeouts (defaults shown)
+ros2 launch luxo_behaviors luxo_system.launch.py \
+    watchdog_state_timeout:=30.0 \
+    watchdog_joint_timeout:=25.0 \
+    watchdog_animation_timeout:=60.0 \
+    watchdog_serial_timeout:=5.0
+```
+
+### Silent Failure Mode Recovery
+The specific 4+ hour issue where system metrics continue but commands stop is detected by:
+1. State updates continuing but no animation commands for 2+ minutes
+2. Joint states updating but no serial feedback
+3. Automatic recovery via ERROR → IDLE state transition cycle
+
 ## Common Issues and Solutions
+
+### Silent Failure Mode (4+ hours)
+- **Symptoms**: No idle animations, only system metrics publishing
+- **Solution**: Watchdog automatically detects and attempts recovery
+- **Manual recovery**: `ros2 service call /luxo/request_state_transition luxo_interfaces/srv/RequestStateTransition "{target_state: 'IDLE'}"`
 
 ### Serial Communication
 - Permission error: Add user to dialout group: `sudo usermod -a -G dialout $USER`
