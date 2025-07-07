@@ -56,6 +56,14 @@ class VoiceDirectionNode(Node):
                 'suppression_duration': 1.5,  # seconds to suppress voice after motor activity
                 'cooldown_duration': 0.5,  # seconds to wait before re-enabling after motor stops
                 'monitoring_window': 0.5  # seconds of history to check for motor activity
+            },
+            # NEW: Coordinate frame transformation configuration
+            'geometry': {
+                'mic_array_offset_x': 0.070,  # meters - lateral displacement of mic array from robot base
+                'mic_array_offset_y': 0.0,    # meters - forward/backward offset (if any)
+                'default_sound_distance': 1.0,  # meters - assumed distance to sound source
+                'min_correction_distance': 0.3,  # meters - minimum distance for parallax correction
+                'max_correction_distance': 3.0   # meters - maximum distance for parallax correction
             }
         }
         
@@ -90,6 +98,13 @@ class VoiceDirectionNode(Node):
         self.suppression_duration = self.config['motor_awareness']['suppression_duration']
         self.cooldown_duration = self.config['motor_awareness']['cooldown_duration']
         self.monitoring_window = self.config['motor_awareness']['monitoring_window']
+        
+        # Geometry configuration
+        self.mic_offset_x = self.config['geometry']['mic_array_offset_x']
+        self.mic_offset_y = self.config['geometry']['mic_array_offset_y']
+        self.default_sound_distance = self.config['geometry']['default_sound_distance']
+        self.min_correction_distance = self.config['geometry']['min_correction_distance']
+        self.max_correction_distance = self.config['geometry']['max_correction_distance']
         
         # Motor state tracking
         self.current_base_position = 0.0
@@ -246,18 +261,96 @@ class VoiceDirectionNode(Node):
         """Calculate Root Mean Square (RMS) amplitude of audio chunk - exactly from vad_doa.py"""
         return np.sqrt(np.mean(audio_chunk.astype(np.float32) ** 2))
     
-    def convert_mic_to_robot_angle(self, mic_angle):
-        """Simple conversion for ROS publishing"""
-        return -mic_angle
+    def convert_mic_to_robot_angle(self, mic_angle, estimated_distance=None):
+        """
+        Convert microphone array DOA angle to robot arm angle with parallax correction.
+        
+        Args:
+            mic_angle: DOA angle from microphone array (degrees)
+            estimated_distance: Estimated distance to sound source (meters)
+        
+        Returns:
+            Robot arm angle (degrees) corrected for mic array displacement
+        """
+        if estimated_distance is None:
+            estimated_distance = self.default_sound_distance
+        
+        # Clamp distance to reasonable range
+        estimated_distance = max(self.min_correction_distance, 
+                               min(self.max_correction_distance, estimated_distance))
+        
+        # Convert mic angle to radians
+        mic_angle_rad = np.radians(mic_angle)
+        
+        # Calculate the position of the sound source relative to the mic array
+        # Assuming mic array coordinate system: 0° = forward, increasing CCW
+        sound_x_mic = estimated_distance * np.cos(mic_angle_rad)
+        sound_y_mic = estimated_distance * np.sin(mic_angle_rad)
+        
+        # Transform to robot arm coordinate system
+        # Robot arm base is offset by mic_offset_x in x-direction
+        sound_x_robot = sound_x_mic - self.mic_offset_x
+        sound_y_robot = sound_y_mic - self.mic_offset_y
+        
+        # Calculate angle from robot arm base to sound source
+        robot_angle_rad = np.arctan2(sound_y_robot, sound_x_robot)
+        robot_angle_deg = np.degrees(robot_angle_rad)
+        
+        # Ensure angle is in [0, 360) range
+        if robot_angle_deg < 0:
+            robot_angle_deg += 360
+        
+        # Convert to your robot's coordinate system (negative for your system)
+        robot_angle_corrected = -robot_angle_deg
+        
+        # Calculate the correction applied for debugging
+        correction = robot_angle_corrected - (-mic_angle)
+        
+        if abs(correction) > 1.0:  # Only log significant corrections
+            self.get_logger().info(f"Parallax correction: {mic_angle:.1f}° → {robot_angle_corrected:.1f}° "
+                                 f"(correction: {correction:.1f}°, distance: {estimated_distance:.1f}m)")
+        
+        return robot_angle_corrected
     
-    def publish_voice_direction(self, direction):
+    def estimate_sound_distance(self, amplitude, peak_amplitude):
+        """
+        Estimate sound source distance based on amplitude.
+        This is a rough approximation - you may want to calibrate this.
+        
+        Args:
+            amplitude: Current audio amplitude
+            peak_amplitude: Peak amplitude reference
+        
+        Returns:
+            Estimated distance in meters
+        """
+        # Simple inverse relationship: higher amplitude = closer source
+        # This is a very rough approximation and should be calibrated
+        amplitude_ratio = amplitude / max(peak_amplitude, self.MIN_AMPLITUDE_THRESHOLD)
+        
+        # Map amplitude ratio to distance estimate
+        if amplitude_ratio > 0.8:
+            return 0.5  # Very close
+        elif amplitude_ratio > 0.5:
+            return 1.0  # Medium distance
+        elif amplitude_ratio > 0.3:
+            return 1.5  # Far
+        else:
+            return 2.0  # Very far
+    
+    def publish_voice_direction(self, direction, amplitude=None):
         """Publish voice direction - minimal ROS addition"""
         # Check if we should suppress due to motor activity
         if self._should_suppress_voice_processing():
             self.get_logger().info(f"Suppressing voice direction {direction}° due to motor activity")
             return
         
-        robot_angle = self.convert_mic_to_robot_angle(direction)
+        # Estimate distance for parallax correction
+        estimated_distance = None
+        if amplitude is not None:
+            estimated_distance = self.estimate_sound_distance(amplitude, self.recent_peak_amplitude)
+        
+        robot_angle = self.convert_mic_to_robot_angle(direction, estimated_distance)
         
         direction_msg = Float32()
         direction_msg.data = float(robot_angle)
@@ -270,7 +363,7 @@ class VoiceDirectionNode(Node):
         active_msg = Bool()
         active_msg.data = True
         self.voice_active_pub.publish(active_msg)
-
+    
     def audio_processing_thread(self):
         """Main audio processing thread - EXACT copy of vad_doa.py main() function"""
         self.get_logger().info('Starting audio processing thread')
@@ -343,7 +436,7 @@ class VoiceDirectionNode(Node):
                                             self.last_direction = int(direction)
                                             
                                             # Publish for ROS (instead of print) - with motor awareness
-                                            self.publish_voice_direction(direction)
+                                            self.publish_voice_direction(direction, avg_amplitude)
                                             
                                             if self.config['debug']['print_amplitude']:
                                                 self.get_logger().info(f'{int(direction)}° (amplitude: {int(avg_amplitude)}, ratio: {amplitude_ratio:.2f}) [NO FILTER]')
@@ -379,7 +472,7 @@ class VoiceDirectionNode(Node):
                                                 self.last_direction = int(avg_direction)
                                                 
                                                 # Publish for ROS (instead of print) - with motor awareness
-                                                self.publish_voice_direction(avg_direction)
+                                                self.publish_voice_direction(avg_direction, avg_amplitude)
                                                 
                                                 if self.config['debug']['print_amplitude']:
                                                     self.get_logger().info(f'{int(avg_direction)}° (amplitude: {int(avg_amplitude)}, ratio: {amplitude_ratio:.2f})')
