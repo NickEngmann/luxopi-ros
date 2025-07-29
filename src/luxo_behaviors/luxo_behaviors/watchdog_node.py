@@ -167,6 +167,7 @@ class WatchdogNode(Node):
         # Watchdog self-health
         self._last_check_time = time.time()
         self._check_count = 0
+        self._startup_time = self.get_clock().now()
         
         self.get_logger().info('Watchdog node initialized')
         self.get_logger().info(f'Monitoring timeouts - State: {self.state_timeout}s, Joint: {self.joint_timeout}s')
@@ -190,6 +191,7 @@ class WatchdogNode(Node):
     def joint_callback(self, msg):
         """Record timestamp and positions of joint message."""
         with self.lock:
+            # Always update the timestamp when we receive a message
             self.last_joint_msg = self.get_clock().now()
             
             # Track joint changes
@@ -203,6 +205,7 @@ class WatchdogNode(Node):
                         self.last_joint_positions = list(msg.position)
                         self.last_joint_change_time = self.get_clock().now()
             
+            # Clear failure state if it was detected
             if self.joint_failure_detected:
                 self.get_logger().info('Joint topic recovered')
                 self.joint_failure_detected = False
@@ -245,20 +248,47 @@ class WatchdogNode(Node):
         self._check_count += 1
         
         with self.lock:
+            # Calculate node uptime
+            node_uptime = (current_time - self._startup_time).nanoseconds / 1e9
+            
             # Check state topic
-            if self.last_state_msg is not None:
+            if self.last_state_msg is None:
+                # Give topics time to start publishing after node startup
+                if node_uptime > 10.0:  # Only check after 10 seconds of node uptime
+                    if not self.state_failure_detected:
+                        self.state_failure_detected = True
+                        self.get_logger().error('State topic never received after 10s startup grace period')
+                        self.trigger_recovery('state')
+                    else:
+                        # Periodically retry recovery for persistent failures
+                        self.trigger_recovery('state')
+            else:
                 state_age = (current_time - self.last_state_msg).nanoseconds / 1e9
-                if state_age > self.state_timeout and not self.state_failure_detected:
-                    self.state_failure_detected = True
-                    self.get_logger().error(f'State topic timeout detected! Last message {state_age:.1f}s ago')
+                if state_age > self.state_timeout:
+                    if not self.state_failure_detected:
+                        self.state_failure_detected = True
+                        self.get_logger().error(f'State topic timeout detected! Last message {state_age:.1f}s ago')
+                    # Always attempt recovery for persistent failures
                     self.trigger_recovery('state')
             
             # Check joint topic
-            if self.last_joint_msg is not None:
+            if self.last_joint_msg is None:
+                # Give topics time to start publishing after node startup
+                if node_uptime > 10.0:  # Only check after 10 seconds of node uptime
+                    if not self.joint_failure_detected:
+                        self.joint_failure_detected = True
+                        self.get_logger().error('Joint topic never received after 10s startup grace period')
+                        self.trigger_recovery('joint')
+                    else:
+                        # Periodically retry recovery for persistent failures
+                        self.trigger_recovery('joint')
+            else:
                 joint_age = (current_time - self.last_joint_msg).nanoseconds / 1e9
-                if joint_age > self.joint_timeout and not self.joint_failure_detected:
-                    self.joint_failure_detected = True
-                    self.get_logger().error(f'Joint topic timeout detected! Last message {joint_age:.1f}s ago')
+                if joint_age > self.joint_timeout:
+                    if not self.joint_failure_detected:
+                        self.joint_failure_detected = True
+                        self.get_logger().error(f'Joint topic timeout detected! Last message {joint_age:.1f}s ago')
+                    # Always attempt recovery for persistent failures
                     self.trigger_recovery('joint')
             
             # Check animation commands (more lenient as not always active)
@@ -274,23 +304,31 @@ class WatchdogNode(Node):
             # Check serial feedback
             if self.last_serial_feedback is not None:
                 serial_age = (current_time - self.last_serial_feedback).nanoseconds / 1e9
-                if serial_age > self.serial_feedback_timeout and not self.serial_failure_detected:
-                    self.serial_failure_detected = True
-                    self.get_logger().error(f'Serial feedback timeout detected! Last feedback {serial_age:.1f}s ago')
+                if serial_age > self.serial_feedback_timeout:
+                    if not self.serial_failure_detected:
+                        self.serial_failure_detected = True
+                        self.get_logger().error(f'Serial feedback timeout detected! Last feedback {serial_age:.1f}s ago')
+                    # Always attempt recovery for persistent failures
                     self.trigger_recovery('serial')
     
     def trigger_recovery(self, failure_type):
         """Trigger recovery mechanism based on failure type."""
-        # Check if we should attempt recovery
-        if self.recovery_attempts[failure_type] >= self.max_recovery_attempts:
-            self.get_logger().error(f'Max recovery attempts reached for {failure_type}')
-            return
-        
         # Check recovery delay
         if self.last_recovery_time[failure_type] is not None:
             time_since_last = datetime.now() - self.last_recovery_time[failure_type]
             if time_since_last.total_seconds() < self.recovery_delay:
                 return
+            
+            # Reset recovery counter after extended timeout (10x recovery delay)
+            # This allows recovery to be retried after a period of time
+            if time_since_last.total_seconds() > self.recovery_delay * 10:
+                self.get_logger().info(f'Resetting recovery counter for {failure_type} after extended timeout')
+                self.recovery_attempts[failure_type] = 0
+        
+        # Check if we should attempt recovery
+        if self.recovery_attempts[failure_type] >= self.max_recovery_attempts:
+            self.get_logger().error(f'Max recovery attempts reached for {failure_type}')
+            return
         
         self.recovery_attempts[failure_type] += 1
         self.last_recovery_time[failure_type] = datetime.now()
