@@ -280,6 +280,11 @@ sudo chmod 660 /dev/tty1
 sudo chgrp tty /dev/tty1
 sudo chmod 660 /dev/tty1
 
+# Install symbolic link
+sudo ln -s /home/pi/luxopi-ros/start_luxopi.sh /usr/local/bin/start_luxopi
+chmod +x /home/pi/luxopi-ros/start_luxopi.sh
+
+
 # Don't enable the firewall automatically - let the user do it
 echo "Firewall configured but not enabled. To enable, run: sudo ufw enable"
 

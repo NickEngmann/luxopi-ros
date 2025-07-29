@@ -123,6 +123,29 @@ def generate_launch_description():
         description='Enable dynamic adaptation mode (default: same as use_hardware)'
     )
     
+    declare_system_monitor = DeclareLaunchArgument(
+        'enable_system_monitor',
+        default_value='true',
+        description='Enable system monitoring (CPU, RAM, temperature)'
+    )
+    
+    declare_watchdog = DeclareLaunchArgument(
+        'enable_watchdog',
+        default_value='true',
+        description='Enable watchdog for detecting stuck nodes'
+    )
+    
+    declare_watchdog_state_timeout = DeclareLaunchArgument(
+        'watchdog_state_timeout',
+        default_value='30.0',
+        description='Seconds without state updates before triggering recovery'
+    )
+    
+    declare_watchdog_joint_timeout = DeclareLaunchArgument(
+        'watchdog_joint_timeout',
+        default_value='25.0',
+        description='Seconds without joint updates before triggering recovery'
+    )
     # ==========================================================================
     # LOGGING ACTIONS
     # ==========================================================================
@@ -153,6 +176,13 @@ def generate_launch_description():
         condition=IfCondition(use_hardware)
     )
     
+    state_manager_info = LogInfo(
+        msg=["\n🎯 STATE MANAGER:\n",
+            "- Centralized state coordination enabled\n",
+            "- Publishing to: /luxo/current_state\n",
+            "- Service: /luxo/request_state_transition\n"],
+    )
+
     # Simulation-specific info
     simulation_info = LogInfo(
         msg=["\n🖥️ SIMULATION MODE DETAILS:\n",
@@ -270,6 +300,17 @@ def generate_launch_description():
     # NODE DEFINITIONS
     # ==========================================================================
     
+    # State Manager node - runs in both hardware and simulation
+    state_manager_node = Node(
+        package='luxo_behaviors',
+        executable='state_manager',
+        name='state_manager',
+        output='screen',
+        parameters=[
+            {'ros__parameters': {'log_level': 'info'}}
+        ]
+        # No condition - runs in both hardware and simulation modes
+    )
     # Hardware interface node (hardware only)
     hardware_interface_node = Node(
         package='luxo_behaviors',
@@ -282,13 +323,20 @@ def generate_launch_description():
             {'enable_torque': True},
             {'read_throttle': 0.1},
             {'enable_dynamic_adaptation': enable_dynamic_adaptation},
-            {'dynamic_adaptation_base_limit': 1},
-            {'dynamic_adaptation_shoulder_limit': 1},
-            {'dynamic_adaptation_elbow_limit': 1}, 
-            {'dynamic_adaptation_wrist_limit': 1},
-            {'dynamic_adaptation_roll_limit': 1},
-            {'dynamic_adaptation_hand_limit': 0},
-            {'dynamic_adaptation_resume_delay': 10.0},
+            # better values for actually moving the robot
+            # {'dynamic_adaptation_base_limit': 60},
+            # {'dynamic_adaptation_shoulder_limit': 750},
+            # {'dynamic_adaptation_elbow_limit': 50}, 
+            # {'dynamic_adaptation_wrist_limit': 50},
+            # {'dynamic_adaptation_roll_limit': 50},
+            # {'dynamic_adaptation_hand_limit': 50},
+            # values for sleep mode
+            {'dynamic_adaptation_base_limit': 50},
+            {'dynamic_adaptation_shoulder_limit': 50},
+            {'dynamic_adaptation_elbow_limit': 50}, 
+            {'dynamic_adaptation_wrist_limit': 50},
+            {'dynamic_adaptation_roll_limit': 50},
+            {'dynamic_adaptation_hand_limit': 50},
             {'enable_movement_source_integration': True},  # Explicitly enable movement source integration
             {'ros__parameters': {'log_level': 'error'}},
             {'enable_voice_following': LaunchConfiguration('enable_voice')},
@@ -310,9 +358,26 @@ def generate_launch_description():
             {'enable_apds9960': True},
             {'enable_vl53_left': True},
             {'enable_vl53_right': True},
-            {'publish_rate': 5.0}  # 5Hz update rate
+            {'publish_rate': 10.0}  
         ],
         condition=IfCondition(PythonExpression(["'", use_hardware, "' == 'true' and '", sense_collision, "' == 'true'"]))
+    )
+    
+    # Watchdog node for monitoring system health
+    watchdog_node = Node(
+        package='luxo_behaviors',
+        executable='watchdog',
+        name='watchdog',
+        output='screen',
+        parameters=[
+            {'state_timeout': LaunchConfiguration('watchdog_state_timeout')},
+            {'joint_timeout': LaunchConfiguration('watchdog_joint_timeout')},
+            {'recovery_delay': 10.0},  # seconds between recovery attempts
+            {'max_recovery_attempts': 3},
+            {'enable_node_restart': False},  # Start with safe mode (no killing nodes)
+            {'enable_state_recovery': True},  # Try state transitions for recovery
+        ],
+        condition=IfCondition(LaunchConfiguration('enable_watchdog'))
     )
     
     voice_direction_node = Node(
@@ -347,6 +412,19 @@ def generate_launch_description():
             {'enable_gestures': enable_gestures}
         ],
         condition=IfCondition(PythonExpression(["'", use_hardware, "' == 'true' and '", sense_collision, "' == 'true'"]))
+    )
+
+    system_monitor_node = Node(
+        package='luxo_behaviors',
+        executable='system_monitor',
+        name='system_monitor',
+        output='screen',
+        parameters=[
+            {'publish_rate': 2.0},
+            {'temperature_source': '/sys/class/thermal/thermal_zone0/temp'},
+            {'cpu_average_window': 5.0}
+        ],
+        condition=IfCondition(LaunchConfiguration('enable_system_monitor'))
     )
     
     # Position test node - basic movement patterns (hardware only)
@@ -451,6 +529,10 @@ def generate_launch_description():
         declare_verbose,
         declare_camera_rotation,
         declare_enable_dynamic_adaptation,
+        declare_system_monitor,
+        declare_watchdog,
+        declare_watchdog_state_timeout,
+        declare_watchdog_joint_timeout,
         
         # Launch info and banners
         startup_banner,
@@ -471,14 +553,16 @@ def generate_launch_description():
         
         # Nodes
         hardware_interface_node,
+        state_manager_node,
         position_test_node,
         hardware_animation_node,
+        system_monitor_node,
         simulation_animation_node,
         collision_detection_node,
         i2c_device_manager_node,
         collision_logic_node,
         camera_interaction_node,
-        
+        watchdog_node,
         # Final info
         completion_message,
         show_nodes_cmd

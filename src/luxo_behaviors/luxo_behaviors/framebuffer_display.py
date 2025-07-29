@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Direct framebuffer display module for camera_interaction.py
-This can be integrated into the camera node or used as a separate module
+Enhanced with Lux robot UI design
 """
 
 import numpy as np
@@ -11,6 +11,9 @@ import struct
 import mmap
 import fcntl
 import threading
+import time
+import math
+from std_msgs.msg import Bool
 
 class FramebufferDisplay:
     """Direct framebuffer display without using external tools"""
@@ -164,187 +167,739 @@ class FramebufferDisplay:
 
 # Integration code for camera_interaction.py
 class CameraFramebufferDisplay:
-    """Helper class to integrate framebuffer display into camera_interaction.py"""
+    """Helper class to integrate Lux robot UI framebuffer display into camera_interaction.py"""
     
     def __init__(self, node, device='/dev/fb0'):
         self.node = node
         self.display = FramebufferDisplay(device)
         self.enabled = self.display.initialized
         
+        # Lux robot UI colors
+        self.colors = {
+            'lux_gold': (120, 220, 255),    # Gold/yellow for Lux name
+            'teal': (226, 219, 120),        # Teal for main elements
+            'orange': (77, 183, 255),       # Orange for emotions
+            'pink': (158, 160, 255),        # Pink for audio
+            'purple': (221, 160, 221),      # Purple for joints
+            'green': (207, 230, 168),       # Green for state
+            'blue': (235, 206, 135),        # Blue for end effector
+            'white': (255, 255, 255),
+            'gray': (128, 128, 128),
+            'dark_gray': (64, 64, 64),
+            'black': (0, 0, 0)
+        }
+        
+        # Animation states for visual feedback
+        self.animation_time = 0
+        self.last_update_time = time.time()
+        
+        # PETTING state display tracking
+        self.petting_display_start_time = None
+        self.petting_display_duration = 5.0  # Show PETTING state for 5 seconds
+        self.last_actual_state = None
+        self.petting_triggered_externally = False  # Track if petting was triggered by event
+        
+        # State mapping for friendly descriptions
+        self.state_descriptions = {
+            'IDLE': 'Gently swaying, waiting...',
+            'OBSERVING': 'Analyzing environment...',
+            'THINKING': 'Processing information...',
+            'REACHING': 'Moving to target...',
+            'GRASPING': 'Carefully picking up...',
+            'ANALYZING': 'Understanding what I see...',
+            'FRIENDLY_WAVE': 'Saying hello to humans!',
+            'CURIOUS_PEEK': "What's that interesting?",
+            'LAMP_CURIOUS': 'Bouncing with curiosity...',
+            'LAMP_EXCITED': 'Hopping with joy!',
+            'LAMP_FOCUSED': 'Intensely studying...',
+            'LAMP_PLAYFUL': 'Ready to play!',
+            'LAMP_SHY': 'Hiding a bit, feeling bashful...',
+            'LAMP_TRACKING': 'Following a human friend...',
+            'LAMP_HAPPY': 'Glowing with happiness!',
+            'PETTING': 'Being petted - feeling loved!',
+            'UNKNOWN': 'Initializing...'
+        }
+        
+        # Emotion to mood mapping
+        self.emotion_moods = {
+            'happy': ('-', 'DETECTING JOY'),
+            'sad': ('-', 'SENSING SADNESS'),
+            'surprise': ('-', 'FEELING SURPRISE'),
+            'anger': ('!', 'READING TENSION'),
+            'neutral': ('-', 'NEUTRAL'),
+            None: ('?', 'NO FACE DETECTED')
+        }
+        
         if not self.enabled:
             self.node.get_logger().warn("Framebuffer display could not be initialized")
     
-    def update_display(self, frame, emotion=None, distance=None, face_bboxes=None, animation_name=None, state=None, voice_info=None):
-        """Update framebuffer with camera frame and overlays including debug info"""
+    def trigger_petting_display(self):
+        """Directly trigger PETTING state display from external event"""
+        current_time = time.time()
+        self.petting_display_start_time = current_time
+        self.petting_triggered_externally = True
+        self.node.get_logger().info("PETTING display triggered by petting event - will show for 5 seconds")
+    
+    def get_friendly_state_info(self, state):
+        """Get friendly state name and description with PETTING state display logic"""
+        current_time = time.time()
+        
+        # Track the actual state changes
+        if state != self.last_actual_state:
+            self.last_actual_state = state
+            
+            # If we're entering PETTING state via state machine, start the display timer
+            if state == "PETTING" and not self.petting_triggered_externally:
+                self.petting_display_start_time = current_time
+                self.node.get_logger().info("PETTING state triggered via state machine - will display for 5 seconds")
+        
+        # Determine what state to display
+        display_state = state
+        
+        # If we have a petting display timer active, check if we should still show PETTING
+        if self.petting_display_start_time is not None:
+            time_since_petting = current_time - self.petting_display_start_time
+            
+            if time_since_petting <= self.petting_display_duration:
+                # Still within the 5-second display window - show PETTING
+                display_state = "PETTING"
+                if hasattr(self, 'verbose_petting_log'):
+                    remaining_time = self.petting_display_duration - time_since_petting
+                    self.node.get_logger().debug(f"Displaying PETTING state ({remaining_time:.1f}s remaining)")
+            else:
+                # 5 seconds have passed, clear the timer and show actual state
+                self.petting_display_start_time = None
+                self.petting_triggered_externally = False
+                self.node.get_logger().debug("PETTING display duration expired - showing actual state")
+        
+        # Handle unknown/invalid states
+        if not display_state or display_state == "UNKNOWN":
+            return "INITIALIZING", "Starting up systems..."
+        
+        # Convert technical states to friendly ones
+        friendly_states = {
+            'IDLE': 'LAMP_IDLE',
+            'ANIMATING': 'LAMP_ANIMATING', 
+            'EMOTION_REACTING': 'LAMP_EMOTION',
+            'VOICE_FOLLOWING': 'LAMP_TRACKING',
+            'MANUAL_CONTROL': 'LAMP_FOCUSED',
+            'PETTING': 'PETTING'  # Keep PETTING as-is for special display
+        }
+        
+        friendly_state = friendly_states.get(display_state, display_state)
+        description = self.state_descriptions.get(friendly_state, 'Doing robot things...')
+        
+        return friendly_state, description
+    
+    def draw_circular_gauge(self, frame, center, radius, value, max_value, color, label, unit=""):
+        """Draw a circular gauge with modern styling"""
+        x, y = center
+        
+        # Background circle (larger)
+        cv2.circle(frame, center, radius, self.colors['dark_gray'], 3)
+        
+        # Calculate angle for progress (0 to 270 degrees)
+        angle = int((value / max_value) * 270)
+        
+        # Draw progress arc
+        if angle > 0:
+            # Create arc points (thicker)
+            arc_thickness = 6
+            start_angle = -90  # Start from top
+            end_angle = start_angle + angle
+            
+            # Draw the arc (OpenCV doesn't have a direct arc function, so we'll draw lines)
+            for i in range(0, angle, 2):
+                current_angle = math.radians(start_angle + i)
+                next_angle = math.radians(start_angle + i + 2)
+                
+                x1 = int(x + (radius - arc_thickness) * math.cos(current_angle))
+                y1 = int(y + (radius - arc_thickness) * math.sin(current_angle))
+                x2 = int(x + radius * math.cos(current_angle))
+                y2 = int(y + radius * math.sin(current_angle))
+                
+                cv2.line(frame, (x1, y1), (x2, y2), color, 3)
+        
+        # Label above gauge (larger font)
+        label_size = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.8, 2)[0]
+        label_x = x - label_size[0] // 2
+        label_y = y - radius - 20
+        cv2.putText(frame, label, (label_x, label_y), cv2.FONT_HERSHEY_SIMPLEX, 0.8, self.colors['white'], 2)
+        
+        # Value in center (larger font)
+        value_text = f"{int(value)}{unit}"
+        value_size = cv2.getTextSize(value_text, cv2.FONT_HERSHEY_SIMPLEX, 1.0, 2)[0]
+        value_x = x - value_size[0] // 2
+        value_y = y + value_size[1] // 2
+        cv2.putText(frame, value_text, (value_x, value_y), cv2.FONT_HERSHEY_SIMPLEX, 1.0, self.colors['white'], 2)
+    
+    def draw_rounded_panel(self, frame, top_left, bottom_right, color, alpha=0.7):
+        """Draw a rounded panel with transparency effect"""
+        x1, y1 = top_left
+        x2, y2 = bottom_right
+        
+        # Create overlay for transparency
+        overlay = frame.copy()
+        
+        # Draw rounded rectangle (approximated with regular rectangle for simplicity)
+        cv2.rectangle(overlay, (x1, y1), (x2, y2), color, -1)
+        
+        # Apply transparency
+        cv2.addWeighted(overlay, alpha, frame, 1 - alpha, 0, frame)
+        
+        # Draw border (thicker)
+        cv2.rectangle(frame, (x1, y1), (x2, y2), color, 3)
+    
+    def draw_touch_sensor_indicator(self, frame, x, y, sensor_name, value):
+        """Draw touch sensor status with visual feedback"""
+        # Map pressure states to colors and symbols
+        pressure_states = {
+            0: (self.colors['gray'], "-", "Not Pressed"),
+            1: (self.colors['teal'], "1", "Light Touch"),
+            2: (self.colors['orange'], "2", "Light Press"),
+            3: (self.colors['pink'], "3", "Medium Press"), 
+            4: ((0, 165, 255), "4", "Hard Press"),  # Orange-red
+            5: ((0, 0, 255), "5", "Very Hard"),     # Red
+            6: ((0, 0, 200), "!", "Maximum")        # Dark red
+        }
+        
+        color, symbol, description = pressure_states.get(value, (self.colors['gray'], "?", "Unknown"))
+        
+        # Draw sensor circle (larger with more spacing)
+        radius = 30
+        cv2.circle(frame, (x, y), radius, color, -1 if value > 0 else 3)
+        
+        # Draw symbol in center (larger font)
+        symbol_size = cv2.getTextSize(symbol, cv2.FONT_HERSHEY_SIMPLEX, 1.0, 2)[0]
+        symbol_x = x - symbol_size[0] // 2
+        symbol_y = y + symbol_size[1] // 2
+        cv2.putText(frame, symbol, (symbol_x, symbol_y), cv2.FONT_HERSHEY_SIMPLEX, 1.0, 
+                   self.colors['black'] if value > 0 else color, 2)
+        
+        # Sensor name below (larger font with more spacing)
+        name_size = cv2.getTextSize(sensor_name, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 1)[0]
+        name_x = x - name_size[0] // 2
+        name_y = y + radius + 35  # Increased spacing
+        cv2.putText(frame, sensor_name, (name_x, name_y), cv2.FONT_HERSHEY_SIMPLEX, 0.6, self.colors['white'], 1)
+
+    def draw_collision_sensors(self, frame, collision_sensors):
+        """Draw collision sensor status with improved modern design"""
+        if not collision_sensors:
+            return
+        
+        # Position collision sensors in top-right area with better spacing
+        base_x = frame.shape[1] - 200
+        base_y = 320  # Positioned below system gauges
+        
+        # Create a larger panel for the collision sensors
+        panel_width = 160
+        panel_height = 140
+        self.draw_rounded_panel(frame, 
+                               (base_x - 20, base_y - 20), 
+                               (base_x + panel_width, base_y + panel_height), 
+                               self.colors['dark_gray'], 0.8)
+        
+        # Panel title
+        cv2.putText(frame, "[COLLISION]", (base_x, base_y + 5), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, self.colors['white'], 2)
+        
+        # Modern sensor indicators with consistent sizing
+        sensor_size = 45  # Larger sensors
+        sensor_spacing = 50
+        
+        # Head sensor (top center)
+        head_x = base_x + panel_width // 2 - sensor_size // 2
+        head_y = base_y + 25
+        head_active = collision_sensors.get('head', False)
+        head_color = self.colors['orange'] if head_active else self.colors['gray']
+        
+        # Draw head sensor as rounded rectangle
+        cv2.rectangle(frame, (head_x, head_y), (head_x + sensor_size, head_y + 25), 
+                     head_color, -1 if head_active else 3)
+        
+        # Head sensor label
+        cv2.putText(frame, "HEAD", (head_x + 2, head_y + 18), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, 
+                   self.colors['black'] if head_active else head_color, 1)
+        
+        # Status indicator dot for head
+        dot_color = self.colors['orange'] if head_active else self.colors['dark_gray']
+        cv2.circle(frame, (head_x + sensor_size + 5, head_y + 12), 4, dot_color, -1)
+        
+        # Left sensor (bottom left)
+        left_x = base_x + 20
+        left_y = base_y + 70
+        left_active = collision_sensors.get('left', False)
+        left_color = self.colors['orange'] if left_active else self.colors['gray']
+        
+        # Draw left sensor as rounded rectangle
+        cv2.rectangle(frame, (left_x, left_y), (left_x + sensor_size, left_y + 25), 
+                     left_color, -1 if left_active else 3)
+        
+        # Left sensor label
+        cv2.putText(frame, "LEFT", (left_x + 4, left_y + 18), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, 
+                   self.colors['black'] if left_active else left_color, 1)
+        
+        # Status indicator dot for left
+        dot_color = self.colors['orange'] if left_active else self.colors['dark_gray']
+        cv2.circle(frame, (left_x + sensor_size + 5, left_y + 12), 4, dot_color, -1)
+        
+        # Right sensor (bottom right)
+        right_x = base_x + panel_width - sensor_size - 20
+        right_y = base_y + 70
+        right_active = collision_sensors.get('right', False)
+        right_color = self.colors['orange'] if right_active else self.colors['gray']
+        
+        # Draw right sensor as rounded rectangle
+        cv2.rectangle(frame, (right_x, right_y), (right_x + sensor_size, right_y + 25), 
+                     right_color, -1 if right_active else 3)
+        
+        # Right sensor label
+        cv2.putText(frame, "RGHT", (right_x + 2, right_y + 18), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, 
+                   self.colors['black'] if right_active else right_color, 1)
+        
+        # Status indicator dot for right
+        dot_color = self.colors['orange'] if right_active else self.colors['dark_gray']
+        cv2.circle(frame, (right_x + sensor_size + 5, right_y + 12), 4, dot_color, -1)
+        
+        # Overall collision status at bottom of panel
+        any_collision = any(collision_sensors.values())
+        status_text = "COLLISION!" if any_collision else "ALL CLEAR"
+        status_color = self.colors['orange'] if any_collision else self.colors['green']
+        
+        # Center the status text
+        status_size = cv2.getTextSize(status_text, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)[0]
+        status_x = base_x + (panel_width - status_size[0]) // 2
+        status_y = base_y + panel_height - 15
+        
+        cv2.putText(frame, status_text, (status_x, status_y), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, status_color, 2)
+    
+    def draw_audio_visualization(self, frame, voice_info):
+        """Draw audio visualization bars"""
+        if not voice_info:
+            return
+        
+        # Position audio bars aligned with DIR text (same Y axis)
+        bar_x = 180
+        bar_y = 500  # Aligned with DIR text position
+        bar_width = 8
+        bar_spacing = 12
+        max_bar_height = 40
+        
+        # Create animated bars based on voice activity
+        active = voice_info.get('active', False)
+        confidence = voice_info.get('confidence', 0.0)
+        
+        # Draw 5 audio bars with animation
+        for i in range(5):
+            if active:
+                # Animate bars when voice is active
+                height = int(max_bar_height * (0.3 + 0.7 * confidence * (0.5 + 0.5 * math.sin(self.animation_time * 3 + i))))
+            else:
+                # Small static bars when inactive
+                height = int(max_bar_height * 0.1)
+            
+            bar_color = self.colors['pink'] if active else self.colors['gray']
+            x = bar_x + i * (bar_width + bar_spacing)
+            cv2.rectangle(frame, (x, bar_y), (x + bar_width, bar_y - height), bar_color, -1)
+        
+        # Audio status text aligned with DIR text (same Y position)
+        status_text = "LISTENING" if active else "QUIET"
+        cv2.putText(frame, status_text, (bar_x + 100, bar_y), cv2.FONT_HERSHEY_SIMPLEX, 0.6, self.colors['pink'], 1)
+
+    def apply_color_filter(self, frame, filter_type=None, intensity=0.3):
+        """Apply color filters to the camera frame"""
+        if filter_type is None:
+            return frame
+        
+        # Create a copy to avoid modifying the original
+        filtered_frame = frame.copy()
+        
+        # Create filter overlay
+        overlay = np.zeros_like(filtered_frame, dtype=np.uint8)
+        
+        if filter_type == 'pink':
+            # Pink filter for petting - soft pink overlay
+            overlay[:, :] = [158, 160, 255]  # Pink color in BGR
+        elif filter_type == 'red':
+            # Red filter for anger - strong red overlay
+            overlay[:, :] = [0, 0, 255]  # Red color in BGR
+        elif filter_type == 'orange':
+            # Orange filter for other strong emotions
+            overlay[:, :] = [0, 165, 255]  # Orange color in BGR
+        
+        # Apply the filter with specified intensity
+        cv2.addWeighted(filtered_frame, 1.0 - intensity, overlay, intensity, 0, filtered_frame)
+        
+        return filtered_frame
+
+    def update_display(self, frame, emotion=None, distance=None, face_bboxes=None, 
+                      animation_name=None, state=None, voice_info=None, 
+                      system_metrics=None, touch_sensors=None, collision_sensors=None,
+                      joint_states=None, lamp_info=None):
+        """Update framebuffer with Lux robot UI design"""
         if not self.enabled:
             return
         
         try:
-            # Create display frame
+            # Update animation time
+            current_time = time.time()
+            dt = current_time - self.last_update_time
+            self.animation_time += dt
+            self.last_update_time = current_time
+            
+            # === APPLY COLOR FILTERS TO CAMERA FRAME ===
             display_frame = frame.copy()
             
-            # Draw face bounding boxes
+            # Determine which filter to apply based on state and animation
+            filter_type = None
+            filter_intensity = 0.3  # Default intensity
+            
+            # Check for petting state first (highest priority)
+            if (hasattr(self, 'petting_display_start_time') and 
+                self.petting_display_start_time is not None):
+                time_since_petting = current_time - self.petting_display_start_time
+                if time_since_petting <= self.petting_display_duration:
+                    filter_type = 'pink'
+                    # Fade the filter intensity as petting duration expires
+                    remaining_ratio = 1.0 - (time_since_petting / self.petting_display_duration)
+                    filter_intensity = 0.4 * remaining_ratio  # Stronger pink filter that fades
+            
+            # Check for anger-related animation (lower priority than petting)
+            elif animation_name and self._is_anger_animation(animation_name):
+                filter_type = 'red'
+                filter_intensity = 0.35  # Stronger red filter for anger animations
+                # Log when red filter is active
+                if not hasattr(self, '_last_red_filter_log') or current_time - self._last_red_filter_log > 2.0:
+                    self.node.get_logger().info(f"RED FILTER ACTIVATED - Animation: {animation_name}")
+                    self._last_red_filter_log = current_time
+            
+            # Apply the determined filter
+            if filter_type:
+                display_frame = self.apply_color_filter(display_frame, filter_type, filter_intensity)
+            
+            # Draw face bounding boxes with friendly styling (thicker lines)
             if face_bboxes:
                 for bbox in face_bboxes:
                     if len(bbox) >= 4:
                         x1, y1, x2, y2 = bbox[0], bbox[1], bbox[2], bbox[3]
-                        # Draw rectangle around face
-                        cv2.rectangle(display_frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
-                        # Add "Face" label above bbox
-                        cv2.putText(display_frame, "Face", (x1, y1 - 10), 
-                                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+                        
+                        # Adjust bounding box color based on active filter
+                        bbox_color = self.colors['teal']  # Default
+                        if filter_type == 'red':
+                            bbox_color = self.colors['orange']  # Orange for anger animations
+                        elif filter_type == 'pink':
+                            bbox_color = self.colors['pink']   # Pink for petting
+                        
+                        # Draw rounded rectangle around face (thicker)
+                        cv2.rectangle(display_frame, (x1, y1), (x2, y2), bbox_color, 4)
+                        
+                        # Create label with emotion if not neutral
+                        if emotion and emotion != 'neutral':
+                            # Capitalize emotion for display
+                            emotion_display = emotion.capitalize()
+                            if filter_type == 'pink':
+                                face_label = "Being Petted! ♥"
+                            elif filter_type == 'red':
+                                face_label = f"Angry Animation: {animation_name}"
+                            else:
+                                face_label = f"Human Friend - {emotion_display}"
+                        else:
+                            face_label = "Human Friend"
+                        
+                        # Add friendly face label with emotion (larger font)
+                        cv2.putText(display_frame, face_label, (x1, y1 - 15), 
+                                   cv2.FONT_HERSHEY_SIMPLEX, 1.0, bbox_color, 3)
             
-            # Add overlays
-            font = cv2.FONT_HERSHEY_SIMPLEX
-            font_scale = 1.2
-            thickness = 2
+            # === TOP HUD SECTION ===
             
-            # Y position for text (left side)
-            y_pos = 40
-            line_height = 45
-            
-            # Add state information (top left, larger font)
-            if state:
-                state_text = f"State: {state}"
-                cv2.putText(display_frame, state_text, (30, y_pos), font, 
-                           font_scale * 1.2, (255, 255, 0), thickness + 1)  # Yellow, thicker
-                y_pos += line_height + 10
-            
-            # Add animation name
-            if animation_name:
-                anim_text = f"Animation: {animation_name}"
-                cv2.putText(display_frame, anim_text, (30, y_pos), font, 
-                           font_scale, (0, 255, 255), thickness)  # Cyan
-                y_pos += line_height
+            # Robot name with lamp indicator (top left, larger)
+            lamp_color = self.colors['lux_gold']
+            # Use lamp_info if provided, otherwise default to off
+            current_lamp_status = lamp_info.get('status', False) if lamp_info else False
+            # Animate lamp glow only if lamp is actually on
+            if current_lamp_status:
+                glow_intensity = int(100 + 50 * math.sin(self.animation_time * 2))
+                lamp_glow_color = (min(255, lamp_color[0] + glow_intensity//4), 
+                                  min(255, lamp_color[1] + glow_intensity//4), 
+                                  min(255, lamp_color[2] + glow_intensity//4))
             else:
-                anim_text = "Animation: None"
-                cv2.putText(display_frame, anim_text, (30, y_pos), font, 
-                           font_scale, (128, 128, 128), thickness)  # Gray
-                y_pos += line_height
+                # Dim lamp indicator when off
+                lamp_glow_color = self.colors['gray']
+                lamp_color = self.colors['gray']
             
-            # Add emotion text
-            if emotion:
-                text = f"Emotion: {emotion}"
-                cv2.putText(display_frame, text, (30, y_pos), font, 
-                           font_scale, (0, 255, 0), thickness)
-                y_pos += line_height
+            # Draw lamp indicator circle (larger)
+            cv2.circle(display_frame, (80, 60), 15, lamp_glow_color, -1)
+            cv2.circle(display_frame, (80, 60), 18, lamp_color, 3)
             
-            # Add distance text
-            if distance is not None:
-                text = f"Distance: {distance:.2f}m"
-                cv2.putText(display_frame, text, (30, y_pos), font, 
-                           font_scale, (0, 255, 0), thickness)
+            # Robot name (much larger)
+            cv2.putText(display_frame, "LUX", (110, 75), cv2.FONT_HERSHEY_SIMPLEX, 2.4, lamp_color, 4)
             
-            # Voice debugging section (right side)
-            if voice_info:
-                voice_x = display_frame.shape[1] - 400  # Right side positioning
-                voice_y = 40
-                voice_font_scale = 0.9
-                voice_thickness = 2
-                voice_line_height = 35
-                
-                # Voice section header
-                cv2.putText(display_frame, "VOICE DEBUG", (voice_x, voice_y), font, 
-                           voice_font_scale, (255, 255, 255), voice_thickness)
-                voice_y += voice_line_height + 10
-                
-                # Voice active status
-                active_text = f"Active: {'YES' if voice_info.get('active', False) else 'NO'}"
-                active_color = (0, 255, 0) if voice_info.get('active', False) else (128, 128, 128)
-                cv2.putText(display_frame, active_text, (voice_x, voice_y), font, 
-                           voice_font_scale, active_color, voice_thickness)
-                voice_y += voice_line_height
-                
-                # Voice direction
-                direction = voice_info.get('direction')
-                if direction is not None:
-                    dir_text = f"Direction: {direction:.1f}°"
-                    cv2.putText(display_frame, dir_text, (voice_x, voice_y), font, 
-                               voice_font_scale, (255, 165, 0), voice_thickness)  # Orange
-                else:
-                    cv2.putText(display_frame, "Direction: N/A", (voice_x, voice_y), font, 
-                               voice_font_scale, (128, 128, 128), voice_thickness)
-                voice_y += voice_line_height
-                
-                # VAD Confidence
-                vad_conf = voice_info.get('confidence', 0.0)
-                conf_text = f"VAD Conf: {vad_conf:.2f}"
-                conf_color = (0, 255, 0) if vad_conf > 0.5 else (255, 255, 0) if vad_conf > 0.3 else (255, 0, 0)
-                cv2.putText(display_frame, conf_text, (voice_x, voice_y), font, 
-                           voice_font_scale, conf_color, voice_thickness)
-                voice_y += voice_line_height
-                
-                # Spectral Confidence
-                spec_conf = voice_info.get('spectral_confidence', 0.0)
-                spec_text = f"Spec Conf: {spec_conf:.2f}"
-                spec_color = (0, 255, 0) if spec_conf > 0.5 else (255, 255, 0) if spec_conf > 0.3 else (255, 0, 0)
-                cv2.putText(display_frame, spec_text, (voice_x, voice_y), font, 
-                           voice_font_scale, spec_color, voice_thickness)
-                voice_y += voice_line_height
-                
-                # SNR
-                snr = voice_info.get('snr', 0.0)
-                if snr == float('inf'):
-                    snr_text = "SNR: INF"
-                elif snr == -float('inf'):
-                    snr_text = "SNR: -INF"
-                else:
-                    snr_text = f"SNR: {snr:.1f}dB"
-                snr_color = (0, 255, 0) if snr > 6.0 else (255, 255, 0) if snr > 0.0 else (255, 0, 0)
-                cv2.putText(display_frame, snr_text, (voice_x, voice_y), font, 
-                           voice_font_scale, snr_color, voice_thickness)
-                voice_y += voice_line_height
-                
-                # Time since last detection
-                last_detection = voice_info.get('last_detection_time')
-                if last_detection is not None:
-                    # Calculate time since last detection
-                    import datetime
-                    current_time = self.node.get_clock().now()
-                    time_diff = (current_time - last_detection).nanoseconds / 1e9
-                    
-                    if time_diff < 60:
-                        time_text = f"Last: {time_diff:.1f}s ago"
-                    else:
-                        time_text = "Last: >60s ago"
-                    
-                    time_color = (0, 255, 0) if time_diff < 2.0 else (255, 255, 0) if time_diff < 5.0 else (128, 128, 128)
-                    cv2.putText(display_frame, time_text, (voice_x, voice_y), font, 
-                               voice_font_scale, time_color, voice_thickness)
-                else:
-                    cv2.putText(display_frame, "Last: Never", (voice_x, voice_y), font, 
-                               voice_font_scale, (128, 128, 128), voice_thickness)
-            
-            # Add timestamp in bottom right corner
+            # System time (top right, larger)
             import datetime
             timestamp = datetime.datetime.now().strftime("%H:%M:%S")
-            text_size = cv2.getTextSize(timestamp, font, font_scale, thickness)[0]
-            timestamp_x = display_frame.shape[1] - text_size[0] - 30
-            timestamp_y = display_frame.shape[0] - 30
-            cv2.putText(display_frame, timestamp, (timestamp_x, timestamp_y), 
-                       font, font_scale, (255, 255, 255), thickness)
+            time_size = cv2.getTextSize(timestamp, cv2.FONT_HERSHEY_SIMPLEX, 1.2, 2)[0]
+            time_x = display_frame.shape[1] - time_size[0] - 30
+            cv2.putText(display_frame, timestamp, (time_x, 60), cv2.FONT_HERSHEY_SIMPLEX, 1.2, self.colors['teal'], 2)
             
-            # Add debug info in bottom left corner
-            debug_y = display_frame.shape[0] - 100
-            debug_font_scale = 0.7
-            debug_thickness = 1
+            # === SYSTEM GAUGES (top right area, moved down to avoid clock overlap) ===
+            if system_metrics:
+                gauge_centers = [
+                    (display_frame.shape[1] - 180, 180),   # Temp - moved down
+                    (display_frame.shape[1] - 280, 240),   # CPU - moved down 
+                    (display_frame.shape[1] - 80, 240)     # RAM - moved down
+                ]
+                
+                metrics = [
+                    (system_metrics.get('temperature', 55), 100, self.colors['pink'], "TEMP", "C"),
+                    (system_metrics.get('cpu_usage', 35), 100, self.colors['green'], "CPU", "%"),
+                    (system_metrics.get('ram_usage', 62), 100, self.colors['lux_gold'], "RAM", "%")
+                ]
+                
+                for i, ((value, max_val, color, label, unit), center) in enumerate(zip(metrics, gauge_centers)):
+                    self.draw_circular_gauge(display_frame, center, 40, value, max_val, color, label, unit)
             
-            # Show number of faces detected
-            if face_bboxes:
-                face_count_text = f"Faces detected: {len(face_bboxes)}"
+            # === STATE MACHINE DISPLAY (left side, much larger panel) ===
+            if state:
+                friendly_state, description = self.get_friendly_state_info(state)
+                
+                # State panel background (increased width by 10%)
+                self.draw_rounded_panel(display_frame, (30, 120), (550, 250), self.colors['dark_gray'], 0.8)
+                
+                # State label (larger font with more spacing)
+                cv2.putText(display_frame, "CURRENT STATE", (45, 150), cv2.FONT_HERSHEY_SIMPLEX, 0.8, self.colors['green'], 2)
+                
+                # Special coloring for PETTING state
+                state_color = self.colors['pink'] if friendly_state == 'PETTING' else self.colors['green']
+                
+                # State name with glow effect (larger font with more spacing)
+                cv2.putText(display_frame, friendly_state, (45, 190), cv2.FONT_HERSHEY_SIMPLEX, 1.6, state_color, 3)
+                
+                # State description (larger font with more spacing)
+                description_color = self.colors['pink'] if friendly_state == 'PETTING' else self.colors['gray']
+                cv2.putText(display_frame, description, (45, 230), cv2.FONT_HERSHEY_SIMPLEX, 0.8, description_color, 2)
+                
+                # Add petting indicator if showing PETTING state
+                if friendly_state == 'PETTING' and self.petting_display_start_time is not None:
+                    remaining_time = self.petting_display_duration - (current_time - self.petting_display_start_time)
+                    if remaining_time > 0:
+                        # Draw heart icon next to PETTING state
+                        heart_x = 45 + len(friendly_state) * 25  # Position after state text
+                        
+                        # Show remaining time as a small indicator
+                        time_text = f"({remaining_time:.1f}s)"
+                        cv2.putText(display_frame, time_text, (heart_x + 40, 190), cv2.FONT_HERSHEY_SIMPLEX, 0.6, self.colors['pink'], 1)
+                        
+                        # Show trigger source for debugging
+                        trigger_source = "Event" if self.petting_triggered_externally else "State"
+                        source_text = f"[{trigger_source}]"
+                        cv2.putText(display_frame, source_text, (heart_x + 120, 190), cv2.FONT_HERSHEY_SIMPLEX, 0.5, self.colors['pink'], 1)
+                        
+                        # Add visual filter indicator
+                        filter_text = "[<3]"
+                        cv2.putText(display_frame, filter_text, (heart_x + 200, 190), cv2.FONT_HERSHEY_SIMPLEX, 0.4, self.colors['pink'], 1)
+            
+            # === EMOTION DISPLAY (left side, much larger panel with more spacing) ===
+            emotion_face, emotion_text = self.emotion_moods.get(emotion, self.emotion_moods[None])
+            
+            # Emotion panel (increased width by 10% and moved down for more spacing)
+            self.draw_rounded_panel(display_frame, (30, 280), (550, 380), self.colors['dark_gray'], 0.8)
+            
+            # Emotion emoji (much larger with more spacing)
+            emotion_color = self.colors['orange']
+            if filter_type == 'red':
+                emotion_color = (0, 0, 255)  # Bright red for anger animations
+            
+            cv2.putText(display_frame, emotion_face, (45, 340), cv2.FONT_HERSHEY_SIMPLEX, 2.0, emotion_color, 4)
+            
+            # Emotion text (larger with more spacing)
+            if filter_type == 'red' and animation_name:
+                emotion_text_display = f"ANGRY ANIMATION: {animation_name.upper()}"
             else:
-                face_count_text = "Faces detected: 0"
-            cv2.putText(display_frame, face_count_text, (30, debug_y), 
-                       font, debug_font_scale, (200, 200, 200), debug_thickness)
+                emotion_text_display = emotion_text
+            
+            cv2.putText(display_frame, emotion_text_display, (140, 340), cv2.FONT_HERSHEY_SIMPLEX, 1.2, emotion_color, 2)
+            
+            # === AUDIO VISUALIZATION (left side, much larger panel) ===
+            if voice_info:
+                # Audio panel with clearer title (much larger, moved down for spacing)
+                audio_y = 400
+                self.draw_rounded_panel(display_frame, (30, audio_y), (400, audio_y + 120), self.colors['dark_gray'], 0.8)
+                
+                # Audio title (larger font with more spacing)
+                cv2.putText(display_frame, "[VOICE TRACKING]", (45, audio_y + 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, self.colors['pink'], 2)
+                
+                # Draw audio bars (adjusted position)
+                self.draw_audio_visualization(display_frame, voice_info)
+                
+                # Voice direction if available (larger font with more spacing)
+                if voice_info.get('direction') is not None:
+                    direction_text = f"DIR: {voice_info['direction']:.0f}"
+                    cv2.putText(display_frame, direction_text, (45, audio_y + 100), cv2.FONT_HERSHEY_SIMPLEX, 0.7, self.colors['pink'], 1)
+                else:
+                    cv2.putText(display_frame, "DIR: ---", (45, audio_y + 100), cv2.FONT_HERSHEY_SIMPLEX, 0.7, self.colors['gray'], 1)
+            
+            # === TOUCH SENSORS (left side, much larger panel) ===
+            if touch_sensors:
+                # Touch panel (increased height by 15% and moved down for spacing)
+                touch_y = 550  # Moved down to accommodate larger panels above
+                self.draw_rounded_panel(display_frame, (30, touch_y), (400, touch_y + 230), self.colors['dark_gray'], 0.8)
+                
+                cv2.putText(display_frame, "[TOUCH SENSORS]", (45, touch_y + 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, self.colors['purple'], 2)
+                
+                # Draw touch sensors in a head-like pattern (adjusted for larger panel)
+                sensor_positions = {
+                    'head_top': (215, touch_y + 80),      # Centered horizontally
+                    'head_left': (140, touch_y + 130),    # Left side
+                    'head_right': (290, touch_y + 130),   # Right side  
+                    'head_bottom': (215, touch_y + 180)   # Bottom, more spacing from top
+                }
+                
+                for sensor_name, (x, y) in sensor_positions.items():
+                    value = touch_sensors.get(sensor_name, 0)
+                    self.draw_touch_sensor_indicator(display_frame, x, y, sensor_name.split('_')[1].upper(), value)
+            
+            # === COLLISION SENSORS (top right) ===
+            if collision_sensors:
+                self.draw_collision_sensors(display_frame, collision_sensors)
+            
+            # === BOTTOM PANELS (much larger) ===
+            
+            # End Effector Panel (bottom right) - much larger for lamp status
+            panel_bottom = display_frame.shape[0] - 40
+            panel_top = panel_bottom - 180  # Increased height
+            panel_right = display_frame.shape[1] - 40
+            panel_left = panel_right - 350  # Increased width
+            
+            self.draw_rounded_panel(display_frame, (panel_left, panel_top), (panel_right, panel_bottom), self.colors['dark_gray'], 0.8)
+            
+            cv2.putText(display_frame, "[LAMP HEAD]", (panel_left + 20, panel_top + 35), cv2.FONT_HERSHEY_SIMPLEX, 1.0, self.colors['blue'], 2)
+            
+            # Position info (simulated for now)
+            position_y = panel_top + 70
+            
+            # Show actual lamp status from hardware (use lamp_info if available)
+            lamp_status = "[LAMP ON]" if current_lamp_status else "[LAMP OFF]"
+            lamp_bg_color = self.colors['lux_gold'] if current_lamp_status else self.colors['gray']
+            lamp_text_color = self.colors['black'] if current_lamp_status else self.colors['white']
+            
+            # Check if lamp status is stale (no updates for more than 5 seconds)
+            # Only check staleness if lamp_info provides an update timestamp
+            if lamp_info and 'last_update' in lamp_info:
+                time_since_update = current_time - lamp_info['last_update']
+                if time_since_update > 5.0:
+                    lamp_status = "[LAMP ???]"
+                    lamp_bg_color = self.colors['orange']
+                    lamp_text_color = self.colors['black']
+                    
+                # Add lamp status timestamp for debugging (larger text with more spacing)
+                if time_since_update < 60.0:  # Only show if recent
+                    timestamp_text = f"Updated {time_since_update:.0f}s ago"
+                    cv2.putText(display_frame, timestamp_text, (panel_left + 20, panel_top + 60), cv2.FONT_HERSHEY_SIMPLEX, 0.5, self.colors['gray'], 1)
+            
+            # Draw lamp status background and text (much larger with more spacing)
+            cv2.rectangle(display_frame, (panel_left + 20, panel_bottom - 50), (panel_right - 20, panel_bottom - 15), lamp_bg_color, -1)
+            cv2.putText(display_frame, lamp_status, (panel_left + 30, panel_bottom - 28), cv2.FONT_HERSHEY_SIMPLEX, 1.0, lamp_text_color, 2)
+            
+            # Joint Status Panel (bottom left, much larger)
+            joint_panel_right = display_frame.shape[1] - 400  # More spacing from lamp panel
+            joint_panel_left = joint_panel_right - 400  # Increased width
+            
+            self.draw_rounded_panel(display_frame, (joint_panel_left, panel_top), (joint_panel_right, panel_bottom), self.colors['dark_gray'], 0.8)
+            
+            cv2.putText(display_frame, "[LAMP JOINTS]", (joint_panel_left + 20, panel_top + 35), cv2.FONT_HERSHEY_SIMPLEX, 1.0, self.colors['purple'], 2)
+            
+            # Display real joint angles if available, otherwise show offline message
+            if joint_states and len(joint_states) > 0:
+                # Define expected joint names and their display names
+                joint_mapping = {
+                    'base_joint': 'Base Rot',
+                    'shoulder_joint': 'Shoulder', 
+                    'elbow_joint': 'Elbow',
+                    'wrist_joint': 'Wrist',
+                    'head_pan_joint': 'Head Pan',
+                    'head_tilt_joint': 'Head Tilt',
+                    'lower_arm_joint': 'Lower Arm',
+                    'upper_arm_joint': 'Upper Arm'
+                }
+                
+                # Get available joints from joint_states
+                available_joints = []
+                for joint_name, display_name in joint_mapping.items():
+                    if joint_name in joint_states:
+                        angle = joint_states[joint_name]
+                        available_joints.append((display_name, f"{angle:.1f}"))
+                
+                # If no mapped joints found, show all available joints
+                if not available_joints:
+                    for joint_name, angle in list(joint_states.items())[:5]:  # Limit to first 5
+                        display_name = joint_name.replace('_', ' ').title()
+                        available_joints.append((display_name, f"{angle:.1f}"))
+                
+                # Display the joints (larger font and much more spacing)
+                joint_y = panel_top + 65
+                for i, (joint_name, angle) in enumerate(available_joints[:6]):  # Show up to 6 joints now
+                    y_pos = joint_y + i * 25  # Increased spacing between lines
+                    # Truncate long joint names
+                    if len(joint_name) > 15:
+                        joint_name = joint_name[:15] + "..."
+                    
+                    cv2.putText(display_frame, joint_name, (joint_panel_left + 20, y_pos), cv2.FONT_HERSHEY_SIMPLEX, 0.7, self.colors['purple'], 1)
+                    cv2.putText(display_frame, angle, (joint_panel_left + 250, y_pos), cv2.FONT_HERSHEY_SIMPLEX, 0.7, self.colors['lux_gold'], 1)
+                
+                # Show joint count if we have more than 6 (larger font with more spacing)
+                if len(joint_states) > 6:
+                    extra_count = len(joint_states) - 6
+                    cv2.putText(display_frame, f"+ {extra_count} more", (joint_panel_left + 20, joint_y + 6 * 25), 
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.6, self.colors['gray'], 1)
+            else:
+                # Show offline message when no joint data available (larger font with more spacing)
+                offline_text = "JOINTS OFFLINE"
+                cv2.putText(display_frame, offline_text, (joint_panel_left + 20, panel_top + 70), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 1.0, self.colors['gray'], 2)
+                
+                # Show waiting message (larger font with more spacing)
+                waiting_text = "Waiting for /joint_states..."
+                cv2.putText(display_frame, waiting_text, (joint_panel_left + 20, panel_top + 110), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.7, self.colors['gray'], 1)
+            
+            # === CENTRAL CROSSHAIR (larger) ===
+            # Draw friendly crosshair in center
+            center_x, center_y = display_frame.shape[1] // 2, display_frame.shape[0] // 2
+            
+            # Breathing animation (larger)
+            breath_scale = 1.0 + 0.1 * math.sin(self.animation_time * 1.5)
+            crosshair_radius = int(40 * breath_scale)
+            
+            cv2.circle(display_frame, (center_x, center_y), crosshair_radius, self.colors['lux_gold'], 3)
+            cv2.circle(display_frame, (center_x, center_y), 8, self.colors['lux_gold'], -1)
+            
+            # === CAMERA INFO (bottom center, larger) ===
+            camera_info = "[CAM] Lux Vision | 1920x1080-30fps | @cyril.engman"
+            info_size = cv2.getTextSize(camera_info, cv2.FONT_HERSHEY_SIMPLEX, 0.8, 2)[0]
+            info_x = (display_frame.shape[1] - info_size[0]) // 2
+            info_y = display_frame.shape[0] - 15
+            
+            # Background for camera info (larger)
+            cv2.rectangle(display_frame, (info_x - 10, info_y - 25), (info_x + info_size[0] + 10, info_y + 10), self.colors['dark_gray'], -1)
+            cv2.putText(display_frame, camera_info, (info_x, info_y), cv2.FONT_HERSHEY_SIMPLEX, 0.8, self.colors['white'], 2)
+            
+            # === ANIMATED SCAN LINE (thicker) ===
+            # Add subtle scan line animation
+            scan_y = int((self.animation_time * 100) % display_frame.shape[0])
+            cv2.line(display_frame, (0, scan_y), (display_frame.shape[1], scan_y), (*self.colors['lux_gold'], 50), 3)
             
             # Display the frame
             self.display.display_frame(display_frame)
             
         except Exception as e:
-            self.node.get_logger().error(f"Error updating framebuffer display: {e}")
+            self.node.get_logger().error(f"Error updating Lux framebuffer display: {e}")
     
     def show_shutdown_message(self):
-        """Display a shutdown message before cleanup"""
+        """Display a Lux-themed shutdown message before cleanup"""
         if not self.enabled:
             return
             
@@ -352,85 +907,112 @@ class CameraFramebufferDisplay:
             # Create a black frame
             frame = np.zeros((self.display.height, self.display.width, 3), dtype=np.uint8)
             
-            # Add shutdown message
+            # Add Lux shutdown message (larger fonts)
             font = cv2.FONT_HERSHEY_SIMPLEX
             
-            # Main message
-            text = "CAMERA STOPPED"
-            font_scale = 2.0
-            thickness = 3
+            # Main message (much larger)
+            text = "LUX POWERING DOWN"
+            font_scale = 3.0
+            thickness = 6
             text_size = cv2.getTextSize(text, font, font_scale, thickness)[0]
             
             # Center the text
             x = (frame.shape[1] - text_size[0]) // 2
-            y = (frame.shape[0] + text_size[1]) // 2 - 50
+            y = (frame.shape[0] + text_size[1]) // 2 - 80
             
-            # Draw text with border for visibility
-            cv2.putText(frame, text, (x, y), font, font_scale, (0, 0, 0), thickness + 2)  # Black border
-            cv2.putText(frame, text, (x, y), font, font_scale, (255, 255, 255), thickness)  # White text
+            # Draw text with glow effect (thicker)
+            cv2.putText(frame, text, (x, y), font, font_scale, (0, 0, 0), thickness + 4)  # Black border
+            cv2.putText(frame, text, (x, y), font, font_scale, self.colors['lux_gold'], thickness)  # Gold text
             
-            # Add smaller subtitle
-            subtitle = "System Shutdown"
-            font_scale_sub = 1.0
-            thickness_sub = 2
+            # Add lamp icon (larger)
+            cv2.circle(frame, (x - 50, y - 25), 25, self.colors['lux_gold'], -1)
+            cv2.putText(frame, "[L]", (x - 65, y - 5), font, 2.0, self.colors['black'], 4)
+            
+            # Add smaller subtitle (larger)
+            subtitle = "Thank you for playing!"
+            font_scale_sub = 2.0
+            thickness_sub = 4
             text_size_sub = cv2.getTextSize(subtitle, font, font_scale_sub, thickness_sub)[0]
             x_sub = (frame.shape[1] - text_size_sub[0]) // 2
-            y_sub = y + 60
+            y_sub = y + 100
             
-            cv2.putText(frame, subtitle, (x_sub, y_sub), font, font_scale_sub, (128, 128, 128), thickness_sub)
+            cv2.putText(frame, subtitle, (x_sub, y_sub), font, font_scale_sub, self.colors['teal'], thickness_sub)
             
-            # Add timestamp
+            # Add timestamp (larger)
             import datetime
             timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            font_scale_ts = 0.7
-            thickness_ts = 1
+            font_scale_ts = 1.4
+            thickness_ts = 2
             text_size_ts = cv2.getTextSize(timestamp, font, font_scale_ts, thickness_ts)[0]
             x_ts = (frame.shape[1] - text_size_ts[0]) // 2
-            y_ts = y_sub + 40
+            y_ts = y_sub + 60
             
-            cv2.putText(frame, timestamp, (x_ts, y_ts), font, font_scale_ts, (100, 100, 100), thickness_ts)
+            cv2.putText(frame, timestamp, (x_ts, y_ts), font, font_scale_ts, self.colors['gray'], thickness_ts)
             
             # Display the frame
             self.display.display_frame(frame)
             
             # Keep the message visible for a moment
             import time
-            time.sleep(1.0)
+            time.sleep(2.0)
             
         except Exception as e:
-            self.node.get_logger().error(f"Error displaying shutdown message: {e}")
+            self.node.get_logger().error(f"Error displaying Lux shutdown message: {e}")
     
     def clear(self, color=(0, 0, 0)):
-        """Clear the display with a solid color or message"""
+        """Clear the display with Lux-themed no signal message"""
         if self.enabled:
             try:
-                # Create a black frame
+                # Create a frame with Lux colors
                 frame = np.full((self.display.height, self.display.width, 3), color, dtype=np.uint8)
                 
-                # Add a "No Signal" message
+                # Add Lux-themed "No Signal" message (larger fonts)
                 font = cv2.FONT_HERSHEY_SIMPLEX
-                text = "NO SIGNAL"
-                font_scale = 1.5
-                thickness = 2
+                text = "LUX SLEEPING"
+                font_scale = 3.0
+                thickness = 4
                 text_size = cv2.getTextSize(text, font, font_scale, thickness)[0]
                 
                 # Center the text
                 x = (frame.shape[1] - text_size[0]) // 2
                 y = (frame.shape[0] + text_size[1]) // 2
                 
-                # Draw text
-                cv2.putText(frame, text, (x, y), font, font_scale, (64, 64, 64), thickness)
+                # Draw text (larger)
+                cv2.putText(frame, text, (x, y), font, font_scale, self.colors['lux_gold'], thickness)
+                
+                # Add sleeping lamp icon (larger)
+                cv2.circle(frame, (x - 50, y - 25), 20, self.colors['gray'], 3)
+                cv2.putText(frame, "Z", (x - 60, y - 5), font, 1.6, self.colors['gray'], 2)
                 
                 self.display.display_frame(frame)
             except Exception as e:
-                self.node.get_logger().error(f"Error clearing display: {e}")
+                self.node.get_logger().error(f"Error clearing Lux display: {e}")
                 # Fallback to simple clear
                 self.display.clear(color)
     
     def cleanup(self):
-        """Clean up resources"""
+        """Clean up resources with Lux-themed shutdown"""
         if self.enabled:
             # Show shutdown message first
             self.show_shutdown_message()
             # Then cleanup
             self.display.cleanup()
+
+    def _is_anger_animation(self, animation_name):
+        """Check if the given animation is an anger-related animation"""
+        if not animation_name:
+            return False
+        
+        # List of animations that should trigger red filter
+        anger_animations = [
+            'shake',      # Anger animation from emotion mapping
+            'startled',   # Can be triggered by anger
+            'think',      # Can be triggered by anger
+            'angry',      # Direct anger animation if it exists
+            'frustrated', # Frustration animation if it exists
+            'agitated'    # Agitation animation if it exists
+        ]
+        
+        # Check if current animation matches any anger-related animations
+        animation_lower = animation_name.lower()
+        return any(anger_anim in animation_lower for anger_anim in anger_animations)

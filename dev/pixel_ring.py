@@ -87,12 +87,8 @@ class PixelRing:
         """
         # Convert angle to LED position (assuming 12 LEDs around circle)
         # Apply dynamic offset based on channel configuration
-        if channels == 6:
-            offset = 120  # 120° offset for 6-channel configuration
-        else:
-            offset = 60   # 60° offset for 4-channel configuration (default)
         
-        adjusted_angle = (angle + offset) % 360
+        adjusted_angle = angle % 360
         led_position = int((adjusted_angle + 15) / 30) % 12  # 30° per LED with rounding
         
         # Create data for 12 LEDs

@@ -13,6 +13,7 @@ import adafruit_vcnl4200
 i2c = board.I2C()
 
 sensor = adafruit_vcnl4200.Adafruit_VCNL4200(i2c)
+# sensor = adafruit_vcnl4200.Adafruit_VCNL4200(i2c, addr=0x21) # specify the address
 
 while True:
     print(f"Proximity is: {sensor.proximity}")

@@ -23,7 +23,7 @@ from DFRobot_DF2301Q import *
   @param i2c_addr - I2C communication address
   @param bus - I2C bus
 '''
-DF2301Q = DFRobot_DF2301Q_I2C(i2c_addr=DF2301Q_I2C_ADDR, bus=1)
+DF2301Q = DFRobot_DF2301Q_I2C(i2c_addr=DF2301Q_I2C_ADDR, bus=3)
 
 def setup():
   '''

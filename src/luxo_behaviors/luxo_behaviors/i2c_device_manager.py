@@ -2,11 +2,13 @@
 
 import rclpy
 from rclpy.node import Node
-from std_msgs.msg import String, Bool, Int16, Float32
+from std_msgs.msg import String, Bool, Int16, Float32, UInt8
 from luxo_interfaces.srv import ConfigureI2CSensor
 import board
 from adafruit_apds9960.apds9960 import APDS9960
 import adafruit_vl53l4cd
+import adafruit_ads7830.ads7830 as ADC
+from adafruit_ads7830.analog_in import AnalogIn
 import threading
 import time
 import queue
@@ -17,6 +19,7 @@ class SensorType(Enum):
     """Enum for supported sensor types"""
     APDS9960 = auto()
     VL53L4CD = auto()
+    ADS7830 = auto()
     # Add more sensor types here as needed
 
 class I2CSensor:
@@ -109,8 +112,8 @@ class VL53L4CDSensor(I2CSensor):
         try:
             self.device = adafruit_vl53l4cd.VL53L4CD(i2c_bus, self.address)
             # Increase timing for more stable readings
-            self.device.inter_measurement = 100  # Increased from 50ms
-            self.device.timing_budget = 100  # Increased from 50ms for better accuracy
+            self.device.inter_measurement = 75
+            self.device.timing_budget = 75
             self.device.start_ranging()
             self.active = True
             self.reading_history = []  # Clear history on init
@@ -164,6 +167,76 @@ class VL53L4CDSensor(I2CSensor):
         except Exception as e:
             raise Exception(f"Failed to read VL53L4CD: {e}")
 
+class ADS7830Sensor(I2CSensor):
+    """ADS7830 8-channel ADC for FSR pressure sensors"""
+    def __init__(self, name: str = "ads7830", address: int = 0x38):
+        super().__init__(name, address, SensorType.ADS7830)
+        self.channels = []
+        self.channel_mapping = {
+            0: "head_top",
+            1: "head_left", 
+            2: "head_bottom",
+            3: "head_right"
+        }
+        self.active_channels = list(self.channel_mapping.keys())  # Only use mapped channels
+        
+    def initialize(self, i2c_bus):
+        """Initialize ADS7830"""
+        try:
+            self.device = ADC.ADS7830(i2c_bus, self.address)
+            
+            # Create analog input objects only for active channels
+            self.channels = {}
+            for channel_num in self.active_channels:
+                self.channels[channel_num] = AnalogIn(self.device, channel_num)
+                
+            self.active = True
+            return True
+        except Exception as e:
+            raise Exception(f"Failed to initialize ADS7830 at {hex(self.address)}: {e}")
+            
+    def read(self):
+        """Read all FSR sensor values"""
+        if not self.active or not self.device or not self.channels:
+            return None
+            
+        try:
+            sensor_data = {}
+            for channel_num in self.active_channels:
+                try:
+                    value = self.channels[channel_num].value
+                    channel_name = self.channel_mapping[channel_num]
+                    sensor_data[channel_name] = value
+                except Exception as channel_error:
+                    # Log channel-specific error but continue with other channels
+                    self.get_logger().debug(f"Failed to read ADS7830 channel {channel_num}: {channel_error}")
+                    continue
+                
+            # Return data even if some channels failed, as long as we got something
+            return sensor_data if sensor_data else None
+        except Exception as e:
+            raise Exception(f"Failed to read ADS7830: {e}")
+            
+    def get_pressure_state(self, value):
+        """
+        Map ADC value to pressure state
+        Returns: (state_number, state_name, state_symbol)
+        """
+        if value >= 24000:  # Not pressed (allowing for some noise)
+            return (0, "Not Pressed", "-")
+        elif value >= 20000:  # Very light touch
+            return (1, "Light Touch", "1")
+        elif value >= 17500:  # Light press
+            return (2, "Light Press", "2")
+        elif value >= 15000:  # Medium press
+            return (3, "Medium Press", "3")
+        elif value >= 8000:   # Hard press
+            return (4, "Hard Press", "4")
+        elif value >= 4000:   # Very hard press
+            return (5, "Very Hard", "5")
+        else:                 # Maximum press
+            return (6, "Maximum", "!")
+
 class I2CDeviceManager(Node):
     """Centralized I2C device manager to prevent bus contention"""
     
@@ -192,7 +265,9 @@ class I2CDeviceManager(Node):
         self.declare_parameter('enable_apds9960', True)
         self.declare_parameter('enable_vl53_left', True)
         self.declare_parameter('enable_vl53_right', True)
-        self.declare_parameter('publish_rate', 5.0)  # Hz
+        self.declare_parameter('enable_ads7830', True)
+        self.declare_parameter('ads7830_address', 0x38)
+        self.declare_parameter('publish_rate', 10.0)  # Hz
         self.declare_parameter('recovery_interval', 3.0)  # seconds
         self.declare_parameter('max_init_attempts', 10)
         
@@ -201,6 +276,8 @@ class I2CDeviceManager(Node):
         self.enable_apds9960 = self.get_parameter('enable_apds9960').value
         self.enable_vl53_left = self.get_parameter('enable_vl53_left').value
         self.enable_vl53_right = self.get_parameter('enable_vl53_right').value
+        self.enable_ads7830 = self.get_parameter('enable_ads7830').value
+        self.ads7830_address = self.get_parameter('ads7830_address').value
         publish_rate = self.get_parameter('publish_rate').value
         self.recovery_interval = self.get_parameter('recovery_interval').value
         self.max_init_attempts = self.get_parameter('max_init_attempts').value
@@ -210,6 +287,12 @@ class I2CDeviceManager(Node):
         self.gesture_pub = self.create_publisher(String, '/i2c/apds9960/gesture', 10)
         self.left_distance_pub = self.create_publisher(Float32, '/i2c/vl53_left/distance', 10)
         self.right_distance_pub = self.create_publisher(Float32, '/i2c/vl53_right/distance', 10)
+        
+        # Touch sensor publishers - Changed to UInt8 for pressure states (0-6)
+        self.touch_head_top_pub = self.create_publisher(UInt8, '/touch_sensors/head_top', 10)
+        self.touch_head_left_pub = self.create_publisher(UInt8, '/touch_sensors/head_left', 10)
+        self.touch_head_bottom_pub = self.create_publisher(UInt8, '/touch_sensors/head_bottom', 10)
+        self.touch_head_right_pub = self.create_publisher(UInt8, '/touch_sensors/head_right', 10)
         
         # Status publishers
         self.status_pub = self.create_publisher(String, '/i2c/status', 10)
@@ -259,6 +342,10 @@ class I2CDeviceManager(Node):
         if self.enable_vl53_right:
             vl53_right = VL53L4CDSensor('vl53_right', 0x59)
             self.pending_sensors['vl53_right'] = vl53_right
+            
+        if self.enable_ads7830:
+            ads7830 = ADS7830Sensor('ads7830', self.ads7830_address)
+            self.pending_sensors['ads7830'] = ads7830
         
         # Try to initialize all pending sensors
         self._initialize_pending_sensors()
@@ -355,6 +442,33 @@ class I2CDeviceManager(Node):
                         msg.data = data['distance']
                         self.right_distance_pub.publish(msg)
                         
+                    elif sensor_name == 'ads7830':
+                        # Publish touch sensor data as pressure states (0-6)
+                        if 'head_top' in data:
+                            state_num, _, _ = sensor.get_pressure_state(data['head_top'])
+                            msg = UInt8()
+                            msg.data = state_num
+                            self.touch_head_top_pub.publish(msg)
+                            
+                            
+                        if 'head_left' in data:
+                            state_num, _, _ = sensor.get_pressure_state(data['head_left'])
+                            msg = UInt8()
+                            msg.data = state_num
+                            self.touch_head_left_pub.publish(msg)
+                            
+                        if 'head_bottom' in data:
+                            state_num, _, _ = sensor.get_pressure_state(data['head_bottom'])
+                            msg = UInt8()
+                            msg.data = state_num
+                            self.touch_head_bottom_pub.publish(msg)
+                            
+                        if 'head_right' in data:
+                            state_num, _, _ = sensor.get_pressure_state(data['head_right'])
+                            msg = UInt8()
+                            msg.data = state_num
+                            self.touch_head_right_pub.publish(msg)
+                        
             except Exception as e:
                 sensor.error_count += 1
                 sensor.total_errors += 1
@@ -401,8 +515,10 @@ class I2CDeviceManager(Node):
             self.get_logger().debug(f"Attempting to initialize {len(self.pending_sensors)} pending sensors")
             self._initialize_pending_sensors()
         
-        # Check active sensors for problems
-        for sensor_name, sensor in self.sensors.items():
+        # Check active sensors for problems - create a copy of items to avoid iteration issues
+        sensors_to_move = []
+        
+        for sensor_name, sensor in list(self.sensors.items()):
             # Try to recover inactive sensors
             if not sensor.active:
                 self.get_logger().info(f"Attempting to recover {sensor_name}")
@@ -412,11 +528,8 @@ class I2CDeviceManager(Node):
                     self._publish_sensor_health(sensor_name, "recovered", 
                         f"Recovered after {sensor.total_errors} total errors")
                 else:
-                    # Move back to pending if recovery failed
-                    if sensor_name not in self.pending_sensors:
-                        self.pending_sensors[sensor_name] = sensor
-                        del self.sensors[sensor_name]
-                        self.get_logger().warn(f"{sensor_name} moved back to pending sensors")
+                    # Mark for moving back to pending
+                    sensors_to_move.append(sensor_name)
                     
             # Check for sensors that haven't reported in a while
             elif sensor.last_success_time:
@@ -426,7 +539,22 @@ class I2CDeviceManager(Node):
                     sensor.active = False
                     self._publish_sensor_health(sensor_name, "timeout", 
                         f"No data for {time_since_success:.1f}s")
-                    
+        
+        # Move failed recovery sensors back to pending (outside the iteration)
+        for sensor_name in sensors_to_move:
+            if sensor_name in self.sensors:
+                sensor = self.sensors[sensor_name]
+                # Only move if we haven't exceeded max attempts
+                if sensor.initialization_attempts < self.max_init_attempts:
+                    self.pending_sensors[sensor_name] = sensor
+                    del self.sensors[sensor_name]
+                    self.get_logger().warn(f"{sensor_name} moved back to pending sensors")
+                else:
+                    # Move to failed sensors if max attempts exceeded
+                    self.failed_sensors[sensor_name] = sensor
+                    del self.sensors[sensor_name]
+                    self.get_logger().error(f"{sensor_name} moved to failed sensors after {sensor.initialization_attempts} attempts")
+
     def publish_health_summary(self):
         """Publish a summary of all sensor health"""
         active_sensors = len([s for s in self.sensors.values() if s.active])
@@ -462,12 +590,17 @@ class I2CDeviceManager(Node):
             
             # Check all sensor lists
             sensor = None
+            current_location = None
+            
             if sensor_name in self.sensors:
                 sensor = self.sensors[sensor_name]
+                current_location = 'active'
             elif sensor_name in self.pending_sensors:
                 sensor = self.pending_sensors[sensor_name]
+                current_location = 'pending'
             elif sensor_name in self.failed_sensors:
                 sensor = self.failed_sensors[sensor_name]
+                current_location = 'failed'
                 
             if not sensor:
                 response.success = False
@@ -481,26 +614,28 @@ class I2CDeviceManager(Node):
                 # Reset counters and try to initialize
                 sensor.initialization_attempts = 0
                 sensor.error_count = 0
+                sensor.total_errors = 0
                 
-                # Move to pending if not already there
-                if sensor_name in self.failed_sensors:
+                # Move to pending based on current location
+                if current_location == 'failed':
                     self.pending_sensors[sensor_name] = sensor
                     del self.failed_sensors[sensor_name]
-                elif sensor_name in self.sensors and not sensor.active:
+                elif current_location == 'active' and not sensor.active:
                     self.pending_sensors[sensor_name] = sensor
                     del self.sensors[sensor_name]
                     
+                # Try to initialize immediately
                 self._initialize_pending_sensors()
                 
             response.success = True
-            response.message = f"Configuration applied to {sensor_name}"
+            response.message = f"Configuration applied to {sensor_name} (was in {current_location})"
             
         except Exception as e:
             response.success = False
             response.message = str(e)
             
         return response
-        
+
     def _publish_status(self, message: str):
         """Publish status message"""
         msg = String()

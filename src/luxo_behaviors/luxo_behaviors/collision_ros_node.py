@@ -2,12 +2,15 @@
 
 import rclpy
 from rclpy.node import Node
-from std_msgs.msg import String, Bool, Int16, Float32
+from std_msgs.msg import String, Bool, Int16, Float32, UInt8
 from luxo_interfaces.srv import ConfigureI2CSensor
 
 class CollisionNode(Node):
     def __init__(self):
         super().__init__('collision_node')
+        
+        # Track startup time to prevent false positives
+        self._startup_time = self.get_clock().now()
         
         # Set the proximity threshold for collision detection
         self.declare_parameter('proximity_threshold', 15)
@@ -32,6 +35,11 @@ class CollisionNode(Node):
         self.prev_right_distance = float('inf')
         self.prev_proximity = 0
         
+        # Add petting state tracking to prevent spam
+        self.petting_currently_active = False
+        self.last_petting_publish_time = self.get_clock().now()
+        self.petting_publish_rate = 0.75  # seconds between petting messages when continuously pressed
+        
         # Track last received data time for timeout detection
         self.last_proximity_time = self.get_clock().now()
         self.last_left_distance_time = self.get_clock().now()
@@ -42,6 +50,32 @@ class CollisionNode(Node):
         self.current_proximity = 0
         self.current_left_distance = float('inf')
         self.current_right_distance = float('inf')
+        
+        # FSR touch sensor state tracking
+        self.touch_sensors = {
+            'head_top': 0,
+            'head_left': 0,
+            'head_bottom': 0,
+            'head_right': 0
+        }
+        self.last_touch_sensor_time = {
+            'head_top': self.get_clock().now(),
+            'head_left': self.get_clock().now(),
+            'head_bottom': self.get_clock().now(),
+            'head_right': self.get_clock().now()
+        }
+        
+        # FSR collision state tracking
+        self.fsr_collision_active = {
+            'front': False,
+            'left': False,
+            'right': False
+        }
+        self.fsr_collision_start_time = {
+            'front': None,
+            'left': None,
+            'right': None
+        }
         
         # Subscribers to I2C device manager topics
         self.proximity_sub = self.create_subscription(
@@ -62,6 +96,35 @@ class CollisionNode(Node):
             Float32,
             '/i2c/vl53_right/distance',
             self.right_distance_callback,
+            10
+        )
+        
+        # FSR touch sensor subscribers
+        self.touch_head_top_sub = self.create_subscription(
+            UInt8,
+            '/touch_sensors/head_top',
+            self.touch_head_top_callback,
+            10
+        )
+        
+        self.touch_head_left_sub = self.create_subscription(
+            UInt8,
+            '/touch_sensors/head_left',
+            self.touch_head_right_callback,
+            10
+        )
+        
+        self.touch_head_bottom_sub = self.create_subscription(
+            UInt8,
+            '/touch_sensors/head_bottom',
+            self.touch_head_bottom_callback,
+            10
+        )
+        
+        self.touch_head_right_sub = self.create_subscription(
+            UInt8,
+            '/touch_sensors/head_right',
+            self.touch_head_left_callback,
             10
         )
         
@@ -98,6 +161,7 @@ class CollisionNode(Node):
         self.front_severity_pub = self.create_publisher(String, '/front_collision_severity', 10)
         self.left_severity_pub = self.create_publisher(String, '/left_collision_severity', 10)
         self.right_severity_pub = self.create_publisher(String, '/right_collision_severity', 10)
+        self.petting_event_pub = self.create_publisher(String, '/collision/petting_events', 10)
         
         # Service client for sensor configuration
         self.sensor_config_client = self.create_client(
@@ -111,11 +175,33 @@ class CollisionNode(Node):
         # Timer for periodic collision evaluation
         self.collision_timer = self.create_timer(0.1, self.evaluate_collisions)
         
+        # Timer to check FSR collision durations
+        self.fsr_timer = self.create_timer(0.1, self.check_fsr_collisions)
+        
         self.get_logger().info('Collision node initialized (using I2C Device Manager)')
         self.get_logger().info(f'Proximity threshold: {self.proximity_threshold}')
         self.get_logger().info(f'Side distance threshold: {self.side_distance_threshold} cm')
         self.get_logger().info(f'Danger threshold: {self.danger_threshold} cm')
         self.get_logger().info(f'Warning threshold: {self.warning_threshold} cm')
+        
+        self.get_logger().info('FSR touch sensor collision detection enabled')
+        
+        # Add startup delay timer to prevent initial false positives
+        self.startup_delay = 5.0  # seconds
+        self.startup_complete = False
+        self.startup_timer = self.create_timer(
+            self.startup_delay, 
+            self._complete_startup
+        )
+        
+        self.get_logger().info(f'Collision detection will be fully active after {self.startup_delay}s startup delay')
+    
+    def _complete_startup(self):
+        """Mark startup as complete and enable full collision detection."""
+        self.startup_complete = True
+        if hasattr(self, 'startup_timer'):
+            self.startup_timer.cancel()
+        self.get_logger().info('Startup complete - full collision detection active')
     
     def proximity_data_callback(self, msg):
         """Handle proximity data from I2C manager"""
@@ -263,6 +349,220 @@ class CollisionNode(Node):
                 
                 self.prev_right_distance = self.current_right_distance
     
+    def touch_head_top_callback(self, msg):
+        """Handle head top touch sensor data - triggers petting behavior"""
+        self.touch_sensors['head_top'] = msg.data
+        self.last_touch_sensor_time['head_top'] = self.get_clock().now()
+        
+        # Don't process petting during startup period
+        if not self.startup_complete:
+            self.get_logger().debug(f"Ignoring head touch during startup: {msg.data}")
+            return
+        
+        current_time = self.get_clock().now()
+        
+        # Check for petting trigger (any pressure > 1)
+        if msg.data > 1:
+            # Only publish if we weren't already petting OR enough time has passed for rate limiting
+            time_since_last_publish = (current_time - self.last_petting_publish_time).nanoseconds / 1e9
+            
+            if not self.petting_currently_active:
+                # New petting session started
+                self.get_logger().info(f"Petting started on head top (pressure: {msg.data})")
+                self.petting_currently_active = True
+                self.last_petting_publish_time = current_time
+                
+                # Publish petting trigger
+                petting_msg = String()
+                petting_msg.data = f"petting_started:{msg.data}"
+                self.petting_event_pub.publish(petting_msg)
+                
+            elif time_since_last_publish > self.petting_publish_rate:
+                # Continue petting session, but rate limited
+                self.get_logger().debug(f"Petting continues (pressure: {msg.data})")
+                self.last_petting_publish_time = current_time
+                
+                # Publish continued petting (for intensity updates)
+                petting_msg = String()
+                petting_msg.data = f"petting_started:{msg.data}"
+                self.petting_event_pub.publish(petting_msg)
+        else:
+            # Petting stopped
+            if self.petting_currently_active:
+                self.get_logger().info("Petting stopped")
+                self.petting_currently_active = False
+                
+                petting_msg = String()
+                petting_msg.data = "petting_stopped:0"
+                self.petting_event_pub.publish(petting_msg)
+    
+    def touch_head_left_callback(self, msg):
+        """Handle head left touch sensor data"""
+        self.touch_sensors['head_left'] = msg.data
+        self.last_touch_sensor_time['head_left'] = self.get_clock().now()
+        self._process_touch_collision('head_left', msg.data)
+    
+    def touch_head_bottom_callback(self, msg):
+        """Handle head bottom touch sensor data"""
+        self.touch_sensors['head_bottom'] = msg.data
+        self.last_touch_sensor_time['head_bottom'] = self.get_clock().now()
+        self._process_touch_collision('head_bottom', msg.data)
+    
+    def touch_head_right_callback(self, msg):
+        """Handle head right touch sensor data"""
+        self.touch_sensors['head_right'] = msg.data
+        self.last_touch_sensor_time['head_right'] = self.get_clock().now()
+        self._process_touch_collision('head_right', msg.data)
+    
+    def _process_touch_collision(self, touch_location, pressure_state):
+        """Process touch sensor data and trigger appropriate collision responses"""
+        # Check for simultaneous left and right touches (likely false positive)
+        if touch_location in ['head_left', 'head_right']:
+            if self.touch_sensors['head_left'] > 1 and self.touch_sensors['head_right'] > 1:
+                self.get_logger().info(
+                    f"Simultaneous left ({self.touch_sensors['head_left']}) and "
+                    f"right ({self.touch_sensors['head_right']}) touch detected - "
+                    f"ignoring as potential false positive"
+                )
+                return
+        
+        # Determine if this is a collision (any pressure state > 1)
+        is_collision = pressure_state > 1
+        
+        # Map touch locations to collision directions
+        collision_direction = None
+        if touch_location == 'head_left':
+            collision_direction = 'left'
+        elif touch_location == 'head_right':
+            collision_direction = 'right'
+        elif touch_location == 'head_bottom':
+            collision_direction = 'front'
+        else:
+            return  # Unknown touch location
+        
+        current_time = self.get_clock().now()
+        
+        if is_collision:
+            # New collision detected
+            if not self.fsr_collision_active[collision_direction]:
+                self.fsr_collision_active[collision_direction] = True
+                self.fsr_collision_start_time[collision_direction] = current_time
+                
+                self.get_logger().info(f"FSR touch collision detected: {touch_location} (pressure: {pressure_state}) -> {collision_direction} collision")
+                
+                # Treat all FSR touches as severe collisions
+                severity = 'danger'
+                
+                # Update collision status
+                collision_msg = Bool()
+                collision_msg.data = True
+                
+                # Publish collision warnings
+                if collision_direction == 'left':
+                    self.left_collision_pub.publish(collision_msg)
+                elif collision_direction == 'right':
+                    self.right_collision_pub.publish(collision_msg)
+                elif collision_direction == 'front':
+                    self.collision_pub.publish(collision_msg)
+                
+                # Publish severity
+                severity_msg = String()
+                severity_msg.data = severity
+                
+                if collision_direction == 'left':
+                    self.left_severity_pub.publish(severity_msg)
+                elif collision_direction == 'right':
+                    self.right_severity_pub.publish(severity_msg)
+                elif collision_direction == 'front':
+                    self.front_severity_pub.publish(severity_msg)
+                
+                # Publish detailed collision information with simulated distance
+                # Use a very small distance (1cm) to indicate immediate contact
+                simulated_distance = 1.0  # cm - represents direct contact
+                details_msg = String()
+                details_msg.data = f"{collision_direction}:{simulated_distance}:{severity}"
+                self.collision_details_pub.publish(details_msg)
+                
+                # Also publish distance for hardware interface consumption
+                distance_msg = Float32()
+                distance_msg.data = simulated_distance
+                
+                if collision_direction == 'left':
+                    self.left_distance_pub.publish(distance_msg)
+                elif collision_direction == 'right':
+                    self.right_distance_pub.publish(distance_msg)
+                # For front collisions, we use proximity sensor, not distance
+                
+        else:
+            # Touch released - clear collision if it was from this sensor
+            if self.fsr_collision_active[collision_direction]:
+                duration = (current_time - self.fsr_collision_start_time[collision_direction]).nanoseconds / 1e9
+                self.get_logger().info(f"FSR collision cleared for {collision_direction} after {duration:.2f}s")
+                
+                self.fsr_collision_active[collision_direction] = False
+                self.fsr_collision_start_time[collision_direction] = None
+                
+                # Clear collision status
+                collision_msg = Bool()
+                collision_msg.data = False
+                
+                if collision_direction == 'left':
+                    self.left_collision_pub.publish(collision_msg)
+                elif collision_direction == 'right':
+                    self.right_collision_pub.publish(collision_msg)
+                elif collision_direction == 'front':
+                    self.collision_pub.publish(collision_msg)
+                
+                # Clear severity
+                severity_msg = String()
+                severity_msg.data = "safe"
+                
+                if collision_direction == 'left':
+                    self.left_severity_pub.publish(severity_msg)
+                elif collision_direction == 'right':
+                    self.right_severity_pub.publish(severity_msg)
+                elif collision_direction == 'front':
+                    self.front_severity_pub.publish(severity_msg)
+    
+    def check_fsr_collisions(self):
+        """Check FSR collision durations and handle timeouts"""
+        current_time = self.get_clock().now()
+        
+        for direction in ['front', 'left', 'right']:
+            if self.fsr_collision_active[direction]:
+                # Check if collision has been active too long
+                if self.fsr_collision_start_time[direction]:
+                    duration = (current_time - self.fsr_collision_start_time[direction]).nanoseconds / 1e9
+                    
+                    # Auto-clear FSR collisions after 2 seconds to prevent sticking
+                    if duration > 0.5:
+                        self.get_logger().warn(f"FSR collision for {direction} auto-cleared after {duration:.2f}s (timeout)")
+                        
+                        self.fsr_collision_active[direction] = False
+                        self.fsr_collision_start_time[direction] = None
+                        
+                        # Clear collision status
+                        collision_msg = Bool()
+                        collision_msg.data = False
+                        
+                        if direction == 'left':
+                            self.left_collision_pub.publish(collision_msg)
+                        elif direction == 'right':
+                            self.right_collision_pub.publish(collision_msg)
+                        elif direction == 'front':
+                            self.collision_pub.publish(collision_msg)
+                        
+                        # Clear severity
+                        severity_msg = String()
+                        severity_msg.data = "safe"
+                        
+                        if direction == 'left':
+                            self.left_severity_pub.publish(severity_msg)
+                        elif direction == 'right':
+                            self.right_severity_pub.publish(severity_msg)
+                        elif direction == 'front':
+                            self.front_severity_pub.publish(severity_msg)
+    
     def check_data_timeout(self):
         """Check if sensor data has timed out and publish safe states"""
         current_time = self.get_clock().now()
@@ -310,6 +610,14 @@ class CollisionNode(Node):
             self.right_collision_pub.publish(collision_msg)
             
             self.request_sensor_reinit('vl53_right')
+        
+        # Check FSR touch sensor timeouts
+        for sensor_name, last_time in self.last_touch_sensor_time.items():
+            time_since_data = (current_time - last_time).nanoseconds / 1e9
+            if time_since_data > self.data_timeout:
+                self.get_logger().debug(f"FSR touch sensor {sensor_name} data timeout - assuming no touch")
+                # Reset the sensor value to 0 (no touch)
+                self.touch_sensors[sensor_name] = 0
     
     def request_sensor_reinit(self, sensor_name):
         """Request sensor reinitialization via service"""

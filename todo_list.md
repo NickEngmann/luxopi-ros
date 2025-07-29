@@ -1,14 +1,11 @@
-[] Touch Circuit
-[] Touch Capabilities - Animations
-[] Touch Capabilities - Collision Detection
-[] Fix DEMA Adaptation Mode and Integrate with Touch
-[] Continue fine tuning the different animation commands
 
 # Later Priorities
 ## High Priority
+- [ ] Update to DepthAI 3.0 (update model as well for more interactions)
+- [ ] have a voice to speak back to me with
+- [ ] CAMERA FOLLOWING
 - [ ] Fix dynamic adaptation mode (DEMA) - increase torque limit for better operation
-- [ ] Fix animation system to handle interruptions from collision avoidance more gracefully
-
+- [ ] Fix DEMA Adaptation Mode and Integrate with Touch
 
 ## Feature Enhancements
 - [ ] Implement smoother transition between animations when interrupted by collisions
@@ -16,11 +13,7 @@
 - [ ] Improve proactive collision avoidance to avoid obstacles more naturally
 - [ ] Convert to lifecycle nodes
 - [ ] Add parameter namespacing
-- [ ] Identify your voice and act differently for different people depending on the voice
-- [ ] Fix the 6 channel implementation
-
-## Documentation
-- [ ] Document all available ROS parameters with descriptions and default values
+- [ ] Identify voices and act differently for different people depending on the voice
 
 ## Performance & Stability
 - [ ] Profile and optimize the safety monitoring timer to prevent crashes
@@ -33,9 +26,7 @@
 ## Technical Debt
 - [ ] Refactor collision handling code to use a more object-oriented approach
 - [ ] Extract configuration from hardcoded values to parameter files
-- [ ] Review and fix thread safety issues in all multi-threaded components
 - [ ] Implement proper ROS2 lifecycle nodes for better state management
-- [ ] Split large nodes into smaller, focused components
 - [ ] Add unit tests for critical components
 - [ ] Create integration tests for full system behavior
 - [ ] Move acceleration to msg.velocity and move source to its own message
