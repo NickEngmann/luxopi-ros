@@ -184,32 +184,14 @@ These wake words activate USER_CONTROL mode for 10 seconds (or until the next co
 - Command ID 114: "Moonlight mode"
 
 ### Command Execution Flow
-1. Voice command detected by DFRobot sensor
-2. Command ID mapped to action (wake_word, light control, brightness, color temp, color, wake_up, go_to_sleep)
-3. State machine transitions to USER_CONTROL state
-4. Command executed with appropriate actions:
-   - Wake words: Enter listening mode for 10 seconds with bouncing direction indicator visual
-   - Basic light commands: Turn NeoPixel LEDs on/off (exits USER_CONTROL immediately if wake word initiated)
-   - Brightness commands: Adjust global LED brightness (0.1 to 1.0 range)
-   - Color temperature: Adjust white color from cool blue-white to warm yellow-white
-   - Color commands: Set specific colors, overriding state-based colors (except ERROR state)
-   - Wake up: Disable DEMA mode, enable torque, turn on lights
-   - Sleep: Play sleep animation, enable DEMA mode, turn off lights
-5. Confirmation sound played
-6. Return to IDLE state after completion (timeout or next command for wake words)
-
-### Light Control Details
-- **Brightness**: Ranges from 0.1 (10%) to 1.0 (100%), adjustable in 20% steps
-- **Color Temperature**: 0.0 = coolest (blue-white), 1.0 = warmest (yellow-white)
-- **Color Modes**: When a specific color is set, it overrides state-based colors
-- **Smart Transitions**: When adjusting temperature while in color mode, system returns to white first
-- **State Priority**: ERROR state always displays red regardless of color settings
+1. Voice command detected → ID mapped → USER_CONTROL state
+2. Command executed (wake words: 10s listening mode; lights: on/off/brightness/color)
+3. Confirmation sound → Return to IDLE
 
 ### Configuration
-- Default volume: 7/20
-- Wake time: 20 seconds
-- Command check interval: 100ms
-- Cooldown between commands: 2 seconds
+- Brightness: 0.1-1.0 (20% steps)
+- Color temp: 0.0=cool, 1.0=warm
+- Volume: 7/20, Wake: 20s, Interval: 100ms, Cooldown: 2s
 
 ## State Machine
 
@@ -805,92 +787,23 @@ GPIO Pinout (40-pin header):
 #### state_manager_node
 **Purpose**: Central state coordination and priority management
 
-**Publishers**:
-- `/luxo/current_state` (String): Current state name
-- `/luxo/state_info` (StateInfo): Detailed state information
-- `/roarm/light` (Int32): NeoPixel brightness
-- `/diagnostics` (DiagnosticArray): Node health
-
-**Subscribers**:
-- `/luxo/node_heartbeat` (String): Node health monitoring
-- `/animation_action/_action/status` (GoalStatusArray): Animation status
-- `/joint_states` (JointState): Joint positions for state validation
-
-**Services**:
-- `/luxo/request_state_transition` (RequestStateTransition): State changes
-- `/luxo/get_current_state` (GetState): Query current state
-
-**Parameters**:
-- `state_timeout`: Max time in any state (default: 300s)
-- `idle_timeout`: Time before auto-idle (default: 60s)
-- `priority_levels`: State priority configuration
-- `neopixel_brightness`: Global LED brightness (0-100)
-
-**State Priority Levels**:
-1. ERROR (highest)
-2. ESCAPE_MODE
-3. COLLISION_AVOIDING
-4. USER_CONTROL
-5. PETTING
-6. VOICE_FOLLOWING
-7. EMOTION_REACTING
-8. ANIMATING
-9. RETURNING_HOME
-10. IDLE (lowest)
+**Key Topics**: `/luxo/current_state`, `/luxo/state_info`, `/roarm/light`  
+**Services**: `/luxo/request_state_transition`, `/luxo/get_current_state`  
+**Priority Order**: ERROR > ESCAPE_MODE > COLLISION_AVOIDING > USER_CONTROL > PETTING > VOICE_FOLLOWING > EMOTION_REACTING > ANIMATING > RETURNING_HOME > IDLE
 
 #### hardware_interface_node
 **Purpose**: Safe robot control with movement coordination
 
-**Publishers**:
-- `/joint_states` (JointState): Current joint positions
-- `/roarm/position` (String): Position feedback
-- `/luxo/movement_source` (String): Active movement source
-- `/hardware/status` (HardwareStatus): Hardware health
-
-**Subscribers**:
-- `/joint_states_target` (JointState): Target positions
-- `/roarm/direct_command` (String): Direct JSON commands
-- `/dynamic_adaptation_toggle` (Bool): DEMA control
-- `/luxo/current_state` (String): State awareness
-
-**Services**:
-- `/hardware/safe_move` (SafeMove): Validated movement
-- `/hardware/get_limits` (GetLimits): Joint limit query
-- `/hardware/emergency_stop` (Trigger): E-stop
-
-**Safety Features**:
-- Joint limit enforcement
-- Velocity limiting
-- Acceleration limiting
-- Collision integration
-- Base wraparound handling (-90° to 90°)
-- Movement source tracking for DEMA
+**Key Topics**: `/joint_states`, `/roarm/position`, `/luxo/movement_source`  
+**Services**: `/hardware/safe_move`, `/hardware/get_limits`, `/hardware/emergency_stop`  
+**Safety**: Joint limits, velocity/acceleration limiting, collision integration, base wraparound, DEMA tracking
 
 #### behavior_coordinator_node
 **Purpose**: Combine behavior mixins for complex actions
 
-**Mixins**:
-- CollisionBehaviorMixin: Obstacle avoidance
-- IdleBehaviorMixin: Autonomous animations
-- VoiceBehaviorMixin: Voice following
-- PettingBehaviorMixin: Touch responses
-- CommandBehaviorMixin: Voice commands
-
-**Publishers**:
-- `/luxo/target_override` (JointState): Behavior targets
-- `/behavior/active` (String): Active behavior
-- `/luxo/movement_priority` (Int32): Movement priority
-
-**Subscribers**:
-- All sensor topics for behavior triggers
-- `/luxo/current_state`: State-aware behavior
-
-**Behavior Arbitration**:
-1. Collision avoidance (highest priority)
-2. User commands
-3. Petting responses
-4. Voice following
-5. Idle animations (lowest priority)
+**Mixins**: Collision, Idle, Voice, Petting, Command behaviors  
+**Key Topics**: `/luxo/target_override`, `/behavior/active`  
+**Priority**: Collision > User commands > Petting > Voice > Idle
 
 ### Sensor Processing Nodes
 
@@ -1163,32 +1076,19 @@ PREFERRED_RANGES = {
 
 ```python
 def create_wave_animation():
-    """Example: Simple wave gesture"""
-    # Start from home position
+    """Example: Simple wave with Disney principles"""
     home = {"j1": 0, "j2": 45, "j3": 90, "j4": 180, "j5": 0, "j6": 90}
-    
-    # Anticipation - pull back slightly
     anticipate = {"j1": -10, "j2": 50, "j3": 95, "j4": 180, "j5": 0, "j6": 90}
-    
-    # Wave positions
     wave_left = {"j1": -30, "j2": 60, "j3": 120, "j4": 150, "j5": -30, "j6": 100}
     wave_right = {"j1": 30, "j2": 60, "j3": 120, "j4": 150, "j5": 30, "j6": 100}
     
-    # Return with follow-through
-    overshoot = {"j1": 5, "j2": 43, "j3": 88, "j4": 182, "j5": 0, "j6": 90}
-    
-    frames = [
+    return [
         {"servos": home, "timing": 1.0},
         {"servos": anticipate, "timing": 0.8},
         {"servos": wave_left, "timing": 1.2},
         {"servos": wave_right, "timing": 1.0},
-        {"servos": wave_left, "timing": 1.0},
-        {"servos": wave_right, "timing": 1.0},
-        {"servos": overshoot, "timing": 0.8},
         {"servos": home, "timing": 1.0}
     ]
-    
-    return frames
 ```
 
 ### Step 4: Testing Your Animation
@@ -1209,26 +1109,9 @@ ros2 topic echo /collision/severity
 
 ### Step 5: Integration
 
-1. Add to animation plugin file:
-```python
-# src/luxo_behaviors/luxo_behaviors/animation_plugins/custom_animations.py
-class CustomAnimations:
-    @staticmethod
-    def wave():
-        return create_wave_animation()
-```
-
-2. Register in animation command:
-```python
-# In animation_command.py
-self.animations['wave'] = CustomAnimations.wave
-```
-
-3. Add emotion mapping if applicable:
-```python
-# In camera_interaction.py
-self.emotion_animations['greeting'] = ['wave', 'nod']
-```
+1. Add to animation plugin: `CustomAnimations.wave()` in custom_animations.py
+2. Register: `self.animations['wave'] = CustomAnimations.wave`
+3. Map emotions: `self.emotion_animations['greeting'] = ['wave', 'nod']`
 
 ### Animation Best Practices
 
@@ -1243,130 +1126,31 @@ self.emotion_animations['greeting'] = ['wave', 'nod']
 
 ### Serial Communication Issues
 
-#### Symptom: "Serial port busy"
-```bash
-# Find process using port
-sudo lsof /dev/ttyAMA0
-# Kill the process
-sudo kill -9 [PID]
-
-# Alternative: Release port
-sudo fuser -k /dev/ttyAMA0
-```
-
-#### Symptom: "Permission denied"
-```bash
-# Add user to dialout group
-sudo usermod -a -G dialout $USER
-# Logout and login again
-
-# Temporary fix
-sudo chmod 666 /dev/ttyAMA0
-```
-
-#### Symptom: "No response from robot"
-1. Check physical connection
-2. Verify baud rate: 115200
-3. Test with screen:
-```bash
-screen /dev/ttyAMA0 115200
-# Send: {"T":100}
-# Should move to home position
-```
+#### Serial Issues
+- **Port busy**: `sudo lsof /dev/ttyAMA0` then `kill -9 [PID]`
+- **Permission denied**: `sudo usermod -a -G dialout $USER` (logout required)
+- **No response**: Check connection, verify 115200 baud, test: `screen /dev/ttyAMA0 115200`
 
 ### I2C Sensor Issues
 
-#### Symptom: "No I2C devices found"
-```bash
-# Check I2C is enabled
-sudo raspi-config
-# Interface Options → I2C → Enable
-
-# Scan for devices
-i2cdetect -y 1
-# Should show devices at 0x39, 0x29, etc.
-```
-
-#### Symptom: "Intermittent sensor readings"
-1. Check wiring and pull-up resistors (4.7kΩ)
-2. Reduce I2C speed:
-```bash
-# Edit /boot/firmware/config.txt
-dtparam=i2c_arm=on
-dtparam=i2c_arm_baudrate=50000  # 50kHz instead of 100kHz
-```
+#### I2C Issues
+- **No devices**: Enable in raspi-config, scan: `i2cdetect -y 1`
+- **Intermittent**: Check 4.7kΩ pull-ups, reduce speed in config.txt: `i2c_arm_baudrate=50000`
 
 
 ## Integration Examples
 
 ### Custom Behavior Integration
 
-```python
-# Create new behavior mixin
-class DanceBehaviorMixin:
-    def __init__(self):
-        self.dance_timer = None
-        self.dance_patterns = ['sway', 'bob', 'spin']
-        
-    def start_dance_mode(self):
-        """Start autonomous dancing"""
-        self.dance_timer = self.create_timer(5.0, self.next_dance_move)
-        
-    def next_dance_move(self):
-        if self.state_machine.current_state != 'DANCING':
-            return
-            
-        move = random.choice(self.dance_patterns)
-        self.animation_client.send_goal(move)
-        
-# Add to behavior coordinator
-class BehaviorCoordinator(Node, DanceBehaviorMixin, ...):
-    def __init__(self):
-        super().__init__('behavior_coordinator')
-        DanceBehaviorMixin.__init__(self)
-```
+Create a new behavior mixin with init, start, and loop methods. Add to BehaviorCoordinator and initialize in constructor. See template in Custom Behavior Creation section.
 
 ### Custom Sensor Integration
 
-```python
-# Add new I2C sensor
-class TemperatureSensor:
-    def __init__(self, i2c, address=0x48):
-        self.i2c = i2c
-        self.address = address
-        
-    def read_temperature(self):
-        # Read two bytes from sensor
-        data = self.i2c.readfrom(self.address, 2)
-        # Convert to temperature
-        temp = (data[0] << 8 | data[1]) / 256.0
-        return temp
-        
-# Add to I2C device manager
-self.temp_sensor = TemperatureSensor(self.i2c)
-self.temp_pub = self.create_publisher(Float32, '/sensors/temperature', 10)
-```
+Add sensor class to i2c_device_manager with read method and publisher. Address via I2C bus, publish to appropriate topic.
 
 ### Voice Command Extension
 
-```python
-# Add custom voice commands
-CUSTOM_COMMANDS = {
-    5: 'dance_mode',      # "Start dancing"
-    6: 'sleep_mode',      # "Go to sleep"
-    7: 'wake_up',         # "Wake up"
-    8: 'follow_me',       # "Follow my voice"
-    9: 'stop_following'   # "Stop following"
-}
-
-def handle_custom_command(self, cmd_id):
-    if cmd_id == 5:
-        self.request_state('DANCING')
-    elif cmd_id == 6:
-        self.animation_client.send_goal('sleep')
-        self.request_state('IDLE')
-    # ... etc
-```
+Add command IDs to CUSTOM_COMMANDS dict and implement handler in command_behavior.py.
 
 
 
