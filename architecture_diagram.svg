@@ -1,341 +1,388 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<svg width="1200" height="2100" xmlns="http://www.w3.org/2000/svg">
-    <!-- Background -->
-    <rect width="1200" height="2100" fill="#f8f9fa" />
+<svg width="1400" height="1800" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- Background gradient -->
+    <linearGradient id="bgGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#ffffff;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#f8f9fa;stop-opacity:1" />
+    </linearGradient>
     
-    <!-- Title -->
-    <text x="600" y="40" font-family="Arial" font-size="24" text-anchor="middle" font-weight="bold">LuxoPi System Architecture (Current)</text>
+    <!-- Shadow filter -->
+    <filter id="softShadow" x="-5%" y="-5%" width="110%" height="110%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="2"/>
+      <feOffset dx="0" dy="2" result="offsetblur"/>
+      <feFlood flood-color="#000000" flood-opacity="0.1"/>
+      <feComposite in2="offsetblur" operator="in"/>
+      <feMerge>
+        <feMergeNode/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
     
-    <!-- Legend -->
-    <g transform="translate(950, 80)">
-        <text x="0" y="-10" font-family="Arial" font-size="14" font-weight="bold">Legend</text>
-        <rect x="0" y="0" width="20" height="20" fill="#90caf9" stroke="#1976d2" stroke-width="2" />
-        <text x="30" y="15" font-family="Arial" font-size="12">ROS2 Node</text>
-        
-        <rect x="0" y="30" width="20" height="20" fill="#a5d6a7" stroke="#388e3c" stroke-width="2" />
-        <text x="30" y="45" font-family="Arial" font-size="12">Hardware</text>
-        
-        <rect x="0" y="60" width="20" height="20" fill="#ffcc80" stroke="#e65100" stroke-width="2" />
-        <text x="30" y="75" font-family="Arial" font-size="12">Component</text>
-        
-        <rect x="0" y="90" width="20" height="20" fill="#e1bee7" stroke="#7b1fa2" stroke-width="2" />
-        <text x="30" y="105" font-family="Arial" font-size="12">State Manager</text>
+    <!-- Arrow markers -->
+    <marker id="arrowhead" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <polygon points="0 0, 8 3, 0 6" fill="#666" />
+    </marker>
+  </defs>
+  
+  <rect width="1400" height="1800" fill="url(#bgGradient)" />
+  
+  <!-- Title -->
+  <text x="700" y="40" font-size="32" font-weight="bold" text-anchor="middle" fill="#1a1a1a">LuxoPi System Architecture</text>
+  <line x1="400" y1="55" x2="1000" y2="55" stroke="#2196F3" stroke-width="2" opacity="0.5"/>
+  
+  <!-- Legend -->
+  <g transform="translate(1100, 80)">
+    <rect x="0" y="0" width="250" height="160" fill="white" stroke="#ddd" stroke-width="1" rx="8" filter="url(#softShadow)"/>
+    <text x="125" y="30" font-size="18" font-weight="bold" text-anchor="middle" fill="#333">Legend</text>
+    
+    <rect x="20" y="50" width="25" height="25" fill="#90caf9" stroke="#1976d2" stroke-width="2" rx="3"/>
+    <text x="55" y="68" font-size="14" fill="#555">ROS2 Node</text>
+    
+    <rect x="20" y="85" width="25" height="25" fill="#a5d6a7" stroke="#388e3c" stroke-width="2" rx="3"/>
+    <text x="55" y="103" font-size="14" fill="#555">Hardware</text>
+    
+    <rect x="20" y="120" width="25" height="25" fill="#ffcc80" stroke="#e65100" stroke-width="2" rx="3"/>
+    <text x="55" y="138" font-size="14" fill="#555">Component</text>
+  </g>
+  
+  <!-- Hardware Layer -->
+  <g id="hardware-layer" transform="translate(30, 120)">
+    <rect x="0" y="0" width="480" height="240" fill="#e8f5e9" stroke="#388e3c" stroke-width="2" rx="12" filter="url(#softShadow)"/>
+    <text x="240" y="30" font-size="20" font-weight="bold" text-anchor="middle" fill="#2c3e50">Hardware Layer</text>
+    
+    <!-- RoArm M3 -->
+    <rect x="30" y="60" width="130" height="60" fill="#a5d6a7" stroke="#388e3c" stroke-width="2" rx="5"/>
+    <text x="95" y="85" font-size="14" text-anchor="middle" fill="white" font-weight="500">RoArm M3</text>
+    <text x="95" y="105" font-size="12" text-anchor="middle" fill="white">6-DOF Arm</text>
+    
+    <!-- OAK-D Camera -->
+    <rect x="30" y="140" width="130" height="60" fill="#a5d6a7" stroke="#388e3c" stroke-width="2" rx="5"/>
+    <text x="95" y="165" font-size="14" text-anchor="middle" fill="white" font-weight="500">OAK-D Camera</text>
+    <text x="95" y="183" font-size="12" text-anchor="middle" fill="white">Depth &amp; RGB</text>
+    
+    <!-- Serial Port -->
+    <rect x="180" y="60" width="130" height="60" fill="#ffcc80" stroke="#e65100" stroke-width="2" rx="5"/>
+    <text x="245" y="85" font-size="14" text-anchor="middle" fill="#333">/dev/ttyAMA0</text>
+    <text x="245" y="105" font-size="12" text-anchor="middle" fill="#333">115200 baud</text>
+    
+    <!-- Sensors -->
+    <rect x="330" y="60" width="120" height="60" fill="#a5d6a7" stroke="#388e3c" stroke-width="2" rx="5"/>
+    <text x="390" y="85" font-size="14" text-anchor="middle" fill="white" font-weight="500">APDS9960</text>
+    <text x="390" y="105" font-size="12" text-anchor="middle" fill="white">Proximity</text>
+    
+    <!-- NeoPixel -->
+    <rect x="180" y="140" width="130" height="60" fill="#a5d6a7" stroke="#388e3c" stroke-width="2" rx="5"/>
+    <text x="245" y="165" font-size="14" text-anchor="middle" fill="white" font-weight="500">NeoPixel Ring</text>
+    <text x="245" y="183" font-size="12" text-anchor="middle" fill="white">12 RGB LEDs</text>
+    
+    <!-- Mic Array -->
+    <rect x="330" y="140" width="120" height="60" fill="#a5d6a7" stroke="#388e3c" stroke-width="2" rx="5"/>
+    <text x="390" y="165" font-size="14" text-anchor="middle" fill="white" font-weight="500">Mic Array</text>
+    <text x="390" y="183" font-size="12" text-anchor="middle" fill="white">4 microphones</text>
+    
+    <!-- Touch note -->
+    <text x="240" y="225" font-size="12" text-anchor="middle" fill="#666" font-style="italic">Touch sensors integration planned</text>
+  </g>
+  
+  <!-- Core ROS2 Nodes -->
+  <g id="core-nodes" transform="translate(540, 120)">
+    <rect x="0" y="0" width="480" height="240" fill="#e3f2fd" stroke="#1976d2" stroke-width="2" rx="12" filter="url(#softShadow)"/>
+    <text x="240" y="30" font-size="20" font-weight="bold" text-anchor="middle" fill="#2c3e50">Core ROS2 Nodes</text>
+    
+    <!-- Hardware Interface -->
+    <rect x="30" y="60" width="200" height="75" fill="#90caf9" stroke="#1976d2" stroke-width="2" rx="5"/>
+    <text x="130" y="85" font-size="14" text-anchor="middle" fill="white" font-weight="500">Hardware Interface</text>
+    <text x="130" y="103" font-size="12" text-anchor="middle" fill="white">Joint State Manager</text>
+    <text x="130" y="120" font-size="12" text-anchor="middle" fill="white">State Machine Host</text>
+    
+    <!-- Serial Manager -->
+    <rect x="250" y="60" width="200" height="75" fill="#ffcc80" stroke="#e65100" stroke-width="2" rx="5"/>
+    <text x="350" y="85" font-size="14" text-anchor="middle" fill="#333" font-weight="500">Serial Manager</text>
+    <text x="350" y="103" font-size="12" text-anchor="middle" fill="#333">JSON Protocol</text>
+    <text x="350" y="120" font-size="12" text-anchor="middle" fill="#333">Thread Safe Queue</text>
+    
+    <!-- Joint States -->
+    <rect x="30" y="155" width="200" height="75" fill="#ffcc80" stroke="#e65100" stroke-width="2" rx="5"/>
+    <text x="130" y="175" font-size="14" text-anchor="middle" fill="#333" font-weight="500">Joint State Topics</text>
+    <text x="130" y="193" font-size="12" text-anchor="middle" fill="#333">/joint_states</text>
+    <text x="130" y="210" font-size="12" text-anchor="middle" fill="#333">/joint_states_target</text>
+    
+    <!-- State Publisher -->
+    <rect x="250" y="155" width="200" height="75" fill="#ffcc80" stroke="#e65100" stroke-width="2" rx="5"/>
+    <text x="350" y="175" font-size="14" text-anchor="middle" fill="#333" font-weight="500">State Publisher</text>
+    <text x="350" y="193" font-size="12" text-anchor="middle" fill="#333">/luxo/current_state</text>
+    <text x="350" y="210" font-size="12" text-anchor="middle" fill="#333">State Machine Status</text>
+  </g>
+  
+  <!-- State Machine -->
+  <g id="state-machine" transform="translate(30, 400)">
+    <rect x="0" y="0" width="650" height="240" fill="#e8f4f8" stroke="#4a90e2" stroke-width="2" rx="12" filter="url(#softShadow)"/>
+    <text x="325" y="30" font-size="20" font-weight="bold" text-anchor="middle" fill="#2c3e50">State Machine</text>
+    
+    <!-- States Row 1 -->
+    <g transform="translate(30, 60)">
+      <rect x="0" y="0" width="120" height="50" fill="#3498db" stroke="#2980b9" stroke-width="2" rx="5"/>
+      <text x="60" y="30" font-size="14" text-anchor="middle" fill="white" font-weight="500">IDLE</text>
+      
+      <rect x="140" y="0" width="120" height="50" fill="#e74c3c" stroke="#c0392b" stroke-width="2" rx="5"/>
+      <text x="200" y="30" font-size="14" text-anchor="middle" fill="white" font-weight="500">ANIMATING</text>
+      
+      <rect x="280" y="0" width="120" height="50" fill="#f39c12" stroke="#d68910" stroke-width="2" rx="5"/>
+      <text x="340" y="30" font-size="14" text-anchor="middle" fill="white" font-weight="500">COLLISION</text>
+      
+      <rect x="420" y="0" width="170" height="50" fill="#9b59b6" stroke="#8e44ad" stroke-width="2" rx="5"/>
+      <text x="505" y="30" font-size="14" text-anchor="middle" fill="white" font-weight="500">USER_CONTROL</text>
     </g>
     
-    <!-- Hardware Layer -->
-    <g transform="translate(50, 140)">
-        <text x="0" y="0" font-family="Arial" font-size="18" font-weight="bold">Hardware Layer</text>
-        
-        <!-- RoArm M3 -->
-        <rect x="20" y="40" width="140" height="90" fill="#a5d6a7" stroke="#388e3c" stroke-width="2" rx="5" ry="5" />
-        <text x="90" y="70" font-family="Arial" font-size="14" text-anchor="middle" font-weight="bold">RoArm M3</text>
-        <text x="90" y="90" font-family="Arial" font-size="10" text-anchor="middle">6-DOF Arm + Lamp</text>
-        <text x="90" y="105" font-family="Arial" font-size="10" text-anchor="middle">Serial: /dev/ttyAMA0</text>
-        <text x="90" y="120" font-family="Arial" font-size="10" text-anchor="middle">76x NeoPixel Ring</text>
-        
-        <!-- OAK-D Camera -->
-        <rect x="180" y="40" width="140" height="90" fill="#a5d6a7" stroke="#388e3c" stroke-width="2" rx="5" ry="5" />
-        <text x="250" y="70" font-family="Arial" font-size="14" text-anchor="middle" font-weight="bold">OAK-D Camera</text>
-        <text x="250" y="90" font-family="Arial" font-size="10" text-anchor="middle">DepthAI</text>
-        <text x="250" y="105" font-family="Arial" font-size="10" text-anchor="middle">Emotion Detection</text>
-        <text x="250" y="120" font-family="Arial" font-size="10" text-anchor="middle">Face Detection</text>
-        
-        <!-- I2C Sensors -->
-        <rect x="340" y="40" width="160" height="90" fill="#a5d6a7" stroke="#388e3c" stroke-width="2" rx="5" ry="5" />
-        <text x="420" y="70" font-family="Arial" font-size="14" text-anchor="middle" font-weight="bold">I2C Sensors</text>
-        <text x="420" y="90" font-family="Arial" font-size="10" text-anchor="middle">APDS9960 (4x Touch)</text>
-        <text x="420" y="105" font-family="Arial" font-size="10" text-anchor="middle">VL53L4CD (Distance L/R)</text>
-        <text x="420" y="120" font-family="Arial" font-size="10" text-anchor="middle">Gesture Recognition</text>
-        
-        <!-- ReSpeaker -->
-        <rect x="520" y="40" width="140" height="90" fill="#a5d6a7" stroke="#388e3c" stroke-width="2" rx="5" ry="5" />
-        <text x="590" y="70" font-family="Arial" font-size="14" text-anchor="middle" font-weight="bold">ReSpeaker</text>
-        <text x="590" y="90" font-family="Arial" font-size="10" text-anchor="middle">4/8-Mic Array</text>
-        <text x="590" y="105" font-family="Arial" font-size="10" text-anchor="middle">Voice Direction</text>
-        <text x="590" y="120" font-family="Arial" font-size="10" text-anchor="middle">DOA + VAD</text>
-        
-        <!-- Framebuffer Display -->
-        <rect x="680" y="40" width="140" height="90" fill="#a5d6a7" stroke="#388e3c" stroke-width="2" rx="5" ry="5" />
-        <text x="750" y="70" font-family="Arial" font-size="14" text-anchor="middle" font-weight="bold">Framebuffer</text>
-        <text x="750" y="90" font-family="Arial" font-size="10" text-anchor="middle">/dev/fb0</text>
-        <text x="750" y="105" font-family="Arial" font-size="10" text-anchor="middle">Lux Display</text>
-        <text x="750" y="120" font-family="Arial" font-size="10" text-anchor="middle">Emotion UI</text>
+    <!-- States Row 2 -->
+    <g transform="translate(30, 130)">
+      <rect x="0" y="0" width="150" height="50" fill="#27ae60" stroke="#229954" stroke-width="2" rx="5"/>
+      <text x="75" y="30" font-size="14" text-anchor="middle" fill="white" font-weight="500">RETURNING_HOME</text>
+      
+      <rect x="170" y="0" width="130" height="50" fill="#16a085" stroke="#138d75" stroke-width="2" rx="5"/>
+      <text x="235" y="30" font-size="14" text-anchor="middle" fill="white" font-weight="500">ESCAPE_MODE</text>
+      
+      <rect x="320" y="0" width="150" height="50" fill="#34495e" stroke="#2c3e50" stroke-width="2" rx="5"/>
+      <text x="395" y="30" font-size="14" text-anchor="middle" fill="white" font-weight="500">EMOTION_REACT</text>
+      
+      <rect x="490" y="0" width="100" height="50" fill="#e67e22" stroke="#d35400" stroke-width="2" rx="5"/>
+      <text x="540" y="30" font-size="14" text-anchor="middle" fill="white" font-weight="500">ERROR</text>
     </g>
     
-    <!-- Central State Management Layer -->
-    <g transform="translate(50, 320)">
-        <text x="0" y="0" font-family="Arial" font-size="18" font-weight="bold">Central State Management Layer</text>
-        
-        <!-- State Manager Node - Central Hub -->
-        <rect x="300" y="40" width="280" height="140" fill="#e1bee7" stroke="#7b1fa2" stroke-width="3" rx="8" ry="8" />
-        <text x="440" y="70" font-family="Arial" font-size="16" text-anchor="middle" font-weight="bold">StateManagerNode</text>
-        <text x="440" y="90" font-family="Arial" font-size="11" text-anchor="middle">🎯 Centralized State Coordination</text>
-        <text x="440" y="105" font-family="Arial" font-size="11" text-anchor="middle">🔄 Priority-based Transitions</text>
-        <text x="440" y="120" font-family="Arial" font-size="11" text-anchor="middle">💡 NeoPixel State Visualization</text>
-        <text x="440" y="135" font-family="Arial" font-size="11" text-anchor="middle">📊 Node Heartbeat Monitoring</text>
-        <text x="440" y="150" font-family="Arial" font-size="11" text-anchor="middle">⚡ Completion Transition Support</text>
-        <text x="440" y="165" font-family="Arial" font-size="11" text-anchor="middle">🔧 State History &amp; Diagnostics</text>
-        
-        <!-- State Flow visualization -->
-        <text x="50" y="220" font-family="Arial" font-size="12" fill="#7b1fa2" font-weight="bold">State Flow: INITIALIZING → IDLE → [ANIMATING | VOICE_FOLLOWING | PETTING | COLLISION_AVOIDING] → IDLE</text>
+    <!-- State transitions hint -->
+    <text x="325" y="215" font-size="13" text-anchor="middle" fill="#7f8c8d" font-style="italic">Transitions managed by LuxoStateMachine with callbacks</text>
+  </g>
+  
+  <!-- Voice System -->
+  <g id="voice-system" transform="translate(710, 400)">
+    <rect x="0" y="0" width="660" height="240" fill="#fef5e7" stroke="#f39c12" stroke-width="2" rx="12" filter="url(#softShadow)"/>
+    <text x="330" y="30" font-size="20" font-weight="bold" text-anchor="middle" fill="#2c3e50">Voice Detection &amp; NeoPixel System</text>
+    
+    <!-- Voice Components -->
+    <g transform="translate(30, 60)">
+      <rect x="0" y="0" width="180" height="50" fill="#f39c12" stroke="#d68910" stroke-width="2" rx="5"/>
+      <text x="90" y="30" font-size="14" text-anchor="middle" fill="white" font-weight="500">Voice Direction Node</text>
+      
+      <rect x="200" y="0" width="180" height="50" fill="#e67e22" stroke="#d35400" stroke-width="2" rx="5"/>
+      <text x="290" y="30" font-size="14" text-anchor="middle" fill="white" font-weight="500">WebRTC VAD</text>
+      
+      <rect x="400" y="0" width="200" height="50" fill="#d35400" stroke="#ba4a00" stroke-width="2" rx="5"/>
+      <text x="500" y="30" font-size="14" text-anchor="middle" fill="white" font-weight="500">Voice Following</text>
     </g>
     
-    <!-- Core Behavior Layer -->
-    <g transform="translate(50, 560)">
-        <text x="0" y="0" font-family="Arial" font-size="18" font-weight="bold">Core Behavior &amp; Hardware Interface Layer</text>
-        
-        <!-- Hardware Interface -->
-        <rect x="20" y="40" width="180" height="120" fill="#90caf9" stroke="#1976d2" stroke-width="2" rx="5" ry="5" />
-        <text x="110" y="70" font-family="Arial" font-size="14" text-anchor="middle" font-weight="bold">HardwareInterface</text>
-        <text x="110" y="90" font-family="Arial" font-size="10" text-anchor="middle">State Machine Client</text>
-        <text x="110" y="105" font-family="Arial" font-size="10" text-anchor="middle">Joint Limits + Safety</text>
-        <text x="110" y="120" font-family="Arial" font-size="10" text-anchor="middle">DEMA Control</text>
-        <text x="110" y="135" font-family="Arial" font-size="10" text-anchor="middle">Base Wraparound</text>
-        <text x="110" y="150" font-family="Arial" font-size="10" text-anchor="middle">Movement Source Tracking</text>
-        
-        <!-- Behavior Coordinator -->
-        <rect x="220" y="40" width="200" height="120" fill="#ffcc80" stroke="#e65100" stroke-width="2" rx="5" ry="5" />
-        <text x="320" y="70" font-family="Arial" font-size="14" text-anchor="middle" font-weight="bold">BehaviorCoordinator</text>
-        <text x="320" y="90" font-family="Arial" font-size="10" text-anchor="middle">CollisionBehaviorMixin</text>
-        <text x="320" y="105" font-family="Arial" font-size="10" text-anchor="middle">IdleBehaviorMixin</text>
-        <text x="320" y="120" font-family="Arial" font-size="10" text-anchor="middle">VoiceBehaviorMixin</text>
-        <text x="320" y="135" font-family="Arial" font-size="10" text-anchor="middle">PettingBehaviorMixin</text>
-        <text x="320" y="150" font-family="Arial" font-size="10" text-anchor="middle">State-aware Coordination</text>
-        
-        <!-- Serial Manager -->
-        <rect x="440" y="40" width="160" height="120" fill="#ffcc80" stroke="#e65100" stroke-width="2" rx="5" ry="5" />
-        <text x="520" y="70" font-family="Arial" font-size="14" text-anchor="middle" font-weight="bold">SerialManager</text>
-        <text x="520" y="90" font-family="Arial" font-size="10" text-anchor="middle">Thread-safe Serial</text>
-        <text x="520" y="105" font-family="Arial" font-size="10" text-anchor="middle">Heartbeat + Recovery</text>
-        <text x="520" y="120" font-family="Arial" font-size="10" text-anchor="middle">Position Feedback</text>
-        <text x="520" y="135" font-family="Arial" font-size="10" text-anchor="middle">Error Detection</text>
-        <text x="520" y="150" font-family="Arial" font-size="10" text-anchor="middle">Command Queuing</text>
-        
-        <!-- Shared Utils -->
-        <rect x="620" y="40" width="160" height="120" fill="#ffcc80" stroke="#e65100" stroke-width="2" rx="5" ry="5" />
-        <text x="700" y="70" font-family="Arial" font-size="14" text-anchor="middle" font-weight="bold">SharedUtils</text>
-        <text x="700" y="90" font-family="Arial" font-size="10" text-anchor="middle">PositionUtils</text>
-        <text x="700" y="105" font-family="Arial" font-size="10" text-anchor="middle">MovementValidator</text>
-        <text x="700" y="120" font-family="Arial" font-size="10" text-anchor="middle">CollisionMath</text>
-        <text x="700" y="135" font-family="Arial" font-size="10" text-anchor="middle">StateUtils</text>
-        <text x="700" y="150" font-family="Arial" font-size="10" text-anchor="middle">Common Operations</text>
+    <!-- NeoPixel Ring -->
+    <g transform="translate(30, 130)">
+      <rect x="0" y="0" width="180" height="50" fill="#e74c3c" stroke="#c0392b" stroke-width="2" rx="5"/>
+      <text x="90" y="30" font-size="14" text-anchor="middle" fill="white" font-weight="500">Pixel Ring Control</text>
+      
+      <rect x="200" y="0" width="400" height="50" fill="#fadbd8" stroke="#e74c3c" stroke-width="2" rx="5"/>
+      <text x="400" y="20" font-size="12" text-anchor="middle" fill="#c0392b">12 RGB LEDs - Direction &amp; Status Display</text>
+      <text x="400" y="38" font-size="12" text-anchor="middle" fill="#c0392b">Modes: wakeup, listen, think, direction, arc</text>
     </g>
     
-    <!-- Sensor Processing Layer -->
-    <g transform="translate(50, 760)">
-        <text x="0" y="0" font-family="Arial" font-size="18" font-weight="bold">Sensor Processing Layer</text>
-        
-        <!-- I2C Device Manager -->
-        <rect x="20" y="40" width="170" height="110" fill="#90caf9" stroke="#1976d2" stroke-width="2" rx="5" ry="5" />
-        <text x="105" y="70" font-family="Arial" font-size="14" text-anchor="middle" font-weight="bold">I2CDeviceManager</text>
-        <text x="105" y="90" font-family="Arial" font-size="10" text-anchor="middle">Touch Sensors (4x)</text>
-        <text x="105" y="105" font-family="Arial" font-size="10" text-anchor="middle">Proximity Detection</text>
-        <text x="105" y="120" font-family="Arial" font-size="10" text-anchor="middle">Gesture Recognition</text>
-        <text x="105" y="135" font-family="Arial" font-size="10" text-anchor="middle">Bus Protection</text>
-        
-        <!-- Collision Logic -->
-        <rect x="210" y="40" width="170" height="110" fill="#90caf9" stroke="#1976d2" stroke-width="2" rx="5" ry="5" />
-        <text x="295" y="70" font-family="Arial" font-size="14" text-anchor="middle" font-weight="bold">CollisionRosNode</text>
-        <text x="295" y="90" font-family="Arial" font-size="10" text-anchor="middle">Severity Classification</text>
-        <text x="295" y="105" font-family="Arial" font-size="10" text-anchor="middle">Warning/Danger States</text>
-        <text x="295" y="120" font-family="Arial" font-size="10" text-anchor="middle">Multi-sensor Fusion</text>
-        <text x="295" y="135" font-family="Arial" font-size="10" text-anchor="middle">State-aware Processing</text>
-        
-        <!-- Voice Direction -->
-        <rect x="400" y="40" width="170" height="110" fill="#90caf9" stroke="#1976d2" stroke-width="2" rx="5" ry="5" />
-        <text x="485" y="70" font-family="Arial" font-size="14" text-anchor="middle" font-weight="bold">VoiceDirectionNode</text>
-        <text x="485" y="90" font-family="Arial" font-size="10" text-anchor="middle">DOA Estimation</text>
-        <text x="485" y="105" font-family="Arial" font-size="10" text-anchor="middle">VAD + Confidence</text>
-        <text x="485" y="120" font-family="Arial" font-size="10" text-anchor="middle">Pixel Ring Control</text>
-        <text x="485" y="135" font-family="Arial" font-size="10" text-anchor="middle">Direction Smoothing</text>
-        
-        <!-- System Monitor -->
-        <rect x="590" y="40" width="170" height="110" fill="#90caf9" stroke="#1976d2" stroke-width="2" rx="5" ry="5" />
-        <text x="675" y="70" font-family="Arial" font-size="14" text-anchor="middle" font-weight="bold">SystemMonitor</text>
-        <text x="675" y="90" font-family="Arial" font-size="10" text-anchor="middle">CPU/RAM/Temp</text>
-        <text x="675" y="105" font-family="Arial" font-size="10" text-anchor="middle">Performance Metrics</text>
-        <text x="675" y="120" font-family="Arial" font-size="10" text-anchor="middle">Health Monitoring</text>
-        <text x="675" y="135" font-family="Arial" font-size="10" text-anchor="middle">Diagnostics Publisher</text>
+    <!-- Features -->
+    <text x="330" y="215" font-size="13" text-anchor="middle" fill="#7f8c8d" font-style="italic">SNR analysis, adaptive noise floor, directional tracking, voice confidence</text>
+  </g>
+  
+  <!-- Animation System -->
+  <g id="animation-system" transform="translate(30, 680)">
+    <rect x="0" y="0" width="650" height="200" fill="#e3f2fd" stroke="#1976d2" stroke-width="2" rx="12" filter="url(#softShadow)"/>
+    <text x="325" y="30" font-size="20" font-weight="bold" text-anchor="middle" fill="#2c3e50">Animation System</text>
+    
+    <!-- Animation Components -->
+    <rect x="30" y="60" width="180" height="60" fill="#90caf9" stroke="#1976d2" stroke-width="2" rx="5"/>
+    <text x="120" y="85" font-size="14" text-anchor="middle" fill="white" font-weight="500">Animation Action Server</text>
+    <text x="120" y="105" font-size="12" text-anchor="middle" fill="white">ROS2 Action Interface</text>
+    
+    <rect x="230" y="60" width="180" height="60" fill="#90caf9" stroke="#1976d2" stroke-width="2" rx="5"/>
+    <text x="320" y="85" font-size="14" text-anchor="middle" fill="white" font-weight="500">Animation Plugins</text>
+    <text x="320" y="105" font-size="12" text-anchor="middle" fill="white">Modular animations</text>
+    
+    <rect x="430" y="60" width="190" height="60" fill="#ffcc80" stroke="#e65100" stroke-width="2" rx="5"/>
+    <text x="525" y="85" font-size="14" text-anchor="middle" fill="#333" font-weight="500">/roarm/animation</text>
+    <text x="525" y="105" font-size="14" text-anchor="middle" fill="#333">_command</text>
+    
+    <!-- Plugin info -->
+    <text x="30" y="150" font-size="13" fill="#555">Plugins: emotion_animations, action_animations, idle_animations, response_animations</text>
+    <text x="30" y="170" font-size="13" fill="#555">Features: Speed control, interruption handling, collision integration, state awareness</text>
+  </g>
+  
+  <!-- Vision System -->
+  <g id="vision-system" transform="translate(710, 680)">
+    <rect x="0" y="0" width="660" height="200" fill="#e3f2fd" stroke="#1976d2" stroke-width="2" rx="12" filter="url(#softShadow)"/>
+    <text x="330" y="30" font-size="20" font-weight="bold" text-anchor="middle" fill="#2c3e50">Vision System</text>
+    
+    <!-- Camera Interaction -->
+    <rect x="30" y="60" width="180" height="60" fill="#90caf9" stroke="#1976d2" stroke-width="2" rx="5"/>
+    <text x="120" y="85" font-size="14" text-anchor="middle" fill="white" font-weight="500">Camera Interaction</text>
+    <text x="120" y="105" font-size="12" text-anchor="middle" fill="white">camera_interaction.py</text>
+    
+    <rect x="230" y="60" width="180" height="60" fill="#90caf9" stroke="#1976d2" stroke-width="2" rx="5"/>
+    <text x="320" y="85" font-size="14" text-anchor="middle" fill="white" font-weight="500">Emotion Detection</text>
+    <text x="320" y="105" font-size="12" text-anchor="middle" fill="white">DepthAI models</text>
+    
+    <rect x="430" y="60" width="200" height="60" fill="#ffcc80" stroke="#e65100" stroke-width="2" rx="5"/>
+    <text x="530" y="85" font-size="14" text-anchor="middle" fill="#333" font-weight="500">/camera/emotion</text>
+    <text x="530" y="105" font-size="12" text-anchor="middle" fill="#333">/camera/person_distance</text>
+    
+    <!-- Info -->
+    <text x="30" y="150" font-size="13" fill="#555">Emotion mappings: Happy-&gt;excited, Sad-&gt;sad, Surprised-&gt;startled, Angry-&gt;shake</text>
+    <text x="30" y="170" font-size="13" fill="#555">Features: Face tracking, distance measurement, emotion history, framebuffer display</text>
+  </g>
+  
+  <!-- Collision System -->
+  <g id="collision-system" transform="translate(30, 920)">
+    <rect x="0" y="0" width="650" height="200" fill="#ffebee" stroke="#ef5350" stroke-width="2" rx="12" filter="url(#softShadow)"/>
+    <text x="325" y="30" font-size="20" font-weight="bold" text-anchor="middle" fill="#2c3e50">Collision Detection System</text>
+    
+    <!-- Collision Components -->
+    <rect x="30" y="60" width="180" height="60" fill="#90caf9" stroke="#1976d2" stroke-width="2" rx="5"/>
+    <text x="120" y="85" font-size="14" text-anchor="middle" fill="white" font-weight="500">Collision Avoidance</text>
+    <text x="120" y="105" font-size="12" text-anchor="middle" fill="white">collision_avoidance.py</text>
+    
+    <rect x="230" y="60" width="180" height="60" fill="#90caf9" stroke="#1976d2" stroke-width="2" rx="5"/>
+    <text x="320" y="85" font-size="14" text-anchor="middle" fill="white" font-weight="500">Collision ROS Node</text>
+    <text x="320" y="105" font-size="12" text-anchor="middle" fill="white">Sensor abstraction</text>
+    
+    <rect x="430" y="60" width="190" height="60" fill="#ffcc80" stroke="#e65100" stroke-width="2" rx="5"/>
+    <text x="525" y="85" font-size="14" text-anchor="middle" fill="#333" font-weight="500">Collision Topics</text>
+    <text x="525" y="105" font-size="12" text-anchor="middle" fill="#333">Multi-sensor fusion</text>
+    
+    <!-- Info -->
+    <text x="30" y="150" font-size="13" fill="#555">Detection zones: Warning (slow), Danger (stop), Persistent (escape), Extended (home)</text>
+    <text x="30" y="170" font-size="13" fill="#555">Sensors: APDS9960 (front), VL53L4CD (sides), Depth camera (optional)</text>
+  </g>
+  
+  <!-- Command Infrastructure -->
+  <g id="command-infrastructure" transform="translate(710, 920)">
+    <rect x="0" y="0" width="660" height="200" fill="#e8f5e9" stroke="#27ae60" stroke-width="2" rx="12" filter="url(#softShadow)"/>
+    <text x="330" y="30" font-size="20" font-weight="bold" text-anchor="middle" fill="#2c3e50">Command Infrastructure</text>
+    
+    <!-- Components -->
+    <rect x="30" y="60" width="190" height="60" fill="#27ae60" stroke="#229954" stroke-width="2" rx="5"/>
+    <text x="125" y="85" font-size="14" text-anchor="middle" fill="white" font-weight="500">JSON Command Protocol</text>
+    <text x="125" y="105" font-size="12" text-anchor="middle" fill="white">Structured messages</text>
+    
+    <rect x="240" y="60" width="180" height="60" fill="#27ae60" stroke="#229954" stroke-width="2" rx="5"/>
+    <text x="330" y="85" font-size="14" text-anchor="middle" fill="white" font-weight="500">Command Queue</text>
+    <text x="330" y="105" font-size="12" text-anchor="middle" fill="white">Thread-safe buffering</text>
+    
+    <rect x="440" y="60" width="190" height="60" fill="#27ae60" stroke="#229954" stroke-width="2" rx="5"/>
+    <text x="535" y="85" font-size="14" text-anchor="middle" fill="white" font-weight="500">Response Handler</text>
+    <text x="535" y="105" font-size="12" text-anchor="middle" fill="white">Async processing</text>
+    
+    <!-- Info -->
+    <text x="30" y="150" font-size="13" fill="#555">Command types: Joint control, DEMA toggle, Light control, Servo parameters</text>
+    <text x="30" y="170" font-size="13" fill="#555">Safety features: Joint limits, acceleration limits, collision override, state validation</text>
+  </g>
+  
+  <!-- Dynamic Adaptation -->
+  <g id="dynamic-adaptation" transform="translate(30, 1160)">
+    <rect x="0" y="0" width="650" height="160" fill="#f3e5f5" stroke="#9c27b0" stroke-width="2" rx="12" filter="url(#softShadow)"/>
+    <text x="325" y="30" font-size="20" font-weight="bold" text-anchor="middle" fill="#2c3e50">Dynamic Adaptation (DEMA)</text>
+    
+    <rect x="30" y="60" width="180" height="60" fill="#ffcc80" stroke="#e65100" stroke-width="2" rx="5"/>
+    <text x="120" y="85" font-size="14" text-anchor="middle" fill="#333" font-weight="500">/dynamic_adaptation</text>
+    <text x="120" y="105" font-size="14" text-anchor="middle" fill="#333">_toggle</text>
+    
+    <rect x="230" y="60" width="180" height="60" fill="#9b59b6" stroke="#8e44ad" stroke-width="2" rx="5"/>
+    <text x="320" y="85" font-size="14" text-anchor="middle" fill="white" font-weight="500">Torque Control</text>
+    <text x="320" y="105" font-size="12" text-anchor="middle" fill="white">Reduced servo force</text>
+    
+    <rect x="430" y="60" width="190" height="60" fill="#9b59b6" stroke="#8e44ad" stroke-width="2" rx="5"/>
+    <text x="525" y="85" font-size="14" text-anchor="middle" fill="white" font-weight="500">USER_CONTROL</text>
+    <text x="525" y="105" font-size="12" text-anchor="middle" fill="white">State transition</text>
+    
+    <text x="325" y="145" font-size="13" text-anchor="middle" fill="#666" font-style="italic">Allows manual positioning, auto-resumes after movement</text>
+  </g>
+  
+  <!-- Launch Configuration -->
+  <g id="launch-config" transform="translate(710, 1160)">
+    <rect x="0" y="0" width="660" height="160" fill="#efebe9" stroke="#795548" stroke-width="2" rx="12" filter="url(#softShadow)"/>
+    <text x="330" y="30" font-size="20" font-weight="bold" text-anchor="middle" fill="#2c3e50">Launch Configuration</text>
+    
+    <rect x="30" y="60" width="280" height="60" fill="#ffcc80" stroke="#e65100" stroke-width="2" rx="5"/>
+    <text x="170" y="85" font-size="14" text-anchor="middle" fill="#333" font-weight="500">luxo_system.launch.py</text>
+    <text x="170" y="105" font-size="12" text-anchor="middle" fill="#333">Main system launcher</text>
+    
+    <rect x="330" y="60" width="300" height="80" fill="#795548" stroke="#5d4037" stroke-width="2" rx="5"/>
+    <text x="480" y="85" font-size="12" text-anchor="middle" fill="white">Parameters: use_hardware, use_camera,</text>
+    <text x="480" y="102" font-size="12" text-anchor="middle" fill="white">sense_collision, enable_emotion_detection,</text>
+    <text x="480" y="119" font-size="12" text-anchor="middle" fill="white">enable_dynamic_adaptation, verbose</text>
+  </g>
+  
+  <!-- Key System Flows -->
+  <g id="key-flows">
+    <rect x="30" y="1360" width="1340" height="140" fill="white" stroke="#ddd" stroke-width="1" rx="8" filter="url(#softShadow)"/>
+    <text x="700" y="1390" font-size="18" font-weight="bold" text-anchor="middle" fill="#333">Key System Flows</text>
+    
+    <g id="flow-animation">
+      <circle cx="100" cy="1440" r="10" fill="#3498db"/>
+      <text x="120" y="1440" font-size="14" fill="#555">Animation Flow:</text>
+      <text x="120" y="1460" font-size="12" fill="#777">Action/Command -&gt; Plugin -&gt; Joint Target -&gt; Hardware</text>
     </g>
     
-    <!-- Vision and Animation Layer -->
-    <g transform="translate(50, 940)">
-        <text x="0" y="0" font-family="Arial" font-size="18" font-weight="bold">Vision and Animation Layer</text>
-        
-        <!-- Camera Interaction -->
-        <rect x="100" y="40" width="200" height="130" fill="#90caf9" stroke="#1976d2" stroke-width="2" rx="5" ry="5" />
-        <text x="200" y="70" font-family="Arial" font-size="14" text-anchor="middle" font-weight="bold">CameraInteraction</text>
-        <text x="200" y="90" font-family="Arial" font-size="10" text-anchor="middle">Emotion Detection</text>
-        <text x="200" y="105" font-family="Arial" font-size="10" text-anchor="middle">Face Detection</text>
-        <text x="200" y="120" font-family="Arial" font-size="10" text-anchor="middle">Framebuffer Integration</text>
-        <text x="200" y="135" font-family="Arial" font-size="10" text-anchor="middle">Animation Triggers</text>
-        <text x="200" y="150" font-family="Arial" font-size="10" text-anchor="middle">State-aware Processing</text>
-        <text x="200" y="165" font-family="Arial" font-size="10" text-anchor="middle">Priority-based Requests</text>
-        
-        <!-- Animation Command -->
-        <rect x="320" y="40" width="200" height="130" fill="#90caf9" stroke="#1976d2" stroke-width="2" rx="5" ry="5" />
-        <text x="420" y="70" font-family="Arial" font-size="14" text-anchor="middle" font-weight="bold">AnimationCommand</text>
-        <text x="420" y="90" font-family="Arial" font-size="10" text-anchor="middle">Action Server</text>
-        <text x="420" y="105" font-family="Arial" font-size="10" text-anchor="middle">Keyframe Interpolation</text>
-        <text x="420" y="120" font-family="Arial" font-size="10" text-anchor="middle">Collision Integration</text>
-        <text x="420" y="135" font-family="Arial" font-size="10" text-anchor="middle">State Machine Aware</text>
-        <text x="420" y="150" font-family="Arial" font-size="10" text-anchor="middle">Movement Source Tracking</text>
-        <text x="420" y="165" font-family="Arial" font-size="10" text-anchor="middle">Completion Notifications</text>
+    <g id="flow-sensor">
+      <circle cx="400" cy="1440" r="10" fill="#ef5350"/>
+      <text x="420" y="1440" font-size="14" fill="#555">Collision Flow:</text>
+      <text x="420" y="1460" font-size="12" fill="#777">Sensors -&gt; Detection -&gt; State Machine -&gt; Avoidance -&gt; Joint Override</text>
     </g>
     
-    <!-- ROS2 Communication Layer -->
-    <g transform="translate(50, 1150)">
-        <text x="0" y="0" font-family="Arial" font-size="18" font-weight="bold">ROS2 Communication Layer</text>
-        
-        <!-- State Management Topics -->
-        <rect x="20" y="40" width="220" height="160" fill="#ffcc80" stroke="#e65100" stroke-width="2" rx="5" ry="5" />
-        <text x="130" y="70" font-family="Arial" font-size="14" text-anchor="middle" font-weight="bold">State Management</text>
-        <text x="130" y="90" font-family="Arial" font-size="10" text-anchor="middle">/luxo/current_state</text>
-        <text x="130" y="105" font-family="Arial" font-size="10" text-anchor="middle">/luxo/state_info</text>
-        <text x="130" y="120" font-family="Arial" font-size="10" text-anchor="middle">/luxo/node_heartbeat</text>
-        <text x="130" y="135" font-family="Arial" font-size="10" text-anchor="middle">RequestStateTransition.srv</text>
-        <text x="130" y="150" font-family="Arial" font-size="10" text-anchor="middle">/diagnostics</text>
-        <text x="130" y="165" font-family="Arial" font-size="10" text-anchor="middle">Priority Coordination</text>
-        <text x="130" y="180" font-family="Arial" font-size="10" text-anchor="middle">Completion Transitions</text>
-        <text x="130" y="195" font-family="Arial" font-size="10" text-anchor="middle">Node Health Monitoring</text>
-        
-        <!-- Core Joint Topics -->
-        <rect x="260" y="40" width="220" height="160" fill="#ffcc80" stroke="#e65100" stroke-width="2" rx="5" ry="5" />
-        <text x="370" y="70" font-family="Arial" font-size="14" text-anchor="middle" font-weight="bold">Joint Control</text>
-        <text x="370" y="90" font-family="Arial" font-size="10" text-anchor="middle">/joint_states_target</text>
-        <text x="370" y="105" font-family="Arial" font-size="10" text-anchor="middle">/joint_states</text>
-        <text x="370" y="120" font-family="Arial" font-size="10" text-anchor="middle">/roarm/position</text>
-        <text x="370" y="135" font-family="Arial" font-size="10" text-anchor="middle">/roarm/light</text>
-        <text x="370" y="150" font-family="Arial" font-size="10" text-anchor="middle">/roarm/movement_source</text>
-        <text x="370" y="165" font-family="Arial" font-size="10" text-anchor="middle">/dynamic_adaptation_toggle</text>
-        <text x="370" y="180" font-family="Arial" font-size="10" text-anchor="middle">Hardware Feedback Loop</text>
-        <text x="370" y="195" font-family="Arial" font-size="10" text-anchor="middle">Real-time Position Data</text>
-        
-        <!-- Sensor Topics -->
-        <rect x="500" y="40" width="220" height="160" fill="#ffcc80" stroke="#e65100" stroke-width="2" rx="5" ry="5" />
-        <text x="610" y="70" font-family="Arial" font-size="14" text-anchor="middle" font-weight="bold">Sensor Data</text>
-        <text x="610" y="90" font-family="Arial" font-size="10" text-anchor="middle">/touch_sensors/* (4x)</text>
-        <text x="610" y="105" font-family="Arial" font-size="10" text-anchor="middle">/proximity /left_distance</text>
-        <text x="610" y="120" font-family="Arial" font-size="10" text-anchor="middle">/voice/direction /voice/active</text>
-        <text x="610" y="135" font-family="Arial" font-size="10" text-anchor="middle">/camera/emotion</text>
-        <text x="610" y="150" font-family="Arial" font-size="10" text-anchor="middle">/collision_status_for_animation</text>
-        <text x="610" y="165" font-family="Arial" font-size="10" text-anchor="middle">/system/* (monitoring)</text>
-        <text x="610" y="180" font-family="Arial" font-size="10" text-anchor="middle">Multi-modal Fusion</text>
-        <text x="610" y="195" font-family="Arial" font-size="10" text-anchor="middle">Real-time Processing</text>
+    <g id="flow-voice">
+      <circle cx="750" cy="1440" r="10" fill="#f39c12"/>
+      <text x="770" y="1440" font-size="14" fill="#555">Voice Flow:</text>
+      <text x="770" y="1460" font-size="12" fill="#777">Mic Array -&gt; Direction -&gt; NeoPixel + Base Rotation</text>
     </g>
     
-    <!-- Connection Lines (drawn after boxes to prevent overlap) -->
-    <g stroke="#666" stroke-width="2" fill="none" opacity="0.7">
-        <!-- Hardware to Sensors - Fixed to start from bottom of rectangles -->
-        <path d="M 90 270 L 90 290 L 105 290 L 105 800" stroke-dasharray="3,3" />
-        <path d="M 420 270 L 420 290 L 105 290" stroke-dasharray="3,3" />
-        <path d="M 590 270 L 590 290 L 485 290 L 485 800" stroke-dasharray="3,3" />
-        
-        <!-- Sensors to Behavior Coordinator - Fixed to start from bottom of sensor rectangles -->
-        <path d="M 105 910 L 105 930 L 320 930 L 320 720" stroke-dasharray="3,3" />
-        <path d="M 295 910 L 295 920 L 320 920" stroke-dasharray="3,3" />
-        <path d="M 485 910 L 485 940 L 320 940 L 320 720" stroke-dasharray="3,3" />
-        
-        <!-- Behavior Coordinator to State Manager -->
-        <path d="M 320 600 L 320 560 L 440 560 L 440 500" stroke="#7b1fa2" stroke-width="3" />
-        
-        <!-- State Manager to all nodes (simplified) -->
-        <circle cx="440" cy="450" r="8" fill="#7b1fa2" opacity="0.8" />
-        <text x="460" y="455" font-family="Arial" font-size="10" fill="#7b1fa2">Central Hub</text>
-        
-        <!-- Animation to Hardware - Fixed to start from bottom of animation rectangles -->
-        <path d="M 420 1110 L 420 1130 L 110 1130 L 110 720" stroke-dasharray="3,3" />
-        
-        <!-- Camera to State Manager - Fixed to start from bottom of camera rectangle -->
-        <path d="M 200 1110 L 200 1150 L 440 1150 L 440 500" stroke-dasharray="3,3" />
+    <g id="flow-state">
+      <circle cx="1050" cy="1440" r="10" fill="#9b59b6"/>
+      <text x="1070" y="1440" font-size="14" fill="#555">State Flow:</text>
+      <text x="1070" y="1460" font-size="12" fill="#777">Events -&gt; State Machine -&gt; Callbacks -&gt; Behaviors</text>
     </g>
+  </g>
+  
+  <!-- Recent Updates -->
+  <g id="recent-updates" transform="translate(30, 1540)">
+    <rect x="0" y="0" width="660" height="120" fill="#e8f5e9" stroke="#27ae60" stroke-width="2" rx="8" filter="url(#softShadow)"/>
+    <text x="330" y="30" font-size="18" font-weight="bold" text-anchor="middle" fill="#2c3e50">Recent Feature Updates</text>
     
-    <!-- Key System Flows - Added proper spacing -->
-    <g transform="translate(50, 1390)">
-        <text x="0" y="0" font-family="Arial" font-size="18" font-weight="bold">Key System Flows</text>
-        
-        <!-- State Management Flow -->
-        <g transform="translate(0, 40)">
-            <text x="0" y="0" font-family="Arial" font-size="14" font-weight="bold">1. Centralized State Coordination</text>
-            <rect x="0" y="15" width="800" height="40" fill="#e1bee7" stroke="#7b1fa2" stroke-width="1" rx="5" opacity="0.3" />
-            <text x="20" y="40" font-family="Arial" font-size="12">Nodes → StateManagerNode → Priority Resolution → State Broadcast → Coordinated Actions</text>
-        </g>
-        
-        <!-- Behavior Flow -->
-        <g transform="translate(0, 110)">
-            <text x="0" y="0" font-family="Arial" font-size="14" font-weight="bold">2. Modular Behavior System</text>
-            <rect x="0" y="15" width="800" height="40" fill="#ffcc80" stroke="#e65100" stroke-width="1" rx="5" opacity="0.3" />
-            <text x="20" y="40" font-family="Arial" font-size="12">Sensors → BehaviorCoordinator → Mixin Behaviors → Hardware Interface → State Updates</text>
-        </g>
-        
-        <!-- Vision Flow -->
-        <g transform="translate(0, 180)">
-            <text x="0" y="0" font-family="Arial" font-size="14" font-weight="bold">3. Vision-Triggered Animations</text>
-            <rect x="0" y="15" width="800" height="40" fill="#90caf9" stroke="#1976d2" stroke-width="1" rx="5" opacity="0.3" />
-            <text x="20" y="40" font-family="Arial" font-size="12">Camera → Emotion Detection → Priority Request → State Manager → Animation → Completion</text>
-        </g>
-        
-        <!-- Collision Flow -->
-        <g transform="translate(0, 250)">
-            <text x="0" y="0" font-family="Arial" font-size="14" font-weight="bold">4. Intelligent Collision Response</text>
-            <rect x="0" y="15" width="800" height="40" fill="#a5d6a7" stroke="#388e3c" stroke-width="1" rx="5" opacity="0.3" />
-            <text x="20" y="40" font-family="Arial" font-size="12">Touch/Proximity → Severity Analysis → Escape Logic → State Coordination → Recovery</text>
-        </g>
-        
-        <!-- Voice Flow -->
-        <g transform="translate(0, 320)">
-            <text x="0" y="0" font-family="Arial" font-size="14" font-weight="bold">5. Voice Direction Following</text>
-            <rect x="0" y="15" width="800" height="40" fill="#ce93d8" stroke="#9c27b0" stroke-width="1" rx="5" opacity="0.3" />
-            <text x="20" y="40" font-family="Arial" font-size="12">ReSpeaker → DOA/VAD → Voice Behavior → Hardware Control → Face Detection Variations</text>
-        </g>
-        
-        <!-- NeoPixel Flow -->
-        <g transform="translate(0, 390)">
-            <text x="0" y="0" font-family="Arial" font-size="14" font-weight="bold">6. Visual State Feedback</text>
-            <rect x="0" y="15" width="800" height="40" fill="#ffab91" stroke="#ff5722" stroke-width="1" rx="5" opacity="0.3" />
-            <text x="20" y="40" font-family="Arial" font-size="12">State Changes → NeoPixel Controller → State-specific Animations → Visual Feedback</text>
-        </g>
-    </g>
+    <text x="30" y="60" font-size="13" fill="#2c3e50">• Voice detection with directional tracking and NeoPixel visualization</text>
+    <text x="30" y="85" font-size="13" fill="#2c3e50">• State machine with 9 distinct states and transition callbacks</text>
+    <text x="30" y="110" font-size="13" fill="#2c3e50">• Command infrastructure with JSON protocol and queueing</text>
+  </g>
+  
+  <!-- Current Development Focus -->
+  <g id="dev-focus" transform="translate(710, 1540)">
+    <rect x="0" y="0" width="660" height="120" fill="#fff3e0" stroke="#f39c12" stroke-width="2" rx="8" filter="url(#softShadow)"/>
+    <text x="330" y="30" font-size="18" font-weight="bold" text-anchor="middle" fill="#2c3e50">Current Development Focus</text>
     
-    <!-- Current Features -->
-    <g transform="translate(50, 1870)">
-        <text x="0" y="0" font-family="Arial" font-size="18" font-weight="bold">Current Architecture Highlights</text>
-        
-        <g transform="translate(20, 40)">
-            <circle cx="0" cy="0" r="4" fill="#4caf50" />
-            <text x="15" y="5" font-family="Arial" font-size="12" font-weight="bold">🎯 Centralized State Management</text>
-            <text x="15" y="20" font-family="Arial" font-size="11">Priority-based coordination, completion transitions, node health monitoring</text>
-            
-            <circle cx="0" cy="50" r="4" fill="#4caf50" />
-            <text x="15" y="55" font-family="Arial" font-size="12" font-weight="bold">🧩 Modular Behavior System</text>
-            <text x="15" y="70" font-family="Arial" font-size="11">Mixin-based behaviors (Collision, Idle, Voice, Petting) with shared utilities</text>
-            
-            <circle cx="0" cy="100" r="4" fill="#4caf50" />
-            <text x="15" y="105" font-family="Arial" font-size="12" font-weight="bold">🔒 Thread-safe Hardware Interface</text>
-            <text x="15" y="120" font-family="Arial" font-size="11">Robust serial communication with error recovery and position feedback</text>
-            
-            <circle cx="0" cy="150" r="4" fill="#4caf50" />
-            <text x="15" y="155" font-family="Arial" font-size="12" font-weight="bold">💡 Integrated Visual Feedback</text>
-            <text x="15" y="170" font-family="Arial" font-size="11">NeoPixel state visualization with animation timing and override protection</text>
-            
-            <circle cx="450" cy="0" r="4" fill="#4caf50" />
-            <text x="465" y="5" font-family="Arial" font-size="12" font-weight="bold">🔍 Comprehensive Sensor Integration</text>
-            <text x="465" y="20" font-family="Arial" font-size="11">Multi-modal sensor fusion with I2C device management and gesture recognition</text>
-            
-            <circle cx="450" cy="50" r="4" fill="#4caf50" />
-            <text x="465" y="55" font-family="Arial" font-size="12" font-weight="bold">🎤 Advanced Voice Processing</text>
-            <text x="465" y="70" font-family="Arial" font-size="11">DOA estimation, VAD processing, and face detection integration</text>
-            
-            <circle cx="450" cy="100" r="4" fill="#4caf50" />
-            <text x="465" y="105" font-family="Arial" font-size="12" font-weight="bold">🤖 Context-aware Motion Control</text>
-            <text x="465" y="120" font-family="Arial" font-size="11">DEMA with movement source tracking and intelligent collision avoidance</text>
-            
-            <circle cx="450" cy="150" r="4" fill="#4caf50" />
-            <text x="465" y="155" font-family="Arial" font-size="12" font-weight="bold">📊 System Health Monitoring</text>
-            <text x="465" y="170" font-family="Arial" font-size="11">Real-time diagnostics, performance metrics, and thermal protection</text>
-        </g>
-    </g>
-    
-    <!-- Version info -->
-    <text x="1150" y="2080" font-family="Arial" font-size="10" text-anchor="end" fill="#666">Architecture v2.0 - Updated with Centralized State Management</text>
+    <text x="30" y="60" font-size="13" fill="#2c3e50">• Touch sensor integration for physical interaction</text>
+    <text x="30" y="85" font-size="13" fill="#2c3e50">• DEMA torque tuning and touch integration</text>
+    <text x="30" y="110" font-size="13" fill="#2c3e50">• Animation interruption handling improvements</text>
+  </g>
+  
+  <!-- Connection arrows -->
+  <!-- Hardware to Core -->
+  <path d="M 510 240 L 540 240" stroke="#666" stroke-width="3" fill="none" marker-end="url(#arrowhead)"/>
+  
+  <!-- Core to State Machine -->
+  <path d="M 780 360 L 780 400" stroke="#666" stroke-width="3" fill="none" marker-end="url(#arrowhead)"/>
+  
+  <!-- Core to Voice -->
+  <path d="M 780 360 L 1040 400" stroke="#666" stroke-width="3" fill="none" marker-end="url(#arrowhead)"/>
+  
+  <!-- State Machine to Animation -->
+  <path d="M 355 640 L 355 680" stroke="#666" stroke-width="3" fill="none" marker-end="url(#arrowhead)"/>
+  
+  <!-- Voice to Animation -->
+  <path d="M 1040 640 L 680 680" stroke="#666" stroke-width="3" fill="none" marker-end="url(#arrowhead)"/>
+  
+  <!-- Vision to Animation -->
+  <path d="M 1040 880 L 680 780" stroke="#666" stroke-width="3" fill="none" marker-end="url(#arrowhead)"/>
+  
+  <!-- Animation to Core -->
+  <path d="M 355 680 L 355 360 L 540 360" stroke="#666" stroke-width="3" fill="none" marker-end="url(#arrowhead)"/>
+  
+  <!-- Collision to Core -->
+  <path d="M 355 920 L 355 360 L 540 360" stroke="#666" stroke-width="3" fill="none" marker-end="url(#arrowhead)"/>
 </svg>

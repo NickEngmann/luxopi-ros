@@ -4,10 +4,10 @@
 - [ ] Update to DepthAI 3.0 (update model as well for more interactions)
 - [ ] have a voice to speak back to me with
 - [ ] CAMERA FOLLOWING
-- [ ] Fix dynamic adaptation mode (DEMA) - increase torque limit for better operation
-- [ ] Fix DEMA Adaptation Mode and Integrate with Touch
 
 ## Feature Enhancements
+- [ ] Fix dynamic adaptation mode (DEMA) - increase torque limit for better operation
+- [ ] Fix DEMA Adaptation Mode and Integrate with Touch
 - [ ] Implement smoother transition between animations when interrupted by collisions
 - [ ] Add more sophisticated emotion detection response (consider context/history)
 - [ ] Improve proactive collision avoidance to avoid obstacles more naturally

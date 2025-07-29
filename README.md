@@ -210,6 +210,24 @@ Multi-layer safety system prevents collisions.
 - `/right_collision_warning` - Right side status
 - `/collision_details` - Detailed collision info
 
+### Voice Commands
+
+The system supports 29 voice commands through the DFRobot DF2301Q module.
+
+#### Wake Words
+- "Hello robot" - Activates listening mode
+- Custom wake word (user programmable)
+
+#### Common Commands
+| Category | Commands | Examples |
+|----------|----------|----------|
+| Light Control | On/Off, Brightness | "Turn on the light", "Dim the light" |
+| Colors | 8 colors | "Set to blue", "Set to red" |
+| Actions | Wake/Sleep | "Start oscillating", "Reset" |
+| Modes | Day/Night | "Daylight mode", "Moonlight mode" |
+
+See [Voice Command Reference](src/luxo_behaviors/resource/voice_command.md) for full list.
+
 ### Dynamic Adaptation
 
 Allows manual positioning by reducing servo torque.
@@ -394,10 +412,6 @@ usbipd attach --wsl Ubuntu-24.04 --hardware-id "03e7:f63b" --auto-attach
 ## API Reference
 
 For detailed robot arm commands and JSON API documentation, see [ROBOT_ARM_API.md](ROBOT_ARM_API.md).
-
-## Contributing
-
-Please read [CONTRIBUTING.md](CONTRIBUTING.md) for our code of conduct and submission process.
 
 ## License
 
