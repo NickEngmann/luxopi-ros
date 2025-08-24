@@ -195,9 +195,9 @@ class CameraInteraction(Node):
         self.emotion_to_animation = {
             'happy': ['excited', 'playful', 'dance'],
             'sad': ['sad', 'droop'],
-            'surprise': ['startled', 'curious'],
+            'surprise': ['startled'],
             'anger': ['shake', 'think', 'startled'],
-            'neutral': ['idle', 'stretch', 'nod']
+            'neutral': ['idle', 'nod']
         }
         
         # Emotion buffer system - using ROS2 time

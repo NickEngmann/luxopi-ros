@@ -4,6 +4,7 @@ import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String, Bool, Int16, Float32, UInt8
 from luxo_interfaces.srv import ConfigureI2CSensor
+from std_srvs.srv import Trigger
 import board
 from adafruit_apds9960.apds9960 import APDS9960
 import adafruit_vl53l4cd
@@ -110,10 +111,14 @@ class VL53L4CDSensor(I2CSensor):
     def initialize(self, i2c_bus):
         """Initialize VL53L4CD"""
         try:
+            # Add delay before initialization to let bus settle
+            time.sleep(0.1)
             self.device = adafruit_vl53l4cd.VL53L4CD(i2c_bus, self.address)
             # Increase timing for more stable readings
-            self.device.inter_measurement = 75
-            self.device.timing_budget = 75
+            self.device.inter_measurement = 100  # Increased from 75ms
+            self.device.timing_budget = 100  # Increased from 75ms
+            # Add delay after configuration
+            time.sleep(0.05)
             self.device.start_ranging()
             self.active = True
             self.reading_history = []  # Clear history on init
@@ -208,8 +213,7 @@ class ADS7830Sensor(I2CSensor):
                     channel_name = self.channel_mapping[channel_num]
                     sensor_data[channel_name] = value
                 except Exception as channel_error:
-                    # Log channel-specific error but continue with other channels
-                    self.get_logger().debug(f"Failed to read ADS7830 channel {channel_num}: {channel_error}")
+                    # Channel-specific error - continue with other channels
                     continue
                 
             # Return data even if some channels failed, as long as we got something
@@ -247,6 +251,12 @@ class I2CDeviceManager(Node):
         self.i2c_bus = board.I2C()
         self.i2c_lock = threading.Lock()
         
+        # Bus health monitoring
+        self.consecutive_bus_errors = 0
+        self.max_consecutive_bus_errors = 5
+        self.last_successful_read = self.get_clock().now()
+        self.bus_timeout = 120.0  # seconds
+        
         # Sensor registries
         self.sensors = {}  # Successfully initialized sensors
         self.pending_sensors = {}  # Sensors waiting to be initialized
@@ -267,7 +277,7 @@ class I2CDeviceManager(Node):
         self.declare_parameter('enable_vl53_right', True)
         self.declare_parameter('enable_ads7830', True)
         self.declare_parameter('ads7830_address', 0x38)
-        self.declare_parameter('publish_rate', 10.0)  # Hz
+        self.declare_parameter('publish_rate', 5.0)  # Hz - reduced from 10Hz to prevent bus congestion
         self.declare_parameter('recovery_interval', 3.0)  # seconds
         self.declare_parameter('max_init_attempts', 10)
         
@@ -303,6 +313,13 @@ class I2CDeviceManager(Node):
             ConfigureI2CSensor,
             'configure_i2c_sensor',
             self.configure_sensor_callback
+        )
+        
+        # Service for bus reset
+        self.reset_service = self.create_service(
+            Trigger,
+            '/i2c/reset_bus',
+            self.reset_bus_callback
         )
         
         # Initialize sensors based on configuration
@@ -360,6 +377,8 @@ class I2CDeviceManager(Node):
                 self.sensors[sensor_name] = sensor
                 sensors_to_remove.append(sensor_name)
                 self.get_logger().info(f"{sensor_name} initialized successfully")
+                # Add delay between sensor initializations to prevent bus congestion
+                time.sleep(0.05)
                 
                 # Start gesture thread if APDS9960 just came online
                 if sensor_name == 'apds9960' and self.enable_gestures and not self.gesture_thread_running:
@@ -412,6 +431,9 @@ class I2CDeviceManager(Node):
                 
     def poll_sensors(self):
         """Poll all active sensors and publish data"""
+        sensors_read = 0
+        sensors_failed = 0
+        
         for sensor_name, sensor in self.sensors.items():
             if not sensor.active:
                 continue
@@ -420,11 +442,14 @@ class I2CDeviceManager(Node):
                 # Read sensor data with bus protection
                 with self.i2c_lock:
                     data = sensor.read()
+                    # Add small delay between sensor reads to prevent bus congestion
+                    time.sleep(0.002)  # 2ms delay
                     
                 if data:
                     sensor.last_success_time = self.get_clock().now()
                     sensor.error_count = 0
                     sensor.successful_reads += 1
+                    sensors_read += 1
                     
                     # Publish based on sensor type
                     if sensor_name == 'apds9960' and 'proximity' in data:
@@ -473,6 +498,7 @@ class I2CDeviceManager(Node):
                 sensor.error_count += 1
                 sensor.total_errors += 1
                 sensor.last_error_time = self.get_clock().now()
+                sensors_failed += 1
                 
                 if sensor.error_count == 1:  # Log on first error
                     self.get_logger().warn(f"{sensor_name} read error: {e}")
@@ -481,6 +507,31 @@ class I2CDeviceManager(Node):
                     self.get_logger().error(f"{sensor_name} exceeded error threshold, marking inactive for recovery")
                     sensor.active = False
                     self._publish_sensor_health(sensor_name, "error", f"Read errors: {sensor.error_count}")
+        
+        # Check for bus-wide failures
+        if sensors_failed >= 2 and sensors_read == 0:
+            self.consecutive_bus_errors += 1
+            if self.consecutive_bus_errors >= self.max_consecutive_bus_errors:
+                self.get_logger().error(f"I2C bus appears to be locked up ({self.consecutive_bus_errors} consecutive failures)")
+                # Trigger bus reset
+                self._perform_bus_recovery()
+        else:
+            # Reset error counter on successful reads
+            if sensors_read > 0:
+                self.consecutive_bus_errors = 0
+                    
+    def _perform_bus_recovery(self):
+        """Perform emergency I2C bus recovery"""
+        self.get_logger().warn("Performing emergency I2C bus recovery")
+        
+        # Reset error counter to prevent immediate re-trigger
+        self.consecutive_bus_errors = 0
+        
+        # Use the existing reset_bus_callback logic
+        from std_srvs.srv import Trigger
+        request = Trigger.Request()
+        response = Trigger.Response()
+        self.reset_bus_callback(request, response)
                     
     def gesture_thread_worker(self):
         """Dedicated thread for gesture detection"""
@@ -581,6 +632,51 @@ class I2CDeviceManager(Node):
                 if not sensor.active:
                     self.get_logger().debug(f"  Inactive: {name} (errors: {sensor.error_count})")
                     
+    def reset_bus_callback(self, request, response):
+        """Handle I2C bus reset requests"""
+        self.get_logger().warn("I2C bus reset requested")
+        
+        try:
+            # Mark all sensors as inactive (do this before taking the lock)
+            for sensor in self.sensors.values():
+                sensor.active = False
+                sensor.error_count = 0
+            
+            # Deinitialize the bus
+            with self.i2c_lock:
+                try:
+                    if hasattr(self.i2c_bus, 'deinit'):
+                        self.i2c_bus.deinit()
+                except Exception as e:
+                    self.get_logger().debug(f"Bus deinit error (expected): {e}")
+            
+            # Wait outside the lock
+            time.sleep(1.5)
+            
+            # Reinitialize the bus
+            with self.i2c_lock:
+                self.i2c_bus = board.I2C()
+                
+            # Move all sensors to pending for reinitialization
+            for sensor_name, sensor in list(self.sensors.items()):
+                sensor.initialization_attempts = 0
+                self.pending_sensors[sensor_name] = sensor
+            self.sensors.clear()
+            
+            # Try to reinitialize
+            self._initialize_pending_sensors()
+            
+            response.success = True
+            response.message = "I2C bus reset completed"
+            self.get_logger().info("I2C bus reset completed")
+            
+        except Exception as e:
+            response.success = False
+            response.message = f"Bus reset failed: {str(e)}"
+            self.get_logger().error(f"I2C bus reset failed: {e}")
+            
+        return response
+    
     def configure_sensor_callback(self, request, response):
         """Handle sensor configuration requests"""
         try:

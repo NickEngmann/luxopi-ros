@@ -371,7 +371,6 @@ class RoArmHardwareInterface(Node):
             # Add a health check timer to ensure safety_timer is still running
             self.timer_health_check = self.create_timer(5.0, self.safety_timer_watchdog)
             
-            
             # Add publisher for light status
             self.light_status_publisher = self.create_publisher(
                 Bool,
@@ -1646,7 +1645,6 @@ class RoArmHardwareInterface(Node):
                 self.disable_dynamic_adaptation_mode()
             except:
                 pass
-
 
 
     def publish_light_status(self):

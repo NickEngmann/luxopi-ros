@@ -215,7 +215,7 @@ class StateManagerNode(Node):
             from luxo_behaviors.neopixel_control import NeoPixelController
             self._neopixel_controller = NeoPixelController(
                 pixel_count=60,
-                brightness=0.5,
+                brightness=0.2,
                 logger=self.get_logger(),
                 max_fps=15.0  # Limit to 15 FPS for long-term stability
             )

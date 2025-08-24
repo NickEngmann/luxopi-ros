@@ -11,43 +11,33 @@ import math
 import random
 import argparse
 
-# Configuration
-PIXEL_COUNT = 60
-# Using proper SPI MOSI pin (GPIO 10, Physical Pin 19)
-print("Using GPIO 10 (MOSI - Pin 19) for NeoPixel SPI")
+# Global variable for pixels (will be initialized later)
+pixels = None
 
-BRIGHTNESS = 0.5     # 0.0 to 1.0 (start dim for safety)
-
-def init_pixels():
-    """Initialize pixels with RGBW color order"""
+def init_pixels(pixel_count, brightness):
+    """Initialize pixels with GRBW color order (physically swapped R/G)"""
     global pixels
     
     try:
         # Get the SPI bus
         spi = board.SPI()
         
-        # Initialize NeoPixels using SPI with RGBW color order
+        # Initialize NeoPixels using SPI with GRBW color order (R and G are swapped in hardware)
         pixels = neopixel_spi.NeoPixel_SPI(
             spi,
-            PIXEL_COUNT, 
-            brightness=BRIGHTNESS,
+            pixel_count, 
+            brightness=brightness,
             auto_write=False,
-            pixel_order=neopixel_spi.RGBW,
+            pixel_order=neopixel_spi.GRBW,
             bpp=4
         )
         
-        print(f"NeoPixel SPI initialized: {PIXEL_COUNT} LEDs, Color order: RGBW")
+        print(f"NeoPixel SPI initialized: {pixel_count} LEDs, Brightness: {brightness*100:.0f}%, Color order: GRBW (hardware has R/G swapped)")
         return True
         
     except Exception as e:
         print(f"Failed to initialize NeoPixel SPI: {e}")
         return False
-
-# Initialize with default order
-if not init_pixels():
-    print("Make sure SPI is enabled in /boot/firmware/config.txt")
-    print("Check that no other devices are using SPI")
-    exit(1)
 
 def clear_all():
     """Turn off all LEDs"""
@@ -55,30 +45,30 @@ def clear_all():
     pixels.show()
 
 def set_pixel_color(index, r, g, b, w=0):
-    """Set a single pixel color - now supports RGBW"""
+    """Set a single pixel color - GRBW order (hardware has G/R swapped)"""
     pixels[index] = (r, g, b, w)
 
 def fill_all(r, g, b, w=0):
-    """Fill all pixels with color - now supports RGBW"""
+    """Fill all pixels with color - GRBW order (hardware has G/R swapped)"""
     pixels.fill((r, g, b, w))
     pixels.show()
 
 def simple_test():
     """Simple test to verify basic functionality"""
-    print(f"\n=== Running SPI NeoPixel Test (RGBW) ===")
+    print(f"\n=== Running SPI NeoPixel Test (GRBW) ===")
     
     try:
         # Test individual colors
         print("Testing individual colors...")
         
-        # Red
+        # Red (GRBW order: G=0, R=255, B=0, W=0)
         print("Testing RED (255,0,0,0)...")
-        fill_all(255, 0, 0, 0)  # R=255, G=0, B=0, W=0
+        fill_all(255, 0, 0, 0)  # With GRBW order, first channel is now correct for red
         time.sleep(2)
         
-        # Green
+        # Green (GRBW order: G=255, R=0, B=0, W=0) 
         print("Testing GREEN (0,255,0,0)...")
-        fill_all(0, 255, 0, 0)  # R=0, G=255, B=0, W=0
+        fill_all(0, 255, 0, 0)  # With GRBW order, second channel is now correct for green
         time.sleep(2)
         
         # Blue
@@ -91,14 +81,14 @@ def simple_test():
         fill_all(0, 0, 0, 200)  # R=0, G=0, B=0, W=200
         time.sleep(2)
         
-        # RGB White (mixing colors)
-        print("Testing RGB WHITE (100,100,100,0)...")
-        fill_all(200, 200, 200, 0)  # R=100, G=100, B=100, W=0
+        # RGB White (mixing colors - with swapped R/G)
+        print("Testing RGB WHITE (200,200,200,0)...")
+        fill_all(200, 200, 200, 0)  # Swapped R/G, B=200, W=0
         time.sleep(2)
         
-        # Warm white (RGB + W)
-        print("Testing WARM WHITE (50,50,50,150)...")
-        fill_all(50, 50, 50, 200)  # R=50, G=50, B=50, W=150
+        # Warm white (RGB + W - with swapped R/G)
+        print("Testing WARM WHITE (50,50,50,200)...")
+        fill_all(50, 50, 50, 200)  # Swapped R/G=50, B=50, W=200
         time.sleep(2)
         
         # Test a few pixels individually
@@ -106,8 +96,8 @@ def simple_test():
         clear_all()
         
         # Light up every 10th pixel in red
-        for i in range(0, PIXEL_COUNT, 10):
-            set_pixel_color(i, 255, 0, 0, 0)  # Red
+        for i in range(0, len(pixels), 10):
+            set_pixel_color(i, 255, 0, 0, 0)  # Red with GRBW order
         pixels.show()
         time.sleep(1)
         
@@ -115,7 +105,7 @@ def simple_test():
         print("Turning OFF...")
         clear_all()
         
-        print("[SUCCESS] RGBW SPI test completed!")
+        print("[SUCCESS] GRBW SPI test completed!")
         return True
         
     except Exception as e:
@@ -131,7 +121,7 @@ def color_wipe(color, delay=0.03):
         r, g, b, w = color
     
     print(f"Color wipe: RGBW({r}, {g}, {b}, {w})")
-    for i in range(PIXEL_COUNT):
+    for i in range(len(pixels)):
         set_pixel_color(i, r, g, b, w)
         pixels.show()
         time.sleep(delay)
@@ -146,7 +136,7 @@ def spinning_dot(color=(255, 255, 255, 0), cycles=3, delay=0.04):
         
     print(f"Spinning dot: RGBW({r}, {g}, {b}, {w})")
     for cycle in range(cycles):
-        for i in range(PIXEL_COUNT):
+        for i in range(len(pixels)):
             clear_all()
             set_pixel_color(i, r, g, b, w)
             pixels.show()
@@ -176,8 +166,9 @@ def rainbow_cycle(cycles=2, delay=0.01):
     print("Rainbow cycle")
     
     def wheel(pos):
-        """Generate rainbow colors across 0-255 positions"""
+        """Generate rainbow colors across 0-255 positions (GRBW order)"""
         if pos < 85:
+            # Returns (R, G, B) for GRBW pixel order
             return (pos * 3, 255 - pos * 3, 0)
         elif pos < 170:
             pos -= 85
@@ -188,8 +179,8 @@ def rainbow_cycle(cycles=2, delay=0.01):
     
     for cycle in range(cycles):
         for j in range(256):
-            for i in range(PIXEL_COUNT):
-                pixel_index = (i * 256 // PIXEL_COUNT) + j
+            for i in range(len(pixels)):
+                pixel_index = (i * 256 // len(pixels)) + j
                 r, g, b = wheel(pixel_index & 255)
                 set_pixel_color(i, r, g, b)
             pixels.show()
@@ -202,8 +193,8 @@ def theater_chase(color, cycles=3, delay=0.1):
     for cycle in range(cycles):
         for q in range(3):
             clear_all()
-            for i in range(0, PIXEL_COUNT, 3):
-                if (i + q) < PIXEL_COUNT:
+            for i in range(0, len(pixels), 3):
+                if (i + q) < len(pixels):
                     set_pixel_color(i + q, r, g, b)
             pixels.show()
             time.sleep(delay)
@@ -236,10 +227,10 @@ def wave_effect(cycles=2, delay=0.03):
     """Sine wave moving around the ring"""
     print("Wave effect")
     for cycle in range(cycles):
-        for offset in range(PIXEL_COUNT):
-            for i in range(PIXEL_COUNT):
+        for offset in range(len(pixels)):
+            for i in range(len(pixels)):
                 # Calculate sine wave value
-                angle = (i + offset) * 2 * math.pi / PIXEL_COUNT
+                angle = (i + offset) * 2 * math.pi / len(pixels)
                 intensity = (math.sin(angle) + 1) / 2  # Normalize to 0-1
 
                 # Create a blue-to-white wave
@@ -260,12 +251,12 @@ def random_sparkle(duration=4, delay=0.1):
     
     while time.time() - start_time < duration:
         # Turn off some random LEDs
-        for _ in range(5):
-            set_pixel_color(random.randint(0, PIXEL_COUNT - 1), 0, 0, 0)
+        for _ in range(min(5, len(pixels))):
+            set_pixel_color(random.randint(0, len(pixels) - 1), 0, 0, 0)
 
         # Turn on some random LEDs with random colors
-        for _ in range(8):
-            i = random.randint(0, PIXEL_COUNT - 1)
+        for _ in range(min(8, len(pixels))):
+            i = random.randint(0, len(pixels) - 1)
             r = random.randint(50, 255)
             g = random.randint(50, 255)
             b = random.randint(50, 255)
@@ -277,63 +268,104 @@ def random_sparkle(duration=4, delay=0.1):
 def segment_test():
     """Test different segments of the ring"""
     print("Segment test - dividing ring into colored sections")
+    # GRBW order: Red=(255,0,0), Green=(0,255,0), Blue=(0,0,255), Yellow=(255,255,0)
     colors = [(255, 0, 0), (0, 255, 0), (0, 0, 255), (255, 255, 0)]
-    segments = PIXEL_COUNT // 4
+    segments = max(1, len(pixels) // 4)
 
     clear_all()
     
     for i, (r, g, b) in enumerate(colors):
         start_idx = i * segments
-        end_idx = min((i + 1) * segments, PIXEL_COUNT)
+        end_idx = min((i + 1) * segments, len(pixels))
         
-        print(f"  Segment {i+1}: LEDs {start_idx}-{end_idx-1} = ({r}, {g}, {b})")
+        if start_idx < len(pixels):
+            print(f"  Segment {i+1}: LEDs {start_idx}-{end_idx-1} = ({r}, {g}, {b})")
 
-        for j in range(start_idx, end_idx):
-            set_pixel_color(j, r, g, b)
+            for j in range(start_idx, end_idx):
+                set_pixel_color(j, r, g, b)
 
     pixels.show()
     time.sleep(3)
 
-def hold_color(r, g, b, color_name):
-    """Hold a solid color until interrupted"""
-    print(f"Setting all LEDs to {color_name} ({r}, {g}, {b})")
+def hold_single_leds(r, g, b, w, num_leds, color_name):
+    """Light up specific number of LEDs with a color"""
+    print(f"Setting {num_leds} LED(s) to {color_name} RGBW({r}, {g}, {b}, {w})")
     print("Press Ctrl+C to stop")
     
-    # Set the color once
-    fill_all(r, g, b)
+    # Clear all first
+    clear_all()
+    
+    # Light up only the specified number of LEDs
+    for i in range(min(num_leds, len(pixels))):
+        set_pixel_color(i, r, g, b, w)
+    
+    pixels.show()
+    
+    # Add a small delay to ensure data is fully transmitted
+    time.sleep(0.1)
+    
+    try:
+        while True:
+            time.sleep(1)
+                
+    except KeyboardInterrupt:
+        print(f"\n[STOP] {color_name} mode stopped")
+        clear_all()
 
 def main():
     """Main test sequence with argparse"""
     parser = argparse.ArgumentParser(description='NeoPixel SPI Test for Raspberry Pi 5')
-    parser.add_argument('--mode', '-m', choices=['simple', 'full', 'wipe', 'spin', 'rainbow', 'chase', 'breathe', 'wave', 'sparkle', 'segment', 'white', 'red', 'green', 'blue'],
+    parser.add_argument('--mode', '-m', choices=['simple', 'full', 'wipe', 'spin', 'rainbow', 'chase', 'breathe', 'wave', 'sparkle', 'segment', 'white', 'red', 'green', 'blue', 'single'],
                        default='simple', help='Test mode to run (default: simple)')
     parser.add_argument('--cycles', '-c', type=int, default=3, help='Number of cycles for effects (default: 3)')
     parser.add_argument('--delay', '-d', type=float, default=0.03, help='Delay between steps (default: 0.03)')
+    parser.add_argument('--leds', '-l', type=int, default=1, help='Number of LEDs to turn on (default: 1 for safety)')
+    parser.add_argument('--brightness', '-b', type=float, default=0.1, help='Brightness (0.0 to 1.0, default: 0.1 for safety)')
+    parser.add_argument('--pixel-count', '-p', type=int, default=60, help='Total number of pixels in the strip (default: 60)')
     
     args = parser.parse_args()
     
+    # Validate brightness
+    if 0.0 <= args.brightness <= 1.0:
+        brightness = args.brightness
+    else:
+        print(f"Warning: Brightness must be between 0.0 and 1.0. Using default: 0.1")
+        brightness = 0.1
+    
+    # Initialize pixels with parsed arguments
+    print("Using GPIO 10 (MOSI - Pin 19) for NeoPixel SPI")
+    if not init_pixels(args.pixel_count, brightness):
+        print("Make sure SPI is enabled in /boot/firmware/config.txt")
+        print("Check that no other devices are using SPI")
+        exit(1)
+    
     print("=" * 60)
     print("NeoPixel SPI Test for Raspberry Pi 5")
-    print(f"LEDs: {PIXEL_COUNT}")
+    print(f"Total LEDs: {args.pixel_count}")
     print(f"Pin: GPIO 10 (MOSI - Physical Pin 19)")
-    print(f"Brightness: {BRIGHTNESS * 100:.0f}%")
+    print(f"Brightness: {brightness * 100:.0f}%")
     print(f"Mode: {args.mode}")
+    if args.mode in ['single', 'white', 'red', 'green', 'blue']:
+        print(f"LEDs to light: {args.leds}")
     print("=" * 60)
 
     try:
-        if args.mode == 'white':
-            hold_color(0, 0, 0, 255, "WHITE")  # Pure white LED
+        if args.mode == 'single':
+            # Single LED mode with white at low brightness
+            hold_single_leds(0, 0, 0, 255, args.leds, "WHITE (single mode)")
+        elif args.mode == 'white':
+            hold_single_leds(0, 0, 0, 255, args.leds, "WHITE")  # Pure white LED
         elif args.mode == 'red':
-            hold_color(255, 0, 0, 0, "RED")
+            hold_single_leds(255, 0, 0, 0, args.leds, "RED")  # GRBW order
         elif args.mode == 'green':
-            hold_color(0, 255, 0, 0, "GREEN")
+            hold_single_leds(0, 255, 0, 0, args.leds, "GREEN")  # GRBW order
         elif args.mode == 'blue':
-            hold_color(0, 0, 255, 0, "BLUE")
+            hold_single_leds(0, 0, 255, 0, args.leds, "BLUE")
         elif args.mode == 'simple':
             simple_test()
         elif args.mode == 'wipe':
-            color_wipe((255, 0, 0, 0), args.delay)  # Red
-            color_wipe((0, 255, 0, 0), args.delay)  # Green
+            color_wipe((255, 0, 0, 0), args.delay)  # Red (GRBW)
+            color_wipe((0, 255, 0, 0), args.delay)  # Green (GRBW)
             color_wipe((0, 0, 255, 0), args.delay)  # Blue
             color_wipe((0, 0, 0, 200), args.delay)  # White LED
         elif args.mode == 'spin':
@@ -341,9 +373,9 @@ def main():
         elif args.mode == 'rainbow':
             rainbow_cycle(args.cycles, args.delay)
         elif args.mode == 'chase':
-            theater_chase((255, 0, 0, 0), args.cycles, args.delay)
+            theater_chase((255, 0, 0, 0), args.cycles, args.delay)  # Red (GRBW)
         elif args.mode == 'breathe':
-            breathing_effect((255, 100, 0, 0), args.cycles)
+            breathing_effect((255, 100, 0, 0), args.cycles)  # Orange-red (GRBW)
         elif args.mode == 'wave':
             wave_effect(args.cycles, args.delay)
         elif args.mode == 'sparkle':
@@ -366,16 +398,16 @@ def main():
                 clear_all()
                 time.sleep(0.5)
 
-                # Basic color wipes
-                color_wipe((255, 0, 0, 0), 0.01)
+                # Basic color wipes (GRBW order)
+                color_wipe((255, 0, 0, 0), 0.01)  # Red
                 time.sleep(0.5)
-                color_wipe((0, 255, 0, 0), 0.01)
+                color_wipe((0, 255, 0, 0), 0.01)  # Green
                 time.sleep(0.5)
                 color_wipe((0, 0, 255, 0), 0.01)
                 time.sleep(0.5)
                 
                 # Dynamic effects
-                spinning_dot((255, 0, 255, 0), 2, 0.02)
+                spinning_dot((255, 0, 255, 0), 2, 0.02)  # Magenta (G+B with swap)
                 theater_chase((0, 255, 255, 0), 2)
                 breathing_effect((255, 100, 0, 0), 1)
                 wave_effect(1)

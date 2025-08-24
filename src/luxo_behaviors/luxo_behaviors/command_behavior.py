@@ -109,7 +109,7 @@ class CommandBehavior:
         self.sleep_start_time = None
         
         # Brightness and color tracking
-        self.current_brightness = 0.8  # Track current brightness level (0.0-1.0)
+        self.current_brightness = 0.2  # Track current brightness level (0.0-1.0)
         self.current_color_temp = 0.5  # Track color temperature (0.0=coolest, 1.0=warmest)
         self.color_mode = None  # Track if we're in a specific color mode
         
@@ -330,7 +330,7 @@ class CommandBehavior:
                 self._adjust_brightness(increase=False)
             elif command_name == 'set_brightness_max':
                 self.node.get_logger().info("Executing command: Set brightness to maximum")
-                self._set_brightness(1.0)
+                self._set_brightness(0.3)
             elif command_name == 'set_brightness_min':
                 self.node.get_logger().info("Executing command: Set brightness to minimum")
                 self._set_brightness(0.1)
