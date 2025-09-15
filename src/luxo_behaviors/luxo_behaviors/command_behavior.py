@@ -154,6 +154,13 @@ class CommandBehavior:
             10
         )
         
+        # Create publisher for voice pixel ring control
+        self.pixel_ring_control_publisher = self.node.create_publisher(
+            Bool,
+            '/voice/pixel_ring_control',
+            10
+        )
+        
         # Start command monitoring if enabled
         if self.voice_commands_enabled and self.dfrobot_sensor:
             self._start_command_monitoring()
@@ -485,6 +492,9 @@ class CommandBehavior:
             self.light_state = True
             self._publish_light_state(self.light_state)
             
+            # Turn on voice direction pixel ring
+            self._publish_pixel_ring_state(True)
+            
             # If this was during wake word, update the before state
             if self.wake_word_active:
                 self.light_state_before_wake = True
@@ -508,6 +518,9 @@ class CommandBehavior:
         # Turn off lights
         self.light_state = False
         self._publish_light_state(self.light_state)
+        
+        # Turn off voice direction pixel ring
+        self._publish_pixel_ring_state(False)
 
         time.sleep(0.3)  # Short delay before starting animation
         # First transition to ANIMATING state for the sleep animation
@@ -629,6 +642,16 @@ class CommandBehavior:
             self.node.get_logger().info(f"Published light state: {state}")
         except Exception as e:
             self.node.get_logger().error(f"Error publishing light state: {e}")
+    
+    def _publish_pixel_ring_state(self, state: bool):
+        """Publish voice pixel ring control command."""
+        try:
+            msg = Bool()
+            msg.data = state
+            self.pixel_ring_control_publisher.publish(msg)
+            self.node.get_logger().info(f"Published pixel ring state: {state}")
+        except Exception as e:
+            self.node.get_logger().error(f"Error publishing pixel ring state: {e}")
     
     def _schedule_command_completion(self, delay_seconds: float):
         """Schedule command completion after a delay."""

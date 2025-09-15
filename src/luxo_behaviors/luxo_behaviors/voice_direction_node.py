@@ -114,6 +114,10 @@ class VoiceDirectionNode(Node):
         self.voice_processing_suppressed = False
         self.motor_state_lock = threading.Lock()
         
+        # Sleep state tracking
+        self.sleep_mode_active = False
+        self.sleep_state_lock = threading.Lock()
+        
         # Only essential ROS publishers
         self.voice_direction_pub = self.create_publisher(Float32, '/voice/direction', 10)
         self.voice_active_pub = self.create_publisher(Bool, '/voice/active', 10)
@@ -124,6 +128,14 @@ class VoiceDirectionNode(Node):
             JointState,
             '/joint_states',
             self.joint_state_callback,
+            10
+        )
+        
+        # Pixel ring control subscription
+        self.pixel_ring_control_sub = self.create_subscription(
+            Bool,
+            '/voice/pixel_ring_control',
+            self.pixel_ring_control_callback,
             10
         )
         
@@ -140,6 +152,24 @@ class VoiceDirectionNode(Node):
         # Start audio processing
         self.start_audio_processing()
 
+    def pixel_ring_control_callback(self, msg):
+        """Control pixel ring sleep state"""
+        try:
+            with self.sleep_state_lock:
+                if not msg.data:  # False = sleep mode
+                    self.sleep_mode_active = True
+                    # Turn off LEDs immediately
+                    if pixel_ring:
+                        pixel_ring.off()
+                    self.leds_on = False
+                    self.get_logger().info('Sleep mode activated - pixel ring turned OFF')
+                else:  # True = wake up
+                    self.sleep_mode_active = False
+                    # Don't turn on immediately - let voice detection control it
+                    self.get_logger().info('Sleep mode deactivated - pixel ring control restored to voice detection')
+        except Exception as e:
+            self.get_logger().error(f'Error controlling pixel ring: {e}')
+    
     def joint_state_callback(self, msg):
         """Monitor joint states for base motor activity"""
         if not self.motor_awareness_enabled:
@@ -397,8 +427,11 @@ class VoiceDirectionNode(Node):
 
                         # Turn off LEDs if no speech for configured timeout - exactly from vad_doa.py
                         if current_time - self.last_speech_time > self.config['vad']['timeout'] and self.leds_on:
-                            pixel_ring.off()
-                            self.leds_on = False
+                            # Only turn off if not in sleep mode (sleep mode manages its own state)
+                            with self.sleep_state_lock:
+                                if not self.sleep_mode_active:
+                                    pixel_ring.off()
+                                    self.leds_on = False
                             self.direction_history.clear()  # Clear history when speech stops
 
                         self.chunks.append(chunk)
@@ -431,8 +464,11 @@ class VoiceDirectionNode(Node):
                                     if direction is not None:
                                         # Skip stability filtering if disabled for debugging - exactly from vad_doa.py
                                         if self.config['debug'].get('disable_stability_filter', False):
-                                            pixel_ring.set_direction(int(direction))
-                                            self.leds_on = True
+                                            # Only update LEDs if not in sleep mode
+                                            with self.sleep_state_lock:
+                                                if not self.sleep_mode_active:
+                                                    pixel_ring.set_direction(int(direction))
+                                                    self.leds_on = True
                                             self.last_direction = int(direction)
                                             
                                             # Publish for ROS (instead of print) - with motor awareness
