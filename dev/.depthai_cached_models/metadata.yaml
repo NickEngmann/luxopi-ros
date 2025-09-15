@@ -1,0 +1,16 @@
+yunet.RVC2.yaml:
+  hash: 25249b0e261ba2ceefb0ccedb1221795
+  model_id: 5d635f3c-45c0-41d2-8800-7ca3681b1915
+  model_version_id: a73585da-cd7a-4b7b-8ad7-423d9bd575ee
+  model_instance_id: c7aa8201-7cdf-4fe2-b3bb-e96dad6bf885
+  downloaded_files:
+    - yunet-s-480x640.rvc2.tar.xz
+  folder_name: 0222af901a52e153665afa5886a5eb2ca08f96a8
+emotion_recognition.RVC2.yaml:
+  hash: e482449764c3c822569ad2334e43bf2e
+  model_id: 3cac7277-2474-4b36-a68e-89ac977366c3
+  model_version_id: 2d6a604c-7045-4487-916e-e6b6f09f56c7
+  model_instance_id: a590b57a-5112-4ffa-b474-ef8c3cf85052
+  downloaded_files:
+    - enet_b2_8_best.rvc2.tar.xz
+  folder_name: f11a781710d0839045c6022c86618ee302212e51
