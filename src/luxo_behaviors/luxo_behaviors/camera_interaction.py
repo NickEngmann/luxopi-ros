@@ -1,196 +1,103 @@
 #!/usr/bin/env python3
-#camera_interaction.py
+from pathlib import Path
+import threading
+import numpy as np
+import time
+
+# Import depthai BEFORE rclpy to avoid context issues
+import depthai as dai
+from depthai_nodes.node import ParsingNeuralNetwork, GatherData, ImgDetectionsBridge
+from depthai_nodes.node.utils import generate_script_content
+
 import rclpy
 from rclpy.node import Node
 from rclpy.action import ActionClient
-from .MultiMsgSync import TwoStageHostSeqSync
-import blobconverter
-import depthai as dai
-import numpy as np
-import time
-import sys
-import cv2
-import subprocess
-import math
-import os
-import threading
-import queue
-from std_msgs.msg import String, Float32, Bool, UInt8, Int16
-from sensor_msgs.msg import Image, JointState
-from cv_bridge import CvBridge
-from collections import deque
+from std_msgs.msg import String, Float32, Bool
+from sensor_msgs.msg import JointState
 from luxo_interfaces.action import PlayAnimation
 
-def frame_norm(frame, bbox):
-    normVals = np.full(len(bbox), frame.shape[0])
-    normVals[::2] = frame.shape[1]
-    return (np.clip(np.array(bbox), 0, 1) * normVals).astype(int)
+# Try both import paths for utils
+try:
+    # When running installed via ros2 run
+    from luxo_behaviors.utils.arguments import initialize_argparser
+    from luxo_behaviors.utils.annotation_node import AnnotationNode
+except ImportError:
+    try:
+        # When running from source directory
+        from utils.arguments import initialize_argparser
+        from utils.annotation_node import AnnotationNode
+    except ImportError:
+        # Fallback with relative import
+        from .utils.arguments import initialize_argparser
+        from .utils.annotation_node import AnnotationNode
 
+# Define emotions list
 emotions = ['neutral', 'happy', 'sad', 'surprise', 'anger']
 
 class CameraInteraction(Node):
     def __init__(self):
         super().__init__('camera_interaction')
-        
-        # Camera connection state
-        self.camera_connected = False
-        self.camera_retry_interval = 30.0  # seconds
-        self.camera_retry_attempts = 0
-        self.max_retry_attempts = -1  # -1 means infinite retries
 
-        # Error tracking for camera disconnection detection
-        self.consecutive_camera_errors = 0
-        self.max_consecutive_errors = 5  # Trigger reconnect after 5 consecutive errors
-        self.last_camera_error_log_time = self.get_clock().now()
-        self.camera_error_log_interval = 5.0  # Log errors at most every 5 seconds
-        
-        # === THREADING AND QUEUES FOR LATENCY OPTIMIZATION ===
-        
-        # High-priority queue for raw camera frames (minimal latency)
-        self.frame_queue = queue.Queue(maxsize=2)  # Small queue to minimize latency
-        
-        # Low-priority queue for processing (emotion detection, etc.)
-        self.processing_queue = queue.Queue(maxsize=5)
-        
-        # Display data queue (for framebuffer updates)
-        self.display_queue = queue.Queue(maxsize=3)
-        
-        # Threading control
-        self.shutdown_event = threading.Event()
-        self.processing_thread = None
-        self.display_thread = None
-        
-        # Shared data structures with locks
-        self.data_lock = threading.Lock()
-        self.latest_emotion = None
-        self.latest_distance = None
-        self.latest_face_bboxes = []
-        self.latest_frame_for_display = None
-        
+        # Initialize ROS2 parameters
+        self.declare_parameter('verbose', False)
+        self.verbose = self.get_parameter('verbose').get_parameter_value().bool_value
+
+        self.declare_parameter('react_to_emotions', True)
+        self.react_to_emotions = self.get_parameter('react_to_emotions').get_parameter_value().bool_value
+
+        self.declare_parameter('emotion_cooldown', 5.0)
+        self.emotion_cooldown = self.get_parameter('emotion_cooldown').get_parameter_value().double_value
+
         # Create ROS publishers
         self.emotion_publisher = self.create_publisher(String, '/camera/emotion', 10)
         self.distance_publisher = self.create_publisher(Float32, '/camera/person_distance', 10)
-        
-        # Publisher for notifying animation command about emotion trigger
         self.animation_trigger_publisher = self.create_publisher(String, '/animation_trigger_source', 10)
-        
+
         # Create action client for animation control
         self._animation_action_client = ActionClient(
             self,
             PlayAnimation,
             'play_animation'
         )
-        
-        # Wait for action server to be available
-        self.get_logger().info('Waiting for animation action server...')
-        if not self._animation_action_client.wait_for_server(timeout_sec=10.0):
-            self.get_logger().warn('Animation action server not available after 10 seconds')
-        else:
-            self.get_logger().info('Connected to animation action server')
-        
+
+        # Don't wait for action server immediately - it may not be running
+        self.get_logger().info('Animation action client created')
+
         # Track active animation goals
         self._active_goal_handle = None
-        
-        # Parameter for publishing the camera feed
-        self.declare_parameter('publish_camera_feed', False)
-        self.publish_camera_feed = self.get_parameter('publish_camera_feed').get_parameter_value().bool_value
-        
-        if self.publish_camera_feed:
-            self.bridge = CvBridge()
-            self.image_publisher = self.create_publisher(Image, '/camera/image_raw', 10)
-        
-        # Parameter for framebuffer display
-        self.declare_parameter('enable_framebuffer_display', True)
-        self.enable_framebuffer_display = self.get_parameter('enable_framebuffer_display').get_parameter_value().bool_value
-        
-        # Framebuffer display parameters
-        self.declare_parameter('framebuffer_device', '/dev/fb0')
-        self.framebuffer_device = self.get_parameter('framebuffer_device').get_parameter_value().string_value
-        
-        self.declare_parameter('framebuffer_tty', '1')
-        self.framebuffer_tty = self.get_parameter('framebuffer_tty').get_parameter_value().string_value
-        
-        # Reduced framebuffer update rate to minimize impact on camera latency
-        self.declare_parameter('framebuffer_update_interval', 0.1)  # Reduced from 0.05 to 0.1 seconds
-        self.framebuffer_update_interval = self.get_parameter('framebuffer_update_interval').get_parameter_value().double_value
-        
-        # Framebuffer display state
-        if self.enable_framebuffer_display:
-            # Import the framebuffer display class
-            from .framebuffer_display import CameraFramebufferDisplay
-            self.framebuffer_display = CameraFramebufferDisplay(self, self.framebuffer_device)
-            
-            if self.framebuffer_display.enabled:
-                self.get_logger().info(f'Direct framebuffer display initialized on {self.framebuffer_device}')
-            else:
-                self.get_logger().warn('Failed to initialize framebuffer display')
-                self.enable_framebuffer_display = False
-        
-        # Parameter for verbose mode
-        self.declare_parameter('verbose', False)
-        self.verbose = self.get_parameter('verbose').get_parameter_value().bool_value
-        
-        # Parameter to enable/disable emotional reactions
-        self.declare_parameter('react_to_emotions', True)
-        self.react_to_emotions = self.get_parameter('react_to_emotions').get_parameter_value().bool_value
-        
-        # Add parameter for camera rotation (0 = normal, 180 = flipped)
-        self.declare_parameter('camera_rotation', False)
-        self.camera_rotation = self.get_parameter('camera_rotation').get_parameter_value().bool_value
-        if self.verbose:
-            rotation_msg = "180 degrees" if self.camera_rotation else "normal (0 degrees)"
-            self.get_logger().info(f'Camera rotation set to: {rotation_msg}')
-        
-        # Add parameter for emotion buffer duration
-        self.declare_parameter('emotion_buffer_duration', 2.0)
-        self.emotion_buffer_duration = self.get_parameter('emotion_buffer_duration').get_parameter_value().double_value
-        
-        # Add parameter for emotion detection threshold
-        self.declare_parameter('emotion_threshold', 50.0)
-        self.emotion_threshold = self.get_parameter('emotion_threshold').get_parameter_value().double_value
-        
-        # Add parameter for emotion cooldown
-        self.declare_parameter('emotion_cooldown', 5.0)
-        self.emotion_cooldown = self.get_parameter('emotion_cooldown').get_parameter_value().double_value
-        
-        # Add parameter for camera retry interval
-        self.declare_parameter('camera_retry_interval', 30.0)
-        self.camera_retry_interval = self.get_parameter('camera_retry_interval').get_parameter_value().double_value
-        
-        # Add parameter for emotion timeout
-        self.declare_parameter('emotion_timeout', 3.0)
-        self.emotion_timeout = self.get_parameter('emotion_timeout').get_parameter_value().double_value
-        
-        # Track last emotion and animation time for cooldown - using ROS2 time
+
+        # Subscribe to animation and state topics
+        self.current_animation_name = None
+        self.current_state = "UNKNOWN"
+
+        self.animation_status_sub = self.create_subscription(
+            String,
+            '/roarm/current_animation',
+            self.animation_status_callback,
+            10
+        )
+
+        self.state_status_sub = self.create_subscription(
+            String,
+            '/luxo/current_state',
+            self.state_status_callback,
+            10
+        )
+
+        # Subscribe to joint states
+        self.joint_states = {}
+        self.joint_states_sub = self.create_subscription(
+            JointState,
+            '/joint_states',
+            self.joint_states_callback,
+            10
+        )
+
+        # Track last emotion and animation time
         self.last_emotion = "neutral"
         self.last_animation_time = self.get_clock().now()
-        
-        # Track last emotion detection time
-        self.last_emotion_detection_time = None
-
-        # Track emotion display timeout
-        self.declare_parameter('emotion_display_timeout', 3.0)
-        self.emotion_display_timeout = self.get_parameter('emotion_display_timeout').get_parameter_value().double_value
-        
-        # Track animation emotion timeout (longer than display timeout)
-        self.declare_parameter('animation_emotion_timeout', 5.0)
-        self.animation_emotion_timeout = self.get_parameter('animation_emotion_timeout').get_parameter_value().double_value
-        
-        # Track when emotion was last displayed
-        self.last_emotion_display_time = self.get_clock().now()
-        self.displayed_emotion = None
-
-        # Track when any animation completes (not just emotion-triggered ones)
         self.last_any_animation_end_time = self.get_clock().now()
 
-        # Minimum delay after ANY animation before allowing emotion-triggered animations
-        self.declare_parameter('post_animation_delay', 3.0)
-        self.post_animation_delay = self.get_parameter('post_animation_delay').get_parameter_value().double_value
-
-        # Add a history of recent emotions to avoid repetition
-        self.declare_parameter('recent_emotion_history', 3)
-        self.recent_emotions = deque(maxlen=self.get_parameter('recent_emotion_history').get_parameter_value().integer_value)  # Keep track of last N emotions that triggered animations
-        
         # Map emotions to animations
         self.emotion_to_animation = {
             'happy': ['excited', 'playful', 'dance'],
@@ -199,1352 +106,294 @@ class CameraInteraction(Node):
             'anger': ['shake', 'think', 'startled'],
             'neutral': ['idle', 'nod']
         }
-        
-        # Emotion buffer system - using ROS2 time
-        self.emotion_buffer = deque(maxlen=60)
-        self.emotion_buffer_start_time = self.get_clock().now()
-        
-        # Log configuration summary
-        if self.react_to_emotions:
-            self.get_logger().info('Emotion-triggered animations are ENABLED')
-        else:
-            self.get_logger().info('Emotion-triggered animations are DISABLED')
-        
-        # Initialize camera-related variables
-        self.device = None
-        self.stereo = False
-        self.sync = None
-        self.queues = {}
-        self.timer = None
-        
-        # Try to initialize camera
-        self.get_logger().info('Attempting to initialize camera...')
-        self.get_logger().info(f'Emotion detection parameters: buffer_duration={self.emotion_buffer_duration}s, '
-                             f'threshold={self.emotion_threshold}%, cooldown={self.emotion_cooldown}s')
-        
-        self._active_goal_handle = None
-        self._goal_is_active = False  # Track state manually
 
-        # Store face bounding boxes for display
-        self.last_face_bboxes = []  # List of (x1, y1, x2, y2) tuples
-        
-        # Voice parameters for debugging
-        self.voice_active = False
-        self.voice_direction = None
-        self.voice_confidence = 0.0
-        self.voice_spectral_confidence = 0.0
-        self.voice_snr = 0.0
-        self.voice_last_detection_time = None
-        
-        # Subscribe to animation name and state topics
-        self.current_animation_name = None
-        self.current_state = "UNKNOWN"
-        
-        # Subscribe to animation status
-        self.animation_status_sub = self.create_subscription(
-            String,
-            '/roarm/current_animation',
-            self.animation_status_callback,
-            10
-        )
-        
-        # Subscribe to state machine status
-        self.state_status_sub = self.create_subscription(
-            String,
-            '/luxo/current_state',
-            self.state_status_callback,
-            10
-        )
+        # Thread control
+        self.shutdown_event = threading.Event()
+        self.ros_processing_thread = None
 
-        # Subscribe to voice topics for debugging
-        self.voice_active_sub = self.create_subscription(
-            Bool,
-            '/voice/active',
-            self.voice_active_callback,
-            10
-        )
-        
-        self.voice_direction_sub = self.create_subscription(
-            Float32,
-            '/voice/direction',
-            self.voice_direction_callback,
-            10
-        )
-        
-        self.voice_confidence_sub = self.create_subscription(
-            Float32,
-            '/voice/confidence',
-            self.voice_confidence_callback,
-            10
-        )
-        
-        self.voice_spectral_confidence_sub = self.create_subscription(
-            Float32,
-            '/voice/spectral_confidence',
-            self.voice_spectral_confidence_callback,
-            10
-        )
-        
-        self.voice_snr_sub = self.create_subscription(
-            Float32,
-            '/voice/snr',
-            self.voice_snr_callback,
-            10
-        )
+        # Optimized resolution for faster processing on RVC2
+        self.REQ_WIDTH, self.REQ_HEIGHT = (
+            640,
+            480,
+        )  # Reduced resolution for better performance on RVC2
 
-        # Subscribe to system metrics for display
-        self.system_metrics = {
-            'cpu_usage': 0.0,
-            'ram_usage': 0.0,
-            'temperature': 0.0
-        }
-        
-        # Subscribe to system monitor topics
-        self.cpu_usage_sub = self.create_subscription(
-            Float32, '/system/cpu_usage',
-            lambda msg: self.update_system_metric('cpu_usage', msg.data), 10
-        )
-        self.ram_usage_sub = self.create_subscription(
-            Float32, '/system/ram_usage', 
-            lambda msg: self.update_system_metric('ram_usage', msg.data), 10
-        )
-        self.temperature_sub = self.create_subscription(
-            Float32, '/system/temperature',
-            lambda msg: self.update_system_metric('temperature', msg.data), 10
-        )
-        
-        # Subscribe to lamp status for display
-        self.lamp_status = False
-        self.lamp_status_update_time = time.time()
-        self.lamp_status_sub = self.create_subscription(
-            Bool, '/luxo/light_status',
-            self.lamp_status_callback, 10
-        )
-        
-        # Subscribe to joint states for real-time joint display
-        self.joint_states = {}
-        self.joint_states_sub = self.create_subscription(
-            JointState,
-            '/joint_states',
-            self.joint_states_callback,
-            10
-        )
-        
-        # Subscribe to I2C sensor data for touch and collision
-        self.touch_sensors = {
-            'head_top': 0,
-            'head_left': 0,
-            'head_bottom': 0,
-            'head_right': 0
-        }
-        
-        self.collision_sensors = {
-            'left': False,
-            'right': False,
-            'head': False
-        }
-        
-        # Petting event tracking
-        self.petting_active = False
-        self.last_petting_event_time = None
-        
-        # Touch sensor subscribers
-        self.touch_head_top_sub = self.create_subscription(
-            UInt8, '/touch_sensors/head_top', 
-            lambda msg: self.update_touch_sensor('head_top', msg.data), 10
-        )
-        self.touch_head_left_sub = self.create_subscription(
-            UInt8, '/touch_sensors/head_left',
-            lambda msg: self.update_touch_sensor('head_left', msg.data), 10
-        )
-        self.touch_head_bottom_sub = self.create_subscription(
-            UInt8, '/touch_sensors/head_bottom',
-            lambda msg: self.update_touch_sensor('head_bottom', msg.data), 10
-        )
-        self.touch_head_right_sub = self.create_subscription(
-            UInt8, '/touch_sensors/head_right',
-            lambda msg: self.update_touch_sensor('head_right', msg.data), 10
-        )
-        
-        # Subscribe to petting events from collision node
-        self.petting_events_sub = self.create_subscription(
-            String, '/collision/petting_events',
-            self.petting_events_callback, 10
-        )
-        
-        # Collision severity subscribers - these tell us when collisions are detected
-        self.front_severity_sub = self.create_subscription(
-            String, '/front_collision_severity',
-            self.front_collision_severity_callback, 10
-        )
-        self.left_severity_sub = self.create_subscription(
-            String, '/left_collision_severity', 
-            self.left_collision_severity_callback, 10
-        )
-        self.right_severity_sub = self.create_subscription(
-            String, '/right_collision_severity',
-            self.right_collision_severity_callback, 10
-        )
-
-        if self.initialize_camera():
-            self.get_logger().info('Camera initialized successfully')
-            # Start processing threads
-            self.start_processing_threads()
-        else:
-            self.get_logger().warn(f'Camera not found. Will retry every {self.camera_retry_interval} seconds...')
-            # Show camera not found message on framebuffer
-            if self.enable_framebuffer_display and hasattr(self, 'framebuffer_display'):
-                self._show_camera_not_found_message()
-            # Create retry timer
-            self.create_camera_retry_timer()
-
-    def start_processing_threads(self):
-        """Start background processing threads for emotion detection and display updates"""
-        if self.processing_thread is None or not self.processing_thread.is_alive():
-            self.processing_thread = threading.Thread(target=self.emotion_processing_worker, daemon=True)
-            self.processing_thread.start()
-            self.get_logger().info("Started emotion processing thread")
-        
-        if self.display_thread is None or not self.display_thread.is_alive():
-            self.display_thread = threading.Thread(target=self.display_update_worker, daemon=True)
-            self.display_thread.start()
-            self.get_logger().info("Started display update thread")
-
-    def emotion_processing_worker(self):
-        """Background thread for emotion detection and analysis (can have latency)"""
-        while not self.shutdown_event.is_set():
-            try:
-                # Get processing data with timeout
-                data = self.processing_queue.get(timeout=0.1)
-                if data is None:
-                    continue
-                
-                frame, detections, recognitions, timestamp = data
-                
-                # Process emotions (this can be slow)
-                self.process_emotions(frame, detections, recognitions, timestamp)
-                
-                self.processing_queue.task_done()
-                
-            except queue.Empty:
-                continue
-            except Exception as e:
-                self.get_logger().error(f"Error in emotion processing thread: {e}")
-
-    def display_update_worker(self):
-        """Background thread for framebuffer display updates (can have latency)"""
-        last_display_update = time.time()
-        
-        while not self.shutdown_event.is_set():
-            try:
-                current_time = time.time()
-                
-                # Throttle display updates
-                if current_time - last_display_update < self.framebuffer_update_interval:
-                    time.sleep(0.01)
-                    continue
-                
-                # Get latest display data
-                with self.data_lock:
-                    frame = self.latest_frame_for_display
-                    emotion = self.latest_emotion
-                    distance = self.latest_distance
-                    face_bboxes = self.latest_face_bboxes.copy()
-                
-                if frame is not None and self.enable_framebuffer_display:
-                    # Update framebuffer display
-                    self._update_framebuffer_display_threaded(
-                        frame, emotion, distance, face_bboxes
-                    )
-                    last_display_update = current_time
-                
-                time.sleep(0.01)  # Small sleep to prevent busy waiting
-                
-            except Exception as e:
-                self.get_logger().error(f"Error in display update thread: {e}")
-
-    def get_current_display_emotion(self):
-        """Get the emotion that should currently be displayed, handling timeouts"""
-        current_time = self.get_clock().now()
-        
-        # Check if we have an active animation
-        animation_active = bool(self.current_animation_name)
-        
-        with self.data_lock:
-            # If no emotion was ever detected, return neutral
-            if not self.last_emotion_detection_time:
-                return "neutral"
-            
-            # Calculate time since last emotion detection
-            time_since_detection = (current_time - self.last_emotion_detection_time).nanoseconds / 1e9
-            
-            # If animation is active, use longer timeout
-            if animation_active:
-                timeout = self.animation_emotion_timeout
-                # During animation, show the emotion that triggered the animation
-                if hasattr(self, 'last_emotion') and self.last_emotion:
-                    current_emotion = self.last_emotion
-                else:
-                    current_emotion = self.displayed_emotion or "neutral"
-            else:
-                timeout = self.emotion_display_timeout
-                current_emotion = self.displayed_emotion or "neutral"
-            
-            # Check if emotion has timed out
-            if time_since_detection > timeout:
-                # Reset to neutral if timed out
-                if self.displayed_emotion != "neutral":
-                    self.displayed_emotion = "neutral"
-                    self.get_logger().debug(f"Emotion display timed out after {time_since_detection:.1f}s, showing neutral")
-                return "neutral"
-            else:
-                return current_emotion
-
-    def _update_framebuffer_display_threaded(self, frame, emotion, distance, face_bboxes):
-        """Thread-safe framebuffer display update"""
+        # Get args and initialize camera
         try:
-            # Get animation and state info (thread-safe)
-            animation_name = self.current_animation_name
-            state = self.current_state
-            
-            # Get the emotion that should be displayed (with timeout handling)
-            display_emotion = self.get_current_display_emotion()
-            
-            # Collect voice debug info
-            voice_info = {
-                'active': self.voice_active,
-                'direction': self.voice_direction,
-                'confidence': self.voice_confidence,
-                'spectral_confidence': self.voice_spectral_confidence,
-                'snr': self.voice_snr,
-                'last_detection_time': self.voice_last_detection_time
-            }
-            
-            # Create lamp status info for display
-            lamp_info = {
-                'status': self.lamp_status,
-                'last_update': getattr(self, 'lamp_status_update_time', time.time())
-            }
-            
-            # Update display with all info including joint states and lamp status
-            self.framebuffer_display.update_display(
-                frame, 
-                emotion=display_emotion,  # Use timeout-aware emotion
-                distance=distance,
-                face_bboxes=face_bboxes,
-                animation_name=animation_name,
-                state=state,
-                voice_info=voice_info,
-                system_metrics=self.system_metrics,
-                touch_sensors=self.touch_sensors,
-                collision_sensors=self.collision_sensors,
-                joint_states=self.joint_states,
-                lamp_info=lamp_info
-            )
-            
-            if self.verbose:
-                self.get_logger().debug("Updated framebuffer display with debug info including lamp status")
-                
+            self.init_camera()
         except Exception as e:
-            self.get_logger().error(f"Error updating framebuffer display: {e}")
+            self.get_logger().error(f"Failed to initialize camera: {e}")
+            # Create a timer to retry camera initialization
+            self.retry_timer = self.create_timer(30.0, self.retry_camera_init)
 
-    def update_system_metric(self, metric_name, value):
-        """Update system metrics for display"""
-        self.system_metrics[metric_name] = value
+    def init_camera(self):
+        """Initialize camera system - DO NOT MODIFY ANYTHING IN THIS METHOD"""
+        # Parse arguments, but filter out ROS2 args first
+        import sys
+        # Save original args
+        original_args = sys.argv
 
-    def update_touch_sensor(self, sensor_name, value):
-        """Update touch sensor values"""
-        self.touch_sensors[sensor_name] = value
+        # Keep only the program name and any non-ROS arguments
+        filtered_args = [sys.argv[0]]  # Keep program name
 
-    def update_collision_sensor(self, sensor_name, value):
-        """Update collision sensor values - kept for compatibility but now uses severity topics"""
-        # This method is now primarily used by the proximity sensor callback
-        if sensor_name == 'head':
-            # For proximity sensor, collision if value > threshold
-            self.collision_sensors[sensor_name] = value > 200
-        # Left and right are now handled by severity callbacks
+        # Iterate through args and skip ROS2-specific ones
+        skip_next = False
+        for i, arg in enumerate(sys.argv[1:], 1):
+            if skip_next:
+                skip_next = False
+                continue
+            if arg.startswith('--ros-args'):
+                continue
+            if arg.startswith('--params-file'):
+                skip_next = True  # Skip the next arg which is the file path
+                continue
+            if arg in ['-p', '-r', '--log-level']:
+                skip_next = True  # Skip the next arg
+                continue
+            if ':=' in arg:  # Skip parameter assignments
+                continue
+            # This is a valid argument for our argparser
+            filtered_args.append(arg)
 
-    def voice_active_callback(self, msg):
-        """Update voice active status."""
-        self.voice_active = msg.data
-        if self.voice_active:
-            self.voice_last_detection_time = self.get_clock().now()
+        sys.argv = filtered_args
 
-    def voice_direction_callback(self, msg):
-        """Update voice direction."""
-        self.voice_direction = msg.data
+        _, self.args = initialize_argparser()
 
-    def voice_confidence_callback(self, msg):
-        """Update voice confidence."""
-        self.voice_confidence = msg.data
+        # Restore original args
+        sys.argv = original_args
 
-    def voice_spectral_confidence_callback(self, msg):
-        """Update voice spectral confidence."""
-        self.voice_spectral_confidence = msg.data
+        # Try different ports if 8082 is busy
+        for port in [8082, 8083, 8084, 8085]:
+            try:
+                self.visualizer = dai.RemoteConnection(httpPort=port)
+                self.get_logger().info(f"Visualizer connected on port {port}")
+                break
+            except Exception as e:
+                if port == 8085:  # Last port
+                    self.get_logger().warn(f"Could not start visualizer: {e}")
+                    self.visualizer = None
+                else:
+                    continue
+        # Don't create device here - we'll do it with the pipeline
+        # self.device = dai.Device(dai.DeviceInfo(self.args.device)) if self.args.device else dai.Device()
+        # platform = self.device.getPlatform().name
+        # self.get_logger().info(f"Platform: {platform}")
 
-    def voice_snr_callback(self, msg):
-        """Update voice SNR."""
-        self.voice_snr = msg.data
+        # RVC2 optimized settings
+        self.frame_type = dai.ImgFrame.Type.BGR888p
 
-    def lamp_status_callback(self, msg):
-        """Update lamp status for display."""
-        self.lamp_status = msg.data
-        self.lamp_status_update_time = time.time()
+        if self.args.fps_limit is None:
+            self.args.fps_limit = 5  # Increased from 8 to 15 for better responsiveness
+            self.get_logger().info(
+                f"FPS limit set to {self.args.fps_limit} for RVC2. Use --fps_limit flag to customize."
+            )
+
+        self.create_and_start_pipeline()
+
+    def create_and_start_pipeline(self):
+        """Create and start the DepthAI pipeline - DO NOT MODIFY"""
+        # Import nodes locally to avoid any namespace issues
+        from depthai_nodes.node import ParsingNeuralNetwork as PN, GatherData as GD, ImgDetectionsBridge as IDB
+        try:
+            from luxo_behaviors.utils.annotation_node import AnnotationNode as AN
+        except ImportError:
+            try:
+                from utils.annotation_node import AnnotationNode as AN
+            except ImportError:
+                from .utils.annotation_node import AnnotationNode as AN
+
+        # Create device first, like in the original
+        self.device = dai.Device(dai.DeviceInfo(self.args.device)) if self.args.device else dai.Device()
+        platform = self.device.getPlatform().name
+        self.get_logger().info(f"Platform: {platform}")
+
+        # Create pipeline with device passed to context manager, EXACTLY like original
+        with dai.Pipeline(self.device) as pipeline:
+            self.get_logger().info("Creating pipeline...")
+
+            # Get the path to the models directory
+            import os
+            script_dir = os.path.dirname(os.path.abspath(__file__))
+            models_dir = os.path.join(script_dir, "depthai_models")
+
+            # face detection model - RVC2 only
+            det_model_description = dai.NNModelDescription.fromYamlFile(
+                os.path.join(models_dir, "yunet.RVC2.yaml")
+            )
+            det_model_nn_archive = dai.NNArchive(dai.getModelFromZoo(det_model_description))
+            det_model_w, det_model_h = det_model_nn_archive.getInputSize()
+
+            # emotion recognition model - RVC2 only
+            rec_model_description = dai.NNModelDescription.fromYamlFile(
+                os.path.join(models_dir, "emotion_recognition.RVC2.yaml")
+            )
+            rec_model_nn_archive = dai.NNArchive(dai.getModelFromZoo(rec_model_description))
+
+            # media/camera input
+            if self.args.media_path:
+                replay = pipeline.create(dai.node.ReplayVideo)
+                replay.setReplayVideoFile(Path(self.args.media_path))
+                replay.setOutFrameType(self.frame_type)
+                replay.setLoop(True)
+                if self.args.fps_limit:
+                    replay.setFps(self.args.fps_limit)
+                replay.setSize(self.REQ_WIDTH, self.REQ_HEIGHT)
+            else:
+                # Optimized camera configuration for RVC2
+                cam = pipeline.create(dai.node.Camera).build()
+                cam = cam.requestOutput(
+                    size=(self.REQ_WIDTH, self.REQ_HEIGHT), type=self.frame_type, fps=self.args.fps_limit
+                )
+            input_node = replay.out if self.args.media_path else cam
+
+            # resize to det model input size
+            resize_node = pipeline.create(dai.node.ImageManip)
+            resize_node.initialConfig.setOutputSize(det_model_w, det_model_h)
+            resize_node.initialConfig.setReusePreviousImage(False)
+            resize_node.inputImage.setBlocking(False)  # Non-blocking for better performance
+            input_node.link(resize_node.inputImage)
+
+            # Create the detection neural network node exactly like original
+            det_nn = pipeline.create(PN).build(
+                resize_node.out, det_model_nn_archive
+            )
+
+            # detection processing
+            det_bridge = pipeline.create(IDB).build(
+                det_nn.out
+            )  # TODO: remove once we have it working with ImgDetectionsExtended
+            script_node = pipeline.create(dai.node.Script)
+            det_bridge.out.link(script_node.inputs["det_in"])
+            input_node.link(script_node.inputs["preview"])
+            script_content = generate_script_content(
+                resize_width=rec_model_nn_archive.getInputWidth(),
+                resize_height=rec_model_nn_archive.getInputHeight(),
+            )
+            script_node.setScript(script_content)
+
+            crop_node = pipeline.create(dai.node.ImageManip)
+            crop_node.inputConfig.setWaitForMessage(True)
+
+            script_node.outputs["manip_cfg"].link(crop_node.inputConfig)
+            script_node.outputs["manip_img"].link(crop_node.inputImage)
+
+            rec_nn = pipeline.create(PN).build(
+                crop_node.out, rec_model_nn_archive
+            )
+
+            # detections and recognitions sync
+            gather_data_node = pipeline.create(GD).build(self.args.fps_limit)
+            rec_nn.out.link(gather_data_node.input_data)
+            det_nn.out.link(gather_data_node.input_reference)
+
+            # annotation
+            self.annotation_node = pipeline.create(AN).build(gather_data_node.out)
+
+            # Store reference to det_nn for later use
+            self.det_nn = det_nn
+
+            # visualization
+            if self.visualizer:
+                self.visualizer.addTopic("Video", det_nn.passthrough, "images")
+                self.visualizer.addTopic("Emotions", self.annotation_node.out, "images")
+
+            self.get_logger().info("Pipeline configuration complete.")
+            self.get_logger().info("Pipeline created.")
+
+            # Start the pipeline
+            self.get_logger().info("Starting pipeline...")
+            pipeline.start()
+            if self.visualizer:
+                self.visualizer.registerPipeline(pipeline)
+
+            # Store pipeline for later use
+            self.pipeline = pipeline
+
+            # Start ROS processing thread
+            self.start_ros_processing()
+
+            # Keep the original visualization loop
+            while pipeline.isRunning():
+                if self.visualizer:
+                    key = self.visualizer.waitKey(1)
+                    if key == ord("q"):
+                        self.get_logger().info("Got q key. Exiting...")
+                        self.shutdown_event.set()
+                        break
+                else:
+                    # No visualizer, just check shutdown event
+                    import time
+                    time.sleep(0.1)
+                    if self.shutdown_event.is_set():
+                        break
+
+    def start_ros_processing(self):
+        """Start a thread to process camera data and publish to ROS topics"""
+        self.ros_processing_thread = threading.Thread(target=self.ros_processing_loop, daemon=True)
+        self.ros_processing_thread.start()
+        self.get_logger().info("Started ROS processing thread")
+
+    def ros_processing_loop(self):
+        """Process camera output and publish to ROS topics"""
+        while not self.shutdown_event.is_set():
+            try:
+                # Get annotated output with emotion data
+                if hasattr(self, 'annotation_node'):
+                    # Get the latest annotation data (this includes emotions)
+                    # The annotation node outputs frames with emotion labels
+                    # We'll process this to extract emotions
+
+                    # For now, just sleep to prevent busy loop
+                    # The actual emotion data is being displayed through visualizer
+                    # We need to hook into the annotation data stream
+                    time.sleep(0.1)
+
+                    # TODO: Extract emotion data from annotation node output
+                    # and publish to ROS topics
+
+            except Exception as e:
+                self.get_logger().error(f"Error in ROS processing: {e}")
+                time.sleep(0.1)
 
     def animation_status_callback(self, msg):
         """Update current animation name and track animation state changes."""
         previous_animation = self.current_animation_name
         self.current_animation_name = msg.data if msg.data else None
-        
+
         if previous_animation and not self.current_animation_name:
             # Animation just ended
             self.last_any_animation_end_time = self.get_clock().now()
-            self.get_logger().debug(f"Animation '{previous_animation}' ended, starting post-animation delay")
+            self.get_logger().debug(f"Animation '{previous_animation}' ended")
 
     def state_status_callback(self, msg):
         """Update current state machine state."""
         self.current_state = msg.data
-    
+
     def joint_states_callback(self, msg):
-        """Update joint states for display"""
-        # Convert joint state message to a dictionary for easy access
+        """Update joint states"""
+        import math
         for i, name in enumerate(msg.name):
             if i < len(msg.position):
-                # Convert radians to degrees for display
+                # Convert radians to degrees
                 angle_deg = math.degrees(msg.position[i])
                 self.joint_states[name] = angle_deg
 
-    def front_collision_severity_callback(self, msg):
-        """Update front/head collision status based on severity."""
-        # Convert severity to boolean collision status
-        severity = msg.data.lower()
-        is_collision = severity in ['warning', 'danger']
-        self.collision_sensors['head'] = is_collision
-
-    def left_collision_severity_callback(self, msg):
-        """Update left collision status based on severity."""
-        severity = msg.data.lower()
-        is_collision = severity in ['warning', 'danger']
-        self.collision_sensors['left'] = is_collision
-
-    def right_collision_severity_callback(self, msg):
-        """Update right collision status based on severity."""
-        severity = msg.data.lower()
-        is_collision = severity in ['warning', 'danger']
-        self.collision_sensors['right'] = is_collision
-
-    def petting_events_callback(self, msg):
-        """Handle petting events from collision node"""
-        event_data = msg.data
-        current_time = self.get_clock().now()
-        
-        if "petting_started" in event_data:
-            # Extract pressure value if available
-            try:
-                pressure = int(event_data.split(':')[1]) if ':' in event_data else 0
-                self.get_logger().info(f"Petting event detected with pressure: {pressure} - PINK FILTER ACTIVATED")
-            except (ValueError, IndexError):
-                pressure = 0
-                self.get_logger().info("Petting event detected - PINK FILTER ACTIVATED")
-            
-            self.petting_active = True
-            self.last_petting_event_time = current_time
-            
-            # Trigger PETTING state display in framebuffer
-            if self.enable_framebuffer_display and hasattr(self, 'framebuffer_display'):
-                self.framebuffer_display.trigger_petting_display()
-                
-        elif "petting_stopped" in event_data:
-            self.get_logger().info("Petting stopped - PINK FILTER WILL FADE")
-            self.petting_active = False
-            # Note: We don't clear the display timer here - let it run for 5 seconds
-
-    def _show_camera_not_found_message(self):
-        """Show camera not found message on framebuffer"""
-        try:
-            if hasattr(self, 'framebuffer_display') and self.framebuffer_display.enabled:
-                # Create a simple black frame with text
-                frame = np.zeros((480, 640, 3), dtype=np.uint8)
-                cv2.putText(frame, "Camera Not Found", (50, 200), cv2.FONT_HERSHEY_SIMPLEX, 2, (255, 255, 255), 2)
-                cv2.putText(frame, f"Retry attempt: {self.camera_retry_attempts}", (50, 300), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
-                cv2.putText(frame, f"Retrying every {self.camera_retry_interval}s", (50, 350), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
-                
-                self.framebuffer_display.update_display(
-                    frame,
-                    emotion="N/A",
-                    distance=None,
-                    face_bboxes=[],
-                    animation_name=self.current_animation_name,
-                    state=self.current_state,
-                    voice_info={'active': False},
-                    system_metrics=self.system_metrics,
-                    touch_sensors=self.touch_sensors,
-                    collision_sensors=self.collision_sensors,
-                    joint_states=self.joint_states,
-                    lamp_info={'status': self.lamp_status, 'last_update': time.time()}
-                )
-        except Exception as e:
-            self.get_logger().error(f"Error showing camera not found message: {e}")
-
-    def _show_camera_attempting_connection(self):
-        """Show camera attempting connection message on framebuffer"""
-        try:
-            if hasattr(self, 'framebuffer_display') and self.framebuffer_display.enabled:
-                # Create a simple black frame with text
-                frame = np.zeros((480, 640, 3), dtype=np.uint8)
-                cv2.putText(frame, "Connecting Camera...", (50, 200), cv2.FONT_HERSHEY_SIMPLEX, 2, (255, 255, 0), 2)
-                cv2.putText(frame, f"Attempt: {self.camera_retry_attempts}", (50, 300), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 0), 2)
-                
-                self.framebuffer_display.update_display(
-                    frame,
-                    emotion="N/A",
-                    distance=None,
-                    face_bboxes=[],
-                    animation_name=self.current_animation_name,
-                    state=self.current_state,
-                    voice_info={'active': False},
-                    system_metrics=self.system_metrics,
-                    touch_sensors=self.touch_sensors,
-                    collision_sensors=self.collision_sensors,
-                    joint_states=self.joint_states,
-                    lamp_info={'status': self.lamp_status, 'last_update': time.time()}
-                )
-        except Exception as e:
-            self.get_logger().error(f"Error showing camera attempting connection message: {e}")
-
-    def _show_camera_reconnected_message(self):
-        """Show camera reconnected message on framebuffer"""
-        try:
-            if hasattr(self, 'framebuffer_display') and self.framebuffer_display.enabled:
-                # Create a simple black frame with text
-                frame = np.zeros((480, 640, 3), dtype=np.uint8)
-                cv2.putText(frame, "Camera Connected!", (50, 200), cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 255, 0), 2)
-                cv2.putText(frame, "Resuming operation...", (50, 300), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-                
-                self.framebuffer_display.update_display(
-                    frame,
-                    emotion="N/A",
-                    distance=None,
-                    face_bboxes=[],
-                    animation_name=self.current_animation_name,
-                    state=self.current_state,
-                    voice_info={'active': False},
-                    system_metrics=self.system_metrics,
-                    touch_sensors=self.touch_sensors,
-                    collision_sensors=self.collision_sensors,
-                    joint_states=self.joint_states,
-                    lamp_info={'status': self.lamp_status, 'last_update': time.time()}
-                )
-                
-                # Show success message briefly
-                time.sleep(1.0)
-        except Exception as e:
-            self.get_logger().error(f"Error showing camera reconnected message: {e}")
-
-    def _show_camera_disconnected_message(self):
-        """Show camera disconnected message on framebuffer"""
-        try:
-            if hasattr(self, 'framebuffer_display') and self.framebuffer_display.enabled:
-                # Create a simple black frame with text
-                frame = np.zeros((480, 640, 3), dtype=np.uint8)
-                cv2.putText(frame, "Camera Disconnected", (50, 200), cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 0, 255), 2)
-                cv2.putText(frame, "Attempting reconnection...", (50, 300), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
-                
-                self.framebuffer_display.update_display(
-                    frame,
-                    emotion="N/A",
-                    distance=None,
-                    face_bboxes=[],
-                    animation_name=self.current_animation_name,
-                    state=self.current_state,
-                    voice_info={'active': False},
-                    system_metrics=self.system_metrics,
-                    touch_sensors=self.touch_sensors,
-                    collision_sensors=self.collision_sensors,
-                    joint_states=self.joint_states,
-                    lamp_info={'status': self.lamp_status, 'last_update': time.time()}
-                )
-        except Exception as e:
-            self.get_logger().error(f"Error showing camera disconnected message: {e}")
-
-    def initialize_camera(self):
-        """Initialize the camera system. Returns True if successful, False otherwise."""
-        try:
-            # Clean up any existing device first
-            if hasattr(self, 'device') and self.device is not None:
-                try:
-                    self.device.close()
-                except:
-                    pass
-                self.device = None
-            
-            # Check if a device is available
-            device_infos = dai.Device.getAllAvailableDevices()
-            if not device_infos:
-                self.get_logger().warn("No DepthAI devices found")
-                return False
-            
-            self.get_logger().info(f"Found {len(device_infos)} DepthAI device(s)")
-            
-            # Initialize device and determine if stereo is available
-            self.device = dai.Device()
-            self.stereo = 1 < len(self.device.getConnectedCameras())
-            self.get_logger().info(f"{'Stereo' if self.stereo else 'Mono'} camera detected")
-            
-            # Start pipeline
-            self.device.startPipeline(self.create_pipeline())
-            
-            # Initialize sync and queues
-            self.sync = TwoStageHostSeqSync()
-            self.queues = {}
-            
-            # Create output queues
-            for name in ["color", "detection", "recognition"]:
-                self.queues[name] = self.device.getOutputQueue(name)
-            
-            # Create timer callback for processing camera data if not already created
-            if self.timer is None:
-                # Increased frequency for lower latency camera feed
-                self.timer = self.create_timer(0.02, self.process_camera_data)  # ~50fps for minimal latency
-            
-            self.camera_connected = True
-            self.get_logger().info("Camera initialization completed successfully")
-            return True
-            
-        except Exception as e:
-            self.get_logger().error(f'Failed to initialize camera: {e}')
-            # Clean up any partial initialization
-            if hasattr(self, 'device') and self.device is not None:
-                try:
-                    self.device.close()
-                except:
-                    pass
-                self.device = None
-            self.camera_connected = False
-            return False
-    
-    def create_pipeline(self):
-        pipeline = dai.Pipeline()
-
-        if self.verbose:
-            self.get_logger().info("Creating Color Camera...")
-        cam = pipeline.create(dai.node.ColorCamera)
-        cam.setPreviewSize(1080, 1080)
-        cam.setResolution(dai.ColorCameraProperties.SensorResolution.THE_1080_P)
-        cam.setInterleaved(False)
-        cam.setBoardSocket(dai.CameraBoardSocket.RGB)
-        
-        # Set camera orientation based on parameter
-        if self.camera_rotation:
-            cam.setImageOrientation(dai.CameraImageOrientation.ROTATE_180_DEG)
-            if self.verbose:
-                self.get_logger().info("Camera image orientation: ROTATE_180_DEG")
-        else:
-            cam.setImageOrientation(dai.CameraImageOrientation.AUTO)
-            if self.verbose:
-                self.get_logger().info("Camera image orientation: AUTO")
-
-        cam_xout = pipeline.create(dai.node.XLinkOut)
-        cam_xout.setStreamName("color")
-        cam.preview.link(cam_xout.input)
-
-        # Workaround: remove in 2.18, use `cam.setPreviewNumFramesPool(10)`
-        # This manip uses 15*3.5 MB => 52 MB of RAM.
-        copy_manip = pipeline.create(dai.node.ImageManip)
-        copy_manip.setNumFramesPool(15)
-        copy_manip.setMaxOutputFrameSize(3499200)
-        cam.preview.link(copy_manip.inputImage)
-
-        # ImageManip that will crop the frame before sending it to the Face detection NN node
-        face_det_manip = pipeline.create(dai.node.ImageManip)
-        face_det_manip.initialConfig.setResize(300, 300)
-        face_det_manip.initialConfig.setFrameType(dai.RawImgFrame.Type.RGB888p)
-        copy_manip.out.link(face_det_manip.inputImage)
-
-        if self.stereo:
-            monoLeft = pipeline.create(dai.node.MonoCamera)
-            monoLeft.setResolution(dai.MonoCameraProperties.SensorResolution.THE_400_P)
-            monoLeft.setBoardSocket(dai.CameraBoardSocket.LEFT)
-
-            monoRight = pipeline.create(dai.node.MonoCamera)
-            monoRight.setResolution(dai.MonoCameraProperties.SensorResolution.THE_400_P)
-            monoRight.setBoardSocket(dai.CameraBoardSocket.RIGHT)
-
-            stereo = pipeline.create(dai.node.StereoDepth)
-            stereo.setDefaultProfilePreset(dai.node.StereoDepth.PresetMode.HIGH_DENSITY)
-            stereo.setDepthAlign(dai.CameraBoardSocket.RGB)
-            monoLeft.out.link(stereo.left)
-            monoRight.out.link(stereo.right)
-
-            # Spatial Detection network if OAK-D
-            if self.verbose:
-                self.get_logger().info("OAK-D detected, spatial coordinates will be available")
-            face_det_nn = pipeline.create(dai.node.MobileNetSpatialDetectionNetwork)
-            face_det_nn.setBoundingBoxScaleFactor(0.8)
-            face_det_nn.setDepthLowerThreshold(100)
-            face_det_nn.setDepthUpperThreshold(5000)
-            stereo.depth.link(face_det_nn.inputDepth)
-        else: # Detection network if OAK-1
-            if self.verbose:
-                self.get_logger().info("OAK-1 detected, spatial coordinates won't be available")
-            face_det_nn = pipeline.create(dai.node.MobileNetDetectionNetwork)
-
-        face_det_nn.setConfidenceThreshold(0.5)
-        face_det_nn.setBlobPath(blobconverter.from_zoo(name="face-detection-retail-0004", shaves=6))
-        face_det_manip.out.link(face_det_nn.input)
-
-        # Send face detections to the host (for bounding boxes)
-        face_det_xout = pipeline.create(dai.node.XLinkOut)
-        face_det_xout.setStreamName("detection")
-        face_det_nn.out.link(face_det_xout.input)
-
-        # Script node will take the output from the face detection NN as an input and set ImageManipConfig
-        # to the 'age_gender_manip' to crop the initial frame
-        image_manip_script = pipeline.create(dai.node.Script)
-        face_det_nn.out.link(image_manip_script.inputs['face_det_in'])
-
-        # Only send metadata, we are only interested in timestamp, so we can sync
-        # depth frames with NN output
-        face_det_nn.passthrough.link(image_manip_script.inputs['passthrough'])
-        copy_manip.out.link(image_manip_script.inputs['preview'])
-
-        image_manip_script.setScript("""
-        import time
-        msgs = dict()
-
-        def add_msg(msg, name, seq = None):
-            global msgs
-            if seq is None:
-                seq = msg.getSequenceNum()
-            seq = str(seq)
-
-            # Each seq number has it's own dict of msgs
-            if seq not in msgs:
-                msgs[seq] = dict()
-            msgs[seq][name] = msg
-
-            # To avoid freezing (not necessary for this ObjDet model)
-            if 15 < len(msgs):
-                node.warn(f"Removing first element! len {len(msgs)}")
-                msgs.popitem() # Remove first element
-
-        def get_msgs():
-            global msgs
-            seq_remove = [] # Arr of sequence numbers to get deleted
-            for seq, syncMsgs in msgs.items():
-                seq_remove.append(seq) # Will get removed from dict if we find synced msgs pair
-
-                # Check if we have both detections and color frame with this sequence number
-                if len(syncMsgs) == 2: # 1 frame, 1 detection
-                    for rm in seq_remove:
-                        del msgs[rm]
-                    return syncMsgs # Returned synced msgs
-            return None
-
-        def correct_bb(bb):
-            if bb.xmin < 0: bb.xmin = 0.001
-            if bb.ymin < 0: bb.ymin = 0.001
-            if bb.xmax > 1: bb.xmax = 0.999
-            if bb.ymax > 1: bb.ymax = 0.999
-            return bb
-
-        while True:
-            time.sleep(0.001) # Avoid lazy looping
-
-            preview = node.io['preview'].tryGet()
-            if preview is not None:
-                add_msg(preview, 'preview')
-
-            face_dets = node.io['face_det_in'].tryGet()
-            if face_dets is not None:
-                # TODO: in 2.18.0.0 use face_dets.getSequenceNum()
-                passthrough = node.io['passthrough'].get()
-                seq = passthrough.getSequenceNum()
-                add_msg(face_dets, 'dets', seq)
-
-            sync_msgs = get_msgs()
-            if sync_msgs is not None:
-                img = sync_msgs['preview']
-                dets = sync_msgs['dets']
-                for i, det in enumerate(dets.detections):
-                    cfg = ImageManipConfig()
-                    correct_bb(det)
-                    cfg.setCropRect(det.xmin, det.ymin, det.xmax, det.ymax)
-                    cfg.setResize(64, 64)
-                    cfg.setKeepAspectRatio(False)
-                    node.io['manip_cfg'].send(cfg)
-                    node.io['manip_img'].send(img)
-        """)
-
-        manip_manip = pipeline.create(dai.node.ImageManip)
-        manip_manip.initialConfig.setResize(64, 64)
-        manip_manip.setWaitForConfigInput(True)
-        image_manip_script.outputs['manip_cfg'].link(manip_manip.inputConfig)
-        image_manip_script.outputs['manip_img'].link(manip_manip.inputImage)
-
-        # This ImageManip will crop the mono frame based on the NN detections. Resulting image will be the cropped
-        # face that was detected by the face-detection NN.
-        emotions_nn = pipeline.create(dai.node.NeuralNetwork)
-        emotions_nn.setBlobPath(blobconverter.from_zoo(name="emotions-recognition-retail-0003", shaves=6))
-        manip_manip.out.link(emotions_nn.input)
-
-        recognition_xout = pipeline.create(dai.node.XLinkOut)
-        recognition_xout.setStreamName("recognition")
-        emotions_nn.out.link(recognition_xout.input)
-
-        return pipeline
-
-    def process_camera_data(self):
-        """Process camera data with minimal latency for camera feed"""
-        # Skip if camera is not connected
-        if not self.camera_connected or self.device is None:
-            return
-        
-        try:
-            # Check if device is still valid before processing
-            if not self.device or not hasattr(self.device, 'getOutputQueue'):
-                self.get_logger().warn("Device is invalid, triggering reconnection")
-                self.handle_camera_disconnection()
-                return
-            
-            # Process all available messages
-            for name, q in self.queues.items():
-                try:
-                    # Add all msgs (color frames, object detections and age/gender recognitions) to the Sync class.
-                    if q.has():
-                        self.sync.add_msg(q.get(), name)
-                except Exception as e:
-                    # Individual queue error - might indicate device issue
-                    self.get_logger().error(f"Error accessing queue '{name}': {e}")
-                    self.consecutive_camera_errors += 1
-                    if self.consecutive_camera_errors >= self.max_consecutive_errors:
-                        self.handle_camera_disconnection()
-                    return
-
-            msgs = self.sync.get_msgs()
-            if msgs is not None:
-                frame = msgs["color"].getCvFrame()
-                detections = msgs["detection"].detections
-                recognitions = msgs["recognition"]
-                timestamp = self.get_clock().now()
-
-                # HIGH PRIORITY: Publish camera feed immediately for minimal latency
-                if self.publish_camera_feed and frame is not None:
-                    try:
-                        # Convert and publish frame with minimal processing
-                        image_msg = self.bridge.cv2_to_imgmsg(frame, encoding="bgr8")
-                        image_msg.header.stamp = timestamp.to_msg()
-                        image_msg.header.frame_id = "camera"
-                        self.image_publisher.publish(image_msg)
-                    except Exception as e:
-                        self.get_logger().error(f"Error publishing camera feed: {e}")
-
-                # Store frame for display (thread-safe)
-                with self.data_lock:
-                    self.latest_frame_for_display = frame.copy()
-
-                # LOW PRIORITY: Queue for emotion processing (can have latency)
-                if detections:
-                    try:
-                        # Non-blocking queue put - drop if queue is full to maintain low latency
-                        self.processing_queue.put_nowait((frame.copy(), detections, recognitions, timestamp))
-                    except queue.Full:
-                        # Drop oldest item and add new one
-                        try:
-                            self.processing_queue.get_nowait()
-                            self.processing_queue.put_nowait((frame.copy(), detections, recognitions, timestamp))
-                        except queue.Empty:
-                            pass
-                else:
-                    # No faces detected - update display data
-                    with self.data_lock:
-                        self.latest_face_bboxes = []
-                        
-                # Reset error counter on successful processing
-                self.consecutive_camera_errors = 0
-                
-        except RuntimeError as e:
-            # Handle specific RuntimeError that indicates communication issues
-            if "Communication exception" in str(e) or "X_LINK_ERROR" in str(e):
-                self.consecutive_camera_errors += 1
-                
-                # Throttle error logging
-                current_time = self.get_clock().now()
-                time_since_last_log = (current_time - self.last_camera_error_log_time).nanoseconds / 1e9
-                
-                if time_since_last_log >= self.camera_error_log_interval:
-                    self.get_logger().error(f"Camera communication error: {e} (consecutive errors: {self.consecutive_camera_errors})")
-                    self.last_camera_error_log_time = current_time
-                
-                # Trigger reconnection immediately on communication errors
-                if self.consecutive_camera_errors >= 2:  # Lower threshold for communication errors
-                    self.get_logger().warn("Camera communication failure detected, attempting reconnection...")
-                    self.handle_camera_disconnection()
-            else:
-                # Other RuntimeErrors
-                self.get_logger().error(f"Runtime error in camera processing: {e}")
-                self.consecutive_camera_errors += 1
-                if self.consecutive_camera_errors >= self.max_consecutive_errors:
-                    self.handle_camera_disconnection()
-        except Exception as e:
-            # Increment error counter for any other errors
-            self.consecutive_camera_errors += 1
-            
-            # Throttle error logging
-            current_time = self.get_clock().now()
-            time_since_last_log = (current_time - self.last_camera_error_log_time).nanoseconds / 1e9
-            
-            if time_since_last_log >= self.camera_error_log_interval:
-                self.get_logger().error(f"Error processing camera data: {e} (consecutive errors: {self.consecutive_camera_errors})")
-                self.last_camera_error_log_time = current_time
-            
-            # Check if we should attempt reconnection
-            if self.consecutive_camera_errors >= self.max_consecutive_errors:
-                self.get_logger().warn(f"Camera appears to be disconnected after {self.consecutive_camera_errors} consecutive errors. Attempting reconnection...")
-                self.handle_camera_disconnection()
-
-    def process_emotions(self, frame, detections, recognitions, timestamp):
-        """Process emotion detection (can have latency - runs in background thread)"""
-        try:
-            # Clear face bboxes if no detections
-            if not detections:
-                with self.data_lock:
-                    self.latest_face_bboxes = []
-                return
-            
-            # Store all face bounding boxes
-            face_bboxes = []
-            for detection in detections:
-                bbox = frame_norm(frame, (detection.xmin, detection.ymin, detection.xmax, detection.ymax))
-                face_bboxes.append(bbox)
-            
-            # Update face bboxes (thread-safe)
-            with self.data_lock:
-                self.latest_face_bboxes = face_bboxes.copy()
-            
-            # Find the closest person if stereo camera is available
-            closest_person_idx = 0
-            if self.stereo and len(detections) > 1:
-                min_distance = float('inf')
-                for i, detection in enumerate(detections):
-                    person_distance = detection.spatialCoordinates.z / 1000.0  # mm to m
-                    if person_distance < min_distance:
-                        min_distance = person_distance
-                        closest_person_idx = i
-                        
-                if self.verbose:
-                    self.get_logger().info(f"Multiple people detected, focusing on closest person at index {closest_person_idx}")
-            
-            # Process only the closest person (or the first one if no distance data)
-            detection = detections[closest_person_idx]
-            rec = recognitions[closest_person_idx]
-
-            emotion_results = np.array(rec.getFirstLayerFp16())
-            emotion_name = emotions[np.argmax(emotion_results)]
-            
-            # Store for display and update detection time (thread-safe)
-            with self.data_lock:
-                self.latest_emotion = emotion_name
-                self.last_emotion_detection_time = timestamp
-                # Update display tracking when we detect a new emotion
-                self.displayed_emotion = emotion_name
-                self.last_emotion_display_time = timestamp
-
-            # Always publish current emotion for monitoring/debugging
-            emotion_msg = String()
-            emotion_msg.data = emotion_name
-            self.emotion_publisher.publish(emotion_msg)
-            
-            # Get person distance if stereo camera is available
-            person_distance = None
-            if self.stereo:
-                distance_msg = Float32()
-                # Convert from millimeters to meters
-                raw_distance = detection.spatialCoordinates.z / 1000.0
-                
-                # Filter out invalid readings
-                if raw_distance <= 0.001:  # Too close to be real
-                    person_distance = None
-                    if self.verbose:
-                        self.get_logger().debug(f"Invalid distance reading: {raw_distance:.3f}m")
-                else:
-                    person_distance = raw_distance
-                    with self.data_lock:
-                        self.latest_distance = person_distance
-                    distance_msg.data = person_distance
-                    self.distance_publisher.publish(distance_msg)
-                
-                if self.verbose and person_distance is not None:
-                    self.get_logger().info(f"Tracked person with emotion: {emotion_name} at {person_distance:.2f}m")
-            else:
-                if self.verbose:
-                    self.get_logger().info(f"Tracked person with emotion: {emotion_name}")
-            
-            # Add to emotion buffer with ROS2 timestamp
-            self.emotion_buffer.append((emotion_name, person_distance, timestamp))
-            
-            # Trigger animations based on buffered emotions if enabled
-            if self.react_to_emotions:
-                self.process_emotion_buffer()
-                
-        except Exception as e:
-            self.get_logger().error(f"Error processing emotions: {e}")
-
-    def create_camera_retry_timer(self):
-        """Create a timer to retry camera connection periodically"""
-        if hasattr(self, 'camera_retry_timer') and self.camera_retry_timer is not None:
-            self.camera_retry_timer.cancel()
-        
-        self.camera_retry_timer = self.create_timer(
-            self.camera_retry_interval,
-            self.retry_camera_connection
-        )
-        self.get_logger().info(f'Created camera retry timer with {self.camera_retry_interval}s interval')
-
-    def retry_camera_connection(self):
-        """Attempt to reconnect to the camera."""
-        self.camera_retry_attempts += 1
-        self.get_logger().info(f'Retrying camera connection (attempt {self.camera_retry_attempts})...')
-        
-        # Show attempting connection message
-        if self.enable_framebuffer_display and hasattr(self, 'framebuffer_display'):
-            self._show_camera_attempting_connection()
-        
-        if self.initialize_camera():
-            self.get_logger().info('Camera reconnection successful!')
-            # Restart processing threads
-            self.start_processing_threads()
-            # Show success message briefly
-            if self.enable_framebuffer_display and hasattr(self, 'framebuffer_display'):
-                self._show_camera_reconnected_message()
-            # Cancel the retry timer
-            if hasattr(self, 'camera_retry_timer') and self.camera_retry_timer is not None:
-                self.camera_retry_timer.cancel()
-                self.camera_retry_timer = None
-            self.camera_retry_attempts = 0
-            # Reset error tracking
-            self.consecutive_camera_errors = 0
-        else:
-            if self.max_retry_attempts > 0 and self.camera_retry_attempts >= self.max_retry_attempts:
-                self.get_logger().error(f'Maximum camera retry attempts ({self.max_retry_attempts}) reached. Giving up.')
-                if hasattr(self, 'camera_retry_timer') and self.camera_retry_timer is not None:
-                    self.camera_retry_timer.cancel()
-                    self.camera_retry_timer = None
-            else:
-                self.get_logger().warn(f'Camera still not found. Will retry again in {self.camera_retry_interval} seconds...')
-                # Update framebuffer with current retry attempt
-                if self.enable_framebuffer_display and hasattr(self, 'framebuffer_display'):
-                    self._show_camera_not_found_message()
-
-    def handle_camera_disconnection(self):
-        """Handle camera disconnection by cleaning up and starting retry timer"""
-        self.get_logger().warn("Camera disconnection detected - starting recovery process")
-        
-        # Mark camera as disconnected
-        self.camera_connected = False
-        
-        # Show disconnection message on framebuffer if enabled
-        if self.enable_framebuffer_display and hasattr(self, 'framebuffer_display'):
-            self._show_camera_disconnected_message()
-        
-        # Clean up the device more thoroughly
-        if self.device is not None:
-            try:
-                self.get_logger().info("Closing camera device connection")
-                self.device.close()
-            except Exception as e:
-                self.get_logger().debug(f"Error closing device (expected during disconnection): {e}")
-            finally:
-                self.device = None
-        
-        # Reset camera-related state
-        self.consecutive_camera_errors = 0
-        self.queues = {}
-        self.sync = None
-        
-        # Cancel existing timer if running
-        if hasattr(self, 'timer') and self.timer is not None:
-            self.timer.cancel()
-            self.timer = None
-        
-        # Start retry timer if not already running
-        if not hasattr(self, 'camera_retry_timer') or self.camera_retry_timer is None:
-            self.get_logger().info(f"Starting camera reconnection timer (retry every {self.camera_retry_interval} seconds)")
-            self.create_camera_retry_timer()
-        else:
-            self.get_logger().debug("Camera retry timer already active")
-
-    def process_camera_data(self):
-        """Process camera data with minimal latency for camera feed"""
-        # Skip if camera is not connected
-        if not self.camera_connected or self.device is None:
-            return
-        
-        try:
-            # Check if device is still valid before processing
-            if not self.device or not hasattr(self.device, 'getOutputQueue'):
-                self.get_logger().warn("Device is invalid, triggering reconnection")
-                self.handle_camera_disconnection()
-                return
-            
-            # Process all available messages
-            for name, q in self.queues.items():
-                try:
-                    # Add all msgs (color frames, object detections and age/gender recognitions) to the Sync class.
-                    if q.has():
-                        self.sync.add_msg(q.get(), name)
-                except Exception as e:
-                    # Individual queue error - might indicate device issue
-                    self.get_logger().error(f"Error accessing queue '{name}': {e}")
-                    self.consecutive_camera_errors += 1
-                    if self.consecutive_camera_errors >= self.max_consecutive_errors:
-                        self.handle_camera_disconnection()
-                    return
-
-            msgs = self.sync.get_msgs()
-            if msgs is not None:
-                frame = msgs["color"].getCvFrame()
-                detections = msgs["detection"].detections
-                recognitions = msgs["recognition"]
-                timestamp = self.get_clock().now()
-
-                # HIGH PRIORITY: Publish camera feed immediately for minimal latency
-                if self.publish_camera_feed and frame is not None:
-                    try:
-                        # Convert and publish frame with minimal processing
-                        image_msg = self.bridge.cv2_to_imgmsg(frame, encoding="bgr8")
-                        image_msg.header.stamp = timestamp.to_msg()
-                        image_msg.header.frame_id = "camera"
-                        self.image_publisher.publish(image_msg)
-                    except Exception as e:
-                        self.get_logger().error(f"Error publishing camera feed: {e}")
-
-                # Store frame for display (thread-safe)
-                with self.data_lock:
-                    self.latest_frame_for_display = frame.copy()
-
-                # LOW PRIORITY: Queue for emotion processing (can have latency)
-                if detections:
-                    try:
-                        # Non-blocking queue put - drop if queue is full to maintain low latency
-                        self.processing_queue.put_nowait((frame.copy(), detections, recognitions, timestamp))
-                    except queue.Full:
-                        # Drop oldest item and add new one
-                        try:
-                            self.processing_queue.get_nowait()
-                            self.processing_queue.put_nowait((frame.copy(), detections, recognitions, timestamp))
-                        except queue.Empty:
-                            pass
-                else:
-                    # No faces detected - update display data
-                    with self.data_lock:
-                        self.latest_face_bboxes = []
-                        
-                # Reset error counter on successful processing
-                self.consecutive_camera_errors = 0
-                
-        except RuntimeError as e:
-            # Handle specific RuntimeError that indicates communication issues
-            if "Communication exception" in str(e) or "X_LINK_ERROR" in str(e):
-                self.consecutive_camera_errors += 1
-                
-                # Throttle error logging
-                current_time = self.get_clock().now()
-                time_since_last_log = (current_time - self.last_camera_error_log_time).nanoseconds / 1e9
-                
-                if time_since_last_log >= self.camera_error_log_interval:
-                    self.get_logger().error(f"Camera communication error: {e} (consecutive errors: {self.consecutive_camera_errors})")
-                    self.last_camera_error_log_time = current_time
-                
-                # Trigger reconnection immediately on communication errors
-                if self.consecutive_camera_errors >= 2:  # Lower threshold for communication errors
-                    self.get_logger().warn("Camera communication failure detected, attempting reconnection...")
-                    self.handle_camera_disconnection()
-            else:
-                # Other RuntimeErrors
-                self.get_logger().error(f"Runtime error in camera processing: {e}")
-                self.consecutive_camera_errors += 1
-                if self.consecutive_camera_errors >= self.max_consecutive_errors:
-                    self.handle_camera_disconnection()
-        except Exception as e:
-            # Increment error counter for any other errors
-            self.consecutive_camera_errors += 1
-            
-            # Throttle error logging
-            current_time = self.get_clock().now()
-            time_since_last_log = (current_time - self.last_camera_error_log_time).nanoseconds / 1e9
-            
-            if time_since_last_log >= self.camera_error_log_interval:
-                self.get_logger().error(f"Error processing camera data: {e} (consecutive errors: {self.consecutive_camera_errors})")
-                self.last_camera_error_log_time = current_time
-            
-            # Check if we should attempt reconnection
-            if self.consecutive_camera_errors >= self.max_consecutive_errors:
-                self.get_logger().warn(f"Camera appears to be disconnected after {self.consecutive_camera_errors} consecutive errors. Attempting reconnection...")
-                self.handle_camera_disconnection()
-
-    def _can_trigger_emotion_animation(self) -> bool:
-        """Check if we can trigger an emotion-based animation right now."""
-        current_time = self.get_clock().now()
-        
-        # Check if any animation is currently running
-        if self.current_animation_name:
-            self.get_logger().debug(f"Cannot trigger emotion animation: '{self.current_animation_name}' is currently running")
-            return False
-        
-        # Check if we're in a state that allows emotion animations
-        if self.current_state not in ['IDLE', 'EMOTION_REACTING']:
-            self.get_logger().debug(f"Cannot trigger emotion animation in state: {self.current_state}")
-            return False
-        
-        # Check post-animation delay (after ANY animation, not just emotion ones)
-        time_since_any_animation = (current_time - self.last_any_animation_end_time).nanoseconds / 1e9
-        if time_since_any_animation < self.post_animation_delay:
-            remaining_delay = self.post_animation_delay - time_since_any_animation
-            self.get_logger().debug(f"Post-animation delay active: {remaining_delay:.1f}s remaining")
-            return False
-        
-        # Check emotion-specific cooldown
-        time_since_last_emotion_animation = (current_time - self.last_animation_time).nanoseconds / 1e9
-        if time_since_last_emotion_animation < self.emotion_cooldown:
-            remaining_cooldown = self.emotion_cooldown - time_since_last_emotion_animation
-            self.get_logger().debug(f"Emotion cooldown active: {remaining_cooldown:.1f}s remaining")
-            return False
-        
-        # Check if there's an active goal handle
-        if self._active_goal_handle and not getattr(self._active_goal_handle, '_finished', False):
-            self.get_logger().debug("Cannot trigger emotion animation: active goal handle exists")
-            return False
-        
-        return True
-
-    def process_emotion_buffer(self):
-        """Process the emotion buffer and trigger an animation if conditions are met"""
-        current_time = self.get_clock().now()
-        
-        # Check if we've collected enough data and if the buffer duration has elapsed
-        if (len(self.emotion_buffer) > 0 and 
-                ((current_time - self.emotion_buffer_start_time).nanoseconds / 1e9) >= self.emotion_buffer_duration):
-            
-            # Early check if we can trigger animations at all
-            if not self._can_trigger_emotion_animation():
-                self.get_logger().debug("Clearing emotion buffer - cannot trigger animation right now")
-                # Reset the buffer and start time
-                self.emotion_buffer.clear()
-                self.emotion_buffer_start_time = current_time
-                return
-            
-            # Get the current elapsed time since last animation
-            time_since_last_animation = (current_time - self.last_animation_time).nanoseconds / 1e9
-            
-            # Count occurrences of each emotion in the buffer
-            emotion_counts = {}
-            valid_distances = []
-            
-            for emotion, distance, timestamp in self.emotion_buffer:
-                emotion_counts[emotion] = emotion_counts.get(emotion, 0) + 1
-                # Filter out invalid distance readings (0.00m or >4.0m likely errors)
-                if distance is not None and 0.3 < distance < 4.0:
-                    valid_distances.append(distance)
-            
-            # Calculate average distance from valid readings only
-            avg_distance = None
-            if valid_distances:
-                avg_distance = sum(valid_distances) / len(valid_distances)
-                if self.verbose:
-                    self.get_logger().debug(f"Valid distances: {len(valid_distances)}/{len(self.emotion_buffer)}, avg: {avg_distance:.2f}m")
-            
-            # Check if we have at least 3 emotion samples
-            if len(self.emotion_buffer) < 3:
-                self.get_logger().debug(f"Not enough emotion samples ({len(self.emotion_buffer)}), need at least 3")
-                # Reset buffer and start time
-                self.emotion_buffer.clear()
-                self.emotion_buffer_start_time = current_time
-                return
-            
-            # Find the most common emotion
-            if emotion_counts:
-                # Sort emotions by count (highest first)
-                sorted_emotions = sorted(emotion_counts.items(), key=lambda x: x[1], reverse=True)
-                dominant_emotion = sorted_emotions[0][0]
-                
-                # Calculate percentage of dominant emotion
-                dominant_percentage = (emotion_counts[dominant_emotion] / len(self.emotion_buffer)) * 100
-                
-                # Log buffer statistics
-                if self.verbose:
-                    self.get_logger().info(f"Buffer stats: {emotion_counts}, samples: {len(self.emotion_buffer)}")
-                
-                # Only trigger if dominant enough (using configurable threshold)
-                if dominant_percentage >= self.emotion_threshold:
-                    # Double-check we can still trigger (state might have changed)
-                    if not self._can_trigger_emotion_animation():
-                        self.get_logger().debug("Animation conditions changed during processing - skipping trigger")
-                    # Check if this emotion is too repetitive
-                    elif self._is_too_repetitive(dominant_emotion):
-                        self.get_logger().info(f"Emotion {dominant_emotion} is repetitive, but checking if we should override...")
-                        
-                        # If it's been a long time since last animation, allow it anyway
-                        if time_since_last_animation > self.emotion_cooldown * 2:
-                            self.get_logger().info(f"Overriding repetition check due to long idle time ({time_since_last_animation:.1f}s)")
-                            # Trigger the animation
-                            self.trigger_animation(dominant_emotion, avg_distance)
-                        else:
-                            self.get_logger().info(f"Skipping repetitive emotion: {dominant_emotion}")
-                    else:
-                        self.get_logger().info(f"Triggering animation for emotion: {dominant_emotion} ({dominant_percentage:.1f}%)")
-                        # Trigger the animation
-                        self.trigger_animation(dominant_emotion, avg_distance)
-                else:
-                    self.get_logger().debug(f"No dominant emotion found, highest: {dominant_emotion} ({dominant_percentage:.1f}%)")
-            
-            # Reset the buffer and start time
-            self.emotion_buffer.clear()
-            self.emotion_buffer_start_time = current_time
-
-    def _is_too_repetitive(self, emotion):
-        """Check if an emotion is being detected too repetitively"""
-        # If it's the same as the last triggered emotion, check how long ago that was
-        if emotion == self.last_emotion:
-            # But allow it if enough time has passed
-            current_time = self.get_clock().now()
-            time_since_last = (current_time - self.last_animation_time).nanoseconds / 1e9
-            if time_since_last > self.emotion_cooldown * 1.5:  # 7.5 seconds
-                return False  # Allow it after extended time
-            return True
-            
-        # If this emotion appears too frequently in our recent history
-        if len(self.recent_emotions) >= 3:  # Check last 3 animations
-            emotion_counts = {}
-            for e in self.recent_emotions:
-                emotion_counts[e] = emotion_counts.get(e, 0) + 1
-                
-            # If this emotion was ALL of our last 3 animations, skip it
-            if emotion in emotion_counts and emotion_counts[emotion] >= 3:
-                return True
-        
-        return False
-
     def trigger_animation(self, emotion, distance=None):
         """Trigger an animation based on detected emotion using the action system"""
+        # Check if action server is available
+        if not self._animation_action_client.wait_for_server(timeout_sec=0.1):
+            self.get_logger().debug("Animation action server not available")
+            return
+
         # Update state with ROS2 time
         self.last_emotion = emotion
         self.last_animation_time = self.get_clock().now()
-        
-        # When triggering an animation, update display emotion tracking
-        with self.data_lock:
-            self.displayed_emotion = emotion
-            self.last_emotion_display_time = self.last_animation_time
-        
-        # Add to recent emotions history
-        self.recent_emotions.append(emotion)
-        
+
         # Get corresponding animation options
         if emotion in self.emotion_to_animation:
             animation_options = self.emotion_to_animation[emotion]
             # Randomly select one animation from the available options
             animation = np.random.choice(animation_options)
-            
+
             # Add speed modifier based on distance if available
             speed_modifier = 1.0
             if distance is not None:
@@ -1553,18 +402,18 @@ class CameraInteraction(Node):
                     # Map 0.5m->1.5 (faster) and 3.0m->0.7 (slower)
                     speed = 1.5 - ((distance - 0.5) * 0.32)
                     speed_modifier = speed
-                
+
             # Cancel any existing animation goal
             if self._active_goal_handle:
                 self.get_logger().info("Cancelling previous emotion-triggered animation")
                 self._active_goal_handle.cancel_goal_async()
-            
+
             # Notify animation command that this is an emotion trigger
             self._notify_animation_trigger('emotion')
-            
+
             # Send animation goal using action system
             self._send_animation_goal(animation, speed_modifier, emotion)
-    
+
     def _notify_animation_trigger(self, source: str):
         """Notify the animation command server about the trigger source."""
         try:
@@ -1573,62 +422,62 @@ class CameraInteraction(Node):
             self.animation_trigger_publisher.publish(msg)
         except Exception as e:
             self.get_logger().error(f"Error publishing animation trigger source: {e}")
-    
+
     def _send_animation_goal(self, animation_name, speed_multiplier, trigger_emotion):
         """Send an animation goal to the action server"""
         if not self._animation_action_client.server_is_ready():
             self.get_logger().warn("Animation action server not ready")
             return
-        
+
         # Create goal message
         goal_msg = PlayAnimation.Goal()
         goal_msg.animation_name = animation_name
         goal_msg.speed_multiplier = speed_multiplier
         goal_msg.allow_interruption = True  # Emotions can be interrupted
         goal_msg.use_hardware_feedback = False
-        
+
         self.get_logger().info(
             f"Sending emotion-triggered animation: {animation_name} "
             f"(speed: {speed_multiplier:.1f}, emotion: {trigger_emotion})"
         )
-        
+
         # Send goal asynchronously
         send_goal_future = self._animation_action_client.send_goal_async(
             goal_msg,
             feedback_callback=self._animation_feedback_callback
         )
-        
+
         # Add callback for when goal is accepted/rejected
         send_goal_future.add_done_callback(
             lambda future: self._goal_response_callback(future, animation_name)
         )
-    
+
     def _goal_response_callback(self, future, animation_name):
         """Handle the goal response from the action server"""
         try:
             goal_handle = future.result()
-            
+
             if not goal_handle.accepted:
                 self.get_logger().warn(f'Animation goal rejected: {animation_name}')
                 return
-            
+
             self.get_logger().debug(f'Animation goal accepted: {animation_name}')
             self._active_goal_handle = goal_handle
-            
+
             # Get the result asynchronously
             result_future = goal_handle.get_result_async()
             result_future.add_done_callback(
                 lambda future: self._get_result_callback(future, animation_name)
             )
-            
+
         except Exception as e:
             self.get_logger().error(f"Error in goal response callback: {e}")
-    
+
     def _get_result_callback(self, future, animation_name):
         """Handle the result of the animation"""
         try:
             result = future.result().result
-            
+
             if result.success:
                 self.get_logger().info(
                     f"Emotion-triggered animation completed: {animation_name} "
@@ -1638,55 +487,51 @@ class CameraInteraction(Node):
                 self.get_logger().warn(
                     f"Emotion-triggered animation failed: {animation_name} - {result.message}"
                 )
-                
-            # Clear the active goal handle and update timing
+
+            # Clear the active goal handle
             self._active_goal_handle = None
             self.last_any_animation_end_time = self.get_clock().now()
-            
-            # When animation ends, start the post-animation emotion timeout
-            with self.data_lock:
-                self.last_emotion_display_time = self.last_any_animation_end_time
-            
+
         except Exception as e:
             self.get_logger().error(f"Error in result callback: {e}")
-    
+
     def _animation_feedback_callback(self, feedback_msg):
         """Handle feedback from the animation action"""
         feedback = feedback_msg.feedback
-        
+
         if self.verbose:
             self.get_logger().debug(
                 f"Animation progress: {feedback.progress*100:.1f}% "
                 f"(step {feedback.current_keyframe+1}/{feedback.total_keyframes})"
             )
-    
+
+    def retry_camera_init(self):
+        """Retry camera initialization"""
+        try:
+            self.get_logger().info("Retrying camera initialization...")
+            self.init_camera()
+            # If successful, cancel the retry timer
+            if hasattr(self, 'retry_timer'):
+                self.retry_timer.cancel()
+                self.retry_timer = None
+                self.get_logger().info("Camera initialization successful")
+        except Exception as e:
+            self.get_logger().error(f"Camera initialization failed: {e}")
+
     def destroy_node(self):
         """Clean up resources when the node is shut down"""
         # Signal threads to stop
         self.shutdown_event.set()
-        
-        # Wait for threads to finish
-        if hasattr(self, 'processing_thread') and self.processing_thread and self.processing_thread.is_alive():
-            self.get_logger().info("Waiting for emotion processing thread to stop...")
-            self.processing_thread.join(timeout=2.0)
-        
-        if hasattr(self, 'display_thread') and self.display_thread and self.display_thread.is_alive():
-            self.get_logger().info("Waiting for display update thread to stop...")
-            self.display_thread.join(timeout=2.0)
-        
-        # Show shutdown message on framebuffer before cleanup
-        if self.enable_framebuffer_display and hasattr(self, 'framebuffer_display'):
-            self.get_logger().info("Displaying shutdown message on framebuffer")
-            self.framebuffer_display.cleanup()
-        
-        # Cancel retry timer
-        if hasattr(self, 'camera_retry_timer') and self.camera_retry_timer is not None:
-            self.camera_retry_timer.cancel()
-            
-        # Cancel main timer
-        if hasattr(self, 'timer') and self.timer is not None:
-            self.timer.cancel()
-            
+
+        # Cancel retry timer if it exists
+        if hasattr(self, 'retry_timer') and self.retry_timer:
+            self.retry_timer.cancel()
+
+        # Wait for ROS processing thread to finish
+        if hasattr(self, 'ros_processing_thread') and self.ros_processing_thread and self.ros_processing_thread.is_alive():
+            self.get_logger().info("Waiting for ROS processing thread to stop...")
+            self.ros_processing_thread.join(timeout=2.0)
+
         # Close camera device
         if hasattr(self, 'device') and self.device is not None:
             self.get_logger().info("Shutting down camera")
@@ -1694,13 +539,13 @@ class CameraInteraction(Node):
                 self.device.close()
             except:
                 pass
-                
+
         super().destroy_node()
 
 def main(args=None):
     rclpy.init(args=args)
     camera_node = CameraInteraction()
-    
+
     try:
         rclpy.spin(camera_node)
     except KeyboardInterrupt:
