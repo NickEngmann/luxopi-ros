@@ -60,10 +60,12 @@ class APDS9960Sensor(I2CSensor):
             self.device = APDS9960(i2c_bus)
             self.device.enable_proximity = True
             self.device.proximity_gain = 1
-            
-            if self.enable_gestures:
-                self.device.enable_gesture = True
-                
+
+            # DISABLED: Gesture detection can cause I2C bus hangs
+            # The gesture() method is a blocking call that can freeze the entire bus
+            # if self.enable_gestures:
+            #     self.device.enable_gesture = True
+
             self.active = True
             return True
         except Exception as e:
@@ -334,12 +336,14 @@ class I2CDeviceManager(Node):
         # Create health status timer
         self.health_timer = self.create_timer(10.0, self.publish_health_summary)
         
-        # Gesture thread for APDS9960 (if enabled)
+        # Gesture thread for APDS9960 - DISABLED to prevent I2C bus hangs
         self.gesture_thread_running = False
-        if self.enable_gestures and 'apds9960' in self.sensors:
-            self.gesture_thread_running = True
-            self.gesture_thread = threading.Thread(target=self.gesture_thread_worker, daemon=True)
-            self.gesture_thread.start()
+        # DISABLED: Gesture detection causes I2C bus freezes
+        # The gesture() method blocks and can hang the entire I2C bus
+        # if self.enable_gestures and 'apds9960' in self.sensors:
+        #     self.gesture_thread_running = True
+        #     self.gesture_thread = threading.Thread(target=self.gesture_thread_worker, daemon=True)
+        #     self.gesture_thread.start()
         
         self.get_logger().info('I2C Device Manager initialized')
         self._publish_status("I2C Device Manager started")
@@ -379,12 +383,12 @@ class I2CDeviceManager(Node):
                 self.get_logger().info(f"{sensor_name} initialized successfully")
                 # Add delay between sensor initializations to prevent bus congestion
                 time.sleep(0.05)
-                
-                # Start gesture thread if APDS9960 just came online
-                if sensor_name == 'apds9960' and self.enable_gestures and not self.gesture_thread_running:
-                    self.gesture_thread_running = True
-                    self.gesture_thread = threading.Thread(target=self.gesture_thread_worker, daemon=True)
-                    self.gesture_thread.start()
+
+                # DISABLED: Gesture thread causes I2C bus hangs
+                # if sensor_name == 'apds9960' and self.enable_gestures and not self.gesture_thread_running:
+                #     self.gesture_thread_running = True
+                #     self.gesture_thread = threading.Thread(target=self.gesture_thread_worker, daemon=True)
+                #     self.gesture_thread.start()
             else:
                 # Failed - check if we should give up
                 if sensor.initialization_attempts >= self.max_init_attempts:

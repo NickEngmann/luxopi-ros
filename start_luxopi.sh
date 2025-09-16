@@ -18,6 +18,7 @@ export LUXOPI_ENABLE_IDLE_ANIMATIONS="${LUXOPI_ENABLE_IDLE_ANIMATIONS:-true}"
 export LUXOPI_ENABLE_DYNAMIC_ADAPTATION="${LUXOPI_ENABLE_DYNAMIC_ADAPTATION:-false}"
 export LUXOPI_ENABLE_FRAMEBUFFER_DISPLAY="${LUXOPI_ENABLE_FRAMEBUFFER_DISPLAY:-true}"
 export LUXOPI_SENSE_COLLISION="${LUXOPI_SENSE_COLLISION:-true}"
+export LUXOPI_ENABLE_APDS9960="${LUXOPI_ENABLE_APDS9960:-trues}"
 export LUXOPI_RESTART_DELAY="${LUXOPI_RESTART_DELAY:-5}"
 export LUXOPI_MAX_RESTARTS="${LUXOPI_MAX_RESTARTS:-0}"  # 0 = unlimited
 
@@ -92,13 +93,14 @@ get_launch_args() {
          "enable_idle_animations:=$LUXOPI_ENABLE_IDLE_ANIMATIONS" \
          "enable_dynamic_adaptation:=$LUXOPI_ENABLE_DYNAMIC_ADAPTATION" \
          "enable_framebuffer_display:=$LUXOPI_ENABLE_FRAMEBUFFER_DISPLAY" \
-         "sense_collision:=$LUXOPI_SENSE_COLLISION"
+         "sense_collision:=$LUXOPI_SENSE_COLLISION" \
+         "i2c_device_manager.enable_apds9960:=$LUXOPI_ENABLE_APDS9960"
 }
 
 print_configuration() {
     log "=== LuxoPi Configuration ==="
     log "Hardware: $LUXOPI_USE_HARDWARE"
-    log "Camera: $LUXOPI_USE_CAMERA" 
+    log "Camera: $LUXOPI_USE_CAMERA"
     log "Emotion Detection: $LUXOPI_ENABLE_EMOTION_DETECTION"
     log "Voice: $LUXOPI_ENABLE_VOICE"
     log "ADS7830: $LUXOPI_ENABLE_ADS7830"
@@ -107,6 +109,7 @@ print_configuration() {
     log "Dynamic Adaptation: $LUXOPI_ENABLE_DYNAMIC_ADAPTATION"
     log "Framebuffer Display: $LUXOPI_ENABLE_FRAMEBUFFER_DISPLAY"
     log "Collision Sensing: $LUXOPI_SENSE_COLLISION"
+    log "APDS9960 Sensor: $LUXOPI_ENABLE_APDS9960"
     log "=========================="
 }
 
