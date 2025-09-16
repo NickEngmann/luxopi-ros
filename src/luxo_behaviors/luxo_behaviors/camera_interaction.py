@@ -164,7 +164,8 @@ class CameraInteraction(Node):
         # Restore original args
         sys.argv = original_args
 
-        # Try different ports if 8082 is busy
+        # Try to create visualizer, but make it optional
+        self.visualizer = None
         for port in [8082, 8083, 8084, 8085]:
             try:
                 self.visualizer = dai.RemoteConnection(httpPort=port)
@@ -172,20 +173,16 @@ class CameraInteraction(Node):
                 break
             except Exception as e:
                 if port == 8085:  # Last port
-                    self.get_logger().warn(f"Could not start visualizer: {e}")
+                    self.get_logger().info(f"Running without visualizer (headless mode)")
                     self.visualizer = None
                 else:
                     continue
-        # Don't create device here - we'll do it with the pipeline
-        # self.device = dai.Device(dai.DeviceInfo(self.args.device)) if self.args.device else dai.Device()
-        # platform = self.device.getPlatform().name
-        # self.get_logger().info(f"Platform: {platform}")
 
         # RVC2 optimized settings
         self.frame_type = dai.ImgFrame.Type.BGR888p
 
         if self.args.fps_limit is None:
-            self.args.fps_limit = 2 
+            self.args.fps_limit = 2
             self.get_logger().info(
                 f"FPS limit set to {self.args.fps_limit} for RVC2. Use --fps_limit flag to customize."
             )
@@ -194,29 +191,58 @@ class CameraInteraction(Node):
 
     def create_and_start_pipeline(self):
         """Create and start the DepthAI pipeline - DO NOT MODIFY"""
-        # Import nodes locally to avoid any namespace issues
-        from depthai_nodes.node import ParsingNeuralNetwork as PN, GatherData as GD, ImgDetectionsBridge as IDB
+        # Try to create device with better error handling
         try:
-            from luxo_behaviors.utils.annotation_node import AnnotationNode as AN
-        except ImportError:
-            try:
-                from utils.annotation_node import AnnotationNode as AN
-            except ImportError:
-                from .utils.annotation_node import AnnotationNode as AN
+            self.device = dai.Device(dai.DeviceInfo(self.args.device)) if self.args.device else dai.Device()
+            platform = self.device.getPlatform().name
+            self.get_logger().info(f"Platform: {platform}")
+        except RuntimeError as e:
+            if "X_LINK_DEVICE_ALREADY_IN_USE" in str(e) or "already in use" in str(e).lower():
+                self.get_logger().error("Camera device is already in use by another process")
+                self.get_logger().info("Attempting to close existing connections...")
+                # Try to find and close any existing device connections
+                import time
+                time.sleep(2)
+                # Retry once
+                try:
+                    self.device = dai.Device(dai.DeviceInfo(self.args.device)) if self.args.device else dai.Device()
+                    platform = self.device.getPlatform().name
+                    self.get_logger().info(f"Successfully connected after retry. Platform: {platform}")
+                except Exception as retry_e:
+                    self.get_logger().error(f"Failed to connect to camera after retry: {retry_e}")
+                    raise
+            else:
+                raise
 
-        # Create device first, like in the original
-        self.device = dai.Device(dai.DeviceInfo(self.args.device)) if self.args.device else dai.Device()
-        platform = self.device.getPlatform().name
-        self.get_logger().info(f"Platform: {platform}")
+        # Start pipeline creation and execution thread
+        self.pipeline_thread = threading.Thread(target=self._create_and_run_pipeline, daemon=True)
+        self.pipeline_thread.start()
 
+    def _create_and_run_pipeline(self):
+        """Create and run the pipeline in its own thread with proper context management"""
         # Create pipeline with device passed to context manager, EXACTLY like original
         with dai.Pipeline(self.device) as pipeline:
             self.get_logger().info("Creating pipeline...")
 
             # Get the path to the models directory
             import os
-            script_dir = os.path.dirname(os.path.abspath(__file__))
-            models_dir = os.path.join(script_dir, "depthai_models")
+            # Try multiple possible locations for the model files
+            possible_dirs = [
+                "/home/pi/luxopi-ros/src/luxo_behaviors/luxo_behaviors/depthai_models",
+                "/home/pi/luxopi-ros/dev/depthai_models",
+                os.path.join(os.path.dirname(os.path.abspath(__file__)), "depthai_models"),
+                "./depthai_models"
+            ]
+
+            models_dir = None
+            for dir_path in possible_dirs:
+                if os.path.exists(os.path.join(dir_path, "yunet.RVC2.yaml")):
+                    models_dir = dir_path
+                    self.get_logger().info(f"Found model files in: {models_dir}")
+                    break
+
+            if models_dir is None:
+                raise FileNotFoundError("Could not find depthai_models directory with yunet.RVC2.yaml")
 
             # face detection model - RVC2 only
             det_model_description = dai.NNModelDescription.fromYamlFile(
@@ -256,12 +282,12 @@ class CameraInteraction(Node):
             input_node.link(resize_node.inputImage)
 
             # Create the detection neural network node exactly like original
-            det_nn = pipeline.create(PN).build(
+            det_nn = pipeline.create(ParsingNeuralNetwork).build(
                 resize_node.out, det_model_nn_archive
             )
 
             # detection processing
-            det_bridge = pipeline.create(IDB).build(
+            det_bridge = pipeline.create(ImgDetectionsBridge).build(
                 det_nn.out
             )  # TODO: remove once we have it working with ImgDetectionsExtended
             script_node = pipeline.create(dai.node.Script)
@@ -279,18 +305,18 @@ class CameraInteraction(Node):
             script_node.outputs["manip_cfg"].link(crop_node.inputConfig)
             script_node.outputs["manip_img"].link(crop_node.inputImage)
 
-            rec_nn = pipeline.create(PN).build(
+            rec_nn = pipeline.create(ParsingNeuralNetwork).build(
                 crop_node.out, rec_model_nn_archive
             )
 
             # detections and recognitions sync
-            gather_data_node = pipeline.create(GD).build(self.args.fps_limit)
+            gather_data_node = pipeline.create(GatherData).build(self.args.fps_limit)
             rec_nn.out.link(gather_data_node.input_data)
             det_nn.out.link(gather_data_node.input_reference)
 
             # annotation - this is a HostNode that will process the data
             # Pass our emotion callback to the annotation node
-            self.annotation_node = pipeline.create(AN).build(
+            self.annotation_node = pipeline.create(AnnotationNode).build(
                 gather_data_node.out,
                 emotion_callback=self.on_emotion_detected
             )
@@ -300,41 +326,70 @@ class CameraInteraction(Node):
             self.gather_data_node = gather_data_node
             self.rec_nn = rec_nn
 
-            # visualization
+            # visualization - only add if visualizer is available
             if self.visualizer:
                 self.visualizer.addTopic("Video", det_nn.passthrough, "images")
                 self.visualizer.addTopic("Emotions", self.annotation_node.out, "images")
+            else:
+                # Create XLinkOut to consume the annotation output when no visualizer
+                # This prevents the pipeline from blocking
+                xout = pipeline.create(dai.node.XLinkOut)
+                xout.setStreamName("annotations_dummy")
+                self.annotation_node.out.link(xout.input)
 
             self.get_logger().info("Pipeline configuration complete.")
-            self.get_logger().info("Pipeline created.")
 
-            # Start the pipeline
+            # NOW START THE PIPELINE AND KEEP IT RUNNING WITHIN THIS CONTEXT
+            # THIS IS THE KEY - WE MUST STAY WITHIN THE with BLOCK
             self.get_logger().info("Starting pipeline...")
             pipeline.start()
+
             if self.visualizer:
                 self.visualizer.registerPipeline(pipeline)
+            else:
+                # Create queue to consume dummy output when no visualizer
+                self.dummy_queue = self.device.getOutputQueue("annotations_dummy", maxSize=4, blocking=False)
 
-            # Store pipeline for later use
-            self.pipeline = pipeline
+            self.get_logger().info("Camera pipeline started successfully")
 
-            # Keep the original visualization loop
-            while pipeline.isRunning():
+            # Count emotions for logging
+            self.emotion_count = 0
+            last_log_time = time.time()
+
+            # Main loop - EXACTLY like the working example
+            # This loop MUST stay within the context manager
+            while pipeline.isRunning() and not self.shutdown_event.is_set():
+                current_time = time.time()
+
+                # Log status every 5 seconds
+                if current_time - last_log_time > 5.0:
+                    self.get_logger().info(f"Pipeline running: emotions detected: {self.emotion_count}")
+                    last_log_time = current_time
+
                 if self.visualizer:
                     key = self.visualizer.waitKey(1)
                     if key == ord("q"):
                         self.get_logger().info("Got q key. Exiting...")
-                        self.shutdown_event.set()
                         break
                 else:
-                    # No visualizer, just check shutdown event
-                    import time
-                    time.sleep(0.1)
-                    if self.shutdown_event.is_set():
-                        break
+                    # No visualizer - consume dummy queue to prevent blocking
+                    if hasattr(self, 'dummy_queue'):
+                        try:
+                            _ = self.dummy_queue.tryGet()
+                        except:
+                            pass
+                    time.sleep(0.001)
+
+            self.get_logger().info("Pipeline loop ended")
+
 
     def on_emotion_detected(self, emotion: str, confidence: float):
         """Callback when emotion is detected by the annotation node"""
         try:
+            # Increment counter
+            if hasattr(self, 'emotion_count'):
+                self.emotion_count += 1
+
             # Publish emotion to ROS topic
             emotion_msg = String()
             emotion_msg.data = emotion

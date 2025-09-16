@@ -21,14 +21,17 @@ class AnnotationNode(dai.node.HostNode):
         self.latest_emotion = None
         self.latest_confidence = 0.0
         self.emotion_callback = None
+        self.skip_output = False  # Flag to skip output when no visualizer
 
     def build(
         self,
         gather_data_msg: dai.Node.Output,
         emotion_callback=None,
+        skip_output=False,
     ) -> "AnnotationNode":
         self.link_args(gather_data_msg)
         self.emotion_callback = emotion_callback
+        self.skip_output = skip_output
         return self
 
     def process(self, gather_data_msg: dai.Buffer) -> None:
@@ -92,9 +95,9 @@ class AnnotationNode(dai.node.HostNode):
                 color=SECONDARY_COLOR,
             )
 
+        # Always send output since we ensure visualizer is connected
         annotations_msg = annotations.build(
             timestamp=dets_msg.getTimestamp(),
             sequence_num=dets_msg.getSequenceNum(),
         )
-
         self.out.send(annotations_msg)
