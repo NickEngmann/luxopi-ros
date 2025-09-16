@@ -199,11 +199,11 @@ class StateManagerNode(Node):
         # Initialize state machine
         self._setup_default_transitions()
         self._enter_state(self._current_state)
-        
+
         # Add automatic transition from INITIALIZING to IDLE after X seconds
         self.add_automatic_transition(
-            LuxoState.INITIALIZING, 
-            LuxoState.IDLE, 
+            LuxoState.INITIALIZING,
+            LuxoState.IDLE,
             delay_seconds=15.0
         )
         
@@ -220,7 +220,17 @@ class StateManagerNode(Node):
                 max_fps=15.0  # Limit to 15 FPS for long-term stability
             )
             if self._neopixel_controller.is_initialized():
-                self.get_logger().info("NeoPixel desk lamp state visualization enabled")
+                # Test for DMA issues
+                try:
+                    self._neopixel_controller.clear_all()
+                    self.get_logger().info("NeoPixel desk lamp state visualization enabled")
+                except Exception as test_error:
+                    if "timeout" in str(test_error).lower() or "110" in str(test_error):
+                        self.get_logger().error("DMA timeout detected - disabling NeoPixels to prevent system lockup")
+                        self._neopixel_controller = None
+                    else:
+                        self.get_logger().warn(f"NeoPixel test failed: {test_error}")
+                        self._neopixel_controller = None
             else:
                 self._neopixel_controller = None
                 self.get_logger().warn("NeoPixel initialization failed - continuing without visual state")
@@ -480,12 +490,11 @@ class StateManagerNode(Node):
                 if self._neopixel_controller:
                     self.get_logger().info("Lights OFF - stopping animations and clearing NeoPixels")
                     
-                    # Force stop any running animations/effects
-                    # self._neopixel_controller.stop_effect()
-                    # time.sleep(0.25)  # Allow time for effects to stop
-                    # Clear all pixels immediately
-                    self._neopixel_controller.clear_all()
-                    time.sleep(0.25)
+                    # Clear all pixels immediately (non-blocking)
+                    try:
+                        self._neopixel_controller.clear_all()
+                    except Exception as e:
+                        self.get_logger().warn(f"Failed to clear NeoPixels on light off: {e}")
                     
                     # Set override to prevent any new updates
                     self._neopixel_override_active = True

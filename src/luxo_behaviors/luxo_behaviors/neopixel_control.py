@@ -192,19 +192,30 @@ class NeoPixelController:
         with self._lock:
             if not self._is_initialized:
                 return False
-            
+
             # Check if already cleared
             clear_color = (0, 0, 0, 0)
             if all(pixel == clear_color for pixel in self._pixel_cache):
                 self._current_mode = NeoPixelMode.OFF
                 self._current_color = clear_color
                 return True
-            
+
             try:
                 self.pixels.fill(clear_color)  # RGBW
-                self.pixels.show()
-                time.sleep(0.01)  # Small delay to ensure clearing takes effect
-                # Update cache
+
+                # Try to show but don't block on DMA errors
+                try:
+                    self.pixels.show()
+                    # Only sleep if show succeeded
+                    time.sleep(0.01)  # Small delay to ensure clearing takes effect
+                except Exception as show_error:
+                    # If DMA timeout, just log and continue
+                    if "timeout" in str(show_error).lower() or "110" in str(show_error):
+                        self._log(f"DMA timeout clearing pixels, continuing: {show_error}", "warn")
+                    else:
+                        self._log(f"Failed to show clear: {show_error}", "error")
+
+                # Update cache regardless of show success
                 self._pixel_cache = [clear_color] * self.pixel_count
                 self._pixels_changed = False  # Reset since we just updated
                 self._current_mode = NeoPixelMode.OFF
@@ -300,11 +311,19 @@ class NeoPixelController:
                     if attempt < max_retries - 1:
                         # Exponential backoff
                         delay = base_delay * (2 ** attempt)
+                        # Check if it's a DMA timeout first
+                        if "timeout" in str(e).lower() or "110" in str(e):
+                            # DMA timeout - skip retries
+                            self._log(f"SPI DMA timeout detected: {e}", "error")
+                            self._spi_error_count += 1
+                            self._consecutive_errors += 1
+                            return False
+
                         self._log(f"SPI show error (attempt {attempt + 1}/{max_retries}): {e}. Retrying in {delay:.3f}s", "warn")
                         time.sleep(delay)
-                        
-                        # Try to reinitialize on second retry
-                        if attempt == 1:
+
+                        # Try to reinitialize on second retry (but not for DMA issues)
+                        if attempt == 1 and "timeout" not in str(e).lower():
                             self._log("Attempting SPI reinitialization", "warn")
                             self._reinitialize_spi()
                     else:
