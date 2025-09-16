@@ -70,6 +70,12 @@ class RoArmHardwareInterface(Node):
         # Add parameter for initialization method
         self.declare_parameter('use_hardware_position_on_init', True)  # Whether to read actual position from hardware
         self.declare_parameter('init_position_timeout', 10.0)  # Timeout for getting initial position
+
+        # Motor resistance detection parameters
+        self.declare_parameter('enable_motor_resistance_detection', True)
+        self.declare_parameter('motor_resistance_threshold', 0.15)  # Radians difference to detect resistance
+        self.declare_parameter('motor_resistance_time_threshold', 1.0)  # Time in seconds before triggering
+        self.declare_parameter('motor_resistance_consecutive_threshold', 5)  # Consecutive detections needed
         
         # Add initialization duration parameter
         self.declare_parameter('initialization_duration', 20.0)  # How long to stay in INITIALIZING state
@@ -200,6 +206,15 @@ class RoArmHardwareInterface(Node):
         
         # Flag to track whether we have valid joint positions from hardware
         self.position_initialized = False
+
+        # Motor resistance detection tracking
+        self.enable_motor_resistance = self.get_parameter('enable_motor_resistance_detection').value
+        self.motor_resistance_threshold = self.get_parameter('motor_resistance_threshold').value
+        self.motor_resistance_time_threshold = self.get_parameter('motor_resistance_time_threshold').value
+        self.motor_resistance_consecutive_threshold = self.get_parameter('motor_resistance_consecutive_threshold').value
+        self.motor_resistance_detections = [0] * 5  # Track per joint
+        self.motor_resistance_start_time = [None] * 5  # When resistance started per joint
+        self.last_resistance_direction = [0.0] * 5  # Direction of last resistance
         
         # Add tracking variables for dynamic adaptation using ROS time
         self.dynamic_adaptation_active = False
@@ -296,6 +311,13 @@ class RoArmHardwareInterface(Node):
             self.collision_status_publisher = self.create_publisher(
                 String,
                 '/collision_status_for_animation',
+                10
+            )
+
+            # Publisher for motor resistance status
+            self.motor_resistance_publisher = self.create_publisher(
+                String,
+                '/motor_resistance/status',
                 10
             )
             
@@ -414,6 +436,13 @@ class RoArmHardwareInterface(Node):
 
     def _handle_state_change(self, old_state: LuxoState, new_state: LuxoState):
         """Handle state transitions locally"""
+        # Clear motor resistance tracking on state changes (except collision states)
+        if (self.enable_motor_resistance and
+            new_state not in [LuxoState.COLLISION_AVOIDING, LuxoState.ESCAPE_MODE]):
+            self.motor_resistance_detections = [0] * 5
+            self.motor_resistance_start_time = [None] * 5
+            self.get_logger().debug("Cleared motor resistance tracking due to state change")
+
         # Handle state-specific actions
         if new_state == LuxoState.INITIALIZING:
             self._on_enter_initializing()
@@ -1058,6 +1087,14 @@ class RoArmHardwareInterface(Node):
             if acceleration is not None:
                 safe_positions = list(safe_positions) + [acceleration]
             
+            # Clear motor resistance tracking for commanded movements
+            if self.enable_motor_resistance:
+                # Only clear for joints that are actively being commanded to move
+                for i in range(min(5, len(target_positions))):
+                    if i < len(self.current_joints) and abs(target_positions[i] - self.current_joints[i]) > 0.05:
+                        self.motor_resistance_detections[i] = 0
+                        self.motor_resistance_start_time[i] = None
+
             # Apply collision avoidance and send command
             self.send_safe_joint_command(safe_positions, "Joint control")
             
@@ -1689,7 +1726,11 @@ class RoArmHardwareInterface(Node):
                 
                 # Update the current joints
                 self.current_joints = positions
-                
+
+                # Check for motor resistance (blocked movement)
+                if self.enable_motor_resistance:
+                    self.check_motor_resistance(positions)
+
                 # Update collision avoidance system with current position
                 self.behavior_coordinator.update_current_joints(positions)
                 
@@ -1703,6 +1744,17 @@ class RoArmHardwareInterface(Node):
                     self.dynamic_adaptation_last_disable_time = self.get_clock().now()
                     # Don't disable DEMA for user movements
                 
+                # Check if we've reached our target (movement complete)
+                if hasattr(self, 'target_joints') and self.target_joints:
+                    all_reached = all(
+                        abs(positions[i] - self.target_joints[i]) < 0.05
+                        for i in range(min(len(positions), 5))
+                    )
+                    if all_reached and self.enable_motor_resistance:
+                        # Clear resistance tracking when target is reached
+                        self.motor_resistance_detections = [0] * 5
+                        self.motor_resistance_start_time = [None] * 5
+
                 # Reset the commanded movement flag
                 self.is_commanded_movement = False
                 
@@ -1713,6 +1765,136 @@ class RoArmHardwareInterface(Node):
             self.get_logger().error(f"Error in position feedback callback: {e}")
             import traceback
             self.get_logger().error(traceback.format_exc())
+
+    def check_motor_resistance(self, actual_positions):
+        """Check if motors are experiencing resistance by comparing commanded vs actual positions."""
+        if not hasattr(self, 'target_joints') or not self.target_joints:
+            return
+
+        current_time = self.get_clock().now()
+        resistance_detected = False
+        resistance_joints = []
+
+        # Check each joint for resistance
+        for i in range(min(len(actual_positions), len(self.target_joints[:5]))):
+            target = self.target_joints[i]
+            actual = actual_positions[i]
+            diff = abs(target - actual)
+
+            # Check if there's significant difference between commanded and actual
+            if diff > self.motor_resistance_threshold:
+                # Record the direction of resistance
+                direction = 1.0 if target > actual else -1.0
+
+                # Start tracking time if this is the first detection
+                if self.motor_resistance_start_time[i] is None:
+                    self.motor_resistance_start_time[i] = current_time
+                    self.last_resistance_direction[i] = direction
+                    self.get_logger().debug(f"Joint {i} resistance started: target={target:.2f}, actual={actual:.2f}, diff={diff:.2f}")
+
+                # Check if resistance has persisted long enough
+                elif (current_time - self.motor_resistance_start_time[i]).nanoseconds / 1e9 > self.motor_resistance_time_threshold:
+                    # Check if we're still trying to move in the same direction
+                    if direction == self.last_resistance_direction[i]:
+                        self.motor_resistance_detections[i] += 1
+                        resistance_detected = True
+                        resistance_joints.append(i)
+
+                        joint_names = ['base', 'shoulder', 'elbow', 'wrist', 'hand']
+                        self.get_logger().warn(
+                            f"Motor resistance detected on {joint_names[i]}: "
+                            f"target={target:.2f}, actual={actual:.2f}, "
+                            f"detections={self.motor_resistance_detections[i]}"
+                        )
+            else:
+                # Clear resistance tracking if joint is moving freely
+                self.motor_resistance_start_time[i] = None
+                self.motor_resistance_detections[i] = max(0, self.motor_resistance_detections[i] - 1)
+
+        # Publish resistance status
+        if self.enable_motor_resistance:
+            status_msg = String()
+            if resistance_detected:
+                joint_names = ['base', 'shoulder', 'elbow', 'wrist', 'hand']
+                joints_str = ', '.join([joint_names[j] for j in resistance_joints])
+                detections_str = ', '.join([str(self.motor_resistance_detections[j]) for j in resistance_joints])
+                status_msg.data = f"RESISTANCE_DETECTED: joints=[{joints_str}], detections=[{detections_str}]"
+            else:
+                status_msg.data = "NO_RESISTANCE"
+            self.motor_resistance_publisher.publish(status_msg)
+
+        # Trigger collision-like response if resistance is detected
+        if resistance_detected:
+            self.handle_motor_resistance(resistance_joints)
+
+    def handle_motor_resistance(self, resistance_joints):
+        """Handle detected motor resistance by triggering appropriate safety responses."""
+        # Calculate total resistance score
+        total_detections = sum(self.motor_resistance_detections[j] for j in resistance_joints)
+
+        # Determine severity based on persistence
+        if total_detections >= self.motor_resistance_consecutive_threshold * 3:
+            # Severe resistance - trigger escape mode
+            self.get_logger().error("Severe motor resistance detected - triggering escape mode")
+
+            # Request escape mode through state machine
+            try:
+                # Use StateUtils from shared_utils for proper state transition
+                state_utils = StateUtils(self)
+                state_utils.request_state_transition('ESCAPE_MODE', priority=90)
+            except Exception as e:
+                self.get_logger().error(f"Failed to request ESCAPE_MODE: {e}")
+                # Fallback: Stop movement
+                self.stop_current_movement()
+
+        elif total_detections >= self.motor_resistance_consecutive_threshold:
+            # Moderate resistance - back off
+            self.get_logger().warn("Motor resistance persisting - backing off")
+
+            # Calculate safe retreat position
+            safe_positions = self.current_joints.copy()
+            for joint in resistance_joints:
+                # Move back in opposite direction of resistance
+                retreat_amount = 0.1 * self.last_resistance_direction[joint] * -1
+                safe_positions[joint] += retreat_amount
+
+            # Apply safety limits
+            if self.enable_collision_avoidance:
+                safe_positions = self.behavior_coordinator.apply_safety_limits(safe_positions)
+
+            # Send the retreat command
+            self.send_safe_joint_command(safe_positions, "Motor resistance retreat")
+
+            # Request collision avoidance state
+            try:
+                state_utils = StateUtils(self)
+                state_utils.request_state_transition('COLLISION_AVOIDING', priority=80)
+            except Exception as e:
+                self.get_logger().warn(f"Failed to request COLLISION_AVOIDING: {e}")
+        else:
+            # Light resistance - just slow down
+            self.get_logger().info("Light motor resistance detected - reducing speed")
+
+            # Reduce movement speed
+            if hasattr(self, 'serial_manager') and self.serial_manager.is_connected():
+                # Send reduced speed command
+                speed_cmd = {"T": 11, "cmd": 500}  # Slow speed
+                self.serial_manager.write_data(json.dumps(speed_cmd))
+
+    def stop_current_movement(self):
+        """Emergency stop of current movement."""
+        try:
+            # Hold current position
+            if hasattr(self, 'current_joints') and self.current_joints:
+                self.send_safe_joint_command(self.current_joints, "Emergency stop")
+                self.target_joints = self.current_joints.copy()
+
+            # Clear resistance tracking
+            self.motor_resistance_detections = [0] * 5
+            self.motor_resistance_start_time = [None] * 5
+
+        except Exception as e:
+            self.get_logger().error(f"Error in emergency stop: {e}")
 
     def check_joint_publish_health(self):
         """Check if joint states are being published regularly"""

@@ -122,6 +122,25 @@ def generate_launch_description():
         default_value=PythonExpression(["'", use_hardware, "'"]),  # Directly match use_hardware value
         description='Enable dynamic adaptation mode (default: same as use_hardware)'
     )
+
+    # Motor resistance detection parameters
+    declare_enable_motor_resistance = DeclareLaunchArgument(
+        'enable_motor_resistance_detection',
+        default_value='true',
+        description='Enable motor resistance/blockage detection (default: true)'
+    )
+
+    declare_motor_resistance_threshold = DeclareLaunchArgument(
+        'motor_resistance_threshold',
+        default_value='0.15',
+        description='Threshold in radians for detecting motor resistance (default: 0.15)'
+    )
+
+    declare_motor_resistance_time = DeclareLaunchArgument(
+        'motor_resistance_time_threshold',
+        default_value='1.0',
+        description='Time in seconds before triggering resistance response (default: 1.0)'
+    )
     
     declare_system_monitor = DeclareLaunchArgument(
         'enable_system_monitor',
@@ -323,6 +342,9 @@ def generate_launch_description():
             {'enable_torque': True},
             {'read_throttle': 0.1},
             {'enable_dynamic_adaptation': enable_dynamic_adaptation},
+            {'enable_motor_resistance_detection': LaunchConfiguration('enable_motor_resistance_detection')},
+            {'motor_resistance_threshold': LaunchConfiguration('motor_resistance_threshold')},
+            {'motor_resistance_time_threshold': LaunchConfiguration('motor_resistance_time_threshold')},
             # better values for actually moving the robot
             # {'dynamic_adaptation_base_limit': 60},
             # {'dynamic_adaptation_shoulder_limit': 750},
@@ -529,6 +551,9 @@ def generate_launch_description():
         declare_verbose,
         declare_camera_rotation,
         declare_enable_dynamic_adaptation,
+        declare_enable_motor_resistance,
+        declare_motor_resistance_threshold,
+        declare_motor_resistance_time,
         declare_system_monitor,
         declare_watchdog,
         declare_watchdog_state_timeout,

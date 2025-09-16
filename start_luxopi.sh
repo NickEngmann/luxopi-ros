@@ -19,6 +19,9 @@ export LUXOPI_ENABLE_DYNAMIC_ADAPTATION="${LUXOPI_ENABLE_DYNAMIC_ADAPTATION:-fal
 export LUXOPI_ENABLE_FRAMEBUFFER_DISPLAY="${LUXOPI_ENABLE_FRAMEBUFFER_DISPLAY:-true}"
 export LUXOPI_SENSE_COLLISION="${LUXOPI_SENSE_COLLISION:-true}"
 export LUXOPI_ENABLE_APDS9960="${LUXOPI_ENABLE_APDS9960:-trues}"
+export LUXOPI_ENABLE_MOTOR_RESISTANCE="${LUXOPI_ENABLE_MOTOR_RESISTANCE:-true}"
+export LUXOPI_MOTOR_RESISTANCE_THRESHOLD="${LUXOPI_MOTOR_RESISTANCE_THRESHOLD:-0.15}"
+export LUXOPI_MOTOR_RESISTANCE_TIME="${LUXOPI_MOTOR_RESISTANCE_TIME:-1.0}"
 export LUXOPI_RESTART_DELAY="${LUXOPI_RESTART_DELAY:-5}"
 export LUXOPI_MAX_RESTARTS="${LUXOPI_MAX_RESTARTS:-0}"  # 0 = unlimited
 
@@ -94,7 +97,10 @@ get_launch_args() {
          "enable_dynamic_adaptation:=$LUXOPI_ENABLE_DYNAMIC_ADAPTATION" \
          "enable_framebuffer_display:=$LUXOPI_ENABLE_FRAMEBUFFER_DISPLAY" \
          "sense_collision:=$LUXOPI_SENSE_COLLISION" \
-         "i2c_device_manager.enable_apds9960:=$LUXOPI_ENABLE_APDS9960"
+         "i2c_device_manager.enable_apds9960:=$LUXOPI_ENABLE_APDS9960" \
+         "enable_motor_resistance_detection:=$LUXOPI_ENABLE_MOTOR_RESISTANCE" \
+         "motor_resistance_threshold:=$LUXOPI_MOTOR_RESISTANCE_THRESHOLD" \
+         "motor_resistance_time_threshold:=$LUXOPI_MOTOR_RESISTANCE_TIME"
 }
 
 print_configuration() {
@@ -110,6 +116,9 @@ print_configuration() {
     log "Framebuffer Display: $LUXOPI_ENABLE_FRAMEBUFFER_DISPLAY"
     log "Collision Sensing: $LUXOPI_SENSE_COLLISION"
     log "APDS9960 Sensor: $LUXOPI_ENABLE_APDS9960"
+    log "Motor Resistance Detection: $LUXOPI_ENABLE_MOTOR_RESISTANCE"
+    log "  - Threshold: $LUXOPI_MOTOR_RESISTANCE_THRESHOLD rad"
+    log "  - Time Threshold: $LUXOPI_MOTOR_RESISTANCE_TIME sec"
     log "=========================="
 }
 
