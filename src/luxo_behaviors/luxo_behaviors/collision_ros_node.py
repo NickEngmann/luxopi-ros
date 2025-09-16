@@ -110,21 +110,21 @@ class CollisionNode(Node):
         self.touch_head_left_sub = self.create_subscription(
             UInt8,
             '/touch_sensors/head_left',
-            self.touch_head_right_callback,
+            self.touch_head_top_callback,
             10
         )
-        
+
         self.touch_head_bottom_sub = self.create_subscription(
             UInt8,
             '/touch_sensors/head_bottom',
-            self.touch_head_bottom_callback,
+            self.touch_head_top_callback,
             10
         )
-        
+
         self.touch_head_right_sub = self.create_subscription(
             UInt8,
             '/touch_sensors/head_right',
-            self.touch_head_left_callback,
+            self.touch_head_top_callback,
             10
         )
         
