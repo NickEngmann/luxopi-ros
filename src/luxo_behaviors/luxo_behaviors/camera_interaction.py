@@ -100,10 +100,13 @@ class CameraInteraction(Node):
 
         # Map emotions to animations
         self.emotion_to_animation = {
-            'happy': ['excited', 'playful', 'dance'],
-            'sad': ['sad', 'droop'],
+            'happiness': ['excited', 'playful', 'dance'],
+            'sadness': ['sad', 'droop'],
             'surprise': ['startled'],
             'anger': ['shake', 'think', 'startled'],
+            'fear': ['startled', 'shake', 'settling_adjust', 'neck_stretch'],
+            'disgust': ['shake', 'think', 'scanning_watch', 'look_around_casual'],
+            'contempt': ['shake', 'shoulder_shimmy', 'pondering', 'attentive_listening'],
             'neutral': ['idle', 'nod']
         }
 
@@ -182,7 +185,7 @@ class CameraInteraction(Node):
         self.frame_type = dai.ImgFrame.Type.BGR888p
 
         if self.args.fps_limit is None:
-            self.args.fps_limit = 5  # Increased from 8 to 15 for better responsiveness
+            self.args.fps_limit = 2 
             self.get_logger().info(
                 f"FPS limit set to {self.args.fps_limit} for RVC2. Use --fps_limit flag to customize."
             )
@@ -285,11 +288,17 @@ class CameraInteraction(Node):
             rec_nn.out.link(gather_data_node.input_data)
             det_nn.out.link(gather_data_node.input_reference)
 
-            # annotation
-            self.annotation_node = pipeline.create(AN).build(gather_data_node.out)
+            # annotation - this is a HostNode that will process the data
+            # Pass our emotion callback to the annotation node
+            self.annotation_node = pipeline.create(AN).build(
+                gather_data_node.out,
+                emotion_callback=self.on_emotion_detected
+            )
 
-            # Store reference to det_nn for later use
+            # Store references for later use
             self.det_nn = det_nn
+            self.gather_data_node = gather_data_node
+            self.rec_nn = rec_nn
 
             # visualization
             if self.visualizer:
@@ -308,9 +317,6 @@ class CameraInteraction(Node):
             # Store pipeline for later use
             self.pipeline = pipeline
 
-            # Start ROS processing thread
-            self.start_ros_processing()
-
             # Keep the original visualization loop
             while pipeline.isRunning():
                 if self.visualizer:
@@ -326,33 +332,32 @@ class CameraInteraction(Node):
                     if self.shutdown_event.is_set():
                         break
 
-    def start_ros_processing(self):
-        """Start a thread to process camera data and publish to ROS topics"""
-        self.ros_processing_thread = threading.Thread(target=self.ros_processing_loop, daemon=True)
-        self.ros_processing_thread.start()
-        self.get_logger().info("Started ROS processing thread")
+    def on_emotion_detected(self, emotion: str, confidence: float):
+        """Callback when emotion is detected by the annotation node"""
+        try:
+            # Publish emotion to ROS topic
+            emotion_msg = String()
+            emotion_msg.data = emotion
+            self.emotion_publisher.publish(emotion_msg)
 
-    def ros_processing_loop(self):
-        """Process camera output and publish to ROS topics"""
-        while not self.shutdown_event.is_set():
-            try:
-                # Get annotated output with emotion data
-                if hasattr(self, 'annotation_node'):
-                    # Get the latest annotation data (this includes emotions)
-                    # The annotation node outputs frames with emotion labels
-                    # We'll process this to extract emotions
+            if self.verbose:
+                self.get_logger().info(f"Published emotion: {emotion} (confidence: {confidence:.2f})")
 
-                    # For now, just sleep to prevent busy loop
-                    # The actual emotion data is being displayed through visualizer
-                    # We need to hook into the annotation data stream
-                    time.sleep(0.1)
+            # Check if we should trigger animation
+            current_time = self.get_clock().now()
+            time_since_last = (current_time - self.last_animation_time).nanoseconds / 1e9
 
-                    # TODO: Extract emotion data from annotation node output
-                    # and publish to ROS topics
+            # Only trigger animation if enough time has passed and emotion changed
+            if (time_since_last > self.emotion_cooldown and
+                emotion != self.last_emotion and
+                self.react_to_emotions and
+                emotion in self.emotion_to_animation):
 
-            except Exception as e:
-                self.get_logger().error(f"Error in ROS processing: {e}")
-                time.sleep(0.1)
+                self.trigger_animation(emotion)
+                self.last_emotion = emotion
+
+        except Exception as e:
+            self.get_logger().error(f"Error in emotion callback: {e}")
 
     def animation_status_callback(self, msg):
         """Update current animation name and track animation state changes."""

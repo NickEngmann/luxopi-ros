@@ -17,12 +17,18 @@ class AnnotationNode(dai.node.HostNode):
             'anger', 'contempt', 'disgust', 'fear',
             'happiness', 'neutral', 'sadness', 'surprise'
         ]
+        # Store emotion data for external access
+        self.latest_emotion = None
+        self.latest_confidence = 0.0
+        self.emotion_callback = None
 
     def build(
         self,
         gather_data_msg: dai.Node.Output,
+        emotion_callback=None,
     ) -> "AnnotationNode":
         self.link_args(gather_data_msg)
+        self.emotion_callback = emotion_callback
         return self
 
     def process(self, gather_data_msg: dai.Buffer) -> None:
@@ -40,7 +46,6 @@ class AnnotationNode(dai.node.HostNode):
         should_print = (current_time - self.last_print_time) > self.print_interval
 
         if should_print and len(rec_msg_list) > 0:
-            print("\n" + "="*50, flush=True)
             print(f"Detected {len(rec_msg_list)} face(s):", flush=True)
             self.last_print_time = current_time
 
@@ -54,6 +59,15 @@ class AnnotationNode(dai.node.HostNode):
 
             # Get all emotion scores
             emotion_scores = rec_msg.scores
+
+            # Store latest emotion data and trigger callback
+            if idx == 0:  # Use first face
+                self.latest_emotion = rec_msg.top_class.lower()
+                self.latest_confidence = rec_msg.top_score.item()
+
+                # Call the emotion callback if provided
+                if self.emotion_callback and self.latest_confidence > 0.3:
+                    self.emotion_callback(self.latest_emotion, self.latest_confidence)
 
             # Print emotion scores to terminal
             if should_print:
