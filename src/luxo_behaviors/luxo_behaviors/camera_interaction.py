@@ -354,17 +354,11 @@ class CameraInteraction(Node):
 
             # Count emotions for logging
             self.emotion_count = 0
-            last_log_time = time.time()
 
             # Main loop - EXACTLY like the working example
             # This loop MUST stay within the context manager
             while pipeline.isRunning() and not self.shutdown_event.is_set():
                 current_time = time.time()
-
-                # Log status every 5 seconds
-                if current_time - last_log_time > 5.0:
-                    self.get_logger().info(f"Pipeline running: emotions detected: {self.emotion_count}")
-                    last_log_time = current_time
 
                 if self.visualizer:
                     key = self.visualizer.waitKey(1)

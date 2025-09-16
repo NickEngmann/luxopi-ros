@@ -11,7 +11,7 @@ class AnnotationNode(dai.node.HostNode):
     def __init__(self) -> None:
         super().__init__()
         self.last_print_time = 0
-        self.print_interval = 0.5  # Print every 0.5 seconds to avoid spam
+        self.print_interval = 2.0  # Print every 2 seconds to avoid spam
         # Emotion labels for the 8 emotions
         self.emotion_labels = [
             'anger', 'contempt', 'disgust', 'fear',
@@ -48,9 +48,8 @@ class AnnotationNode(dai.node.HostNode):
         current_time = time.time()
         should_print = (current_time - self.last_print_time) > self.print_interval
 
-        if should_print and len(rec_msg_list) > 0:
-            print(f"Detected {len(rec_msg_list)} face(s):", flush=True)
-            self.last_print_time = current_time
+        # Collect face data for single-line logging
+        face_data = []
 
         for idx, (det_msg, rec_msg) in enumerate(zip(dets_msg.detections, rec_msg_list)):
             xmin, ymin, xmax, ymax = det_msg.rotated_rect.getOuterRect()
@@ -72,21 +71,8 @@ class AnnotationNode(dai.node.HostNode):
                 if self.emotion_callback and self.latest_confidence > 0.3:
                     self.emotion_callback(self.latest_emotion, self.latest_confidence)
 
-            # Print emotion scores to terminal
-            if should_print:
-                print(f"\nFace {idx + 1}:", flush=True)
-                print(f"  Primary: {rec_msg.top_class} ({rec_msg.top_score.item():.3f})", flush=True)
-
-                # Print all emotion scores
-                # if len(emotion_scores) == len(self.emotion_labels):
-                #     print("  All emotions:", flush=True)
-                #     emotion_data = list(zip(self.emotion_labels, emotion_scores))
-                #     # Sort by score for better readability
-                #     emotion_data.sort(key=lambda x: x[1], reverse=True)
-                #     for emotion, score in emotion_data:
-                #         bar_length = int(score * 20)  # Visual bar
-                #         bar = '█' * bar_length + '░' * (20 - bar_length)
-                #         print(f"    {emotion:10s}: {bar} {score:.3f}", flush=True)
+            # Collect face info for logging
+            face_data.append(f"Face{idx + 1}:{rec_msg.top_class}({rec_msg.top_score.item():.2f})")
 
             annotations.draw_text(
                 text=f"{rec_msg.top_class} ({rec_msg.top_score.item():.2f})",
@@ -94,6 +80,11 @@ class AnnotationNode(dai.node.HostNode):
                 size=20,
                 color=SECONDARY_COLOR,
             )
+
+        # Print all faces on a single line
+        if should_print and face_data:
+            print(f"Detected {len(face_data)} faces: {' | '.join(face_data)}", flush=True)
+            self.last_print_time = current_time
 
         # Always send output since we ensure visualizer is connected
         annotations_msg = annotations.build(
