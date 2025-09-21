@@ -30,18 +30,21 @@ class NeoPixelController:
     Supports RGBW color format
     """
     
-    def __init__(self, pixel_count: int = 60, brightness: float = 0.2, 
+    def __init__(self, pixel_count: int = 76, brightness: float = 0.2,
                  logger=None, max_fps: float = 20.0):
         """
         Initialize NeoPixel controller
-        
+
         Args:
-            pixel_count: Number of pixels in the strip
+            pixel_count: Number of pixels in the strip (76 total: 60 lighting + 16 status)
             brightness: Brightness level (0.0 to 1.0)
             logger: Optional logger instance for debugging
             max_fps: Maximum frames per second for animations (default 20)
         """
         self.pixel_count = pixel_count
+        self.lighting_pixels = 60  # First 60 pixels for lighting
+        self.status_pixels_start = 60  # Status pixels start at index 60
+        self.status_pixels_count = 16  # 16 pixels for status (60-75)
         self.brightness = brightness
         self.logger = logger
         self.max_fps = max_fps
@@ -243,6 +246,36 @@ class NeoPixelController:
                 self._log(f"Failed to set pixel {index}: {e}", "error")
                 return False
     
+    def clear_status_pixels(self):
+        """Clear only the status pixels (60-75), leaving lighting pixels unchanged"""
+        with self._lock:
+            if not self._is_initialized:
+                return False
+
+            try:
+                for i in range(self.status_pixels_start, self.pixel_count):
+                    self.set_pixel_color(i, 0, 0, 0, 0)
+                self.show()
+                return True
+            except Exception as e:
+                self._log(f"Failed to clear status pixels: {e}", "error")
+                return False
+
+    def fill_status_pixels(self, r: int, g: int, b: int, w: int = 0):
+        """Fill only status pixels (60-75) with specified color"""
+        with self._lock:
+            if not self._is_initialized:
+                return False
+
+            try:
+                for i in range(self.status_pixels_start, self.pixel_count):
+                    self.set_pixel_color(i, r, g, b, w)
+                self.show()
+                return True
+            except Exception as e:
+                self._log(f"Failed to fill status pixels: {e}", "error")
+                return False
+
     def fill_all(self, r: int, g: int, b: int, w: int = 0, show: bool = True):
         """Fill all pixels with RGBW color with retry logic"""
         with self._lock:
@@ -510,7 +543,49 @@ class NeoPixelController:
             self._run_effect(_color_wipe)
         return True
     
-    def spinning_dot(self, color: Union[Tuple[int, int, int], Tuple[int, int, int, int]] = (255, 255, 255, 0), 
+    def spinning_dot_status(self, color: Union[Tuple[int, int, int], Tuple[int, int, int, int]] = (255, 255, 255, 0),
+                           delay: float = 0.04, blocking: bool = False):
+        """Single dot spinning around the status pixels (60-75) only"""
+        if not self._is_initialized:
+            return False
+
+        # Handle both RGB and RGBW color formats
+        if len(color) == 3:
+            r, g, b = color
+            w = 0
+        else:
+            r, g, b, w = color
+
+        def _spinning_dot_status():
+            self._log(f"Status spinning dot: RGBW({r}, {g}, {b}, {w}) - continuous")
+
+            # Clear status pixels first
+            self.clear_status_pixels()
+
+            # Spin continuously until stopped, only on status pixels
+            while not self._stop_event.is_set():
+                for i in range(self.status_pixels_count):
+                    if self._stop_event.is_set():
+                        break
+                    # Clear status pixels
+                    for j in range(self.status_pixels_start, self.pixel_count):
+                        self.set_pixel_color(j, 0, 0, 0, 0)
+                    # Set current status pixel
+                    pixel_idx = self.status_pixels_start + i
+                    self.set_pixel_color(pixel_idx, r, g, b, w)
+                    self.show_rate_limited()
+                    time.sleep(delay)
+
+            # Clear status pixels when done
+            self.clear_status_pixels()
+
+        if blocking:
+            _spinning_dot_status()
+        else:
+            self._run_effect(_spinning_dot_status)
+        return True
+
+    def spinning_dot(self, color: Union[Tuple[int, int, int], Tuple[int, int, int, int]] = (255, 255, 255, 0),
                      cycles: int = 3, delay: float = 0.04, blocking: bool = False):
         """Single dot spinning around the ring - spins continuously until stopped"""
         if not self._is_initialized:
@@ -545,9 +620,74 @@ class NeoPixelController:
             self._run_effect(_spinning_dot)
         return True
     
-    def spinning_group(self, color: Union[Tuple[int, int, int], Tuple[int, int, int, int]] = (255, 255, 255, 0), 
-                       group_size: int = 8, cycles: int = 3, 
-                       delay_first_60: float = 0.04, delay_last_16: float = 0.08, 
+    def spinning_group_status(self, color: Union[Tuple[int, int, int], Tuple[int, int, int, int]] = (255, 255, 255, 0),
+                             group_size: int = 4, delay: float = 0.05, blocking: bool = False):
+        """Group of pixels spinning around the status pixels (60-75) only"""
+        if not self._is_initialized:
+            return False
+
+        # Handle both RGB and RGBW color formats
+        if len(color) == 3:
+            r, g, b = color
+            w = 0
+        else:
+            r, g, b, w = color
+
+        # Limit group size to status pixel count
+        group_size = min(group_size, self.status_pixels_count)
+
+        def _spinning_group_status():
+            self._log(f"Status spinning group: RGBW({r}, {g}, {b}, {w}), size: {group_size}")
+
+            # Clear status pixels first
+            self.clear_status_pixels()
+
+            # Track previous group positions
+            prev_group_positions = set()
+
+            # Spin continuously until stopped
+            while not self._stop_event.is_set():
+                for start_pos in range(self.status_pixels_count):
+                    if self._stop_event.is_set():
+                        break
+
+                    # Calculate current group positions within status pixels
+                    current_group_positions = set()
+                    for i in range(group_size):
+                        # Wrap around within status pixels only
+                        status_idx = (start_pos + i) % self.status_pixels_count
+                        pixel_idx = self.status_pixels_start + status_idx
+                        current_group_positions.add(pixel_idx)
+
+                    # Turn off pixels that were on but shouldn't be anymore
+                    pixels_to_turn_off = prev_group_positions - current_group_positions
+                    for pixel_idx in pixels_to_turn_off:
+                        self.set_pixel_color(pixel_idx, 0, 0, 0, 0)
+
+                    # Turn on pixels that should be on
+                    for pixel_idx in current_group_positions:
+                        self.set_pixel_color(pixel_idx, r, g, b, w)
+
+                    # Update the display
+                    self.show_rate_limited()
+
+                    # Store current positions for next iteration
+                    prev_group_positions = current_group_positions
+
+                    time.sleep(delay)
+
+            # Clear status pixels when done
+            self.clear_status_pixels()
+
+        if blocking:
+            _spinning_group_status()
+        else:
+            self._run_effect(_spinning_group_status)
+        return True
+
+    def spinning_group(self, color: Union[Tuple[int, int, int], Tuple[int, int, int, int]] = (255, 255, 255, 0),
+                       group_size: int = 8, cycles: int = 3,
+                       delay_first_60: float = 0.04, delay_last_16: float = 0.08,
                        blocking: bool = False):
         """Group of pixels spinning around the ring - spins continuously until stopped"""
         if not self._is_initialized:
@@ -737,6 +877,26 @@ class NeoPixelController:
         else:
             self._run_effect(_breathing_effect)
         return True
+    
+    def set_lighting_color(self, r: int, g: int, b: int, w: int = 255) -> bool:
+        """Set color for lighting pixels only (0-59), leaving status pixels unchanged"""
+        with self._lock:
+            if not self._is_initialized:
+                return False
+
+            try:
+                for i in range(self.lighting_pixels):
+                    self.set_pixel_color(i, r, g, b, w)
+                self.show()
+                return True
+            except Exception as e:
+                self._log(f"Failed to set lighting color: {e}", "error")
+                return False
+
+    def turn_off_lighting(self) -> bool:
+        """Turn off lighting pixels (0-59) only, leaving status pixels unchanged"""
+        return self.set_lighting_color(0, 0, 0, 0)
+
     def set_solid_color(self, r: int, g: int, b: int, w: int = 0) -> bool:
         """Set a solid color across all pixels"""
         return self.fill_all(r, g, b, w)

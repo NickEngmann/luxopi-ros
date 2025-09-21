@@ -214,7 +214,7 @@ class StateManagerNode(Node):
         try:
             from luxo_behaviors.neopixel_control import NeoPixelController
             self._neopixel_controller = NeoPixelController(
-                pixel_count=60,
+                pixel_count=76,  # 60 lighting + 16 status pixels
                 brightness=0.2,
                 logger=self.get_logger(),
                 max_fps=15.0  # Limit to 15 FPS for long-term stability
@@ -223,7 +223,17 @@ class StateManagerNode(Node):
                 # Test for DMA issues
                 try:
                     self._neopixel_controller.clear_all()
-                    self.get_logger().info("NeoPixel desk lamp state visualization enabled")
+                    # Turn on default white lighting if lights are enabled
+                    if self._lights_enabled:
+                        self._neopixel_controller.set_lighting_color(
+                            self._default_white_color[0],
+                            self._default_white_color[1],
+                            self._default_white_color[2],
+                            self._default_white_color[3]
+                        )
+                        self.get_logger().info("NeoPixel desk lamp initialized with default white lighting")
+                    else:
+                        self.get_logger().info("NeoPixel desk lamp state visualization enabled (lights off)")
                 except Exception as test_error:
                     if "timeout" in str(test_error).lower() or "110" in str(test_error):
                         self.get_logger().error("DMA timeout detected - disabling NeoPixels to prevent system lockup")
@@ -486,45 +496,30 @@ class StateManagerNode(Node):
             self.get_logger().info(f"Light control command received: {state}")
             
             if not self._lights_enabled:
-                # Lights turned OFF - forcefully stop animations and clear NeoPixels
+                # Lights turned OFF - only turn off lighting pixels (0-59), keep status pixels
                 if self._neopixel_controller:
-                    self.get_logger().info("Lights OFF - stopping animations and clearing NeoPixels")
-                    
-                    # Clear all pixels immediately (non-blocking)
+                    self.get_logger().info("Lights OFF - turning off lighting pixels only")
+
+                    # Turn off lighting pixels only, keep status pixels
                     try:
-                        self._neopixel_controller.clear_all()
+                        self._neopixel_controller.turn_off_lighting()
+                        self._lighting_initialized = False  # Reset so lights turn back on properly
                     except Exception as e:
-                        self.get_logger().warn(f"Failed to clear NeoPixels on light off: {e}")
-                    
-                    # Set override to prevent any new updates
+                        self.get_logger().warn(f"Failed to turn off lighting pixels: {e}")
+
+                    # Set override to prevent lighting updates
                     self._neopixel_override_active = True
                     
-                    # Clear all timing variables to prevent pending updates
-                    self._neopixel_animation_start_time = None
-                    self._neopixel_pending_state = None
-                    self._current_animation_duration = None
-                    self._neopixel_last_visual_state = None
-                    
-                    # Force another clear after a brief delay to ensure animation threads are stopped
-                    import threading
-                    def delayed_clear():
-                        time.sleep(0.25)  # Wait for animation threads to stop
-                        if not self._lights_enabled:  # Check again in case lights were turned back on
-                            self._neopixel_controller.clear_all()
-                            self.get_logger().debug("Secondary clear completed")
-                    
-                    clear_thread = threading.Thread(target=delayed_clear, daemon=True)
-                    clear_thread.start()
-                    
             elif previous_state != self._lights_enabled:
-                # Lights turned ON - re-enable NeoPixel updates
+                # Lights turned ON - turn on lighting pixels only
                 if self._neopixel_controller:
-                    self.get_logger().info("Lights ON - re-enabling NeoPixel updates")
+                    self.get_logger().info("Lights ON - turning on lighting pixels")
                     self._neopixel_override_active = False
-                    
-                    # Force update to current state
-                    self._neopixel_last_visual_state = None  # Reset to force update
-                    self._update_neopixel_for_state(self._current_state)
+
+                    # Set lighting to default white
+                    color = self._default_white_color
+                    self._neopixel_controller.set_lighting_color(color[0], color[1], color[2], color[3])
+                    self._lighting_initialized = True  # Mark as initialized
                     
         except Exception as e:
             self.get_logger().error(f"Error in light control callback: {e}")
@@ -578,7 +573,7 @@ class StateManagerNode(Node):
                 if self._lights_enabled and self._neopixel_controller:
                     # Only apply if we're currently showing white/default colors
                     if not hasattr(self, '_color_mode') or self._color_mode is None:
-                        self._update_neopixel_for_state(self._current_state)
+                        self._neopixel_controller.set_lighting_color(r, g, b, w)
                         
                 self.get_logger().info(f"Color temperature set to {color_temp:.1%} (RGBW: {r}, {g}, {b}, {w})")
                 
@@ -616,13 +611,13 @@ class StateManagerNode(Node):
                     self._color_mode = color_name
                     color = color_map.get(color_name, (255, 255, 255, 0))
                 
-                # Apply the color if lights are on
+                # Apply the color to lighting pixels only if lights are on
                 if self._lights_enabled and self._neopixel_controller and color:
-                    success = self._neopixel_controller.set_solid_color(*color)
+                    success = self._neopixel_controller.set_lighting_color(*color)
                     if success:
-                        self.get_logger().info(f"NeoPixel color set to {color_name}")
+                        self.get_logger().info(f"Lighting color set to {color_name}")
                     else:
-                        self.get_logger().error(f"Failed to set NeoPixel color to {color_name}")
+                        self.get_logger().error(f"Failed to set lighting color to {color_name}")
                         
         except Exception as e:
             self.get_logger().error(f"Error in color control callback: {e}")
@@ -705,31 +700,25 @@ class StateManagerNode(Node):
             needs_animation_timer = False
             
             if state == LuxoState.ERROR:
-                self.get_logger().debug("NeoPixel: Red flashing for ERROR state")
-                self._neopixel_controller.breathing_effect(color, cycles=3, blocking=False)
-                needs_animation_timer = True
+                self.get_logger().debug("NeoPixel: Red status pixels for ERROR state")
+                self._neopixel_controller.fill_status_pixels(color[0], color[1], color[2], color[3])
+                needs_animation_timer = False
             elif state == LuxoState.COLLISION_AVOIDING:
-                self.get_logger().debug("NeoPixel: Orange spinning group for COLLISION_AVOIDING state")
-                self._neopixel_controller.spinning_group(color, group_size=36, cycles=1, 
-                                                       delay_first_60=0.03, delay_last_16=0.06, 
-                                                       blocking=False)
-                needs_animation_timer = True
+                self.get_logger().debug("NeoPixel: Orange status pixels for COLLISION_AVOIDING state")
+                self._neopixel_controller.fill_status_pixels(color[0], color[1], color[2], color[3])
+                needs_animation_timer = False
             elif state == LuxoState.INITIALIZING:
-                self.get_logger().debug("NeoPixel: Blue spinning dot for INITIALIZING state")
-                self._neopixel_controller.spinning_dot(color, cycles=3, delay=0.05, blocking=False)
+                self.get_logger().debug("NeoPixel: Blue spinning dot on status pixels for INITIALIZING state")
+                self._neopixel_controller.spinning_dot_status(color, delay=0.05, blocking=False)
                 needs_animation_timer = True
             elif state == LuxoState.ANIMATING:
-                self.get_logger().debug("NeoPixel: Warm white spinning group for ANIMATING state")
-                self._neopixel_controller.spinning_group(color, group_size=48, cycles=1, 
-                                                       delay_first_60=0.03, delay_last_16=0.06, 
-                                                       blocking=False)
-                needs_animation_timer = True
+                self.get_logger().debug("NeoPixel: Stable white on status pixels for ANIMATING state")
+                self._neopixel_controller.fill_status_pixels(color[0], color[1], color[2], color[3])
+                needs_animation_timer = False
             elif state == LuxoState.PETTING:
-                self.get_logger().debug("NeoPixel: Pink spinning group for PETTING state")
-                self._neopixel_controller.spinning_group(color, group_size=48, cycles=1, 
-                                                       delay_first_60=0.03, delay_last_16=0.06, 
-                                                       blocking=False)
-                needs_animation_timer = True
+                self.get_logger().debug("NeoPixel: Pink status pixels for PETTING state")
+                self._neopixel_controller.fill_status_pixels(color[0], color[1], color[2], color[3])
+                needs_animation_timer = False
             elif state == LuxoState.USER_CONTROL:
                 self.get_logger().debug("NeoPixel: Bouncing direction indicator for USER_CONTROL state")
                 # Create a bouncing direction indicator effect
@@ -746,14 +735,41 @@ class StateManagerNode(Node):
                 )
                 needs_animation_timer = True
             elif state == LuxoState.SHUTDOWN:
-                self.get_logger().debug("NeoPixel: Fading to black for SHUTDOWN state")
-                self._neopixel_controller.breathing_effect((0, 0, 0, 0), cycles=1, blocking=True)
-                needs_animation_timer = True
+                self.get_logger().debug("NeoPixel: Clear all pixels for SHUTDOWN state")
+                self._neopixel_controller.clear_all()
+                needs_animation_timer = False
+            elif state == LuxoState.IDLE:
+                # Clear status pixels when idle
+                self.get_logger().debug("NeoPixel: Clear status pixels for IDLE state")
+                self._neopixel_controller.clear_status_pixels()
+
+                # If lights are enabled, turn on lighting pixels with default white
+                if self._lights_enabled:
+                    self.get_logger().debug(f"NeoPixel: Setting lighting to default white for IDLE")
+                    self._neopixel_controller.set_lighting_color(
+                        self._default_white_color[0],
+                        self._default_white_color[1],
+                        self._default_white_color[2],
+                        self._default_white_color[3]
+                    )
+                needs_animation_timer = False
             else:
-                # For static states, use the RGBW color directly
+                # For other states, show color on status pixels only
                 r, g, b, w = color
-                self.get_logger().debug(f"NeoPixel: RGBW({r}, {g}, {b}, {w}) solid for {state.name} state")
-                self._neopixel_controller.set_solid_color(r, g, b, w)
+                self.get_logger().debug(f"NeoPixel: RGBW({r}, {g}, {b}, {w}) on status pixels for {state.name} state")
+                self._neopixel_controller.fill_status_pixels(r, g, b, w)
+
+                # Ensure lighting stays on if enabled
+                if self._lights_enabled and state != LuxoState.SHUTDOWN:
+                    # Don't override lighting unless it's the first time or lighting was off
+                    if not hasattr(self, '_lighting_initialized') or not self._lighting_initialized:
+                        self._neopixel_controller.set_lighting_color(
+                            self._default_white_color[0],
+                            self._default_white_color[1],
+                            self._default_white_color[2],
+                            self._default_white_color[3]
+                        )
+                        self._lighting_initialized = True
                 needs_animation_timer = False
             
             if needs_animation_timer:
