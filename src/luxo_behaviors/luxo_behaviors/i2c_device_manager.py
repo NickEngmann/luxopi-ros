@@ -181,12 +181,45 @@ class ADS7830Sensor(I2CSensor):
         self.channels = []
         self.channel_mapping = {
             0: "head_top",
-            1: "head_left", 
+            1: "head_left",
             2: "head_bottom",
             3: "head_right"
         }
         self.active_channels = list(self.channel_mapping.keys())  # Only use mapped channels
-        
+
+        # ADC configuration for pressure detection
+        self.ADC_MIN = 48000  # ADC value at maximum pressure (fully pressed)
+        self.ADC_MAX = 59000  # ADC value at no pressure (not pressed)
+
+        # Pressure level percentages (0% = not pressed, 100% = maximum pressure)
+        self.PRESSURE_LEVELS = [
+            (5,   "Light Touch", "1"),   # 5% pressure
+            (15,  "Light Press", "2"),   # 15% pressure
+            (30,  "Medium Press", "3"),  # 30% pressure
+            (50,  "Hard Press", "4"),    # 50% pressure
+            (70,  "Very Hard", "5"),     # 70% pressure
+            (100, "Maximum", "!"),       # 100% pressure
+        ]
+
+        # Calculate thresholds once at initialization
+        self.thresholds = self._calculate_thresholds()
+
+    def _calculate_thresholds(self):
+        """
+        Calculate ADC thresholds based on min/max values and pressure percentages
+        Returns a list of (threshold, name, symbol) tuples
+        """
+        range_size = self.ADC_MAX - self.ADC_MIN
+        thresholds = []
+
+        for percent, name, symbol in self.PRESSURE_LEVELS:
+            # Calculate threshold: higher ADC values = less pressure
+            # So we subtract the percentage from MAX
+            threshold = self.ADC_MAX - (range_size * percent / 100)
+            thresholds.append((int(threshold), name, symbol))
+
+        return thresholds
+
     def initialize(self, i2c_bus):
         """Initialize ADS7830"""
         try:
@@ -225,23 +258,20 @@ class ADS7830Sensor(I2CSensor):
             
     def get_pressure_state(self, value):
         """
-        Map ADC value to pressure state
+        Map ADC value to pressure state using calculated thresholds
         Returns: (state_number, state_name, state_symbol)
         """
-        if value >= 24000:  # Not pressed (allowing for some noise)
+        # Check if not pressed (near maximum ADC value with 2% tolerance)
+        if value >= (self.ADC_MAX - (self.ADC_MAX - self.ADC_MIN) * 0.02):
             return (0, "Not Pressed", "-")
-        elif value >= 20000:  # Very light touch
-            return (1, "Light Touch", "1")
-        elif value >= 17500:  # Light press
-            return (2, "Light Press", "2")
-        elif value >= 15000:  # Medium press
-            return (3, "Medium Press", "3")
-        elif value >= 8000:   # Hard press
-            return (4, "Hard Press", "4")
-        elif value >= 4000:   # Very hard press
-            return (5, "Very Hard", "5")
-        else:                 # Maximum press
-            return (6, "Maximum", "!")
+
+        # Check pressure levels from lightest to hardest
+        for i, (threshold, name, symbol) in enumerate(self.thresholds):
+            if value >= threshold:
+                return (i + 1, name, symbol)
+
+        # If below all thresholds, it's maximum pressure
+        return (len(self.thresholds), self.thresholds[-1][1], self.thresholds[-1][2])
 
 class I2CDeviceManager(Node):
     """Centralized I2C device manager to prevent bus contention"""
