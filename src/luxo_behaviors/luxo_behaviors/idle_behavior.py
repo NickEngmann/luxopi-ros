@@ -44,7 +44,8 @@ class IdleBehavior:
         self.last_idle_head_variation_time = self.node.get_clock().now()
         self.current_idle_head_target = None
         self.idle_head_variation_active = False
-        self.idle_base_position = [0.0, -0.55, 1.2, 1.0, 2.0]  # Standard idle position
+        self.idle_base_position = [0.0, -0.55, 1.2, 1.0, 2.0]  # Standard idle position (without antenna)
+        self.idle_antenna_variation_range = 3.14  # Full range for antenna movement (0 to 3.14 radians = 180 degrees)
         
         # Create action client for triggering animations
         self._idle_animation_client = ActionClient(
@@ -254,15 +255,50 @@ class IdleBehavior:
             base_position[2] = self.idle_base_position[2]  # Start with base idle elbow
             base_position[3] = self.idle_base_position[3]  # Start with base idle wrist
             base_position[4] = self.idle_base_position[4]  # Start with base idle hand
-            
+
             # Add tiny variations to other joints for naturalness, but keep neck straighter
             # Only add elbow variation 30% of the time to keep neck less crooked
             if random.random() < 0.3:
                 base_position[2] += random.uniform(-0.02, 0.02)  # Reduced elbow adjustment
-            # Only add wrist variation 20% of the time 
+            # Only add wrist variation 20% of the time
             if random.random() < 0.2:
                 base_position[3] += random.uniform(-0.01, 0.01)  # Reduced wrist adjustment
-            
+
+            # Add antenna movement that correlates with the head movement
+            # When looking up (alert/curious), antenna tends to perk up (positive)
+            # When looking down or neutral, antenna can droop or stay neutral
+
+            # Ensure we have space for antenna value (7 elements total)
+            while len(base_position) < 7:
+                if len(base_position) == 5:
+                    base_position.append(10.0)  # Default acceleration at index 5
+                else:
+                    base_position.append(0.0)  # Default antenna at index 6
+
+            # Generate antenna variation based on head position
+            # Use full range 0 to 3.14 for dramatic visible movement
+            if look_type < 0.7:  # Looking up - antenna perks up (70% chance)
+                # When alert/curious, antenna goes up significantly (1.5 to 3.14)
+                antenna_variation = random.uniform(1.5, self.idle_antenna_variation_range)
+            elif look_type < 0.9:  # Looking down - antenna droops (20% chance)
+                # When looking down, antenna droops (0.0 to 1.2)
+                antenna_variation = random.uniform(0.0, 1.2)
+            else:  # Neutral - mid-range movement (10% chance)
+                # Neutral position varies in middle range (0.8 to 2.2)
+                antenna_variation = random.uniform(0.8, 2.2)
+
+            # Apply antenna variation at index 6
+            base_position[6] = antenna_variation
+
+            # Rate-limited logging for antenna variations
+            if not hasattr(self, '_last_antenna_variation_log_time'):
+                self._last_antenna_variation_log_time = 0
+
+            current_time = self.node.get_clock().now().nanoseconds / 1e9
+            if current_time - self._last_antenna_variation_log_time >= 1.0:
+                self.node.get_logger().info(f"Added antenna variation: {antenna_variation:.2f} for {variation_description}")
+                self._last_antenna_variation_log_time = current_time
+
             # Set the new target
             self.current_idle_head_target = base_position
             self.idle_head_variation_active = True

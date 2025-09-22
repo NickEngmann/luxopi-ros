@@ -34,18 +34,18 @@ class CuriousLookAnimation(AnimationPlugin):
         base_center = 0.0
         
         keyframes = [
-            [base_center, -0.2, 0.8, 0.9, -1.4, 16.0],      # Anticipation - pulled back
-            [base_center-0.1, -0.1, 0.5, 0.3, -0.9, 19.0],  # Notice something - barely forward
-            [base_center-0.05, -0.4, 0.3, 0.6, -2.1, 20.0], # Quick double-take - back
-            [base_center+0.15, -0.6, 0.8, 0.8, -0.8, 17.0], # Lean in carefully - still back
-            [base_center, -0.3, 0.4, 0.5, -1.9, 21.0],      # Surprised pullback
-            [base_center+0.2, -0.7, 1.0, 0.9, -0.85, 16.0], # Cautious approach - back
-            [base_center+0.1, -0.9, 1.2, 1.1, -2.0, 14.0],  # Close inspection - far back
-            [base_center-0.15, -0.8, 1.1, 1.0, -1.0, 18.0], # Tilt examination - back
-            [base_center, -0.5, 0.7, 0.7, -1.6, 19.0],      # Final look - back
-            [base_center, -0.3, 0.9, 0.5, -1.5, 15.0],      # Satisfied nod - back
-            [base_center, 0.2, 1.3, 1.5, -1.5, 15.0],       # Return home 1 - neutral
-            [base_center, -0.65, 1.2, 1.0, -1.5, 10.0]      # Return home 2 - neutral
+            [base_center, -0.2, 0.8, 0.9, -1.4, 16.0, 1.00],      # Anticipation - pulled back
+            [base_center-0.1, -0.1, 0.5, 0.3, -0.9, 19.0, 1.00],  # Notice something - barely forward
+            [base_center-0.05, -0.4, 0.3, 0.6, -2.1, 20.0, 1.00], # Quick double-take - back
+            [base_center+0.15, -0.6, 0.8, 0.8, -0.8, 17.0, 1.00], # Lean in carefully - still back
+            [base_center, -0.3, 0.4, 0.5, -1.9, 21.0, 2.80],      # Surprised pullback
+            [base_center+0.2, -0.7, 1.0, 0.9, -0.85, 16.0, 1.00], # Cautious approach - back
+            [base_center+0.1, -0.9, 1.2, 1.1, -2.0, 14.0, 1.00],  # Close inspection - far back
+            [base_center-0.15, -0.8, 1.1, 1.0, -1.0, 18.0, 1.00], # Tilt examination - back
+            [base_center, -0.5, 0.7, 0.7, -1.6, 19.0, 1.00],      # Final look - back
+            [base_center, -0.3, 0.9, 0.5, -1.5, 15.0, 1.00],      # Satisfied nod - back
+            [base_center, 0.2, 1.3, 1.5, -1.5, 15.0, 1.00],       # Return home 1 - neutral
+            [base_center, -0.65, 1.2, 1.0, -1.5, 10.0, 1.00]      # Return home 2 - neutral
         ]
         
         # Snappier durations
@@ -80,21 +80,21 @@ class ThinkingAnimation(AnimationPlugin):
         base_pos = 0.0
         
         keyframes = [
-            [base_pos, -0.1, 0.7, 0.5, -1.5, 15.0],        # Alert - slightly back
-            [base_pos+0.05, -0.2, 0.5, 0.7, -1.2, 17.0],   # Processing tilt - back
-            [base_pos, -0.5, 0.9, 1.0, -1.8, 14.0],        # Chin scratch pose - back
-            [base_pos-0.1, -0.7, 1.1, 1.2, -0.9, 12.0],    # Deep thought - far back
-            [base_pos+0.2, -0.6, 1.0, 1.1, -2.0, 16.0],    # Ponder left - back
-            [base_pos-0.2, -0.6, 1.0, 1.1, -1.0, 16.0],    # Ponder right - back
-            [base_pos, -0.8, 1.2, 1.3, -1.5, 11.0],        # Hmm moment - far back
-            [base_pos, -0.5, 0.8, 0.9, -1.3, 18.0],        # Building idea - back
-            [base_pos, -0.3, 0.5, 0.6, -1.6, 20.0],        # Pre-eureka - back
-            [base_pos, -0.2, 0.2, 0.3, -1.5, 22.0],        # Eureka! - still back
-            [base_pos, 0.0, 0.4, 0.2, -1.4, 21.0],         # Excitement bounce - neutral
-            [base_pos, -0.4, 0.6, 0.8, -1.6, 17.0],        # Pride pose - back
-            [base_pos, -0.1, 0.8, 0.6, -1.5, 15.0],        # Satisfied - slightly back
-            [base_pos, 0.2, 1.3, 1.5, -1.5, 15.0],         # Return home 1
-            [base_pos, -0.65, 1.2, 1.0, -1.5, 10.0]        # Return home 2
+            [base_pos, -0.1, 0.7, 0.5, -1.5, 15.0, 2.40],        # Alert - slightly back
+            [base_pos+0.05, -0.2, 0.5, 0.7, -1.2, 17.0, 1.00],   # Processing tilt - back
+            [base_pos, -0.5, 0.9, 1.0, -1.8, 14.0, 1.00],        # Chin scratch pose - back
+            [base_pos-0.1, -0.7, 1.1, 1.2, -0.9, 12.0, 1.00],    # Deep thought - far back
+            [base_pos+0.2, -0.6, 1.0, 1.1, -2.0, 16.0, 1.60],    # Ponder left - back
+            [base_pos-0.2, -0.6, 1.0, 1.1, -1.0, 16.0, 1.60],    # Ponder right - back
+            [base_pos, -0.8, 1.2, 1.3, -1.5, 11.0, 1.00],        # Hmm moment - far back
+            [base_pos, -0.5, 0.8, 0.9, -1.3, 18.0, 1.00],        # Building idea - back
+            [base_pos, -0.3, 0.5, 0.6, -1.6, 20.0, 1.00],        # Pre-eureka - back
+            [base_pos, -0.2, 0.2, 0.3, -1.5, 22.0, 1.00],        # Eureka! - still back
+            [base_pos, 0.0, 0.4, 0.2, -1.4, 21.0, 2.20],         # Excitement bounce - neutral
+            [base_pos, -0.4, 0.6, 0.8, -1.6, 17.0, 1.00],        # Pride pose - back
+            [base_pos, -0.1, 0.8, 0.6, -1.5, 15.0, 1.00],        # Satisfied - slightly back
+            [base_pos, 0.2, 1.3, 1.5, -1.5, 15.0, 1.00],         # Return home 1
+            [base_pos, -0.65, 1.2, 1.0, -1.5, 10.0, 1.00]        # Return home 2
         ]
         
         # Faster thinking
@@ -121,26 +121,26 @@ class StretchingAnimation(AnimationPlugin):
         base_pos = 0.0
         
         keyframes = [
-            [base_pos, 0.2, 1.4, 0.8, -1.5, 13.0],         # Start tired - forward OK for home
-            [base_pos, 0.1, 1.5, 1.0, -1.6, 14.0],         # Begin compression - less forward
-            [base_pos, -0.8, 1.8, 1.2, -1.4, 12.0],        # Compress more - back
-            [base_pos, -1.0, 2.0, 1.0, -1.45, 10.0],       # Near max compact
-            [base_pos, -0.9, 1.6, 0.8, -1.5, 11.0],        # Slight release
-            [base_pos, -0.7, 1.2, 0.6, -1.4, 13.0],        # Build tension
-            [base_pos, -0.4, 0.8, 0.4, -1.45, 16.0],       # Begin stretch
-            [base_pos, -0.2, 0.4, 0.2, -1.45, 19.0],       # Continue up
-            [base_pos, -0.1, 0.2, 0.1, -1.45, 21.0],       # Almost peak
-            [base_pos, 0, 0, 0, -1.45, 8.0],               # Full stretch - straight up!
-            [base_pos, 0, 0.1, 0.05, -1.5, 9.0],           # Hold with wobble
-            [base_pos, -0.05, 0.15, 0.1, -1.4, 10.0],      # Slight wobble
-            [base_pos, -0.2, 0.4, 0.3, -1.5, 14.0],        # Begin descent
-            [base_pos, -0.4, 0.7, 0.6, -1.6, 16.0],        # Continue down
-            [base_pos, -0.5, 1.0, 0.8, -1.5, 15.0],        # Lower more
-            [base_pos, -0.3, 0.8, 0.7, -1.4, 17.0],        # Small bounce
-            [base_pos, -0.1, 0.6, 0.5, -1.5, 18.0],        # Another bounce
-            [base_pos, 0.1, 0.7, 0.4, -1.5, 16.0],         # Settling
-            [base_pos, 0.2, 1.3, 1.5, -1.5, 15.0],         # Return home 1
-            [base_pos, -0.65, 1.2, 1.0, -1.5, 10.0]        # Return home 2
+            [base_pos, 0.2, 1.4, 0.8, -1.5, 13.0, 1.00],         # Start tired - forward OK for home
+            [base_pos, 0.1, 1.5, 1.0, -1.6, 14.0, 0.40],         # Begin compression - less forward
+            [base_pos, -0.8, 1.8, 1.2, -1.4, 12.0, 0.40],        # Compress more - back
+            [base_pos, -1.0, 2.0, 1.0, -1.45, 10.0, 1.00],       # Near max compact
+            [base_pos, -0.9, 1.6, 0.8, -1.5, 11.0, 1.00],        # Slight release
+            [base_pos, -0.7, 1.2, 0.6, -1.4, 13.0, 1.00],        # Build tension
+            [base_pos, -0.4, 0.8, 0.4, -1.45, 16.0, 1.00],       # Begin stretch
+            [base_pos, -0.2, 0.4, 0.2, -1.45, 19.0, 2.80],       # Continue up
+            [base_pos, -0.1, 0.2, 0.1, -1.45, 21.0, 3.14],       # Almost peak
+            [base_pos, 0, 0, 0, -1.45, 8.0, 2.80],               # Full stretch - straight up!
+            [base_pos, 0, 0.1, 0.05, -1.5, 9.0, 1.00],           # Hold with wobble
+            [base_pos, -0.05, 0.15, 0.1, -1.4, 10.0, 1.00],      # Slight wobble
+            [base_pos, -0.2, 0.4, 0.3, -1.5, 14.0, 1.00],        # Begin descent
+            [base_pos, -0.4, 0.7, 0.6, -1.6, 16.0, 0.40],        # Continue down
+            [base_pos, -0.5, 1.0, 0.8, -1.5, 15.0, 0.40],        # Lower more
+            [base_pos, -0.3, 0.8, 0.7, -1.4, 17.0, 2.20],        # Small bounce
+            [base_pos, -0.1, 0.6, 0.5, -1.5, 18.0, 2.20],        # Another bounce
+            [base_pos, 0.1, 0.7, 0.4, -1.5, 16.0, 1.00],         # Settling
+            [base_pos, 0.2, 1.3, 1.5, -1.5, 15.0, 1.00],         # Return home 1
+            [base_pos, -0.65, 1.2, 1.0, -1.5, 10.0, 1.00]        # Return home 2
         ]
         
         # Faster stretch
@@ -167,22 +167,22 @@ class DancingAnimation(AnimationPlugin):
         base_pos = 0.0
         
         keyframes = [
-            [base_pos, -0.1, 0.7, 0.4, -1.5, 17.0],        # Ready - slightly back
-            [base_pos+0.3, 0.1, 0.8, 0.3, -1.2, 20.0],     # Right bounce - slight forward
-            [base_pos+0.4, -0.3, 0.5, 0.6, -1.8, 21.0],    # Right high - back
-            [base_pos+0.2, -0.1, 0.9, 0.5, -0.9, 19.0],    # Right low - barely back
-            [base_pos-0.3, 0.2, 0.8, 0.3, -2.1, 20.0],     # Left bounce - bit forward
-            [base_pos-0.4, -0.3, 0.5, 0.6, -0.8, 21.0],    # Left high - back
-            [base_pos-0.2, -0.1, 0.9, 0.5, -1.9, 19.0],    # Left low - barely back
-            [base_pos, -0.5, 0.6, 0.7, -1.5, 22.0],        # Center pop - back
-            [base_pos+0.2, -0.4, 0.7, 0.8, -1.0, 18.0],    # Twist right - back
-            [base_pos-0.2, -0.4, 0.7, 0.8, -2.0, 18.0],    # Twist left - back
-            [base_pos, 0.3, 1.2, 0.2, -1.5, 15.0],         # Dip down - forward OK
-            [base_pos, -0.6, 0.3, 0.9, -1.5, 22.0],        # Pop up - back
-            [base_pos+0.1, -0.3, 0.5, 0.6, -1.6, 20.0],    # Finale pose - back
-            [base_pos, -0.2, 0.7, 0.5, -1.5, 16.0],        # Cool down - back
-            [base_pos, 0.2, 1.3, 1.5, -1.5, 15.0],         # Return home 1
-            [base_pos, -0.65, 1.2, 1.0, -1.5, 10.0]        # Return home 2
+            [base_pos, -0.1, 0.7, 0.4, -1.5, 17.0, 1.00],        # Ready - slightly back
+            [base_pos+0.3, 0.1, 0.8, 0.3, -1.2, 20.0, 1.80],     # Right bounce - slight forward
+            [base_pos+0.4, -0.3, 0.5, 0.6, -1.8, 21.0, 1.80],    # Right high - back
+            [base_pos+0.2, -0.1, 0.9, 0.5, -0.9, 19.0, 1.80],    # Right low - barely back
+            [base_pos-0.3, 0.2, 0.8, 0.3, -2.1, 20.0, 1.40],     # Left bounce - bit forward
+            [base_pos-0.4, -0.3, 0.5, 0.6, -0.8, 21.0, 1.40],    # Left high - back
+            [base_pos-0.2, -0.1, 0.9, 0.5, -1.9, 19.0, 1.40],    # Left low - barely back
+            [base_pos, -0.5, 0.6, 0.7, -1.5, 22.0, 1.00],        # Center pop - back
+            [base_pos+0.2, -0.4, 0.7, 0.8, -1.0, 18.0, 1.80],    # Twist right - back
+            [base_pos-0.2, -0.4, 0.7, 0.8, -2.0, 18.0, 1.40],    # Twist left - back
+            [base_pos, 0.3, 1.2, 0.2, -1.5, 15.0, 0.40],         # Dip down - forward OK
+            [base_pos, -0.6, 0.3, 0.9, -1.5, 22.0, 2.80],        # Pop up - back
+            [base_pos+0.1, -0.3, 0.5, 0.6, -1.6, 20.0, 1.00],    # Finale pose - back
+            [base_pos, -0.2, 0.7, 0.5, -1.5, 16.0, 0.40],        # Cool down - back
+            [base_pos, 0.2, 1.3, 1.5, -1.5, 15.0, 1.00],         # Return home 1
+            [base_pos, -0.65, 1.2, 1.0, -1.5, 10.0, 1.00]        # Return home 2
         ]
         
         # Snappy dance timing
@@ -222,12 +222,27 @@ class IdleAnimation(AnimationPlugin):
         hand_left = random.uniform(-1.7, -1.9)
         
         keyframes = [
-            [base_var, shoulder_var, elbow_var, wrist_var, hand_idle, 13.0],
-            [base_var + look_right, shoulder_var + 0.05, elbow_var - 0.05, wrist_var, hand_right, 16.0],
-            [base_var, shoulder_var - 0.03, elbow_var + 0.03, wrist_var + 0.05, -1.5, 15.0],
-            [base_var - look_left, shoulder_var, elbow_var, wrist_var - 0.05, hand_left, 16.0],
-            [base_var, shoulder_var, elbow_var, wrist_var, -1.5, 14.0],
-            [0.0, -0.65, 1.2, 1.0, -1.5, 10.0]  # Return home 2
+            [base_var, shoulder_var, elbow_var, wrist_var, hand_idle, 13.0, 1.00],
+
+
+
+            [base_var + look_right, shoulder_var + 0.05, elbow_var - 0.05, wrist_var, hand_right, 16.0, 1.00],
+
+
+
+            [base_var, shoulder_var - 0.03, elbow_var + 0.03, wrist_var + 0.05, -1.5, 15.0, 1.00],
+
+
+
+            [base_var - look_left, shoulder_var, elbow_var, wrist_var - 0.05, hand_left, 16.0, 1.00],
+
+
+
+            [base_var, shoulder_var, elbow_var, wrist_var, -1.5, 14.0, 1.00],
+
+
+
+            [0.0, -0.65, 1.2, 1.0, -1.5, 10.0, 1.00]  # Return home 2
         ]
         
         # Gentle, relaxed timing

@@ -90,7 +90,7 @@ class AnimationCommandActionServer(Node):
         self.get_logger().info('Publishing animation status to: /roarm/current_animation')
 
         # Current joint positions
-        self.current_positions = [0.0, 0.0, 0.0, 0.0, 0.0, 10.0]  # base, shoulder, elbow, wrist, hand, acceleration
+        self.current_positions = [0.0, 0.0, 0.0, 0.0, 0.0, 10.0, 0.0]  # base, shoulder, elbow, wrist, roll, acceleration, antenna
         self.target_positions = self.current_positions.copy()
 
         self.behavior_coordinator = None
@@ -837,7 +837,12 @@ class AnimationCommandActionServer(Node):
             if len(self.target_positions) > 5:
                 # Include acceleration in the position array
                 validated_positions.append(float(self.target_positions[5]))
-            
+
+            # Check if we have antenna value
+            if len(self.target_positions) > 6:
+                # Include antenna in the position array
+                validated_positions.append(float(self.target_positions[6]))
+
             msg.position = validated_positions
             
             # Encode movement source in velocity field
@@ -899,42 +904,54 @@ class AnimationCommandActionServer(Node):
             anim_msg.data = animation_name
             self.current_animation_publisher.publish(anim_msg)
         
-        # Handle acceleration value if present
-        if len(positions) > 5:
-            # Update target positions to include acceleration
-            target_with_accel = positions[:6]  # Take first 6 elements
+        # Handle acceleration and antenna values if present
+        if len(positions) > 6:
+            # Update target positions to include acceleration and antenna
+            target_with_all = positions[:7]  # Take first 7 elements
+        elif len(positions) > 5:
+            # Has acceleration but no antenna, add default antenna
+            target_with_all = list(positions[:6]) + [0.0]  # Default antenna position
         else:
-            # No acceleration provided, use default
-            target_with_accel = list(positions[:5]) + [10.0]  # Default acceleration
-        
+            # No acceleration or antenna provided, use defaults
+            target_with_all = list(positions[:5]) + [10.0, 0.0]  # Default acceleration and antenna
+
         elapsed_time = 0.0
         while elapsed_time < adjusted_duration:
             current_time = self.get_clock().now()
             elapsed_time = (current_time - start_time).nanoseconds / 1e9
             progress = min(1.0, elapsed_time / adjusted_duration)
-            
+
             if easing:
                 eased_progress = self.ease_in_out(progress)
             else:
                 eased_progress = progress
-            
-            # Update positions including acceleration
-            for i in range(5):  # Only interpolate joint positions, not acceleration
-                self.target_positions[i] = start_positions[i] + eased_progress * (target_with_accel[i] - start_positions[i])
-            
+
+            # Update positions including antenna (but not acceleration)
+            for i in range(5):  # Interpolate joint positions
+                self.target_positions[i] = start_positions[i] + eased_progress * (target_with_all[i] - start_positions[i])
+
             # Set acceleration directly (don't interpolate)
             if len(self.target_positions) > 5:
-                self.target_positions[5] = target_with_accel[5]
+                self.target_positions[5] = target_with_all[5]
             else:
-                self.target_positions.append(target_with_accel[5])
-            
+                self.target_positions.append(target_with_all[5])
+
+            # Interpolate antenna position (index 6)
+            if len(self.target_positions) > 6:
+                if len(start_positions) > 6:
+                    self.target_positions[6] = start_positions[6] + eased_progress * (target_with_all[6] - start_positions[6])
+                else:
+                    self.target_positions[6] = eased_progress * target_with_all[6]
+            else:
+                self.target_positions.append(target_with_all[6])
+
             # IMPORTANT: Explicitly publish the joint states during movement
             self.publish_joint_states_target()
-            
+
             time.sleep(0.01)
-        
+
         # Final position update
-        self.target_positions = list(target_with_accel)
+        self.target_positions = list(target_with_all)
         
         # Final publish at target position
         self.publish_joint_states_target()

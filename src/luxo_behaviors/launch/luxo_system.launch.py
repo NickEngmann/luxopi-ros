@@ -427,7 +427,7 @@ def generate_launch_description():
         name='collision_node',
         output='screen',
         parameters=[
-            {'proximity_threshold': 15},
+            {'proximity_threshold': 3},  # Changed to be more sensitive (3+ = detection, 10 = very close)
             {'side_distance_threshold': 8.0},
             {'danger_threshold': 5.0},
             {'warning_threshold': 15.0},

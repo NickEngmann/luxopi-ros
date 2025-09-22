@@ -117,8 +117,8 @@ class BehaviorCoordinator(PettingBehavior, IdleBehavior, VoiceBehavior, Collisio
         self.is_returning_to_rest = False  # Flag to track when we're returning to rest
         
         # External shared state
-        self.current_joints = [0.0, 0.0, 0.0, 0.0, 0.0]  # Current joint positions
-        self.target_joints = [0.0, 0.0, 0.0, 0.0, 0.0]   # Target joint positions
+        self.current_joints = [0.0, 0.0, 0.0, 0.0, 0.0, 10.0, 0.0]  # Current joint positions including acceleration and antenna
+        self.target_joints = [0.0, 0.0, 0.0, 0.0, 0.0, 10.0, 0.0]   # Target joint positions including acceleration and antenna
         self.joint_velocities = [0.0, 0.0, 0.0, 0.0, 0.0] # Current joint velocities
         
         # Additional tracking variables with ROS time

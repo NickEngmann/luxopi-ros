@@ -13,7 +13,7 @@ class CollisionNode(Node):
         self._startup_time = self.get_clock().now()
         
         # Set the proximity threshold for collision detection
-        self.declare_parameter('proximity_threshold', 15)
+        self.declare_parameter('proximity_threshold', 3)  # Changed from 15 to 3 for more sensitive detection
         self.proximity_threshold = self.get_parameter('proximity_threshold').value
         
         # Set the distance threshold for side collision detection (in cm)
@@ -259,16 +259,22 @@ class CollisionNode(Node):
     def evaluate_collisions(self):
         """Evaluate collision states based on current sensor data"""
         # Front/head collision detection
-        collision_detected = (self.current_proximity > self.proximity_threshold and 
-                            self.prev_proximity > self.proximity_threshold)
-        
+        collision_detected = (self.current_proximity >= self.proximity_threshold and
+                            self.prev_proximity >= self.proximity_threshold)
+
         collision_msg = Bool()
         collision_msg.data = collision_detected
         self.collision_pub.publish(collision_msg)
-        
-        # Determine severity for front collision
+
+        # Determine severity for front collision based on new scale (0-10+)
         if collision_detected:
-            severity = "danger" if self.current_proximity > self.proximity_threshold * 2 else "warning"
+            # New severity levels: 3-5 = warning, 6-9 = caution, 10+ = danger
+            if self.current_proximity >= 10:
+                severity = "danger"  # Right in front of us
+            elif self.current_proximity >= 6:
+                severity = "caution"  # Close proximity
+            else:
+                severity = "warning"  # Something detected (3-5)
             self.get_logger().debug(f"Head Collision warning! Proximity: {self.current_proximity}, Severity: {severity}")
             
             # Publish severity

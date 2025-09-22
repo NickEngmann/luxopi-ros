@@ -199,8 +199,8 @@ class RoArmHardwareInterface(Node):
         
         # Joint state tracking with fallback default values
         # These will be initialized from hardware before publishing begins
-        self.current_joints = [0.0, 0.0, 0.0, 0.0, 0.0]  # base, shoulder, elbow, wrist, hand (no acceleration in current)
-        self.target_joints = [0.0, 0.0, 0.0, 0.0, 0.0, 10.0]  # Include default acceleration in target
+        self.current_joints = [0.0, 0.0, 0.0, 0.0, 0.0, 10.0, 0.0]  # base, shoulder, elbow, wrist, roll, acceleration, antenna
+        self.target_joints = [0.0, 0.0, 0.0, 0.0, 0.0, 10.0, 0.0]  # Include default acceleration and antenna in target
         self.joint_velocities = [0.0, 0.0, 0.0, 0.0, 0.0]
         self.last_command_time = self.get_clock().now()  # ROS time
         
@@ -864,7 +864,12 @@ class RoArmHardwareInterface(Node):
                 # Check if we have acceleration value (6th position)
                 if len(positions) > 5:
                     target_positions.append(positions[5])
-                
+
+                # Check if we have antenna value (7th position)
+                if len(positions) > 6:
+                    target_positions.append(positions[6])
+                    self.get_logger().debug(f"Received antenna value during init: {positions[6]:.3f}")
+
                 # Send command directly without collision avoidance during initialization
                 self.send_safe_joint_command(target_positions, "Joint control (initialization)")
                 
@@ -1037,7 +1042,15 @@ class RoArmHardwareInterface(Node):
                 # Add acceleration to target_positions
                 target_positions.append(acceleration)
                 self.get_logger().debug(f"Received acceleration value: {acceleration}")
-            
+
+            # Check if we have antenna value (7th position)
+            antenna = None
+            if len(positions) > 6:
+                antenna = positions[6]
+                # Add antenna to target_positions
+                target_positions.append(antenna)
+                self.get_logger().debug(f"Received antenna value: {antenna:.3f}")
+
             # Check if this is a significant movement using our method
             previous_joints = getattr(self, 'target_joints', None)
             is_significant = self.is_significant_movement(previous_joints, target_positions[:5], threshold=0.05)  # Only check joint positions, not acceleration
@@ -1086,7 +1099,11 @@ class RoArmHardwareInterface(Node):
             # Add acceleration back if it was provided
             if acceleration is not None:
                 safe_positions = list(safe_positions) + [acceleration]
-            
+
+            # Add antenna back if it was provided
+            if antenna is not None:
+                safe_positions = list(safe_positions) + [antenna]
+
             # Clear motor resistance tracking for commanded movements
             if self.enable_motor_resistance:
                 # Only clear for joints that are actively being commanded to move
@@ -1295,13 +1312,26 @@ class RoArmHardwareInterface(Node):
                     acc_val = 10  # Set to safe default if out of bounds
             else:
                 acc_val = 10  # Default safe position
+
+            # Determine hand/antenna value if provided (7th element)
+            if len(safe_positions) > 6:
+                hand_value = safe_positions[6]
+                # Antenna safe range: 0 to 3.14 radians (0 to 180 degrees)
+                # Allow full range for maximum expressive antenna movement
+                if hand_value < 0.0:
+                    hand_value = 0.0  # Minimum position
+                elif hand_value > 3.14:
+                    hand_value = 3.14  # Maximum position (180 degrees)
+            else:
+                hand_value = 1.0  # Default neutral position for antenna (mid-range)
+
             joint_cmd = {
                 'T': 102,
                 'base': safe_positions[0],
                 'shoulder': safe_positions[1],
                 'elbow': safe_positions[2],
                 'roll': roll_value,  # Use boundary-checked roll value
-                'hand': 0.0,  # Gripper
+                'hand': hand_value,  # Gripper/antenna value from animations
                 'spd': 0,  #  Speed
                 'acc': acc_val  # Acceleration
             }
@@ -1321,7 +1351,22 @@ class RoArmHardwareInterface(Node):
             
             # Add more info for debugging
             self.get_logger().debug(f"Sending command to hardware: {description}")
-            
+
+            # Log the antenna/hand value specifically (rate limited to once per second)
+            if 'hand' in joint_cmd:
+                current_time = time.time()
+                if not hasattr(self, '_last_antenna_log_time'):
+                    self._last_antenna_log_time = 0
+                    self._last_antenna_value = None
+
+                # Only log if 1 second has passed or value changed significantly
+                if (current_time - self._last_antenna_log_time >= 1.0 or
+                    self._last_antenna_value is None or
+                    abs(joint_cmd['hand'] - self._last_antenna_value) > 0.5):
+                    self.get_logger().info(f"Antenna value: {joint_cmd['hand']:.2f} rad ({joint_cmd['hand']*57.3:.0f}°) for {description}")
+                    self._last_antenna_log_time = current_time
+                    self._last_antenna_value = joint_cmd['hand']
+
             # Send command as JSON
             cmd_str = json.dumps(joint_cmd)
             result = self.send_command(cmd_str, description)
@@ -1473,13 +1518,21 @@ class RoArmHardwareInterface(Node):
             # Use the appropriate joint names based on configuration
             if hasattr(self, 'use_hardware_joint_names') and self.use_hardware_joint_names:
                 # Hardware interface expected joint names
-                msg.name = ['base', 'shoulder', 'elbow', 'wrist', 'hand']
+                msg.name = ['base', 'shoulder', 'elbow', 'wrist', 'hand', 'antenna']
             else:
                 # URDF-based joint names
-                msg.name = ['base_to_L1', 'L1_to_L2', 'L2_to_L3', 'L3_to_L4', 'hand']
-            
-            # Set the actual positions - ensure we have a Python list, not just an array reference
-            msg.position = list(positions)
+                msg.name = ['base_to_L1', 'L1_to_L2', 'L2_to_L3', 'L3_to_L4', 'hand', 'antenna']
+
+            # Set the actual positions - filter out acceleration (index 5) if present
+            # positions should be [base, shoulder, elbow, wrist, roll, acceleration, antenna]
+            # We want to publish [base, shoulder, elbow, wrist, roll, antenna]
+            if len(positions) >= 7:
+                # Skip acceleration at index 5
+                msg.position = list(positions[:5]) + [positions[6]]  # Skip acceleration
+                self.get_logger().debug(f"Publishing with antenna - Positions: {positions}, Published: {msg.position}")
+            else:
+                msg.position = list(positions)
+                self.get_logger().debug(f"Publishing without antenna - Positions: {positions}")
             
             # Check if positions are the same as previously published
             if (self._last_published_positions is not None and 
@@ -1515,6 +1568,7 @@ class RoArmHardwareInterface(Node):
             'wrist': 'wrist',
             'roll': 'roll',
             'hand': 'hand',
+            'antenna': 'antenna',  # Antenna is controlled by the hand/gripper servo
             # Add alternative mappings from your system if needed
             'base_to_L1': 'base',
             'L1_to_L2': 'shoulder',
