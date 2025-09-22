@@ -45,7 +45,8 @@ class IdleBehavior:
         self.current_idle_head_target = None
         self.idle_head_variation_active = False
         self.idle_base_position = [0.0, -0.55, 1.2, 1.0, 2.0]  # Standard idle position (without antenna)
-        self.idle_antenna_variation_range = 3.14  # Full range for antenna movement (0 to 3.14 radians = 180 degrees)
+        self.idle_antenna_min = 0.5  # Minimum antenna position
+        self.idle_antenna_max = 2.6  # Maximum antenna position
         
         # Create action client for triggering animations
         self._idle_animation_client = ActionClient(
@@ -276,16 +277,16 @@ class IdleBehavior:
                     base_position.append(0.0)  # Default antenna at index 6
 
             # Generate antenna variation based on head position
-            # Use full range 0 to 3.14 for dramatic visible movement
+            # Use range 0.5 to 2.6 for realistic movement
             if look_type < 0.7:  # Looking up - antenna perks up (70% chance)
-                # When alert/curious, antenna goes up significantly (1.5 to 3.14)
-                antenna_variation = random.uniform(1.5, self.idle_antenna_variation_range)
+                # When alert/curious, antenna goes up (1.5 to 2.6)
+                antenna_variation = random.uniform(1.5, self.idle_antenna_max)
             elif look_type < 0.9:  # Looking down - antenna droops (20% chance)
-                # When looking down, antenna droops (0.0 to 1.2)
-                antenna_variation = random.uniform(0.0, 1.2)
+                # When looking down, antenna droops (0.5 to 1.2)
+                antenna_variation = random.uniform(self.idle_antenna_min, 1.2)
             else:  # Neutral - mid-range movement (10% chance)
-                # Neutral position varies in middle range (0.8 to 2.2)
-                antenna_variation = random.uniform(0.8, 2.2)
+                # Neutral position varies in middle range (0.8 to 2.0)
+                antenna_variation = random.uniform(0.8, 2.0)
 
             # Apply antenna variation at index 6
             base_position[6] = antenna_variation

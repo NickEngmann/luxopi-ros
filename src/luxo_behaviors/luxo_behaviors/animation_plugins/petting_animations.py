@@ -34,16 +34,16 @@ class HappyPetAnimation(AnimationPlugin):
         base_pos = 0.0
         
         keyframes = [
-            [base_pos, -1.3, 1.4, 0.8, -2.2, 10.0, 1.00],        # Initial fold - starting to curve
-            [base_pos, -1.6, 1.8, 1.2, -2.8, 8.0, 1.00],         # Deep C-curve - folded position
-            [base_pos+0.3, -1.65, 1.85, 1.3, -2.6, 9.0, 1.80],   # Neck right - head movement
+            [base_pos, -1.3, 1.4, 0.8, -2.2, 10.0, 1.50],        # Initial fold - starting to curve
+            [base_pos, -1.6, 1.8, 1.2, -2.8, 8.0, 1.50],         # Deep C-curve - folded position
+            [base_pos+0.3, -1.65, 1.85, 1.3, -2.6, 9.0, 1.60],   # Neck right - head movement
             [base_pos-0.3, -1.7, 1.9, 1.4, -2.9, 8.5, 1.40],     # Neck left - opposite movement
-            [base_pos+0.4, -1.75, 1.95, 1.5, -2.5, 9.5, 1.80],   # Content right - deeper fold
+            [base_pos+0.4, -1.75, 1.95, 1.5, -2.5, 9.5, 1.60],   # Content right - deeper fold
             [base_pos-0.4, -1.8, 2.0, 1.6, -3.0, 8.0, 1.40],     # Blissful left - maximum fold
-            [base_pos, -1.75, 1.95, 1.4, -2.7, 9.0, 3.14],       # Happy center - balanced
-            [base_pos+0.2, -1.7, 1.9, 1.3, -2.5, 10.0, 1.80],    # Gentle right - slight movement
-            [base_pos-0.1, -1.6, 1.7, 1.1, -2.3, 11.0, 1.00],    # Final left - starting to unfold
-            [base_pos, -0.55, 1.2, 1.0, -2.0, 12.0, 0.60]       # Settled contentment - final position
+            [base_pos, -1.75, 1.95, 1.4, -2.7, 9.0, 2.60],       # Happy center - balanced
+            [base_pos+0.2, -1.7, 1.9, 1.3, -2.5, 10.0, 1.60],    # Gentle right - slight movement
+            [base_pos-0.1, -1.6, 1.7, 1.1, -2.3, 11.0, 1.50],    # Final left - starting to unfold
+            [base_pos, -0.55, 1.2, 1.0, -2.0, 12.0, 0.90]       # Settled contentment - final position
         ]
         
         # Smooth neck movement durations - 15% faster
@@ -77,18 +77,18 @@ class ShyPetAnimation(AnimationPlugin):
         base_pos = 0.0
         
         keyframes = [
-            [base_pos, -0.4, 0.8, 0.5, -1.5, 17.0, 1.00],        # Ready position - back
-            [base_pos+0.4, -0.5, 0.7, 0.4, -1.2, 19.0, 1.80],    # Quick right bounce - back
+            [base_pos, -0.4, 0.8, 0.5, -1.5, 17.0, 1.50],        # Ready position - back
+            [base_pos+0.4, -0.5, 0.7, 0.4, -1.2, 19.0, 1.60],    # Quick right bounce - back
             [base_pos-0.4, -0.3, 0.9, 0.3, -1.8, 18.0, 1.40],    # Wiggle left - back
-            [base_pos+0.2, -0.6, 0.5, 0.6, -0.9, 20.0, 2.80],    # Up bounce - back
-            [base_pos+0.5, -0.4, 1.0, 0.4, -2.0, 17.0, 1.00],    # Spiral movement - back
-            [base_pos-0.5, -0.5, 0.6, 0.5, -0.8, 21.0, 1.20],    # Quick shake - back
-            [base_pos+0.15, -0.45, 0.8, 0.45, -1.7, 19.0, 2.20], # Double bounce - back
-            [base_pos-0.3, -0.35, 0.95, 0.55, -1.1, 18.0, 2.20], # Side wiggle - back
-            [base_pos+0.1, -0.4, 0.85, 0.6, -1.9, 16.0, 3.14],   # Happy bounce - back
-            [base_pos, -0.5, 0.9, 0.7, -1.5, 15.0, 0.60],        # Settle wiggle - back
-            [base_pos, 0.2, 1.3, 1.5, -1.5, 15.0, 1.00],         # Return home 1
-            [base_pos, -0.65, 1.2, 1.0, -1.5, 10.0, 1.00]        # Return home 2
+            [base_pos+0.2, -0.6, 0.5, 0.6, -0.9, 20.0, 2.40],    # Up bounce - back
+            [base_pos+0.5, -0.4, 1.0, 0.4, -2.0, 17.0, 1.50],    # Spiral movement - back
+            [base_pos-0.5, -0.5, 0.6, 0.5, -0.8, 21.0, 1.30],    # Quick shake - back
+            [base_pos+0.15, -0.45, 0.8, 0.45, -1.7, 19.0, 2.10], # Double bounce - back
+            [base_pos-0.3, -0.35, 0.95, 0.55, -1.1, 18.0, 2.10], # Side wiggle - back
+            [base_pos+0.1, -0.4, 0.85, 0.6, -1.9, 16.0, 2.60],   # Happy bounce - back
+            [base_pos, -0.5, 0.9, 0.7, -1.5, 15.0, 0.90],        # Settle wiggle - back
+            [base_pos, 0.2, 1.3, 1.5, -1.5, 15.0, 1.50],         # Return home 1
+            [base_pos, -0.65, 1.2, 1.0, -1.5, 10.0, 1.50]        # Return home 2
         ]
         
         # Snappier playful timing
@@ -122,17 +122,17 @@ class ContentPetAnimation(AnimationPlugin):
         base_pos = 0.0
         
         keyframes = [
-            [base_pos, -0.3, 0.6, 0.4, -1.5, 15.0, 1.00],        # Alert start - back
-            [base_pos+0.05, -0.2, 0.8, 0.5, -1.3, 14.0, 0.60],   # Begin relax - back
-            [base_pos, -0.1, 1.0, 0.6, -1.6, 13.0, 0.20],        # Getting sleepy - back
-            [base_pos-0.05, 0.0, 1.2, 0.7, -1.4, 12.0, 0.00],    # Drooping more - neutral
-            [base_pos, 0.1, 1.3, 0.8, -1.7, 11.0, 1.00],         # Heavy eyelids - slight forward
-            [base_pos, 0.15, 1.4, 0.9, -1.5, 10.5, 0.20],        # Almost asleep - slight forward
-            [base_pos, 0.2, 1.5, 1.0, -1.8, 10.0, 0.60],         # Deep relax - forward OK
-            [base_pos, 0.25, 1.6, 1.1, -1.6, 9.0, 1.00],         # Peaceful state - forward OK
-            [base_pos, 0.2, 1.5, 1.0, -1.5, 10.0, 1.00],         # Contented sigh
-            [base_pos, 0.2, 1.3, 1.5, -1.5, 15.0, 1.00],         # Return home 1
-            [base_pos, -0.65, 1.2, 1.0, -1.5, 10.0, 1.00]        # Return home 2
+            [base_pos, -0.3, 0.6, 0.4, -1.5, 15.0, 1.50],        # Alert start - back
+            [base_pos+0.05, -0.2, 0.8, 0.5, -1.3, 14.0, 0.90],   # Begin relax - back
+            [base_pos, -0.1, 1.0, 0.6, -1.6, 13.0, 0.60],        # Getting sleepy - back
+            [base_pos-0.05, 0.0, 1.2, 0.7, -1.4, 12.0, 0.50],    # Drooping more - neutral
+            [base_pos, 0.1, 1.3, 0.8, -1.7, 11.0, 1.50],         # Heavy eyelids - slight forward
+            [base_pos, 0.15, 1.4, 0.9, -1.5, 10.5, 0.60],        # Almost asleep - slight forward
+            [base_pos, 0.2, 1.5, 1.0, -1.8, 10.0, 0.90],         # Deep relax - forward OK
+            [base_pos, 0.25, 1.6, 1.1, -1.6, 9.0, 1.50],         # Peaceful state - forward OK
+            [base_pos, 0.2, 1.5, 1.0, -1.5, 10.0, 1.50],         # Contented sigh
+            [base_pos, 0.2, 1.3, 1.5, -1.5, 15.0, 1.50],         # Return home 1
+            [base_pos, -0.65, 1.2, 1.0, -1.5, 10.0, 1.50]        # Return home 2
         ]
         
         # Slow but not too slow

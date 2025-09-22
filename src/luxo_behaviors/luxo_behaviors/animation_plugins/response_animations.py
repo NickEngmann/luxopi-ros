@@ -33,18 +33,18 @@ class NoddingAnimation(AnimationPlugin):
         base_pos = 0.0
         
         keyframes = [
-            [base_pos, -0.65, 1.2, 1.0, -1.5, 12.0, 1.00],      # Start at home 2
-            [base_pos+0.05, -0.65, 1.2, 1.35, -1.6, 20.0, 0.40], # First nod down
-            [base_pos+0.05, -0.65, 1.2, 0.0, -1.4, 21.0, 2.80],  # First nod up
-            [base_pos-0.05, -0.65, 1.2, 1.3, -1.5, 22.0, 0.40],  # Quick double nod down
-            [base_pos-0.05, -0.65, 1.2, 0.1, -1.5, 22.0, 2.80],  # Quick double nod up
-            [base_pos+0.1, -0.65, 1.2, 1.35, -1.7, 19.0, 0.40],  # Big nod down
-            [base_pos+0.1, -0.65, 1.2, 0.0, -1.3, 20.0, 2.80],   # Big nod up
-            [base_pos-0.15, -0.7, 1.3, 0.8, -1.8, 21.0, 3.14],   # Excited wiggle left
-            [base_pos+0.15, -0.6, 1.1, 0.8, -1.2, 21.0, 3.14],   # Excited wiggle right
-            [base_pos, -0.65, 1.2, 1.2, -1.5, 18.0, 1.00],       # Final affirmative nod
-            [base_pos, -0.65, 1.2, 1.0, -1.5, 16.0, 0.60],       # Settle
-            [base_pos, -0.65, 1.2, 1.0, -1.5, 10.0, 1.00]        # Return home 2
+            [base_pos, -0.65, 1.2, 1.0, -1.5, 12.0, 1.50],      # Start at home 2
+            [base_pos+0.05, -0.65, 1.2, 1.35, -1.6, 20.0, 0.70], # First nod down
+            [base_pos+0.05, -0.65, 1.2, 0.0, -1.4, 21.0, 2.40],  # First nod up
+            [base_pos-0.05, -0.65, 1.2, 1.3, -1.5, 22.0, 0.70],  # Quick double nod down
+            [base_pos-0.05, -0.65, 1.2, 0.1, -1.5, 22.0, 2.40],  # Quick double nod up
+            [base_pos+0.1, -0.65, 1.2, 1.35, -1.7, 19.0, 0.70],  # Big nod down
+            [base_pos+0.1, -0.65, 1.2, 0.0, -1.3, 20.0, 2.40],   # Big nod up
+            [base_pos-0.15, -0.7, 1.3, 0.8, -1.8, 21.0, 2.60],   # Excited wiggle left
+            [base_pos+0.15, -0.6, 1.1, 0.8, -1.2, 21.0, 2.60],   # Excited wiggle right
+            [base_pos, -0.65, 1.2, 1.2, -1.5, 18.0, 1.50],       # Final affirmative nod
+            [base_pos, -0.65, 1.2, 1.0, -1.5, 16.0, 0.90],       # Settle
+            [base_pos, -0.65, 1.2, 1.0, -1.5, 10.0, 1.50]        # Return home 2
         ]
         
         # Fast, snappy nodding
@@ -79,20 +79,20 @@ class HeadShakeAnimation(AnimationPlugin):
         base_pos = 0.0
         
         keyframes = [
-            [base_pos, -0.3, 0.8, 0.6, -1.5, 14.0, 1.00],       # Neutral - back
-            [base_pos-0.1, -0.4, 0.9, 0.7, -1.4, 16.0, 2.80],   # Wind up - back
-            [base_pos+0.35, -0.5, 0.9, 0.8, -2.1, 21.0, 1.80],  # Big shake right - back
+            [base_pos, -0.3, 0.8, 0.6, -1.5, 14.0, 1.50],       # Neutral - back
+            [base_pos-0.1, -0.4, 0.9, 0.7, -1.4, 16.0, 2.40],   # Wind up - back
+            [base_pos+0.35, -0.5, 0.9, 0.8, -2.1, 21.0, 1.60],  # Big shake right - back
             [base_pos-0.4, -0.5, 0.9, 0.8, -0.9, 22.0, 1.40],   # Big shake left - back
-            [base_pos+0.3, -0.45, 0.85, 0.75, -2.0, 22.5, 1.80], # Fast shake right - back
+            [base_pos+0.3, -0.45, 0.85, 0.75, -2.0, 22.5, 1.60], # Fast shake right - back
             [base_pos-0.35, -0.45, 0.85, 0.75, -1.0, 22.0, 1.40], # Fast shake left - back
-            [base_pos+0.25, -0.4, 0.8, 0.7, -1.9, 20.0, 1.80],  # Medium shake right - back
+            [base_pos+0.25, -0.4, 0.8, 0.7, -1.9, 20.0, 1.60],  # Medium shake right - back
             [base_pos-0.25, -0.4, 0.8, 0.7, -1.1, 20.0, 1.40],  # Medium shake left - back
-            [base_pos+0.15, -0.35, 0.75, 0.65, -1.7, 18.0, 1.80], # Small shake right - back
+            [base_pos+0.15, -0.35, 0.75, 0.65, -1.7, 18.0, 1.60], # Small shake right - back
             [base_pos-0.15, -0.35, 0.75, 0.65, -1.3, 18.0, 1.40], # Small shake left - back
-            [base_pos, -0.3, 0.7, 0.6, -1.5, 16.0, 1.20],       # Tiny shake - back
-            [base_pos, -0.4, 0.9, 0.7, -1.5, 14.0, 0.60],       # Settle - back
-            [base_pos, 0.2, 1.3, 1.5, -1.5, 15.0, 1.00],        # Return home 1
-            [base_pos, -0.65, 1.2, 1.0, -1.5, 10.0, 1.00]       # Return home 2
+            [base_pos, -0.3, 0.7, 0.6, -1.5, 16.0, 1.30],       # Tiny shake - back
+            [base_pos, -0.4, 0.9, 0.7, -1.5, 14.0, 0.90],       # Settle - back
+            [base_pos, 0.2, 1.3, 1.5, -1.5, 15.0, 1.50],        # Return home 1
+            [base_pos, -0.65, 1.2, 1.0, -1.5, 10.0, 1.50]       # Return home 2
         ]
         
         # Faster shakes
@@ -130,11 +130,11 @@ class CloseAnimation(AnimationPlugin):
         base_pos = 0.0
         
         keyframes = [
-            [base_pos, -0.9, 1.0, 1.5, -1.3, 11.0, 1.80],   # Prepare - slight right
+            [base_pos, -0.9, 1.0, 1.5, -1.3, 11.0, 1.60],   # Prepare - slight right
             [base_pos, -0.9, 1.5, 1.6, -1.8, 10.5, 1.40],   # Begin fold - left to balance
             [base_pos, -1.1, 2.0, 1.7, -2.2, 10.0, 1.40],   # Continue - more left
-            [base_pos, -1.4, 2.0, 1.8, -0.8, 10.0, 1.80],   # Final closed - right extreme to balance
-            [base_pos, -0.55, 1.2, 1.0, -2.0, 10.0, 1.00]   # Go directly to home 2 (close) - neutral
+            [base_pos, -1.4, 2.0, 1.8, -0.8, 10.0, 1.60],   # Final closed - right extreme to balance
+            [base_pos, -0.55, 1.2, 1.0, -2.0, 10.0, 1.50]   # Go directly to home 2 (close) - neutral
         ]
         
         # Scaled durations (base duration * 10 / acceleration)
@@ -165,9 +165,9 @@ class StopAnimation(AnimationPlugin):
     def get_keyframes(self) -> Tuple[List[List[float]], List[float]]:
         # Just return to a safe neutral position quickly, then home
         keyframes = [
-            [0.0, 0.3, 0.7, 0.3, -1.5, 14.0, 1.00],     # Safe neutral - center
-            [0.0, 0.5, 1.3, 1.4, -1.5, 12.0, 1.00],     # Return home 1 - neutral
-            [0.0, -0.55, 1.2, 1.0, -2.0, 10.0, 1.00]    # Return home 2 - neutral
+            [0.0, 0.3, 0.7, 0.3, -1.5, 14.0, 1.50],     # Safe neutral - center
+            [0.0, 0.5, 1.3, 1.4, -1.5, 12.0, 1.50],     # Return home 1 - neutral
+            [0.0, -0.55, 1.2, 1.0, -2.0, 10.0, 1.50]    # Return home 2 - neutral
         ]
         
         durations = [0.71, 0.58, 1.3]  # Scaled for safety but still relatively quick

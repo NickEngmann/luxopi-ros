@@ -42,51 +42,51 @@ def add_antenna_to_keyframe(line):
 
 def get_antenna_value(comment):
     """Generate antenna value based on animation context in comment.
-    Uses full range 0 to 3.14 radians (0-180 degrees) for maximum expressive movement."""
+    Uses range 0.5 to 2.6 radians for realistic movement."""
     comment_lower = comment.lower() if comment else ''
 
-    # Keywords for antenna movements using full expressive range (0 to 3.14)
+    # Keywords for antenna movements using realistic range (0.5 to 2.6)
     if 'home' in comment_lower or 'start' in comment_lower:
-        return 1.0  # Neutral home position (mid-range)
+        return 1.5  # Neutral home position (mid-range)
     elif 'alert' in comment_lower or 'attention' in comment_lower or 'listen' in comment_lower:
-        return 2.4  # Alert and attentive (raised)
+        return 2.3  # Alert and attentive (raised)
     elif 'curious' in comment_lower or 'question' in comment_lower or 'explore' in comment_lower:
         return 2.0  # Moderately raised for curiosity
     elif 'excited' in comment_lower or 'happy' in comment_lower or 'joy' in comment_lower or 'peak' in comment_lower:
-        return 3.14  # Maximum for excitement (180 degrees)
+        return 2.6  # Maximum for excitement
     elif 'sad' in comment_lower or 'droop' in comment_lower or 'depress' in comment_lower:
-        return 0.0  # Fully drooped for sadness
+        return 0.5  # Minimum realistic position for sadness
     elif 'think' in comment_lower or 'ponder' in comment_lower:
-        return 1.6  # Thoughtful mid-position
+        return 1.8  # Thoughtful mid-position
     elif 'relax' in comment_lower or 'rest' in comment_lower or 'settle' in comment_lower:
-        return 0.6  # Relaxed low position
+        return 0.9  # Relaxed low position
     elif 'sleep' in comment_lower or 'tired' in comment_lower:
-        return 0.2  # Very low for sleep
+        return 0.6  # Very low for sleep
     elif 'left' in comment_lower:
         return 1.4  # Mid-left tilt
     elif 'right' in comment_lower:
-        return 1.8  # Mid-right tilt
+        return 1.6  # Mid-right tilt
     elif 'up' in comment_lower or 'rise' in comment_lower or 'launch' in comment_lower:
-        return 2.8  # Raised up high
+        return 2.4  # Raised up high
     elif 'down' in comment_lower or 'compress' in comment_lower or 'low' in comment_lower:
-        return 0.4  # Low position
+        return 0.7  # Low position
     elif 'wiggle' in comment_lower or 'bounce' in comment_lower:
-        return 2.2  # Energetic mid-high
+        return 2.1  # Energetic mid-high
     elif 'shake' in comment_lower:
-        return 1.2  # Mid shake position
+        return 1.3  # Mid shake position
     elif 'surprise' in comment_lower or 'startle' in comment_lower:
-        return 2.9  # Almost maximum for surprise
+        return 2.5  # Near maximum for surprise
     elif 'victory' in comment_lower or 'proud' in comment_lower:
-        return 3.0  # Very high for pride
+        return 2.5  # Very high for pride
     elif 'fear' in comment_lower or 'scared' in comment_lower:
-        return 0.3  # Very low for fear
+        return 0.6  # Very low for fear
     elif 'angry' in comment_lower or 'mad' in comment_lower:
-        return 2.5  # Raised in anger
+        return 2.2  # Raised in anger
     elif 'playful' in comment_lower or 'play' in comment_lower:
-        return 2.1  # Playful mid-high
+        return 2.0  # Playful mid-high
     else:
         # Default neutral-raised position
-        return 1.0
+        return 1.5
 
 def process_file(filepath):
     """Process a file to add antenna values."""

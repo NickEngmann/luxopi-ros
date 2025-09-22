@@ -1316,14 +1316,14 @@ class RoArmHardwareInterface(Node):
             # Determine hand/antenna value if provided (7th element)
             if len(safe_positions) > 6:
                 hand_value = safe_positions[6]
-                # Antenna safe range: 0 to 3.14 radians (0 to 180 degrees)
-                # Allow full range for maximum expressive antenna movement
-                if hand_value < 0.0:
-                    hand_value = 0.0  # Minimum position
-                elif hand_value > 3.14:
-                    hand_value = 3.14  # Maximum position (180 degrees)
+                # Antenna safe range: 0.5 to 2.6 radians for realistic movement
+                # This provides good visible movement without extremes
+                if hand_value < 0.5:
+                    hand_value = 0.5  # Minimum realistic position
+                elif hand_value > 2.6:
+                    hand_value = 2.6  # Maximum realistic position
             else:
-                hand_value = 1.0  # Default neutral position for antenna (mid-range)
+                hand_value = 1.5  # Default neutral position for antenna (mid-range)
 
             joint_cmd = {
                 'T': 102,
