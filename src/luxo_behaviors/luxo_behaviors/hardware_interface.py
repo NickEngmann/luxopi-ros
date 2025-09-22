@@ -185,6 +185,8 @@ class RoArmHardwareInterface(Node):
         self.safety_timer_last_exception = None
         self.safety_timer_lock = threading.Lock()
         
+        time.sleep(3) # Allow time before we connect to the serialport
+
         # Initialize the SerialManager
         self.serial_manager = SerialManager(
             self, 
@@ -1352,20 +1354,6 @@ class RoArmHardwareInterface(Node):
             # Add more info for debugging
             self.get_logger().debug(f"Sending command to hardware: {description}")
 
-            # Log the antenna/hand value specifically (rate limited to once per second)
-            if 'hand' in joint_cmd:
-                current_time = time.time()
-                if not hasattr(self, '_last_antenna_log_time'):
-                    self._last_antenna_log_time = 0
-                    self._last_antenna_value = None
-
-                # Only log if 1 second has passed or value changed significantly
-                if (current_time - self._last_antenna_log_time >= 1.0 or
-                    self._last_antenna_value is None or
-                    abs(joint_cmd['hand'] - self._last_antenna_value) > 0.5):
-                    self.get_logger().info(f"Antenna value: {joint_cmd['hand']:.2f} rad ({joint_cmd['hand']*57.3:.0f}°) for {description}")
-                    self._last_antenna_log_time = current_time
-                    self._last_antenna_value = joint_cmd['hand']
 
             # Send command as JSON
             cmd_str = json.dumps(joint_cmd)

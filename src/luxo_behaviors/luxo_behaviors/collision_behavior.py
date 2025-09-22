@@ -85,7 +85,7 @@ class CollisionBehavior:
                 'adjustment_made': False
             }
         }
-        self.adjustment_cooldown = 1.0
+        self.adjustment_cooldown = 0.2  # Reduced from 1.0 for faster response
         self.adjustment_position_threshold = 0.1
         
         # Escape mode variables

@@ -36,17 +36,16 @@ class IdleBehavior:
         
         # Idle head variation tracking
         self.idle_head_variation_enabled = False  # Will be set by hardware interface
-        self.idle_head_variation_interval = 5.0  # Maximum interval - actual will be random 1.0 to this value
-        self.idle_head_base_rotation_range = 0.3
-        self.idle_head_look_up_range = 0.6
-        self.idle_head_look_down_range = 0.15
-        self.idle_head_variation_speed = 4.0
+        self.idle_head_variation_interval = 0.25  # Maximum interval - actual will be random 0.2 to this value (very frequent)
+        self.idle_head_base_rotation_range = 0.5  # Back to original for more movement
+        self.idle_head_look_up_range = 1.2  # Back to original for more dramatic movement
+        self.idle_head_look_down_range = 0.2  # Even less looking down
         self.last_idle_head_variation_time = self.node.get_clock().now()
         self.current_idle_head_target = None
         self.idle_head_variation_active = False
         self.idle_base_position = [0.0, -0.55, 1.2, 1.0, 2.0]  # Standard idle position (without antenna)
-        self.idle_antenna_min = 0.5  # Minimum antenna position
-        self.idle_antenna_max = 2.6  # Maximum antenna position
+        self.idle_antenna_min = 0.9  # Minimum antenna position
+        self.idle_antenna_max = 2.2  # Maximum antenna position
         
         # Create action client for triggering animations
         self._idle_animation_client = ActionClient(
@@ -204,16 +203,16 @@ class IdleBehavior:
         
         # Check if it's time for a new variation
         time_since_last_variation = (current_time - self.last_idle_head_variation_time).nanoseconds / 1e9
-        
-        # Use random interval between 0.75 and idle_head_variation_interval
+
+        # Use very short intervals for continuous movement
         current_interval = getattr(self, '_current_idle_variation_interval', self.idle_head_variation_interval)
-        
+
         if time_since_last_variation > current_interval:
             # Generate new idle head target
             self._generate_idle_head_variation()
-            
-            # Set new random interval for next variation
-            self._current_idle_variation_interval = random.uniform(0.75, self.idle_head_variation_interval)
+
+            # Set new random interval for next variation - much shorter for rapid movement
+            self._current_idle_variation_interval = random.uniform(0.1, self.idle_head_variation_interval)
             self.last_idle_head_variation_time = current_time
             
             return True
@@ -221,96 +220,316 @@ class IdleBehavior:
         return self.idle_head_variation_active
     
     def _generate_idle_head_variation(self):
-        """Generate a new idle head variation target."""
+        """Generate a new idle head variation target with more lifelike movement patterns."""
         try:
             # Start with current position
             base_position = self.current_joints.copy()
-            
-            # Generate random variation for base rotation
-            base_variation = random.uniform(
-                -self.idle_head_base_rotation_range, 
-                self.idle_head_base_rotation_range
-            )
-            
-            # Apply variation to base, keeping within limits
-            new_base = self.position_utils.normalize_angle(base_position[0] + base_variation)
-            new_base = np.clip(new_base, self.base_min_limit, self.base_max_limit)
-            base_position[0] = new_base
-            
-            # For other joints, use the idle base position as reference but apply looking up bias
-            # Bias towards looking up (70% chance) as it appears more alert/curious
-            look_type = random.random()
-            if look_type < 0.7:  # Look up (70% chance)
-                shoulder_variation = random.uniform(0.1, self.idle_head_look_up_range)
-                base_position[1] = self.idle_base_position[1] - shoulder_variation  # More positive = looking up
-                variation_description = f"looking up (+{shoulder_variation:.2f})"
-            elif look_type < 0.9:  # Look down slightly (20% chance)
-                shoulder_variation = random.uniform(0.0, self.idle_head_look_down_range)
-                base_position[1] = self.idle_base_position[1] + shoulder_variation  # More negative = looking down
-                variation_description = f"looking down (-{shoulder_variation:.2f})"
-            else:  # Stay neutral (10% chance)
-                base_position[1] = self.idle_base_position[1]  # Use base idle position
-                variation_description = "staying neutral"
-            
-            # Use base idle position for elbow, wrist, hand with small variations
-            base_position[2] = self.idle_base_position[2]  # Start with base idle elbow
-            base_position[3] = self.idle_base_position[3]  # Start with base idle wrist
-            base_position[4] = self.idle_base_position[4]  # Start with base idle hand
 
-            # Add tiny variations to other joints for naturalness, but keep neck straighter
-            # Only add elbow variation 30% of the time to keep neck less crooked
-            if random.random() < 0.3:
-                base_position[2] += random.uniform(-0.02, 0.02)  # Reduced elbow adjustment
-            # Only add wrist variation 20% of the time
-            if random.random() < 0.2:
-                base_position[3] += random.uniform(-0.01, 0.01)  # Reduced wrist adjustment
+            # Decide movement pattern - prioritize sequential fluid movements
+            movement_type = random.random()
 
-            # Add antenna movement that correlates with the head movement
-            # When looking up (alert/curious), antenna tends to perk up (positive)
-            # When looking down or neutral, antenna can droop or stay neutral
-
-            # Ensure we have space for antenna value (7 elements total)
-            while len(base_position) < 7:
-                if len(base_position) == 5:
-                    base_position.append(10.0)  # Default acceleration at index 5
-                else:
-                    base_position.append(0.0)  # Default antenna at index 6
-
-            # Generate antenna variation based on head position
-            # Use range 0.5 to 2.6 for realistic movement
-            if look_type < 0.7:  # Looking up - antenna perks up (70% chance)
-                # When alert/curious, antenna goes up (1.5 to 2.6)
-                antenna_variation = random.uniform(1.5, self.idle_antenna_max)
-            elif look_type < 0.9:  # Looking down - antenna droops (20% chance)
-                # When looking down, antenna droops (0.5 to 1.2)
-                antenna_variation = random.uniform(self.idle_antenna_min, 1.2)
-            else:  # Neutral - mid-range movement (10% chance)
-                # Neutral position varies in middle range (0.8 to 2.0)
-                antenna_variation = random.uniform(0.8, 2.0)
-
-            # Apply antenna variation at index 6
-            base_position[6] = antenna_variation
-
-            # Rate-limited logging for antenna variations
-            if not hasattr(self, '_last_antenna_variation_log_time'):
-                self._last_antenna_variation_log_time = 0
-
-            current_time = self.node.get_clock().now().nanoseconds / 1e9
-            if current_time - self._last_antenna_variation_log_time >= 3.0:
-                self.node.get_logger().info(f"Added antenna variation: {antenna_variation:.2f} for {variation_description}")
-                self._last_antenna_variation_log_time = current_time
+            if movement_type < 0.60:  # 60% - Sequential joint movement (fluid thinking feel)
+                self._generate_sequential_movement(base_position)
+            elif movement_type < 0.75:  # 15% - Paired joint movement
+                self._generate_paired_movement(base_position)
+            elif movement_type < 0.90:  # 15% - Full coordinated movement
+                self._generate_full_movement(base_position)
+            elif movement_type < 0.97:  # 7% - Single joint with antenna
+                self._generate_single_joint_movement(base_position)
+            else:  # 3% - Just antenna expression (minimal)
+                self._generate_antenna_only_movement(base_position)
 
             # Set the new target
             self.current_idle_head_target = base_position
             self.idle_head_variation_active = True
-            
-            self.node.get_logger().info(
-                f"Generated idle head variation: base {np.rad2deg(base_variation):.1f}°, {variation_description}"
-            )
-            
+
         except Exception as e:
             self.node.get_logger().error(f"Error generating idle head variation: {e}")
             self.idle_head_variation_active = False
+
+    def _generate_single_joint_movement(self, base_position):
+        """Move a single joint with antenna expression."""
+        # Choose which joint to move
+        joint_choice = random.choice(['base', 'shoulder', 'elbow', 'wrist'])
+
+        # Ensure we have space for antenna and acceleration
+        while len(base_position) < 7:
+            if len(base_position) == 5:
+                base_position.append(random.uniform(7.0, 20.0))  # Varying acceleration
+            else:
+                base_position.append(0.0)
+
+        # Apply movement to chosen joint - much more dramatic variations
+        if joint_choice == 'base':
+            variation = random.uniform(-self.idle_head_base_rotation_range*1.2,
+                                     self.idle_head_base_rotation_range*1.2)  # Bigger movements
+            new_base = self.position_utils.normalize_angle(base_position[0] + variation)
+            base_position[0] = np.clip(new_base, self.base_min_limit, self.base_max_limit)
+            # Antenna follows base rotation - turning head shows interest
+            base_position[6] = self._get_expressive_antenna(emotion='curious', intensity=abs(variation)*3)
+        elif joint_choice == 'shoulder':
+            # Strong bias towards looking up (negative variation) with bigger movements
+            variation = random.uniform(-0.6, 0.25)  # Much bigger range, strong upward bias
+            base_position[1] = self.idle_base_position[1] + variation
+            # Antenna expresses the looking direction
+            base_position[6] = self._get_expressive_antenna(
+                emotion='alert' if variation < 0 else 'content',
+                intensity=abs(variation)*2.5
+            )
+        elif joint_choice == 'elbow':
+            variation = random.uniform(-0.15, 0.15)  # Bigger movements
+            base_position[2] = self.idle_base_position[2] + variation
+            # Subtle antenna adjustment
+            base_position[6] = self._get_expressive_antenna(emotion='thinking', intensity=1.2)
+        else:  # wrist
+            variation = random.uniform(-0.08, 0.08)  # Bigger movements
+            base_position[3] = self.idle_base_position[3] + variation
+            # Small antenna twitch
+            base_position[6] = self._get_expressive_antenna(emotion='subtle', intensity=1.1)
+
+        # Faster acceleration for more responsive movement
+        base_position[5] = random.uniform(12.0, 22.0)
+
+        self.node.get_logger().debug(f"Single joint movement: {joint_choice}")
+
+    def _generate_sequential_movement(self, base_position):
+        """Create a true cascading sequential movement through joints."""
+        # Initialize sequential state if needed
+        if not hasattr(self, '_sequential_state'):
+            self._sequential_state = 0
+            self._sequential_targets = {}
+
+        # Ensure we have space for antenna and acceleration
+        while len(base_position) < 7:
+            if len(base_position) == 5:
+                base_position.append(20.0)  # Fast acceleration for rapid cascading
+            else:
+                base_position.append(0.0)
+
+        # Define target positions for full movement
+        if self._sequential_state == 0:
+            # Generate new target positions
+            base_var = random.uniform(-0.4, 0.4)  # Much larger movements
+            shoulder_var = random.uniform(-0.5, 0.2)  # Strong upward bias, bigger range
+            elbow_var = random.uniform(-0.15, 0.15)
+            wrist_var = random.uniform(-0.08, 0.08)
+
+            new_base = self.position_utils.normalize_angle(base_position[0] + base_var)
+            self._sequential_targets = {
+                'base': np.clip(new_base, self.base_min_limit, self.base_max_limit),
+                'shoulder': self.idle_base_position[1] + shoulder_var,
+                'elbow': self.idle_base_position[2] + elbow_var,
+                'wrist': self.idle_base_position[3] + wrist_var,
+                'antenna': self._get_expressive_antenna(
+                    emotion='curious' if shoulder_var < 0 else 'content',
+                    intensity=1.5
+                )
+            }
+
+        # Apply movement in cascade based on state
+        if self._sequential_state == 0:
+            # First move base and antenna (like head turning with expression)
+            base_position[0] = self._sequential_targets['base']
+            base_position[6] = self._sequential_targets['antenna'] * 0.8  # Start antenna movement
+            self._sequential_state = 1
+        elif self._sequential_state == 1:
+            # Add shoulder movement
+            base_position[0] = self._sequential_targets['base']
+            base_position[1] = self._sequential_targets['shoulder']
+            base_position[6] = self._sequential_targets['antenna'] * 0.9
+            self._sequential_state = 2
+        elif self._sequential_state == 2:
+            # Add elbow movement
+            base_position[0] = self._sequential_targets['base']
+            base_position[1] = self._sequential_targets['shoulder']
+            base_position[2] = self._sequential_targets['elbow']
+            base_position[6] = self._sequential_targets['antenna']
+            self._sequential_state = 3
+        else:
+            # Final - add wrist
+            base_position[0] = self._sequential_targets['base']
+            base_position[1] = self._sequential_targets['shoulder']
+            base_position[2] = self._sequential_targets['elbow']
+            base_position[3] = self._sequential_targets['wrist']
+            base_position[6] = self._sequential_targets['antenna']
+            self._sequential_state = 0  # Reset for next sequence
+
+        # Fast acceleration for snappy sequential movement
+        base_position[5] = random.uniform(15.0, 25.0)
+
+        self.node.get_logger().debug(f"Sequential movement state: {self._sequential_state}")
+
+    def _generate_paired_movement(self, base_position):
+        """Move 2-3 joints together for coordinated expression."""
+        # Choose joint pairs that work well together
+        pair_type = random.choice(['look_around', 'lean', 'gesture'])
+
+        # Ensure we have space for antenna and acceleration
+        while len(base_position) < 7:
+            if len(base_position) == 5:
+                base_position.append(12.0)
+            else:
+                base_position.append(0.0)
+
+        if pair_type == 'look_around':
+            # Base and shoulder move together for looking - much more dramatic
+            base_var = random.uniform(-0.5, 0.5)  # Big sweeping looks
+            shoulder_var = random.uniform(-0.45, 0.2)  # Strong bias towards looking up, bigger range
+            new_base = self.position_utils.normalize_angle(base_position[0] + base_var)
+            base_position[0] = np.clip(new_base, self.base_min_limit, self.base_max_limit)
+            base_position[1] = self.idle_base_position[1] + shoulder_var
+            # Antenna shows interest level
+            base_position[6] = self._get_expressive_antenna(
+                emotion='interested',
+                intensity=abs(base_var)*2.5
+            )
+        elif pair_type == 'lean':
+            # Shoulder and elbow for leaning motion - much more expressive
+            shoulder_var = random.uniform(-0.4, 0.2)  # Bigger range, stronger upward bias
+            elbow_var = random.uniform(-0.15, 0.15)  # Bigger movements
+            base_position[1] = self.idle_base_position[1] + shoulder_var
+            base_position[2] = self.idle_base_position[2] + elbow_var
+            # Antenna shows effort/relaxation
+            base_position[6] = self._get_expressive_antenna(
+                emotion='focused' if shoulder_var < 0 else 'relaxed',
+                intensity=1.5
+            )
+        else:  # gesture
+            # Elbow and wrist for gestures - more noticeable
+            elbow_var = random.uniform(-0.12, 0.12)  # Bigger
+            wrist_var = random.uniform(-0.1, 0.1)  # Bigger
+            base_position[2] = self.idle_base_position[2] + elbow_var
+            base_position[3] = self.idle_base_position[3] + wrist_var
+            # Antenna adds personality
+            base_position[6] = self._get_expressive_antenna(emotion='playful', intensity=1.3)
+
+        # Faster acceleration for snappier movements
+        base_position[5] = random.uniform(12.0, 20.0)
+
+        self.node.get_logger().debug(f"Paired movement: {pair_type}")
+
+    def _generate_antenna_only_movement(self, base_position):
+        """Just move the antenna for pure expression."""
+        # Ensure we have space for antenna and acceleration
+        while len(base_position) < 7:
+            if len(base_position) == 5:
+                base_position.append(random.uniform(20.0, 35.0))  # Quick antenna movements
+            else:
+                base_position.append(0.0)
+
+        # Keep other joints mostly stable with tiny variations
+        if random.random() < 0.3:  # 30% chance of tiny body adjustment
+            base_position[0] += random.uniform(-0.02, 0.02)
+            base_position[0] = np.clip(base_position[0], self.base_min_limit, self.base_max_limit)
+
+        # Generate expressive antenna movement
+        expression_type = random.choice([
+            'thinking', 'alert', 'curious', 'content',
+            'playful', 'focused', 'surprised', 'subtle'
+        ])
+
+        base_position[6] = self._get_expressive_antenna(emotion=expression_type)
+        base_position[5] = random.uniform(15.0, 30.0)  # Snappy antenna movement
+
+        self.node.get_logger().debug(f"Antenna expression: {expression_type}")
+
+    def _generate_full_movement(self, base_position):
+        """Original full coordinated movement with enhanced antenna expression."""
+        # Generate random variation for base rotation
+        base_variation = random.uniform(
+            -self.idle_head_base_rotation_range,
+            self.idle_head_base_rotation_range
+        )
+
+        # Apply variation to base, keeping within limits
+        new_base = self.position_utils.normalize_angle(base_position[0] + base_variation)
+        new_base = np.clip(new_base, self.base_min_limit, self.base_max_limit)
+        base_position[0] = new_base
+
+        # For other joints, use the idle base position as reference with strong looking up bias
+        look_type = random.random()
+        if look_type < 0.85:  # Look up (85% chance - much more common)
+            shoulder_variation = random.uniform(0.15, self.idle_head_look_up_range)  # Much more dramatic upward
+            base_position[1] = self.idle_base_position[1] - shoulder_variation
+            variation_description = f"looking up (+{shoulder_variation:.2f})"
+            emotion = 'alert' if shoulder_variation > 0.4 else 'curious'
+        elif look_type < 0.95:  # Stay neutral (10% chance)
+            base_position[1] = self.idle_base_position[1]
+            variation_description = "staying neutral"
+            emotion = 'content'
+        else:  # Look down slightly (5% chance - rare)
+            base_position[1] = self.idle_base_position[1]
+            variation_description = "staying neutral"
+            emotion = 'content'
+
+        # Use base idle position for elbow, wrist, hand with small variations
+        base_position[2] = self.idle_base_position[2]
+        base_position[3] = self.idle_base_position[3]
+        base_position[4] = self.idle_base_position[4]
+
+        # Add more frequent tiny variations to other joints for continuous movement
+        if random.random() < 0.7:  # Very frequent
+            base_position[2] += random.uniform(-0.025, 0.025)  # Slightly larger range
+        if random.random() < 0.6:
+            base_position[3] += random.uniform(-0.02, 0.02)
+
+        # Ensure we have space for antenna and acceleration
+        while len(base_position) < 7:
+            if len(base_position) == 5:
+                base_position.append(random.uniform(5.0, 18.0))  # Varying acceleration
+            else:
+                base_position.append(0.0)
+
+        # Generate expressive antenna movement based on overall motion
+        base_position[6] = self._get_expressive_antenna(
+            emotion=emotion,
+            intensity=abs(base_variation)*2 + abs(shoulder_variation if 'shoulder_variation' in locals() else 0)
+        )
+        base_position[5] = random.uniform(15.0, 25.0)  # Much more dynamic acceleration
+
+        self.node.get_logger().info(
+            f"Full movement: base {np.rad2deg(base_variation):.1f}°, {variation_description}"
+        )
+
+    def _get_expressive_antenna(self, emotion='neutral', intensity=1.0):
+        """Generate antenna position based on emotion and intensity.
+        The antenna acts like an eyebrow - crucial for expression."""
+
+        # Base positions for different emotions (0.5 to 2.6 range)
+        antenna_emotions = {
+            'alert': (2.0, 2.6),      # Perked up, attentive
+            'curious': (1.8, 2.4),    # Raised, interested
+            'thinking': (1.4, 2.0),   # Mid-high, contemplative
+            'content': (1.2, 1.8),    # Neutral-comfortable
+            'relaxed': (0.8, 1.4),    # Lowered, calm
+            'tired': (0.5, 1.0),      # Drooped
+            'playful': (1.5, 2.5),    # Dynamic range
+            'focused': (1.6, 2.2),    # Concentrated
+            'surprised': (2.2, 2.6),  # Raised high
+            'interested': (1.7, 2.3), # Moderately raised
+            'subtle': (1.0, 1.6),     # Small movements
+            'neutral': (1.0, 2.0)     # Default range
+        }
+
+        # Get range for emotion
+        min_pos, max_pos = antenna_emotions.get(emotion, (1.0, 2.0))
+
+        # Add some randomness within the emotional range
+        base_position = random.uniform(min_pos, max_pos)
+
+        # Apply intensity modifier (0.5 to 1.5 typical)
+        intensity = np.clip(intensity, 0.3, 2.0)
+
+        # For playful emotion, add extra variation
+        if emotion == 'playful':
+            base_position += random.uniform(-0.3, 0.3) * intensity
+
+        # For thinking, add small oscillation range
+        if emotion == 'thinking':
+            base_position += random.uniform(-0.15, 0.15)
+
+        # Ensure within physical limits
+        return np.clip(base_position, self.idle_antenna_min, self.idle_antenna_max)
     
     def apply_idle_head_variation(self, positions: List[float]) -> List[float]:
         """
