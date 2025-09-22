@@ -296,7 +296,7 @@ class IdleBehavior:
                 self._last_antenna_variation_log_time = 0
 
             current_time = self.node.get_clock().now().nanoseconds / 1e9
-            if current_time - self._last_antenna_variation_log_time >= 1.0:
+            if current_time - self._last_antenna_variation_log_time >= 3.0:
                 self.node.get_logger().info(f"Added antenna variation: {antenna_variation:.2f} for {variation_description}")
                 self._last_antenna_variation_log_time = current_time
 

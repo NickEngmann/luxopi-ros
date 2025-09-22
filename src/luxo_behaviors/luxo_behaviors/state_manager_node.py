@@ -215,7 +215,7 @@ class StateManagerNode(Node):
             from luxo_behaviors.neopixel_control import NeoPixelController
             self._neopixel_controller = NeoPixelController(
                 pixel_count=76,  # 60 lighting + 16 status pixels
-                brightness=0.2,
+                brightness=0.3,
                 logger=self.get_logger(),
                 max_fps=15.0  # Limit to 15 FPS for long-term stability
             )
@@ -467,6 +467,12 @@ class StateManagerNode(Node):
         """Get the minimum animation duration for a specific state"""
         if state == LuxoState.PETTING:
             return 12.0
+        elif state == LuxoState.COLLISION_AVOIDING:
+            return 3.0  # Keep collision warning visible for 3 seconds
+        elif state == LuxoState.USER_CONTROL:
+            return 10.0  # User control stays active for listening
+        elif state == LuxoState.INITIALIZING:
+            return 5.0  # Initialization needs longer
         else:
             return self._neopixel_min_animation_duration
     
@@ -706,7 +712,7 @@ class StateManagerNode(Node):
             elif state == LuxoState.COLLISION_AVOIDING:
                 self.get_logger().debug("NeoPixel: Orange status pixels for COLLISION_AVOIDING state")
                 self._neopixel_controller.fill_status_pixels(color[0], color[1], color[2], color[3])
-                needs_animation_timer = False
+                needs_animation_timer = True  # Keep collision warning visible for minimum duration
             elif state == LuxoState.INITIALIZING:
                 self.get_logger().debug("NeoPixel: Blue spinning dot on status pixels for INITIALIZING state")
                 self._neopixel_controller.spinning_dot_status(color, delay=0.05, blocking=False)
@@ -720,16 +726,16 @@ class StateManagerNode(Node):
                 self._neopixel_controller.fill_status_pixels(color[0], color[1], color[2], color[3])
                 needs_animation_timer = False
             elif state == LuxoState.USER_CONTROL:
-                self.get_logger().debug("NeoPixel: Bouncing direction indicator for USER_CONTROL state")
-                # Create a bouncing direction indicator effect
+                self.get_logger().debug("NeoPixel: Bouncing direction indicator on status pixels for USER_CONTROL state")
+                # Create a bouncing direction indicator effect on status pixels only
                 # White primary with blue secondary for wake word detection
                 primary_color = (255, 255, 255, 0)  # White for active listening
                 secondary_color = (0, 100, 255, 0)  # Blue for surrounding
-                self._neopixel_controller.bouncing_direction_indicator(
+                self._neopixel_controller.bouncing_direction_indicator_status(
                     primary_color=primary_color,
                     secondary_color=secondary_color,
-                    bounce_range=8,  # Bounce by 8 pixels
-                    start_position=0,  # Start at top of lamp
+                    bounce_range=8,  # Bounce by 8 pixels within status range
+                    start_position=0,  # Start at first status pixel
                     speed=0.05,  # 50ms between frames for smooth animation
                     blocking=False
                 )

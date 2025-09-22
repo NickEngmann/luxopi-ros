@@ -117,7 +117,7 @@ class CommandBehavior:
         self.wake_word_active = False
         self.wake_word_time = None
         self.wake_word_timeout = 10.0  # Seconds to stay in USER_CONTROL after wake word
-        self.light_state_before_wake = None  # Track light state before wake word
+        # Removed light_state_before_wake - no longer needed as we only use status LEDs
         
         # Threading for sensor polling
         self.command_thread = None
@@ -405,16 +405,10 @@ class CommandBehavior:
         self.wake_word_time = self.node.get_clock().now()
         # Make sure command_in_progress is True for proper tracking
         self.command_in_progress = True
-        
-        # Store previous light state and turn on lights for wake word visual feedback
-        self.light_state_before_wake = self.light_state
-        if not self.light_state:
-            self.node.get_logger().info("Temporarily turning on lights for wake word LED animation")
-            self.light_state = True
-            self._publish_light_state(True)
-            # Give time for light state to propagate
-            time.sleep(0.1)
-        
+
+        # No longer need to manipulate light state since we're only using status LEDs
+        # The status LEDs will show the bouncing animation automatically via state manager
+
         if was_already_active:
             self.node.get_logger().info(f"Wake word timeout reset to {self.wake_word_timeout} seconds")
         else:
@@ -428,9 +422,7 @@ class CommandBehavior:
         self._publish_light_state(self.light_state)
         self.node.get_logger().info("Lights turned ON")
         
-        # If this was during wake word, update the before state so we don't turn them off later
-        if self.wake_word_active:
-            self.light_state_before_wake = True
+        # No longer need to track light state for wake word
         
         # If robot was sleeping, wake it up too
         if self.sleep_state:
@@ -452,9 +444,7 @@ class CommandBehavior:
         self._publish_light_state(self.light_state)
         self.node.get_logger().info("Lights turned OFF")
         
-        # If this was during wake word, update the before state so we don't turn them on later
-        if self.wake_word_active:
-            self.light_state_before_wake = False
+        # No longer need to track light state for wake word
         
         # If wake word is active, complete immediately to exit USER_CONTROL
         if self.wake_word_active:
@@ -495,9 +485,7 @@ class CommandBehavior:
             # Turn on voice direction pixel ring
             self._publish_pixel_ring_state(True)
             
-            # If this was during wake word, update the before state
-            if self.wake_word_active:
-                self.light_state_before_wake = True
+            # No longer need to track light state for wake word
             
             # Move to a neutral/home position if available
             if hasattr(self, 'go_to_home_position'):
@@ -672,16 +660,7 @@ class CommandBehavior:
             
             self.node.get_logger().info("Completing voice command - clearing state")
             
-            # If wake word was active and lights were turned on temporarily, restore previous state
-            if self.wake_word_active and self.light_state_before_wake is not None:
-                if not self.light_state_before_wake and self.light_state:
-                    # Only turn off if we turned them on for wake word and they haven't been explicitly turned on
-                    # Check if robot is still sleeping (no wake up command was given)
-                    if self.sleep_state:
-                        self.node.get_logger().info("Wake word timeout - restoring lights OFF state")
-                        self.light_state = False
-                        self._publish_light_state(False)
-                self.light_state_before_wake = None
+            # No longer need to manage light state for wake word since we only use status LEDs
             
             self.command_in_progress = False
             self.current_command_id = None
