@@ -950,60 +950,31 @@ class NeoPixelController:
             except Exception as e:
                 self._log(f"Failed to set direction indicator: {e}", "error")
                 return False
-    
-    def bouncing_direction_indicator_status(self, primary_color: Tuple[int, int, int, int] = (255, 255, 255, 0),
-                                         secondary_color: Tuple[int, int, int, int] = (0, 100, 255, 0),
-                                         bounce_range: int = 8, start_position: int = 0,
-                                         speed: float = 0.05, blocking: bool = False) -> bool:
+
+    def spinning_wake_word_indicator(self, base_color: Tuple[int, int, int, int] = (0, 100, 255, 0),
+                                     indicator_color: Tuple[int, int, int, int] = (255, 255, 255, 0),
+                                     speed: float = 0.08, blocking: bool = False) -> bool:
         """
-        Create a bouncing direction indicator effect on status pixels only (60-75)
+        Create a spinning white indicator on blue background for wake word detection.
+        All 16 status LEDs are blue, with a white indicator that spins through them.
 
         Args:
-            primary_color: Color for the main indicator (default white)
-            secondary_color: Color for surrounding LEDs (default blue)
-            bounce_range: Number of pixels to bounce (default 8, max 16)
-            start_position: Starting position within status pixels (default 0)
-            speed: Delay between frames in seconds (default 0.05)
+            base_color: Base color for all status LEDs (default blue)
+            indicator_color: Color for the spinning indicator (default white)
+            speed: Delay between frames in seconds (default 0.08)
             blocking: Whether to block execution (default False)
         """
-        # Limit bounce range to status pixel count
-        bounce_range = min(bounce_range, self.status_pixels_count)
-
-        def _bouncing_effect():
-            position = start_position
-            direction = 1  # 1 for forward, -1 for backward
+        def _spinning_wake_word():
+            position = 0
 
             while not self._stop_event.is_set():
-                # Clear only status pixels
+                # First, set all status pixels to the base color
                 for i in range(self.status_pixels_start, self.pixel_count):
-                    self.set_pixel_color(i, 0, 0, 0, 0)
+                    self.set_pixel_color(i, *base_color)
 
-                # Calculate actual pixel index within status range
+                # Then set the current position to the indicator color
                 actual_position = self.status_pixels_start + position
-
-                # Set primary position
-                self.set_pixel_color(actual_position, *primary_color)
-
-                # Set adjacent pixels with secondary color (within status range)
-                if position > 0:
-                    prev_pos = self.status_pixels_start + position - 1
-                    self.set_pixel_color(prev_pos, *secondary_color)
-                if position < self.status_pixels_count - 1:
-                    next_pos = self.status_pixels_start + position + 1
-                    self.set_pixel_color(next_pos, *secondary_color)
-
-                # Add dimmer secondary colors further out (if within range)
-                dim_r = secondary_color[0] // 3
-                dim_g = secondary_color[1] // 3
-                dim_b = secondary_color[2] // 3
-                dim_w = secondary_color[3] // 3
-
-                if position > 1:
-                    prev_prev = self.status_pixels_start + position - 2
-                    self.set_pixel_color(prev_prev, dim_r, dim_g, dim_b, dim_w)
-                if position < self.status_pixels_count - 2:
-                    next_next = self.status_pixels_start + position + 2
-                    self.set_pixel_color(next_next, dim_r, dim_g, dim_b, dim_w)
+                self.set_pixel_color(actual_position, *indicator_color)
 
                 # Update the display
                 self.show_rate_limited()
@@ -1011,25 +982,17 @@ class NeoPixelController:
                 # Wait for next frame
                 time.sleep(speed)
 
-                # Move to next position
-                position += direction
-
-                # Check bounds and reverse direction if needed
-                if position >= min(start_position + bounce_range, self.status_pixels_count):
-                    position = min(start_position + bounce_range - 1, self.status_pixels_count - 1)
-                    direction = -1
-                elif position < start_position:
-                    position = start_position
-                    direction = 1
+                # Move to next position (wrapping around)
+                position = (position + 1) % self.status_pixels_count
 
             # Clear status pixels when done
             self.clear_status_pixels()
             self._current_mode = NeoPixelMode.OFF
 
         if blocking:
-            _bouncing_effect()
+            _spinning_wake_word()
         else:
-            self._run_effect(_bouncing_effect)
+            self._run_effect(_spinning_wake_word)
         return True
     
     def get_current_mode(self) -> NeoPixelMode:
