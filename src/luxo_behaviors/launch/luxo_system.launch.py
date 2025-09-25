@@ -516,7 +516,9 @@ def generate_launch_description():
             {'publish_camera_feed': False},
             {'verbose': LaunchConfiguration('verbose')},
             {'react_to_emotions': LaunchConfiguration('enable_emotion_detection')},
-            {'camera_rotation': LaunchConfiguration('camera_rotation')}
+            {'camera_rotation': LaunchConfiguration('camera_rotation')},
+            {'health_check_interval': 30.0},  # Check health every 10 seconds
+            {'frame_timeout': 120.0}  # Consider camera frozen after 30s without frames
         ],
         condition=IfCondition(use_camera)
     )

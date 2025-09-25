@@ -3,6 +3,8 @@ from pathlib import Path
 import threading
 import numpy as np
 import time
+import traceback
+from datetime import datetime, timedelta
 
 # Import depthai BEFORE rclpy to avoid context issues
 import depthai as dai
@@ -15,6 +17,7 @@ from rclpy.action import ActionClient
 from std_msgs.msg import String, Float32, Bool
 from sensor_msgs.msg import JointState
 from luxo_interfaces.action import PlayAnimation
+from diagnostic_msgs.msg import DiagnosticStatus, DiagnosticArray, KeyValue
 
 # Try both import paths for utils
 try:
@@ -113,6 +116,30 @@ class CameraInteraction(Node):
         # Thread control
         self.shutdown_event = threading.Event()
         self.ros_processing_thread = None
+        self.pipeline_thread = None
+        self.pipeline_running = False
+
+        # Health monitoring
+        self.camera_healthy = False
+        self.last_frame_time = None
+        self.consecutive_failures = 0
+        self.max_consecutive_failures = 5
+        self.recovery_attempts = 0
+        self.max_recovery_attempts = 10
+        self.last_recovery_attempt = None
+        self.recovery_backoff = 5.0  # Initial retry delay in seconds
+        self.max_backoff = 300.0  # Max 5 minutes between retries
+
+        # Add health check parameters
+        self.declare_parameter('health_check_interval', 30.0)
+        self.health_check_interval = self.get_parameter('health_check_interval').get_parameter_value().double_value
+
+        self.declare_parameter('frame_timeout', 120.0)
+        self.frame_timeout = self.get_parameter('frame_timeout').get_parameter_value().double_value
+
+        # Health publishers
+        self.health_publisher = self.create_publisher(Bool, '/camera/health', 10)
+        self.diagnostic_publisher = self.create_publisher(DiagnosticArray, '/diagnostics', 10)
 
         # Optimized resolution for faster processing on RVC2
         self.REQ_WIDTH, self.REQ_HEIGHT = (
@@ -120,13 +147,14 @@ class CameraInteraction(Node):
             480,
         )  # Reduced resolution for better performance on RVC2
 
-        # Get args and initialize camera
-        try:
-            self.init_camera()
-        except Exception as e:
-            self.get_logger().error(f"Failed to initialize camera: {e}")
-            # Create a timer to retry camera initialization
-            self.retry_timer = self.create_timer(30.0, self.retry_camera_init)
+        # Create health check timer
+        self.health_check_timer = self.create_timer(
+            self.health_check_interval,
+            self.check_camera_health
+        )
+
+        # Start camera initialization with recovery
+        self.start_camera_initialization()
 
     def init_camera(self):
         """Initialize camera system - DO NOT MODIFY ANYTHING IN THIS METHOD"""
@@ -190,33 +218,61 @@ class CameraInteraction(Node):
         self.create_and_start_pipeline()
 
     def create_and_start_pipeline(self):
-        """Create and start the DepthAI pipeline - DO NOT MODIFY"""
+        """Create and start the DepthAI pipeline with monitoring."""
         # Try to create device with better error handling
         try:
-            self.device = dai.Device(dai.DeviceInfo(self.args.device)) if self.args.device else dai.Device()
-            platform = self.device.getPlatform().name
-            self.get_logger().info(f"Platform: {platform}")
-        except RuntimeError as e:
-            if "X_LINK_DEVICE_ALREADY_IN_USE" in str(e) or "already in use" in str(e).lower():
-                self.get_logger().error("Camera device is already in use by another process")
-                self.get_logger().info("Attempting to close existing connections...")
-                # Try to find and close any existing device connections
-                import time
-                time.sleep(2)
-                # Retry once
+            # Close existing device if any
+            if hasattr(self, 'device') and self.device:
+                try:
+                    self.device.close()
+                except:
+                    pass
+                self.device = None
+
+            # Try to connect to device with retries
+            max_device_retries = 3
+            for retry in range(max_device_retries):
                 try:
                     self.device = dai.Device(dai.DeviceInfo(self.args.device)) if self.args.device else dai.Device()
                     platform = self.device.getPlatform().name
-                    self.get_logger().info(f"Successfully connected after retry. Platform: {platform}")
-                except Exception as retry_e:
-                    self.get_logger().error(f"Failed to connect to camera after retry: {retry_e}")
-                    raise
-            else:
-                raise
+                    self.get_logger().info(f"Connected to device. Platform: {platform}")
+                    break
+                except RuntimeError as e:
+                    if retry < max_device_retries - 1:
+                        self.get_logger().warn(f"Device connection attempt {retry + 1} failed, retrying...")
+                        time.sleep(2)
+                    else:
+                        raise
 
-        # Start pipeline creation and execution thread
-        self.pipeline_thread = threading.Thread(target=self._create_and_run_pipeline, daemon=True)
-        self.pipeline_thread.start()
+            if not self.device:
+                raise Exception("Failed to connect to camera device")
+
+            # Start pipeline thread with monitoring
+            self.pipeline_running = True
+            self.pipeline_thread = threading.Thread(target=self._run_pipeline_with_monitoring, daemon=True)
+            self.pipeline_thread.start()
+
+            # Wait briefly to ensure pipeline starts
+            time.sleep(2)
+
+        except Exception as e:
+            self.get_logger().error(f"Failed to create pipeline: {e}")
+            raise
+
+    def _run_pipeline_with_monitoring(self):
+        """Run the pipeline with monitoring for crashes."""
+        try:
+            self._create_and_run_pipeline()
+        except Exception as e:
+            self.get_logger().error(f"Pipeline crashed: {e}")
+            self.get_logger().error(f"Traceback: {traceback.format_exc()}")
+            self.pipeline_running = False
+            self.camera_healthy = False
+
+            # Trigger recovery
+            if not self.shutdown_event.is_set():
+                self.get_logger().info("Triggering automatic recovery...")
+                self.start_camera_initialization()
 
     def _create_and_run_pipeline(self):
         """Create and run the pipeline in its own thread with proper context management"""
@@ -355,9 +411,12 @@ class CameraInteraction(Node):
             # Count emotions for logging
             self.emotion_count = 0
 
+            # Update last frame time when pipeline starts
+            self.last_frame_time = datetime.now()
+
             # Main loop - EXACTLY like the working example
             # This loop MUST stay within the context manager
-            while pipeline.isRunning() and not self.shutdown_event.is_set():
+            while pipeline.isRunning() and not self.shutdown_event.is_set() and self.pipeline_running:
                 current_time = time.time()
 
                 if self.visualizer:
@@ -370,6 +429,8 @@ class CameraInteraction(Node):
                     if hasattr(self, 'dummy_queue'):
                         try:
                             _ = self.dummy_queue.tryGet()
+                            # Update frame time to indicate we're still receiving data
+                            self.last_frame_time = datetime.now()
                         except:
                             pass
                     time.sleep(0.001)
@@ -380,6 +441,9 @@ class CameraInteraction(Node):
     def on_emotion_detected(self, emotion: str, confidence: float):
         """Callback when emotion is detected by the annotation node"""
         try:
+            # Update frame time
+            self.last_frame_time = datetime.now()
+
             # Increment counter
             if hasattr(self, 'emotion_count'):
                 self.emotion_count += 1
@@ -559,27 +623,183 @@ class CameraInteraction(Node):
                 f"(step {feedback.current_keyframe+1}/{feedback.total_keyframes})"
             )
 
-    def retry_camera_init(self):
-        """Retry camera initialization"""
+    def start_camera_initialization(self):
+        """Start camera initialization in a separate thread with recovery."""
+        if self.pipeline_thread and self.pipeline_thread.is_alive():
+            self.get_logger().warn("Pipeline thread already running, skipping initialization")
+            return
+
+        init_thread = threading.Thread(target=self._initialize_camera_with_recovery, daemon=True)
+        init_thread.start()
+
+    def _initialize_camera_with_recovery(self):
+        """Initialize camera with recovery logic."""
+        while not self.shutdown_event.is_set() and self.recovery_attempts < self.max_recovery_attempts:
+            try:
+                # Check if we should wait before retry
+                if self.last_recovery_attempt:
+                    time_since_last = datetime.now() - self.last_recovery_attempt
+                    if time_since_last.total_seconds() < self.recovery_backoff:
+                        wait_time = self.recovery_backoff - time_since_last.total_seconds()
+                        self.get_logger().info(f"Waiting {wait_time:.1f}s before retry...")
+                        time.sleep(wait_time)
+
+                self.last_recovery_attempt = datetime.now()
+                self.recovery_attempts += 1
+
+                self.get_logger().info(f"Camera initialization attempt {self.recovery_attempts}/{self.max_recovery_attempts}")
+
+                # Try to initialize camera
+                self.init_camera()
+
+                # If we get here, initialization succeeded
+                self.get_logger().info("Camera initialized successfully")
+                self.camera_healthy = True
+                self.consecutive_failures = 0
+                self.recovery_attempts = 0
+                self.recovery_backoff = 5.0  # Reset backoff
+                self.publish_health_status(True)
+                return
+
+            except Exception as e:
+                self.get_logger().error(f"Camera initialization failed: {e}")
+                self.get_logger().error(f"Traceback: {traceback.format_exc()}")
+
+                # Exponential backoff
+                self.recovery_backoff = min(self.recovery_backoff * 2, self.max_backoff)
+
+                # Cleanup any partial initialization
+                self.cleanup_camera()
+
+                # Publish health status
+                self.publish_health_status(False)
+
+                if self.recovery_attempts >= self.max_recovery_attempts:
+                    self.get_logger().error(f"Max recovery attempts ({self.max_recovery_attempts}) reached. Giving up.")
+                    break
+
+    def check_camera_health(self):
+        """Periodic health check for the camera."""
         try:
-            self.get_logger().info("Retrying camera initialization...")
-            self.init_camera()
-            # If successful, cancel the retry timer
-            if hasattr(self, 'retry_timer'):
-                self.retry_timer.cancel()
-                self.retry_timer = None
-                self.get_logger().info("Camera initialization successful")
+            # Check if pipeline thread is alive
+            if self.pipeline_thread and not self.pipeline_thread.is_alive():
+                self.get_logger().warn("Pipeline thread died, triggering recovery")
+                self.camera_healthy = False
+                self.pipeline_running = False
+                self.publish_health_status(False)
+                self.start_camera_initialization()
+                return
+
+            # Check for frame timeout
+            if self.last_frame_time:
+                time_since_frame = (datetime.now() - self.last_frame_time).total_seconds()
+                if time_since_frame > self.frame_timeout:
+                    self.get_logger().warn(f"No frames for {time_since_frame:.1f}s, camera may be frozen")
+                    self.consecutive_failures += 1
+
+                    if self.consecutive_failures >= self.max_consecutive_failures:
+                        self.get_logger().error("Max consecutive failures reached, triggering recovery")
+                        self.camera_healthy = False
+                        self.publish_health_status(False)
+
+                        # Stop current pipeline
+                        self.pipeline_running = False
+                        self.cleanup_camera()
+
+                        # Start recovery
+                        self.start_camera_initialization()
+                else:
+                    self.consecutive_failures = 0
+                    if not self.camera_healthy:
+                        self.camera_healthy = True
+                        self.publish_health_status(True)
+
+            # Publish diagnostic info
+            self.publish_diagnostics()
+
         except Exception as e:
-            self.get_logger().error(f"Camera initialization failed: {e}")
+            self.get_logger().error(f"Error in health check: {e}")
+
+    def publish_health_status(self, healthy):
+        """Publish camera health status."""
+        msg = Bool()
+        msg.data = healthy
+        self.health_publisher.publish(msg)
+
+    def publish_diagnostics(self):
+        """Publish detailed diagnostic information."""
+        diag_array = DiagnosticArray()
+        diag_array.header.stamp = self.get_clock().now().to_msg()
+
+        status = DiagnosticStatus()
+        status.name = "camera_interaction"
+        status.hardware_id = "oak-d"
+
+        if self.camera_healthy:
+            status.level = DiagnosticStatus.OK
+            status.message = "Camera operating normally"
+        elif self.pipeline_running:
+            status.level = DiagnosticStatus.WARN
+            status.message = f"Camera degraded - {self.consecutive_failures} failures"
+        else:
+            status.level = DiagnosticStatus.ERROR
+            status.message = f"Camera offline - recovery attempt {self.recovery_attempts}"
+
+        # Add diagnostic values
+        status.values = [
+            KeyValue(key="healthy", value=str(self.camera_healthy)),
+            KeyValue(key="pipeline_running", value=str(self.pipeline_running)),
+            KeyValue(key="consecutive_failures", value=str(self.consecutive_failures)),
+            KeyValue(key="recovery_attempts", value=str(self.recovery_attempts)),
+            KeyValue(key="recovery_backoff", value=f"{self.recovery_backoff:.1f}s"),
+        ]
+
+        if self.last_frame_time:
+            time_since_frame = (datetime.now() - self.last_frame_time).total_seconds()
+            status.values.append(KeyValue(key="time_since_frame", value=f"{time_since_frame:.1f}s"))
+
+        if self.last_recovery_attempt:
+            time_since_recovery = (datetime.now() - self.last_recovery_attempt).total_seconds()
+            status.values.append(KeyValue(key="time_since_recovery", value=f"{time_since_recovery:.1f}s"))
+
+        diag_array.status = [status]
+        self.diagnostic_publisher.publish(diag_array)
+
+    def cleanup_camera(self):
+        """Clean up camera resources."""
+        try:
+            # Stop pipeline
+            self.pipeline_running = False
+
+            # Close device
+            if hasattr(self, 'device') and self.device:
+                try:
+                    self.device.close()
+                except:
+                    pass
+                self.device = None
+
+            # Wait for thread to finish
+            if self.pipeline_thread and self.pipeline_thread.is_alive():
+                self.pipeline_thread.join(timeout=5.0)
+
+            self.pipeline_thread = None
+
+        except Exception as e:
+            self.get_logger().error(f"Error during cleanup: {e}")
 
     def destroy_node(self):
         """Clean up resources when the node is shut down"""
         # Signal threads to stop
         self.shutdown_event.set()
+        self.pipeline_running = False
 
-        # Cancel retry timer if it exists
-        if hasattr(self, 'retry_timer') and self.retry_timer:
-            self.retry_timer.cancel()
+        # Cancel health check timer if it exists
+        if hasattr(self, 'health_check_timer'):
+            self.health_check_timer.cancel()
+
+        # Clean up camera
+        self.cleanup_camera()
 
         # Wait for ROS processing thread to finish
         if hasattr(self, 'ros_processing_thread') and self.ros_processing_thread and self.ros_processing_thread.is_alive():
