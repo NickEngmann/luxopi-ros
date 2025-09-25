@@ -36,7 +36,7 @@ class IdleBehavior:
         
         # Idle head variation tracking
         self.idle_head_variation_enabled = False  # Will be set by hardware interface
-        self.idle_head_variation_interval = 0.25  # Maximum interval - actual will be random 0.2 to this value (very frequent)
+        self.idle_head_variation_interval = 1.25  # Maximum interval - actual will be random 0.2 to this value (very frequent)
         self.idle_head_base_rotation_range = 0.5  # Back to original for more movement
         self.idle_head_look_up_range = 1.2  # Back to original for more dramatic movement
         self.idle_head_look_down_range = 0.2  # Even less looking down
@@ -190,16 +190,14 @@ class IdleBehavior:
             self.idle_head_variation_active = False
             self.current_idle_head_target = None
             return False
-        
+
         # Check if enabled
         if not self.idle_head_variation_enabled:
             return False
-        
-        # Don't apply if we're doing voice following
-        if hasattr(self, 'voice_influence') and self.voice_influence > 0.1:
-            self.idle_head_variation_active = False
-            self.current_idle_head_target = None
-            return False
+
+        # Modified: Allow idle head variations even during voice following
+        # This keeps the robot looking alive while tracking voice
+        # We'll preserve the base angle from voice following but vary other joints
         
         # Check if it's time for a new variation
         time_since_last_variation = (current_time - self.last_idle_head_variation_time).nanoseconds / 1e9
@@ -225,17 +223,20 @@ class IdleBehavior:
             # Start with current position
             base_position = self.current_joints.copy()
 
+            # Check if voice following is active
+            voice_is_active = hasattr(self, 'voice_influence') and self.voice_influence > 0.1
+
             # Decide movement pattern - prioritize sequential fluid movements
             movement_type = random.random()
 
             if movement_type < 0.60:  # 60% - Sequential joint movement (fluid thinking feel)
-                self._generate_sequential_movement(base_position)
+                self._generate_sequential_movement(base_position, preserve_base=voice_is_active)
             elif movement_type < 0.75:  # 15% - Paired joint movement
-                self._generate_paired_movement(base_position)
+                self._generate_paired_movement(base_position, preserve_base=voice_is_active)
             elif movement_type < 0.90:  # 15% - Full coordinated movement
-                self._generate_full_movement(base_position)
+                self._generate_full_movement(base_position, preserve_base=voice_is_active)
             elif movement_type < 0.97:  # 7% - Single joint with antenna
-                self._generate_single_joint_movement(base_position)
+                self._generate_single_joint_movement(base_position, preserve_base=voice_is_active)
             else:  # 3% - Just antenna expression (minimal)
                 self._generate_antenna_only_movement(base_position)
 
@@ -247,10 +248,13 @@ class IdleBehavior:
             self.node.get_logger().error(f"Error generating idle head variation: {e}")
             self.idle_head_variation_active = False
 
-    def _generate_single_joint_movement(self, base_position):
+    def _generate_single_joint_movement(self, base_position, preserve_base=False):
         """Move a single joint with antenna expression."""
-        # Choose which joint to move
-        joint_choice = random.choice(['base', 'shoulder', 'elbow', 'wrist'])
+        # Choose which joint to move (exclude base if preserving for voice)
+        if preserve_base:
+            joint_choice = random.choice(['shoulder', 'elbow', 'wrist'])
+        else:
+            joint_choice = random.choice(['base', 'shoulder', 'elbow', 'wrist'])
 
         # Ensure we have space for antenna and acceleration
         while len(base_position) < 7:
@@ -292,7 +296,7 @@ class IdleBehavior:
 
         self.node.get_logger().debug(f"Single joint movement: {joint_choice}")
 
-    def _generate_sequential_movement(self, base_position):
+    def _generate_sequential_movement(self, base_position, preserve_base=False):
         """Create a true cascading sequential movement through joints."""
         # Initialize sequential state if needed
         if not hasattr(self, '_sequential_state'):
@@ -309,14 +313,20 @@ class IdleBehavior:
         # Define target positions for full movement
         if self._sequential_state == 0:
             # Generate new target positions
-            base_var = random.uniform(-0.4, 0.4)  # Much larger movements
+            if preserve_base:
+                # Keep base unchanged when voice following
+                base_var = 0.0
+                new_base = base_position[0]
+            else:
+                base_var = random.uniform(-0.4, 0.4)  # Much larger movements
+                new_base = self.position_utils.normalize_angle(base_position[0] + base_var)
+
             shoulder_var = random.uniform(-0.5, 0.2)  # Strong upward bias, bigger range
             elbow_var = random.uniform(-0.15, 0.15)
             wrist_var = random.uniform(-0.08, 0.08)
 
-            new_base = self.position_utils.normalize_angle(base_position[0] + base_var)
             self._sequential_targets = {
-                'base': np.clip(new_base, self.base_min_limit, self.base_max_limit),
+                'base': np.clip(new_base, self.base_min_limit, self.base_max_limit) if not preserve_base else base_position[0],
                 'shoulder': self.idle_base_position[1] + shoulder_var,
                 'elbow': self.idle_base_position[2] + elbow_var,
                 'wrist': self.idle_base_position[3] + wrist_var,
@@ -359,10 +369,13 @@ class IdleBehavior:
 
         self.node.get_logger().debug(f"Sequential movement state: {self._sequential_state}")
 
-    def _generate_paired_movement(self, base_position):
+    def _generate_paired_movement(self, base_position, preserve_base=False):
         """Move 2-3 joints together for coordinated expression."""
-        # Choose joint pairs that work well together
-        pair_type = random.choice(['look_around', 'lean', 'gesture'])
+        # Choose joint pairs that work well together (avoid look_around if preserving base)
+        if preserve_base:
+            pair_type = random.choice(['lean', 'gesture', 'lean'])  # Weight towards lean since look_around is limited
+        else:
+            pair_type = random.choice(['look_around', 'lean', 'gesture'])
 
         # Ensure we have space for antenna and acceleration
         while len(base_position) < 7:
@@ -373,15 +386,22 @@ class IdleBehavior:
 
         if pair_type == 'look_around':
             # Base and shoulder move together for looking - much more dramatic
-            base_var = random.uniform(-0.5, 0.5)  # Big sweeping looks
-            shoulder_var = random.uniform(-0.45, 0.2)  # Strong bias towards looking up, bigger range
-            new_base = self.position_utils.normalize_angle(base_position[0] + base_var)
-            base_position[0] = np.clip(new_base, self.base_min_limit, self.base_max_limit)
+            if preserve_base:
+                # Only move shoulder when preserving base for voice
+                base_var = 0.0
+                shoulder_var = random.uniform(-0.45, 0.2)  # Strong bias towards looking up, bigger range
+                # Don't modify base when preserving
+            else:
+                base_var = random.uniform(-0.5, 0.5)  # Big sweeping looks
+                shoulder_var = random.uniform(-0.45, 0.2)  # Strong bias towards looking up, bigger range
+                new_base = self.position_utils.normalize_angle(base_position[0] + base_var)
+                base_position[0] = np.clip(new_base, self.base_min_limit, self.base_max_limit)
+
             base_position[1] = self.idle_base_position[1] + shoulder_var
             # Antenna shows interest level
             base_position[6] = self._get_expressive_antenna(
                 emotion='interested',
-                intensity=abs(base_var)*2.5
+                intensity=abs(shoulder_var)*2.5 if preserve_base else abs(base_var)*2.5
             )
         elif pair_type == 'lean':
             # Shoulder and elbow for leaning motion - much more expressive
@@ -433,18 +453,22 @@ class IdleBehavior:
 
         self.node.get_logger().debug(f"Antenna expression: {expression_type}")
 
-    def _generate_full_movement(self, base_position):
+    def _generate_full_movement(self, base_position, preserve_base=False):
         """Original full coordinated movement with enhanced antenna expression."""
-        # Generate random variation for base rotation
-        base_variation = random.uniform(
-            -self.idle_head_base_rotation_range,
-            self.idle_head_base_rotation_range
-        )
+        if preserve_base:
+            # Don't modify base when voice following is active
+            base_variation = 0.0
+        else:
+            # Generate random variation for base rotation
+            base_variation = random.uniform(
+                -self.idle_head_base_rotation_range,
+                self.idle_head_base_rotation_range
+            )
 
-        # Apply variation to base, keeping within limits
-        new_base = self.position_utils.normalize_angle(base_position[0] + base_variation)
-        new_base = np.clip(new_base, self.base_min_limit, self.base_max_limit)
-        base_position[0] = new_base
+            # Apply variation to base, keeping within limits
+            new_base = self.position_utils.normalize_angle(base_position[0] + base_variation)
+            new_base = np.clip(new_base, self.base_min_limit, self.base_max_limit)
+            base_position[0] = new_base
 
         # For other joints, use the idle base position as reference with strong looking up bias
         look_type = random.random()
@@ -534,26 +558,34 @@ class IdleBehavior:
     def apply_idle_head_variation(self, positions: List[float]) -> List[float]:
         """
         Apply idle head variation to joint positions if active.
-        
+
         Args:
             positions: Current joint positions
-            
+
         Returns:
             Modified positions with idle variation applied
         """
         if not self.idle_head_variation_active or not self.current_idle_head_target:
             return positions
-        
+
         # Only apply in IDLE state
         if not self._is_in_state(LuxoState.IDLE):
             self.idle_head_variation_active = False
             self.current_idle_head_target = None
             return positions
-        
-        # Don't apply if voice following is active
+
+        # Modified: Allow idle head variations even with voice following
+        # When voice is active, we preserve the base from voice following
+        # but apply idle variations to other joints
         if hasattr(self, 'voice_influence') and self.voice_influence > 0.1:
-            return positions
-        
+            # Mix voice base with idle variations for other joints
+            mixed_position = positions.copy()
+            # Keep base from voice following (positions[0])
+            # Apply idle variations to other joints
+            for i in range(1, min(len(positions), len(self.current_idle_head_target))):
+                mixed_position[i] = self.current_idle_head_target[i]
+            return mixed_position
+
         # Use the idle head target
         return self.current_idle_head_target.copy()
     
