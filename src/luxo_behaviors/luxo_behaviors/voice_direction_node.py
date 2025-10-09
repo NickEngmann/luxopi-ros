@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
-ROS2 Voice Direction Detection Node - Exact copy of vad_doa.py logic
+ROS2 Voice Direction Detection Node with ALSA Loopback Forwarding
+Performs DOA/LED control AND forwards audio to loopback for luxopi_assistant.py
 """
 
 import rclpy
@@ -13,6 +14,8 @@ import time
 import sys
 import os
 import contextlib
+import subprocess
+import pyaudio
 from .mic_array import MicArray
 from .pixel_ring import pixel_ring
 import webrtcvad
@@ -33,6 +36,56 @@ def suppress_alsa_warnings():
     finally:
         os.dup2(old_stderr, 2)
         os.close(devnull)
+
+
+def find_loopback_device():
+    """Find the ALSA loopback device card number"""
+    try:
+        result = subprocess.run(
+            ["aplay", "-l"],
+            capture_output=True,
+            text=True,
+            timeout=2
+        )
+
+        for line in result.stdout.split('\n'):
+            if 'Loopback' in line and line.startswith('card'):
+                # Extract card number
+                card_num = line.split(':')[0].split()[1]
+                return int(card_num)
+
+        return None
+
+    except Exception as e:
+        return None
+
+
+def extract_stereo_channels(audio_chunk_6ch):
+    """
+    Extract channels 1 and 4 from 6-channel audio and create stereo output.
+
+    Args:
+        audio_chunk_6ch: Interleaved 6-channel int16 audio data
+
+    Returns:
+        Stereo float32 audio data (2 channels interleaved)
+    """
+    # Convert to numpy array if bytes
+    if isinstance(audio_chunk_6ch, bytes):
+        audio_array = np.frombuffer(audio_chunk_6ch, dtype=np.int16)
+    else:
+        audio_array = audio_chunk_6ch
+
+    # Reshape to (samples, 6)
+    samples = len(audio_array) // 6
+    audio_6ch = audio_array.reshape(samples, 6)
+
+    # Extract channels 1 and 4 (0-indexed: 0 and 3)
+    stereo = np.zeros((samples, 2), dtype=np.float32)
+    stereo[:, 0] = audio_6ch[:, 0].astype(np.float32) / 32768.0  # Channel 1 → Left
+    stereo[:, 1] = audio_6ch[:, 3].astype(np.float32) / 32768.0  # Channel 4 → Right
+
+    return stereo
 
 
 class VoiceDirectionNode(Node):
@@ -142,15 +195,73 @@ class VoiceDirectionNode(Node):
         # Thread control
         self.running = False
         self.audio_thread = None
-        
+
+        # Loopback forwarding setup
+        self.loopback_enabled = False
+        self.loopback_stream = None
+        self.pa = None
+        self._setup_loopback()
+
         # Set LED brightness exactly like vad_doa.py
         if pixel_ring:
             pixel_ring.set_brightness(self.config['led']['brightness'])
-        
-        self.get_logger().info(f'Voice Direction Node initialized with motor awareness: {self.motor_awareness_enabled}')
-        
+
+        self.get_logger().info(f'Voice Direction Node initialized')
+        self.get_logger().info(f'  Motor awareness: {self.motor_awareness_enabled}')
+        self.get_logger().info(f'  Loopback forwarding: {self.loopback_enabled}')
+
         # Start audio processing
         self.start_audio_processing()
+
+    def _setup_loopback(self):
+        """Setup ALSA loopback for audio forwarding to luxopi_assistant.py"""
+        try:
+            loopback_card = find_loopback_device()
+            if loopback_card is None:
+                self.get_logger().warn('ALSA loopback not found - voice assistant will not work')
+                self.get_logger().warn('Run: cd ~/luxopi-ai && ./setup_loopback.sh')
+                return
+
+            # Initialize PyAudio
+            self.pa = pyaudio.PyAudio()
+
+            # Find loopback device index
+            loopback_device_index = None
+            for i in range(self.pa.get_device_count()):
+                info = self.pa.get_device_info_by_index(i)
+                if 'Loopback' in info['name'] and info['maxOutputChannels'] >= 2:
+                    loopback_device_index = i
+                    self.get_logger().info(f'Found loopback device: {info["name"]} (index {i})')
+                    break
+
+            if loopback_device_index is None:
+                self.get_logger().warn('Loopback device index not found')
+                self.pa.terminate()
+                self.pa = None
+                return
+
+            # Calculate chunk size for loopback
+            chunk_size = int(self.RATE * self.VAD_FRAMES / 1000)
+
+            # Open loopback output stream (playback side - hw:X,0,0)
+            self.loopback_stream = self.pa.open(
+                format=pyaudio.paFloat32,
+                channels=2,
+                rate=self.RATE,
+                output=True,
+                output_device_index=loopback_device_index,
+                frames_per_buffer=chunk_size
+            )
+
+            self.loopback_enabled = True
+            self.get_logger().info(f'✅ Loopback forwarding enabled - voice assistant can run separately')
+
+        except Exception as e:
+            self.get_logger().error(f'Error setting up loopback: {e}')
+            if self.pa:
+                self.pa.terminate()
+                self.pa = None
+            self.loopback_enabled = False
 
     def pixel_ring_control_callback(self, msg):
         """Control pixel ring sleep state"""
@@ -404,7 +515,15 @@ class VoiceDirectionNode(Node):
                     for chunk in mic.read_chunks():
                         if not self.running:
                             break
-                    
+
+                        # Forward stereo audio to loopback (for luxopi_assistant.py)
+                        if self.loopback_enabled and self.loopback_stream:
+                            try:
+                                stereo_audio = extract_stereo_channels(chunk)
+                                self.loopback_stream.write(stereo_audio.tobytes())
+                            except Exception as e:
+                                self.get_logger().error(f'Error writing to loopback: {e}')
+
                         current_time = time.time()
                         
                         # Calculate chunk amplitude - exactly from vad_doa.py
@@ -553,10 +672,26 @@ class VoiceDirectionNode(Node):
         """Clean up when node is destroyed"""
         self.get_logger().info('Shutting down Voice Direction Node')
         self.stop_audio_processing()
-        
+
+        # Clean up loopback
+        if self.loopback_stream:
+            try:
+                self.loopback_stream.stop_stream()
+                self.loopback_stream.close()
+            except:
+                pass
+            self.loopback_stream = None
+
+        if self.pa:
+            try:
+                self.pa.terminate()
+            except:
+                pass
+            self.pa = None
+
         if pixel_ring:
             pixel_ring.off()
-        
+
         super().destroy_node()
 
 
