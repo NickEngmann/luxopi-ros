@@ -810,6 +810,7 @@ class StateManagerNode(Node):
         self.add_transition(LuxoState.IDLE, LuxoState.COLLISION_AVOIDING)
         self.add_transition(LuxoState.IDLE, LuxoState.USER_CONTROL)
         self.add_transition(LuxoState.IDLE, LuxoState.EMOTION_REACTING)
+        self.add_transition(LuxoState.IDLE, LuxoState.ESCAPE_MODE)
         self.add_transition(LuxoState.IDLE, LuxoState.RETURNING_HOME)
         self.add_transition(LuxoState.IDLE, LuxoState.PETTING)
         
