@@ -103,92 +103,94 @@ class ThinkingAnimation(AnimationPlugin):
         return keyframes, durations
 
 
-class StretchingAnimation(AnimationPlugin):
-    """Make the arm perform a satisfying stretch."""
-    
-    @property
-    def name(self) -> str:
-        return "stretch"
-    
-    @property
-    def description(self) -> str:
-        return "Satisfying full-body stretch with compact-to-extend motion"
-    
-    def get_category(self) -> str:
-        return "action"
-    
-    def get_keyframes(self) -> Tuple[List[List[float]], List[float]]:
-        base_pos = 0.0
-        
-        keyframes = [
-            [base_pos, 0.2, 1.4, 0.8, -1.5, 13.0, 1.50],         # Start tired - forward OK for home
-            [base_pos, 0.1, 1.5, 1.0, -1.6, 14.0, 0.70],         # Begin compression - less forward
-            [base_pos, -0.8, 1.8, 1.2, -1.4, 12.0, 0.70],        # Compress more - back
-            [base_pos, -1.0, 2.0, 1.0, -1.45, 10.0, 1.50],       # Near max compact
-            [base_pos, -0.9, 1.6, 0.8, -1.5, 11.0, 1.50],        # Slight release
-            [base_pos, -0.7, 1.2, 0.6, -1.4, 13.0, 1.50],        # Build tension
-            [base_pos, -0.4, 0.8, 0.4, -1.45, 16.0, 1.50],       # Begin stretch
-            [base_pos, -0.2, 0.4, 0.2, -1.45, 19.0, 2.40],       # Continue up
-            [base_pos, -0.1, 0.2, 0.1, -1.45, 21.0, 2.60],       # Almost peak
-            [base_pos, 0, 0, 0, -1.45, 8.0, 2.40],               # Full stretch - straight up!
-            [base_pos, 0, 0.1, 0.05, -1.5, 9.0, 1.50],           # Hold with wobble
-            [base_pos, -0.05, 0.15, 0.1, -1.4, 10.0, 1.50],      # Slight wobble
-            [base_pos, -0.2, 0.4, 0.3, -1.5, 14.0, 1.50],        # Begin descent
-            [base_pos, -0.4, 0.7, 0.6, -1.6, 16.0, 0.70],        # Continue down
-            [base_pos, -0.5, 1.0, 0.8, -1.5, 15.0, 0.70],        # Lower more
-            [base_pos, -0.3, 0.8, 0.7, -1.4, 17.0, 2.10],        # Small bounce
-            [base_pos, -0.1, 0.6, 0.5, -1.5, 18.0, 2.10],        # Another bounce
-            [base_pos, 0.1, 0.7, 0.4, -1.5, 16.0, 1.50],         # Settling
-            [base_pos, 0.2, 1.3, 1.5, -1.5, 15.0, 1.50],         # Return home 1
-            [base_pos, -0.65, 1.2, 1.0, -1.5, 10.0, 1.50]        # Return home 2
-        ]
-        
-        # Faster stretch
-        durations = [0.7, 0.7, 0.8, 0.9, 0.85, 0.7, 0.6, 0.45, 0.35, 1.2, 0.9, 0.8, 0.7, 0.6, 0.6, 0.5, 0.45, 0.6, 0.6, 0.9]
-        
-        return keyframes, durations
+# COMMENTED OUT: This animation stretches forward and breaks things
+# class StretchingAnimation(AnimationPlugin):
+#     """Make the arm perform a satisfying stretch."""
+#
+#     @property
+#     def name(self) -> str:
+#         return "stretch"
+#
+#     @property
+#     def description(self) -> str:
+#         return "Satisfying full-body stretch with compact-to-extend motion"
+#
+#     def get_category(self) -> str:
+#         return "action"
+#
+#     def get_keyframes(self) -> Tuple[List[List[float]], List[float]]:
+#         base_pos = 0.0
+#
+#         keyframes = [
+#             [base_pos, 0.2, 1.4, 0.8, -1.5, 13.0, 1.50],         # Start tired - forward OK for home
+#             [base_pos, 0.1, 1.5, 1.0, -1.6, 14.0, 0.70],         # Begin compression - less forward
+#             [base_pos, -0.8, 1.8, 1.2, -1.4, 12.0, 0.70],        # Compress more - back
+#             [base_pos, -1.0, 2.0, 1.0, -1.45, 10.0, 1.50],       # Near max compact
+#             [base_pos, -0.9, 1.6, 0.8, -1.5, 11.0, 1.50],        # Slight release
+#             [base_pos, -0.7, 1.2, 0.6, -1.4, 13.0, 1.50],        # Build tension
+#             [base_pos, -0.4, 0.8, 0.4, -1.45, 16.0, 1.50],       # Begin stretch
+#             [base_pos, -0.2, 0.4, 0.2, -1.45, 19.0, 2.40],       # Continue up
+#             [base_pos, -0.1, 0.2, 0.1, -1.45, 21.0, 2.60],       # Almost peak
+#             [base_pos, 0, 0, 0, -1.45, 8.0, 2.40],               # Full stretch - straight up!
+#             [base_pos, 0, 0.1, 0.05, -1.5, 9.0, 1.50],           # Hold with wobble
+#             [base_pos, -0.05, 0.15, 0.1, -1.4, 10.0, 1.50],      # Slight wobble
+#             [base_pos, -0.2, 0.4, 0.3, -1.5, 14.0, 1.50],        # Begin descent
+#             [base_pos, -0.4, 0.7, 0.6, -1.6, 16.0, 0.70],        # Continue down
+#             [base_pos, -0.5, 1.0, 0.8, -1.5, 15.0, 0.70],        # Lower more
+#             [base_pos, -0.3, 0.8, 0.7, -1.4, 17.0, 2.10],        # Small bounce
+#             [base_pos, -0.1, 0.6, 0.5, -1.5, 18.0, 2.10],        # Another bounce
+#             [base_pos, 0.1, 0.7, 0.4, -1.5, 16.0, 1.50],         # Settling
+#             [base_pos, 0.2, 1.3, 1.5, -1.5, 15.0, 1.50],         # Return home 1
+#             [base_pos, -0.65, 1.2, 1.0, -1.5, 10.0, 1.50]        # Return home 2
+#         ]
+#
+#         # Faster stretch
+#         durations = [0.7, 0.7, 0.8, 0.9, 0.85, 0.7, 0.6, 0.45, 0.35, 1.2, 0.9, 0.8, 0.7, 0.6, 0.6, 0.5, 0.45, 0.6, 0.6, 0.9]
+#
+#         return keyframes, durations
 
 
-class DancingAnimation(AnimationPlugin):
-    """Make the arm perform a rhythmic dance."""
-    
-    @property
-    def name(self) -> str:
-        return "dance"
-    
-    @property
-    def description(self) -> str:
-        return "Rhythmic dancing motion with musical timing"
-    
-    def get_category(self) -> str:
-        return "action"
-    
-    def get_keyframes(self) -> Tuple[List[List[float]], List[float]]:
-        base_pos = 0.0
-        
-        keyframes = [
-            [base_pos, -0.1, 0.7, 0.4, -1.5, 17.0, 1.50],        # Ready - slightly back
-            [base_pos+0.3, 0.1, 0.8, 0.3, -1.2, 20.0, 1.60],     # Right bounce - slight forward
-            [base_pos+0.4, -0.3, 0.5, 0.6, -1.8, 21.0, 1.60],    # Right high - back
-            [base_pos+0.2, -0.1, 0.9, 0.5, -0.9, 19.0, 1.60],    # Right low - barely back
-            [base_pos-0.3, 0.2, 0.8, 0.3, -2.1, 20.0, 1.40],     # Left bounce - bit forward
-            [base_pos-0.4, -0.3, 0.5, 0.6, -0.8, 21.0, 1.40],    # Left high - back
-            [base_pos-0.2, -0.1, 0.9, 0.5, -1.9, 19.0, 1.40],    # Left low - barely back
-            [base_pos, -0.5, 0.6, 0.7, -1.5, 22.0, 1.50],        # Center pop - back
-            [base_pos+0.2, -0.4, 0.7, 0.8, -1.0, 18.0, 1.60],    # Twist right - back
-            [base_pos-0.2, -0.4, 0.7, 0.8, -2.0, 18.0, 1.40],    # Twist left - back
-            [base_pos, 0.3, 1.2, 0.2, -1.5, 15.0, 0.70],         # Dip down - forward OK
-            [base_pos, -0.6, 0.3, 0.9, -1.5, 22.0, 2.40],        # Pop up - back
-            [base_pos+0.1, -0.3, 0.5, 0.6, -1.6, 20.0, 1.50],    # Finale pose - back
-            [base_pos, -0.2, 0.7, 0.5, -1.5, 16.0, 0.70],        # Cool down - back
-            [base_pos, 0.2, 1.3, 1.5, -1.5, 15.0, 1.50],         # Return home 1
-            [base_pos, -0.65, 1.2, 1.0, -1.5, 10.0, 1.50]        # Return home 2
-        ]
-        
-        # Snappy dance timing
-        durations = [0.45, 0.35, 0.5, 0.35, 0.6, 0.5, 0.35, 0.35, 0.45, 0.45, 0.6, 0.65, 0.35, 0.6, 0.6, 0.9]
-        
-        return keyframes, durations
+# COMMENTED OUT: This animation stretches forward and breaks things
+# class DancingAnimation(AnimationPlugin):
+#     """Make the arm perform a rhythmic dance."""
+#
+#     @property
+#     def name(self) -> str:
+#         return "dance"
+#
+#     @property
+#     def description(self) -> str:
+#         return "Rhythmic dancing motion with musical timing"
+#
+#     def get_category(self) -> str:
+#         return "action"
+#
+#     def get_keyframes(self) -> Tuple[List[List[float]], List[float]]:
+#         base_pos = 0.0
+#
+#         keyframes = [
+#             [base_pos, -0.1, 0.7, 0.4, -1.5, 17.0, 1.50],        # Ready - slightly back
+#             [base_pos+0.3, 0.1, 0.8, 0.3, -1.2, 20.0, 1.60],     # Right bounce - slight forward
+#             [base_pos+0.4, -0.3, 0.5, 0.6, -1.8, 21.0, 1.60],    # Right high - back
+#             [base_pos+0.2, -0.1, 0.9, 0.5, -0.9, 19.0, 1.60],    # Right low - barely back
+#             [base_pos-0.3, 0.2, 0.8, 0.3, -2.1, 20.0, 1.40],     # Left bounce - bit forward
+#             [base_pos-0.4, -0.3, 0.5, 0.6, -0.8, 21.0, 1.40],    # Left high - back
+#             [base_pos-0.2, -0.1, 0.9, 0.5, -1.9, 19.0, 1.40],    # Left low - barely back
+#             [base_pos, -0.5, 0.6, 0.7, -1.5, 22.0, 1.50],        # Center pop - back
+#             [base_pos+0.2, -0.4, 0.7, 0.8, -1.0, 18.0, 1.60],    # Twist right - back
+#             [base_pos-0.2, -0.4, 0.7, 0.8, -2.0, 18.0, 1.40],    # Twist left - back
+#             [base_pos, 0.3, 1.2, 0.2, -1.5, 15.0, 0.70],         # Dip down - forward OK
+#             [base_pos, -0.6, 0.3, 0.9, -1.5, 22.0, 2.40],        # Pop up - back
+#             [base_pos+0.1, -0.3, 0.5, 0.6, -1.6, 20.0, 1.50],    # Finale pose - back
+#             [base_pos, -0.2, 0.7, 0.5, -1.5, 16.0, 0.70],        # Cool down - back
+#             [base_pos, 0.2, 1.3, 1.5, -1.5, 15.0, 1.50],         # Return home 1
+#             [base_pos, -0.65, 1.2, 1.0, -1.5, 10.0, 1.50]        # Return home 2
+#         ]
+#
+#         # Snappy dance timing
+#         durations = [0.45, 0.35, 0.5, 0.35, 0.6, 0.5, 0.35, 0.35, 0.45, 0.45, 0.6, 0.65, 0.35, 0.6, 0.6, 0.9]
+#
+#         return keyframes, durations
 
 
 class IdleAnimation(AnimationPlugin):
