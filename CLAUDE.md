@@ -18,7 +18,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **ROS2**: Jazzy distribution
 - **Communication**: Serial JSON protocol at 115200 baud
 - **Vision**: DepthAI for face/emotion detection
-- **Audio**: DFRobot DF2301Q voice recognition + ReSpeaker 2-mic array for direction
+- **Audio**: Whisper + Qwen LLM for AI assistant, ReSpeaker 2-mic array for voice direction
 - **Display**: Framebuffer display with system metrics and state visualization
 
 ## Core Architecture Principles
@@ -133,65 +133,95 @@ The main launch file `luxo_system.launch.py` supports these parameters:
 #### Petting Animations (3)
 `folded_wiggle`, `bouncy_wiggle`, `sleepy_melt`
 
-## Voice Command System (DFRobot DF2301Q)
+## AI Voice Assistant System
 
-The system uses a DFRobot DF2301Q voice recognition module connected via I2C (bus 3).
+The system features an ultra-fast AI voice assistant using Whisper for speech recognition and Qwen for language understanding, achieving sub-2-second response times.
 
-### Available Commands (29 total)
+### Architecture
 
-#### Wake Word Commands
-- Command ID 1: Custom wake word (user-programmed)
-- Command ID 2: "Hello robot"
+**Speech-to-Text**: Whisper base.en model with Hailo-8 acceleration (optional)
+**Language Model**: Qwen 0.6B quantized (q4_0) for fast inference
+**Text-to-Speech**: espeak-ng with optional SoX voice transformation
+**Audio Hardware**: ReSpeaker 2-mic or 4-mic array with Direction of Arrival (DOA)
 
-These wake words activate USER_CONTROL mode for 10 seconds (or until the next command), displaying a bouncing white/blue direction indicator on the NeoPixels that moves back and forth by 8 pixels.
+### Voice Assistant Commands
 
-#### Basic Light Control Commands
-**Turn OFF/ON light:**
-- Command ID 103: "Turn on the light"
-- Command ID 104: "Turn off the light"
+The assistant understands natural language and supports two categories of commands:
 
-#### Brightness Control Commands
-- Command ID 105: "Brighten the light" - Increases brightness by 20%
-- Command ID 106: "Dim the light" - Decreases brightness by 20%
-- Command ID 107: "Adjust brightness to maximum" - Sets brightness to 100%
-- Command ID 108: "Adjust brightness to minimum" - Sets brightness to 10%
+#### Robot Hardware Commands
+- **Sleep/Wake**: "Go to sleep", "You're about to sleep now", "Good night", "Wake up", "Good morning"
+- **Light Control**: "Turn on/off the light"
+- **Brightness**: "Brighten/dim the light", "Maximum/minimum brightness"
+- **Color Temperature**: "Make it warmer/cooler"
+- **Colors**: "Set to red/orange/yellow/green/cyan/blue/purple/white"
 
-#### Color Temperature Commands
-- Command ID 109: "Increase color temperature" - Makes light warmer (more red/yellow)
-- Command ID 110: "Decrease color temperature" - Makes light cooler (more blue)
-- Command ID 111: "Adjust color temperature to maximum" - Sets warmest temperature
-- Command ID 112: "Adjust color temperature to minimum" - Sets coolest temperature
+#### Voice Assistant Controls
+- **Mute/Unmute**: "Be quiet", "Shut up", "You can talk now"
+- **Volume**: "Speak louder/quieter", "Volume up/down"
+- **Speed**: "Speak faster/slower"
+- **Pitch**: "Higher/lower pitch"
+- **Status**: "What's your status?"
 
-#### Color Setting Commands
-- Command ID 116: "Set to red"
-- Command ID 117: "Set to orange"
-- Command ID 118: "Set to yellow"
-- Command ID 119: "Set to green"
-- Command ID 120: "Set to cyan"
-- Command ID 121: "Set to blue"
-- Command ID 122: "Set to purple"
-- Command ID 123: "Set to white" - Returns to default white with current temperature
+### Sleep Mode Features
 
-#### Wake Up Commands
-- Command ID 80: "Start oscillating"
-- Command ID 113: "Daylight mode"
-- Command ID 115: "Color mode"
+When the robot goes to sleep:
+1. **Visual**: Lights turn off, pixel ring turns off
+2. **Physical**: DEMA mode enables (robot becomes limp), torque disabled
+3. **Audio**: Volume mutes to 0 (robot can still hear but won't respond)
+4. **Animation**: Plays sleep animation
 
-#### Go to Sleep Commands
-- Command ID 81: "Stop oscillating"
-- Command ID 82: "Reset"
-- Command ID 93: "Stop playing"
-- Command ID 114: "Moonlight mode"
+When waking up:
+1. **Audio**: Volume restores BEFORE responding (you hear the wake response)
+2. **Physical**: DEMA disables, torque enables
+3. **Visual**: Lights and pixel ring turn back on
+4. **Animation**: Returns to idle behaviors
 
-### Command Execution Flow
-1. Voice command detected → ID mapped → USER_CONTROL state
-2. Command executed (wake words: 10s listening mode; lights: on/off/brightness/color)
-3. Confirmation sound → Return to IDLE
+### Natural Language Processing
+
+The system uses flexible pattern matching for robust command detection:
+- Handles common transcription errors (e.g., "your" vs "you're")
+- Supports various phrasings ("Go to sleep", "Time for bed", "It's bedtime")
+- Context-aware (distinguishes "wake up" from "unmute")
+- Quick responses for greetings ("Hello", "Hi", "Good morning")
+
+### Performance Metrics
+
+**Target Latency**: < 2 seconds end-to-end
+- STT (Speech-to-Text): ~0.8s
+- LLM (Language Model): ~0.3-1.0s
+- TTS (Text-to-Speech): ~0.5-1.0s
+
+**CPU Usage**: 40-50% on Raspberry Pi 5 (CPU mode)
+**With Hailo-8**: 20-30% CPU, 2-3x faster STT
+
+### Voice Direction Tracking
+
+The ReSpeaker microphone array provides directional information:
+- **DOA Algorithm**: GCC-PHAT for time delay estimation
+- **Motor Noise Compensation**: Ignores voice during robot movement
+- **Parallax Correction**: Accounts for microphone position (10cm behind, 15cm up)
+- **Visual Feedback**: Pixel ring LEDs show listening/speaking/thinking states
 
 ### Configuration
-- Brightness: 0.1-1.0 (20% steps)
-- Color temp: 0.0=cool, 1.0=warm
-- Volume: 7/20, Wake: 20s, Interval: 100ms, Cooldown: 2s
+
+**Launch Parameters**:
+```bash
+ros2 launch luxo_behaviors luxo_system.launch.py \
+    use_hailo:=true \              # Enable Hailo acceleration
+    verbose:=true \                 # Debug output
+    whisper_step_ms:=1000          # STT processing interval
+```
+
+**Topics**:
+- `/voice/transcription` (String): Recognized speech
+- `/voice/llm_response` (String): Assistant responses
+- `/voice/tts_active` (Bool): Speaking status
+- `/voice/direction` (Float32): Voice direction angle
+- `/luxo/sleep_mode` (Bool): Sleep/wake commands
+
+**Key Nodes**:
+- `luxopi_assistant_node`: Main AI assistant (STT + LLM + TTS)
+- `voice_direction_node`: Audio localization and tracking
 
 ## State Machine
 
@@ -421,10 +451,10 @@ luxo_behaviors/
 #### Hardware Communication
 - `serial_manager.py`: Thread-safe serial communication with heartbeat
 - `i2c_device_manager.py`: I2C sensor management (APDS9960, VL53L4CD)
-- `DFRobot_DF2301Q.py`: Voice recognition hardware driver
 
 #### Vision & Audio
 - `camera_interaction.py`: Vision, emotion detection
+- `luxopi_assistant_node.py`: AI voice assistant (Whisper + Qwen + espeak)
 - `voice_direction_node.py`: Voice tracking with motor awareness
 - `mic_array.py`: ReSpeaker microphone array interface
 - `gcc_phat.py`: Audio localization algorithm
@@ -594,8 +624,11 @@ ros2 topic echo /system/cpu_usage
 ros2 topic echo /system/ram_usage
 ros2 topic echo /system/temperature
 
-# Check voice command detection
-ros2 topic echo /voice_command/detected
+# Check voice assistant transcription
+ros2 topic echo /voice/transcription
+
+# Check assistant responses
+ros2 topic echo /voice/llm_response
 
 # Monitor behavior coordination
 ros2 topic echo /luxo/target_override
@@ -612,11 +645,11 @@ ros2 topic echo /luxo/movement_source
 
 ## Resource Locations
 
-- **Voice Commands Documentation**: `src/luxo_behaviors/resource/voice_command.md`
 - **Animation Guidelines**: `animation_guidelines.md`
 - **Robot API**: `ROBOT_ARM_API.md`
 - **Architecture Diagram**: `architecture_diagram.svg`
 - **Service Files**: `luxopi.service`, `luxopi-ros.service`
+- **Voice Presets**: `/home/pi/luxopi-ai/audio_experiments_web/` (SoX transformations)
 
 System uses ROS2 Jazzy on Ubuntu 24.04. Python packages require `--break-system-packages` flag.
 
@@ -645,8 +678,6 @@ GPIO Pinout (40-pin header):
 - Pin 10 (GPIO15): RX from Robot (via level shifter)
 - Pin 3 (GPIO2): I2C1 SDA
 - Pin 5 (GPIO3): I2C1 SCL
-- Pin 27 (GPIO0): I2C3 SDA (DFRobot voice module)
-- Pin 28 (GPIO1): I2C3 SCL (DFRobot voice module)
 - Pin 12 (GPIO18): NeoPixel data (via level shifter)
 ```
 
@@ -654,7 +685,6 @@ GPIO Pinout (40-pin header):
 - **0x39**: APDS9960 (proximity/gesture sensor)
 - **0x29**: VL53L4CD (left distance sensor)
 - **0x2A**: VL53L4CD (right distance sensor) - reprogrammed
-- **0x64**: DFRobot DF2301Q (voice recognition) on I2C bus 3
 
 ### NeoPixel LED Ring
 - **Model**: WS2812B RGB LED ring

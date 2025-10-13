@@ -210,23 +210,68 @@ Multi-layer safety system prevents collisions.
 - `/right_collision_warning` - Right side status
 - `/collision_details` - Detailed collision info
 
-### Voice Commands
+### AI Voice Assistant
 
-The system supports 29 voice commands through the DFRobot DF2301Q module.
+The robot features an ultra-fast AI voice assistant powered by Whisper and Qwen, achieving sub-2-second response times.
 
-#### Wake Words
-- "Hello robot" - Activates listening mode
-- Custom wake word (user programmable)
+#### Natural Language Understanding
 
-#### Common Commands
-| Category | Commands | Examples |
-|----------|----------|----------|
-| Light Control | On/Off, Brightness | "Turn on the light", "Dim the light" |
-| Colors | 8 colors | "Set to blue", "Set to red" |
-| Actions | Wake/Sleep | "Start oscillating", "Reset" |
-| Modes | Day/Night | "Daylight mode", "Moonlight mode" |
+The assistant uses flexible NLP to understand various phrasings:
+- **Conversational**: Just talk to it naturally!
+- **Context-aware**: Understands intent from context
+- **Error-tolerant**: Handles transcription variations
 
-See [Voice Command Reference](src/luxo_behaviors/resource/voice_command.md) for full list.
+#### Robot Hardware Commands
+
+| Category | Example Commands |
+|----------|------------------|
+| **Sleep/Wake** | "Go to sleep", "Good night", "Time for bed", "Wake up", "Good morning" |
+| **Light Control** | "Turn on/off the light" |
+| **Brightness** | "Brighten the light", "Dim the light", "Maximum brightness" |
+| **Color Temperature** | "Make it warmer", "Make it cooler" |
+| **Colors** | "Set to red", "Set to blue", "Set to purple", etc. (8 colors) |
+
+#### Voice Assistant Controls
+
+| Category | Example Commands |
+|----------|------------------|
+| **Mute/Unmute** | "Be quiet", "Shut up", "You can talk now", "Speak" |
+| **Volume** | "Speak louder", "Speak quieter", "Volume up/down" |
+| **Speed** | "Speak faster", "Speak slower", "Slow down" |
+| **Pitch** | "Higher pitch", "Lower pitch", "Deeper voice" |
+| **Status** | "What's your status?", "Show me your settings" |
+
+#### Sleep Mode Features
+
+When you tell the robot to sleep:
+- **Visual**: Lights and pixel ring turn off
+- **Physical**: DEMA enables (robot becomes limp)
+- **Audio**: Mutes voice (can hear but won't respond)
+- **Animation**: Plays sleep animation
+
+When waking up, everything restores automatically!
+
+#### Performance
+
+- **Response Time**: < 2 seconds (STT + LLM + TTS)
+- **CPU Usage**: 40-50% on Raspberry Pi 5
+- **With Hailo-8**: 20-30% CPU, 2-3x faster
+
+#### Monitoring Assistant
+
+```bash
+# Listen to transcriptions
+ros2 topic echo /voice/transcription
+
+# See assistant responses
+ros2 topic echo /voice/llm_response
+
+# Check voice direction
+ros2 topic echo /voice/direction
+
+# Monitor sleep mode
+ros2 topic echo /luxo/sleep_mode
+```
 
 ### Dynamic Adaptation
 
