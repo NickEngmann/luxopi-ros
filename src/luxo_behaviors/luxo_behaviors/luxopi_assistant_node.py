@@ -289,7 +289,19 @@ class LuxopiAssistantNode(Node, CommandBehavior):
         self.llm_response_pub = self.create_publisher(String, '/voice/llm_response', 10)
         self.tts_active_pub = self.create_publisher(Bool, '/voice/tts_active', 10)
 
-        self.get_logger().info("✅ ROS publishers created")
+        # ROS Subscribers
+        self.sleep_mode_sub = self.create_subscription(
+            Bool,
+            '/luxo/sleep_mode',
+            self.sleep_mode_callback,
+            10
+        )
+
+        # Sleep mode state
+        self.is_sleep_mode = False
+        self.saved_amplitude = None
+
+        self.get_logger().info("✅ ROS publishers and subscribers created")
         self.get_logger().info(f"🔧 Hailo mode: {use_hailo}")
         self.get_logger().info(f"🔧 Voice preset: {voice_preset if voice_preset else 'None'}")
         self.get_logger().info(f"🔧 Whisper step: {whisper_step_ms}ms")
@@ -435,6 +447,29 @@ class LuxopiAssistantNode(Node, CommandBehavior):
 
         except Exception as e:
             self.get_logger().warn(f"  ⚠️ Could not set volume: {e}")
+
+    def sleep_mode_callback(self, msg):
+        """Handle sleep/wake mode for volume control."""
+        try:
+            if msg.data and not self.is_sleep_mode:
+                # Going to sleep - save current amplitude and mute
+                self.saved_amplitude = self.amplitude
+                self.amplitude = 0
+                self.is_sleep_mode = True
+                self.get_logger().info(f"💤 Sleep mode: Volume muted (saved: {self.saved_amplitude})")
+            elif not msg.data and self.is_sleep_mode:
+                # Waking up - restore amplitude BEFORE responding
+                if self.saved_amplitude is not None:
+                    self.amplitude = self.saved_amplitude
+                    self.get_logger().info(f"🌅 Wake mode: Volume restored to {self.amplitude}")
+                    self.saved_amplitude = None
+                else:
+                    # Fallback to default if no saved value
+                    self.amplitude = 100
+                    self.get_logger().info(f"🌅 Wake mode: Volume restored to default {self.amplitude}")
+                self.is_sleep_mode = False
+        except Exception as e:
+            self.get_logger().error(f"Error in sleep mode callback: {e}")
 
     def speak(self, text):
         """Speak text using espeak-ng with optional voice transformation"""

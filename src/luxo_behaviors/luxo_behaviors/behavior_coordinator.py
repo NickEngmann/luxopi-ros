@@ -176,6 +176,31 @@ class BehaviorCoordinator(PettingBehavior, IdleBehavior, VoiceBehavior, Collisio
         self.setup_voice_behavior()      # Initialize voice behavior
         self.setup_command_behavior(setup_publishers=False)  # Initialize command behavior (coordination only, no publishers)
 
+        # Subscribe to sleep mode commands for complete sleep sequence handling
+        self.sleep_mode_subscription = self.node.create_subscription(
+            Bool,
+            '/luxo/sleep_mode',
+            self._sleep_mode_callback,
+            10
+        )
+
+        # Create publishers for sleep mode control
+        self.light_control_publisher = self.node.create_publisher(
+            Bool,
+            '/luxo/light_control',
+            10
+        )
+
+        self.pixel_ring_control_publisher = self.node.create_publisher(
+            Bool,
+            '/voice/pixel_ring_control',
+            10
+        )
+
+        # Track sleep state
+        self.sleep_state = False
+        self.sleep_animation_in_progress = False
+
     def _state_info_callback(self, msg):
         """Callback for state info updates."""
         with self._state_lock:
@@ -931,9 +956,91 @@ class BehaviorCoordinator(PettingBehavior, IdleBehavior, VoiceBehavior, Collisio
     def _publish_movement_source(self, source):
         """Publish movement source information for DEMA coordination."""
         self.movement_publisher.publish_movement_source(
-            self.node, 
-            source, 
+            self.node,
+            source,
             self.current_joints,
             getattr(self.node, 'joint_states_publisher', None),
             getattr(self.node, 'movement_source_publisher', None)
         )
+
+    def _sleep_mode_callback(self, msg):
+        """Handle sleep mode commands - complete sequence with lights and DEMA."""
+        try:
+            if msg.data and not self.sleep_state:
+                # Going to sleep
+                self.node.get_logger().info("Sleep mode activated - handling lights and DEMA")
+                self.sleep_state = True
+                self.sleep_animation_in_progress = True
+
+                # Turn off lights immediately
+                light_msg = Bool()
+                light_msg.data = False
+                self.light_control_publisher.publish(light_msg)
+                self.node.get_logger().info("Lights turned OFF for sleep")
+
+                # Turn off pixel ring
+                pixel_msg = Bool()
+                pixel_msg.data = False
+                self.pixel_ring_control_publisher.publish(pixel_msg)
+                self.node.get_logger().info("Pixel ring turned OFF for sleep")
+
+                # Schedule DEMA enable after animation completes (sleep animation is ~6-8 seconds)
+                # Add some buffer time
+                sleep_animation_duration = 10.0
+                self._schedule_dema_enable(sleep_animation_duration)
+
+            elif not msg.data and self.sleep_state:
+                # Waking up
+                self.node.get_logger().info("Wake mode activated - disabling DEMA and turning on lights")
+                self.sleep_state = False
+                self.sleep_animation_in_progress = False
+
+                # Disable DEMA mode
+                if hasattr(self.node, 'disable_dynamic_adaptation_mode'):
+                    success = self.node.disable_dynamic_adaptation_mode()
+                    if success:
+                        time.sleep(0.2)
+                        self.node.enable_torque()
+                        self.node.get_logger().info("DEMA disabled and torque enabled for wake up")
+
+                # Turn on lights
+                light_msg = Bool()
+                light_msg.data = True
+                self.light_control_publisher.publish(light_msg)
+                self.node.get_logger().info("Lights turned ON for wake up")
+
+                # Turn on pixel ring
+                pixel_msg = Bool()
+                pixel_msg.data = True
+                self.pixel_ring_control_publisher.publish(pixel_msg)
+                self.node.get_logger().info("Pixel ring turned ON for wake up")
+
+        except Exception as e:
+            self.node.get_logger().error(f"Error in sleep mode callback: {e}")
+
+    def _schedule_dema_enable(self, delay_seconds):
+        """Schedule DEMA enable after animation completes."""
+        def enable_dema_after_delay():
+            try:
+                time.sleep(delay_seconds)
+                if self.sleep_state and self.sleep_animation_in_progress:
+                    self.node.get_logger().info("Sleep animation completed - enabling DEMA")
+
+                    # Enable DEMA mode
+                    if hasattr(self.node, 'enable_dynamic_adaptation_mode'):
+                        success = self.node.enable_dynamic_adaptation_mode()
+                        if success:
+                            self.node.get_logger().info("DEMA enabled - robot is now immobilized for sleep")
+                            self.node.disable_torque()
+                            self.node.get_logger().info("Torque disabled for sleep mode")
+                        else:
+                            self.node.get_logger().warn("Failed to enable DEMA for sleep mode")
+
+                    self.sleep_animation_in_progress = False
+            except Exception as e:
+                self.node.get_logger().error(f"Error enabling DEMA after sleep animation: {e}")
+
+        # Start thread to enable DEMA after delay
+        import threading
+        dema_thread = threading.Thread(target=enable_dema_after_delay, daemon=True)
+        dema_thread.start()

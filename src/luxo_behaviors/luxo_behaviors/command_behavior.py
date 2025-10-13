@@ -198,26 +198,53 @@ class CommandBehavior:
     def _init_robot_hardware_patterns(self):
         """Initialize fuzzy patterns for robot hardware commands."""
 
-        # Sleep patterns - VERY FLEXIBLE for common transcription errors
+        # Sleep patterns - VERY FLEXIBLE for natural language
         self.sleep_patterns = [
-            r'go.{0,5}(to|the|a|and)?.{0,5}(sleep|slip|asleep|sleeps)',
-            r'(go|going).{0,10}sleep',
-            r'time.{0,10}(bed|sleep)',
-            r'goodnight',
-            r'good night',
-            r'sleep mode',
-            r'power down',
-            r'shut down',
-            r'(to|the|a)?\s*sweet',  # Common mishear of "sleep"
+            # Direct sleep commands
+            r'go.{0,5}(to|the|a|and)?.{0,5}(sleep|slip|asleep|sleeps|sleeping)',
+            r'(go|going).{0,10}(sleep|bed)',
+            r'time.{0,10}(to|for|the)?.{0,10}(bed|sleep)',
+
+            # "You're about to..." / "You should..." patterns
+            r'(you\'?re|your|you|u).{0,10}(about|going|supposed).{0,10}(to|the)?.{0,10}(sleep|bed)',
+            r'(you\'?re|your|you|u).{0,10}(should|need|have).{0,10}(to|the)?.{0,10}(sleep|bed)',
+
+            # Natural commands
+            r'(it\'?s|its)?.{0,5}(time|night).{0,10}(to|for|the)?.{0,10}(sleep|bed)',
+            r'(it\'?s|its).{0,5}bed.?time',
+            r'sleep\s+(now|time)',
+            r'(sleep|sleeping).{0,5}(mode|time)',
+
+            # Night time phrases
+            r'good.?night',
+            r'nighty.{0,5}night',
+            r'sweet.{0,5}dreams',
+
+            # Power commands
+            r'power.{0,5}down',
+            r'shut.{0,5}down',
+            r'power.{0,5}off',
         ]
 
-        # Wake patterns - flexible
+        # Wake patterns - VERY FLEXIBLE for natural language
         self.wake_patterns = [
-            r'wake.{0,5}up',
-            r'good morning',
-            r'time.{0,10}wake',
+            # Direct wake commands
+            r'wake.{0,5}(up|it)?',
+            r'(get|git).{0,5}up',
+            r'(rise|rice).{0,5}(and.{0,5})?shine',
+
+            # Morning greetings
+            r'good\s+morning',
+            r'morning',
+
+            # "You should..." / "Time to..." patterns
+            r'(you\'?re|your|you|u).{0,10}(should|need|have).{0,10}(to|the)?.{0,10}(wake|get).{0,10}up',
+            r'time.{0,10}(to|for).{0,10}(wake|get).{0,10}up',
+
+            # Power commands
             r'power\s+(on|up)',
-            r'start\s+up',
+            r'(start|boot).{0,5}up',
+            r'turn.{0,5}on',
         ]
 
         # Light ON patterns

@@ -183,6 +183,14 @@ class StateManagerNode(Node):
             10
         )
 
+        # Add subscription for sleep mode control
+        self.sleep_mode_sub = self.create_subscription(
+            Bool,
+            '/luxo/sleep_mode',
+            self.sleep_mode_callback,
+            10
+        )
+
         # Timers
         self.update_timer = self.create_timer(0.1, self.update)  # 10Hz update
         self.publish_timer = self.create_timer(0.25, self.publish_state)  # 4Hz state publishing
@@ -627,6 +635,68 @@ class StateManagerNode(Node):
                         
         except Exception as e:
             self.get_logger().error(f"Error in color control callback: {e}")
+
+    def sleep_mode_callback(self, msg):
+        """Handle sleep/wake mode commands."""
+        try:
+            if msg.data:
+                # Sleep mode - trigger sleep animation
+                self.get_logger().info("Sleep mode activated - triggering sleep animation")
+                self._trigger_animation('sleep')
+            else:
+                # Wake mode - return to idle or trigger wake animation
+                self.get_logger().info("Wake mode activated - returning to idle")
+                # Could optionally trigger a "wake up" animation here
+                # self._trigger_animation('stretch')
+                pass
+        except Exception as e:
+            self.get_logger().error(f"Error in sleep mode callback: {e}")
+
+    def _trigger_animation(self, animation_name):
+        """Helper method to trigger an animation via ROS2 action."""
+        try:
+            from rclpy.action import ActionClient
+            from luxo_interfaces.action import PlayAnimation
+
+            # Create action client if it doesn't exist
+            if not hasattr(self, '_animation_action_client'):
+                self._animation_action_client = ActionClient(
+                    self,
+                    PlayAnimation,
+                    'play_animation'  # <- Fixed: use correct action name
+                )
+
+            # Wait for action server with timeout
+            if not self._animation_action_client.wait_for_server(timeout_sec=2.0):
+                self.get_logger().warn("Animation action server not available")
+                return
+
+            # Create and send goal
+            goal_msg = PlayAnimation.Goal()
+            goal_msg.animation_name = animation_name
+            goal_msg.speed_multiplier = 1.0
+            goal_msg.allow_interruption = False
+            goal_msg.use_hardware_feedback = False
+
+            self.get_logger().info(f"Sending animation goal: {animation_name}")
+            send_goal_future = self._animation_action_client.send_goal_async(goal_msg)
+
+            # Don't wait for result - fire and forget
+            send_goal_future.add_done_callback(lambda future: self._animation_goal_response_callback(future, animation_name))
+
+        except Exception as e:
+            self.get_logger().error(f"Error triggering animation '{animation_name}': {e}")
+
+    def _animation_goal_response_callback(self, future, animation_name):
+        """Callback for animation goal response."""
+        try:
+            goal_handle = future.result()
+            if goal_handle.accepted:
+                self.get_logger().info(f"Animation '{animation_name}' goal accepted")
+            else:
+                self.get_logger().warn(f"Animation '{animation_name}' goal rejected")
+        except Exception as e:
+            self.get_logger().error(f"Error in animation goal response: {e}")
 
     def _update_neopixel_for_state(self, state: LuxoState):
         """Update NeoPixel display based on current state"""
