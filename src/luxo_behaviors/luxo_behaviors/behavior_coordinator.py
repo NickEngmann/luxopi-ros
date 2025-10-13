@@ -174,7 +174,7 @@ class BehaviorCoordinator(PettingBehavior, IdleBehavior, VoiceBehavior, Collisio
         self.setup_idle_behavior()       # Initialize idle behavior
         self.setup_petting_behavior()    # Initialize petting behavior
         self.setup_voice_behavior()      # Initialize voice behavior
-        self.setup_command_behavior()    # Initialize command behavior
+        self.setup_command_behavior(setup_publishers=False)  # Initialize command behavior (coordination only, no publishers)
 
     def _state_info_callback(self, msg):
         """Callback for state info updates."""

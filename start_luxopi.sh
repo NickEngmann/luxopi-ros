@@ -25,6 +25,13 @@ export LUXOPI_MOTOR_RESISTANCE_TIME="${LUXOPI_MOTOR_RESISTANCE_TIME:-1.0}"
 export LUXOPI_RESTART_DELAY="${LUXOPI_RESTART_DELAY:-5}"
 export LUXOPI_MAX_RESTARTS="${LUXOPI_MAX_RESTARTS:-0}"  # 0 = unlimited
 
+# LLM Assistant Configuration
+export LUXOPI_ENABLE_LLM_ASSISTANT="${LUXOPI_ENABLE_LLM_ASSISTANT:-true}"
+export LUXOPI_LLM_ASSISTANT_HAILO="${LUXOPI_LLM_ASSISTANT_HAILO:-true}"
+export LUXOPI_LLM_ASSISTANT_VERBOSE="${LUXOPI_LLM_ASSISTANT_VERBOSE:-false}"
+export LUXOPI_LLM_ASSISTANT_VOICE_PRESET="${LUXOPI_LLM_ASSISTANT_VOICE_PRESET:-/home/pi/luxopi-ai/audio_experiments_web/preset_alpha-high-pitch.json}"
+export LUXOPI_LLM_ASSISTANT_WHISPER_STEP_MS="${LUXOPI_LLM_ASSISTANT_WHISPER_STEP_MS:-1000}"
+
 # ROS2 Configuration
 export DISPLAY=:0
 export ROS_DOMAIN_ID=0
@@ -100,7 +107,12 @@ get_launch_args() {
          "i2c_device_manager.enable_apds9960:=$LUXOPI_ENABLE_APDS9960" \
          "enable_motor_resistance_detection:=$LUXOPI_ENABLE_MOTOR_RESISTANCE" \
          "motor_resistance_threshold:=$LUXOPI_MOTOR_RESISTANCE_THRESHOLD" \
-         "motor_resistance_time_threshold:=$LUXOPI_MOTOR_RESISTANCE_TIME"
+         "motor_resistance_time_threshold:=$LUXOPI_MOTOR_RESISTANCE_TIME" \
+         "enable_llm_assistant:=$LUXOPI_ENABLE_LLM_ASSISTANT" \
+         "llm_assistant_hailo:=$LUXOPI_LLM_ASSISTANT_HAILO" \
+         "llm_assistant_verbose:=$LUXOPI_LLM_ASSISTANT_VERBOSE" \
+         "llm_assistant_voice_preset:=$LUXOPI_LLM_ASSISTANT_VOICE_PRESET" \
+         "llm_assistant_whisper_step_ms:=$LUXOPI_LLM_ASSISTANT_WHISPER_STEP_MS"
 }
 
 print_configuration() {
@@ -119,6 +131,11 @@ print_configuration() {
     log "Motor Resistance Detection: $LUXOPI_ENABLE_MOTOR_RESISTANCE"
     log "  - Threshold: $LUXOPI_MOTOR_RESISTANCE_THRESHOLD rad"
     log "  - Time Threshold: $LUXOPI_MOTOR_RESISTANCE_TIME sec"
+    log "LLM Assistant: $LUXOPI_ENABLE_LLM_ASSISTANT"
+    log "  - Hailo Mode: $LUXOPI_LLM_ASSISTANT_HAILO"
+    log "  - Verbose: $LUXOPI_LLM_ASSISTANT_VERBOSE"
+    log "  - Voice Preset: $LUXOPI_LLM_ASSISTANT_VOICE_PRESET"
+    log "  - Whisper Step: $LUXOPI_LLM_ASSISTANT_WHISPER_STEP_MS ms"
     log "=========================="
 }
 

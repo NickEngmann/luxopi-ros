@@ -38,6 +38,7 @@ setup(
             'collision_detection = luxo_behaviors.collision_detection:main',
             'animation_action_client = luxo_behaviors.animation_action_client:main',
             'watchdog = luxo_behaviors.watchdog_node:main',
+            'luxopi_assistant_node = luxo_behaviors.luxopi_assistant_node:main',
         ],
     },
 )

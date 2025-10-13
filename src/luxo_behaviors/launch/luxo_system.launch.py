@@ -165,6 +165,37 @@ def generate_launch_description():
         default_value='25.0',
         description='Seconds without joint updates before triggering recovery'
     )
+
+    # LLM Assistant parameters
+    declare_enable_llm_assistant = DeclareLaunchArgument(
+        'enable_llm_assistant',
+        default_value='true',
+        description='Enable LLM voice assistant with Hailo Whisper and Qwen3-0.6B'
+    )
+
+    declare_llm_assistant_hailo = DeclareLaunchArgument(
+        'llm_assistant_hailo',
+        default_value='true',
+        description='Use Hailo-8 NPU for Whisper acceleration in LLM assistant (default: true)'
+    )
+
+    declare_llm_assistant_verbose = DeclareLaunchArgument(
+        'llm_assistant_verbose',
+        default_value='false',
+        description='Enable verbose logging for LLM assistant'
+    )
+
+    declare_llm_assistant_voice_preset = DeclareLaunchArgument(
+        'llm_assistant_voice_preset',
+        default_value='/home/pi/luxopi-ai/audio_experiments_web/preset_alpha-high-pitch.json',
+        description='Voice preset path for TTS transformation'
+    )
+
+    declare_llm_assistant_whisper_step_ms = DeclareLaunchArgument(
+        'llm_assistant_whisper_step_ms',
+        default_value='1000',
+        description='Whisper processing step in milliseconds'
+    )
     # ==========================================================================
     # LOGGING ACTIONS
     # ==========================================================================
@@ -420,6 +451,21 @@ def generate_launch_description():
         condition=IfCondition(LaunchConfiguration('enable_voice'))
     )
 
+    # LLM Voice Assistant node (depends on voice_direction_node for audio loopback)
+    luxopi_assistant_node = Node(
+        package='luxo_behaviors',
+        executable='luxopi_assistant_node',
+        name='luxopi_assistant_node',
+        output='screen',
+        parameters=[
+            {'use_hailo': LaunchConfiguration('llm_assistant_hailo')},
+            {'verbose': LaunchConfiguration('llm_assistant_verbose')},
+            {'voice_preset': LaunchConfiguration('llm_assistant_voice_preset')},
+            {'whisper_step_ms': LaunchConfiguration('llm_assistant_whisper_step_ms')}
+        ],
+        condition=IfCondition(PythonExpression(["'", LaunchConfiguration('enable_llm_assistant'), "' == 'true' and '", LaunchConfiguration('enable_voice'), "' == 'true'"]))
+    )
+
     # Collision detection logic node (hardware only, now uses I2C manager data)
     collision_logic_node = Node(
         package='luxo_behaviors',
@@ -560,7 +606,12 @@ def generate_launch_description():
         declare_watchdog,
         declare_watchdog_state_timeout,
         declare_watchdog_joint_timeout,
-        
+        declare_enable_llm_assistant,
+        declare_llm_assistant_hailo,
+        declare_llm_assistant_verbose,
+        declare_llm_assistant_voice_preset,
+        declare_llm_assistant_whisper_step_ms,
+
         # Launch info and banners
         startup_banner,
         mode_info,
@@ -572,6 +623,7 @@ def generate_launch_description():
         troubleshooting_info,
         jsp_killer,
         voice_direction_node,
+        luxopi_assistant_node,
         # Launch files
         roarm_launch,
         

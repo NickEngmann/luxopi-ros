@@ -1,847 +1,960 @@
 #!/usr/bin/env python3
 #command_behavior.py
 """
-Command behavior module for Luxo robot.
-Handles DFRobot voice recognition commands for lighting and robot control.
+Unified Command Behavior Module for Luxo robot (MIXIN).
+Handles BOTH voice assistant commands (mute, volume, speed, pitch)
+AND robot hardware commands (sleep, wake, lights, brightness, colors).
+
+Used by:
+- luxopi_assistant_node (detects all commands from user speech)
+- behavior_coordinator (coordinates voice with physical behaviors)
 """
 
 import threading
 import time
+import re
+import random
 from typing import Optional, Dict, Set
-from std_msgs.msg import Bool, String
+from std_msgs.msg import Bool, String, Float32
 from luxo_behaviors.state_machine import LuxoState
 from rclpy.action import ActionClient
 from luxo_interfaces.action import PlayAnimation
-import sys
-import os
-
-# Try to import from local directory first, then fallback to dev directory
-try:
-    # Import from local directory (same as command_behavior.py)
-    from .DFRobot_DF2301Q import DFRobot_DF2301Q_I2C, DF2301Q_I2C_ADDR
-    DFROBOT_AVAILABLE = True
-except ImportError:
-    print("DFRobot_DF2301Q not found in local directory, trying dev directory...")
-    DFROBOT_AVAILABLE = False
 
 
 class CommandBehavior:
-    """Mixin class for DFRobot voice command functionality."""
-    
-    def setup_command_behavior(self):
-        """Initialize command behavior attributes and hardware."""
-        # Command parameters - check before declaring
-        if not self.node.has_parameter('enable_voice_commands'):
-            self.node.declare_parameter('enable_voice_commands', True)
-        if not self.node.has_parameter('command_check_interval'):
-            self.node.declare_parameter('command_check_interval', 0.1)  # 100ms check interval
-        if not self.node.has_parameter('dfrobot_i2c_bus'):
-            self.node.declare_parameter('dfrobot_i2c_bus', 3)
-        if not self.node.has_parameter('dfrobot_volume'):
-            self.node.declare_parameter('dfrobot_volume', 7)
-        if not self.node.has_parameter('dfrobot_wake_time'):
-            self.node.declare_parameter('dfrobot_wake_time', 20)
-        
-        # Load parameters
-        self.voice_commands_enabled = self.node.get_parameter('enable_voice_commands').value
-        self.command_check_interval = self.node.get_parameter('command_check_interval').value
-        self.dfrobot_i2c_bus = self.node.get_parameter('dfrobot_i2c_bus').value
-        self.dfrobot_volume = self.node.get_parameter('dfrobot_volume').value
-        self.dfrobot_wake_time = self.node.get_parameter('dfrobot_wake_time').value
-        
-        # Command state tracking
+    """
+    Unified command behavior mixin handling both voice assistant and robot hardware commands.
+
+    Used as a mixin by:
+    1. BehaviorCoordinator (behavior_coordinator.py) - For coordination with physical behaviors
+    2. LuxopiAssistantNode (luxopi_assistant_node.py) - For command detection from speech
+    """
+
+    def setup_command_behavior(self, verbose=False, amplitude=120, speed=300, pitch=90, setup_publishers=True):
+        """
+        Initialize command behavior (mixin setup method).
+
+        Args:
+            verbose: Enable verbose logging
+            amplitude: Voice amplitude (0-200)
+            speed: Voice speed in WPM (80-450)
+            pitch: Voice pitch (0-99)
+            setup_publishers: If True, create ROS publishers for hardware control.
+                             Set to False if only using coordination methods (e.g., behavior_coordinator)
+        """
+        self.verbose = verbose
+
+        # Voice assistant settings (espeak parameters)
+        self.is_muted = False
+        self.amplitude = amplitude  # Volume: 0-200, default 120
+        self.speed = speed          # Speed: 80-450 wpm, default 300
+        self.pitch = pitch          # Pitch: 0-99, default 90
+
+        # Voice assistant bounds and steps
+        self.AMPLITUDE_MIN = 20
+        self.AMPLITUDE_MAX = 200
+        self.SPEED_MIN = 80
+        self.SPEED_MAX = 450
+        self.PITCH_MIN = 0
+        self.PITCH_MAX = 99
+        self.AMPLITUDE_STEP = 20
+        self.SPEED_STEP = 50
+        self.PITCH_STEP = 10
+
+        # Robot hardware state tracking
+        self.light_state = True
+        self.sleep_state = False
+        self.current_brightness = 0.2
+        self.current_color_temp = 0.5
+        self.color_mode = None
+
+        # Command timing and cooldown
+        self.command_cooldown = 2.0  # seconds
         self.last_command_time = self.node.get_clock().now()
-        self.command_cooldown = 2.0  # seconds between commands
-        self.current_command_id = None
+
+        # Initialize patterns
+        self._init_voice_assistant_patterns()
+        self._init_robot_hardware_patterns()
+
+        # ROS integration (optional - only needed if this node publishes commands)
+        if setup_publishers:
+            self._setup_ros_integration()
+            if self.node:
+                self.node.get_logger().info("CommandBehavior mixin initialized (with publishers)")
+        else:
+            # Still need command state tracking for coordination
+            self.command_in_progress = False
+            self.command_completion_time = None
+            self.last_llm_interaction_time = None
+            self.user_control_timeout = 3.0
+            self.command_lock = threading.Lock()
+            if self.node:
+                self.node.get_logger().info("CommandBehavior mixin initialized (coordination only, no publishers)")
+
+    def _init_voice_assistant_patterns(self):
+        """Initialize fuzzy patterns for voice assistant commands."""
+
+        # Quick responses (bypass LLM entirely)
+        self.quick_responses = {
+            "hello": "Hello!",
+            "hello there": "Hi there!",
+            "hi": "Hey!",
+            "hey": "Hello!",
+            "good morning": "Good morning!",
+            "good afternoon": "Good afternoon!",
+            "good evening": "Good evening!",
+            "goodbye": "Goodbye!",
+            "bye": "Bye!",
+            "thank you": "You're welcome!",
+            "thanks": "No problem!",
+            "how are you": "I'm doing great!",
+            "what's up": "Not much, you?",
+        }
+
+        # Mute command patterns (flexible for fuzzy matching)
+        self.mute_patterns = [
+            r'(be|bee|beat).{0,5}(silent|silence|silents)',
+            r'(be|bee|beat).{0,5}(quiet|quite|quieter)',
+            r'(shut|shush|shot|shout).{0,5}(up|it|that)',
+            r'(mute|moot|meet|muting).{0,5}(yourself)?',
+            r'stop.{0,5}(talking|speaking|talk|speak)',
+            r'\bhush\b',
+            r'zip.{0,5}it',
+            r'no.{0,5}more.{0,5}talking',
+            r'(need|want).{0,5}silence',
+            r'quiet.{0,5}down',
+        ]
+
+        # Unmute command patterns
+        self.unmute_patterns = [
+            r'(you.{0,5}can.{0,5})?talk.{0,5}(again|now)?',
+            r'(you.{0,5}can.{0,5})?speak.{0,5}(again|now)?',
+            r'(unmute|un.{0,5}mute|unmuting).{0,5}(yourself)?',
+            r'start.{0,5}(talking|speaking).{0,5}(again)?',
+            r'go.{0,5}ahead.{0,5}(and.{0,5})?(talk|speak)?',
+            r'(it\'?s.{0,5})?okay.{0,5}(to.{0,5})?(talk|speak).{0,5}(now)?',
+            r'(you\'?re.{0,5})?allowed.{0,5}to.{0,5}(talk|speak)',
+            r'\bresume\b',
+            r'back.{0,5}on',
+        ]
+
+        # Volume control patterns
+        self.volume_up_patterns = [
+            r'(speak|talk|be|bee).{0,5}(louder|loader|lauder|higher)',
+            r'increase.{0,5}(your.{0,5})?(volume|volumes|loudness)',
+            r'(raise|rays|race).{0,5}(your.{0,5}|the.{0,5})?(volume|voice)',
+            r'\blouder\b',
+            r'volume.{0,5}up',
+            r'turn.{0,5}up.{0,5}(volume|voice)',
+        ]
+
+        self.volume_down_patterns = [
+            r'(speak|talk|be|bee).{0,5}(quieter|quite|softer|lower)',
+            r'decrease.{0,5}(your.{0,5})?(volume|volumes|loudness)',
+            r'(lower|turn.{0,5}down).{0,5}(your.{0,5}|the.{0,5})?(volume|voice)',
+            r'\bquieter\b',
+            r'\bsofter\b',
+            r'volume.{0,5}down',
+            r'too.{0,5}(loud|load)',
+        ]
+
+        # Speed control patterns
+        self.speed_up_patterns = [
+            r'(speak|talk|speaks|talks).{0,5}(faster|quicker)',
+            r'speed.{0,5}up',
+            r'\b(faster|quicker)\b',
+        ]
+
+        self.speed_down_patterns = [
+            r'(speak|talk|speaks|talks).{0,5}(slower|slow|more.{0,5}slowly)',
+            r'slow.{0,5}down',
+            r'too.{0,5}(fast|faster)',
+            r'\b(slower|slow)\b',
+        ]
+
+        # Pitch control patterns
+        self.pitch_up_patterns = [
+            r'higher.{0,5}(pitch|voice)',
+            r'(raise|rays|race).{0,5}(your.{0,5})?pitch',
+            r'more.{0,5}high-pitched',
+        ]
+
+        self.pitch_down_patterns = [
+            r'lower.{0,5}(pitch|voice)',
+            r'deeper.{0,5}voice',
+            r'more.{0,5}bass',
+            r'lower.{0,5}your.{0,5}pitch',
+        ]
+
+        # Status request patterns
+        self.status_patterns = [
+            r'what\'?s.{0,5}your.{0,5}(status|settings|setting|configuration)',
+            r'how.{0,5}are.{0,5}you.{0,5}configured',
+            r'show.{0,5}(me.{0,5})?(your.{0,5})?settings',
+            r'check.{0,5}settings',
+            r'voice.{0,5}settings',
+        ]
+
+    def _init_robot_hardware_patterns(self):
+        """Initialize fuzzy patterns for robot hardware commands."""
+
+        # Sleep patterns - VERY FLEXIBLE for common transcription errors
+        self.sleep_patterns = [
+            r'go.{0,5}(to|the|a|and)?.{0,5}(sleep|slip|asleep|sleeps)',
+            r'(go|going).{0,10}sleep',
+            r'time.{0,10}(bed|sleep)',
+            r'goodnight',
+            r'good night',
+            r'sleep mode',
+            r'power down',
+            r'shut down',
+            r'(to|the|a)?\s*sweet',  # Common mishear of "sleep"
+        ]
+
+        # Wake patterns - flexible
+        self.wake_patterns = [
+            r'wake.{0,5}up',
+            r'good morning',
+            r'time.{0,10}wake',
+            r'power\s+(on|up)',
+            r'start\s+up',
+        ]
+
+        # Light ON patterns
+        self.light_on_patterns = [
+            r'(turn|turns|torn).{0,5}(on|in|and).{0,5}(the|a|an)?.{0,5}(light|lights|like)',
+            r'(turn|turns|torn).{0,5}(the|a|an)?.{0,5}(light|lights|like).{0,5}(on|in|and)',
+            r'(light|lights|like).{0,5}(on|in|and)',
+            r'(switch|switches).{0,5}(light|lights).{0,5}on',
+        ]
+
+        # Light OFF patterns
+        self.light_off_patterns = [
+            r'(turn|turns|torn).{0,5}(off|of|out).{0,5}(the|a|an)?.{0,5}(light|lights|like)',
+            r'(turn|turns|torn).{0,5}(the|a|an)?.{0,5}(light|lights|like).{0,5}(off|of|out)',
+            r'(light|lights|like).{0,5}(off|of|out)',
+            r'(switch|switches).{0,5}(light|lights).{0,5}off',
+        ]
+
+        # Color map for fuzzy matching
+        self.color_variations = {
+            'red': ['red', 'read', 'rad', 'rid'],
+            'orange': ['orange', 'ornge', 'arrange'],
+            'yellow': ['yellow', 'yello', 'mellow'],
+            'green': ['green', 'grain', 'grin', 'scene'],
+            'cyan': ['cyan', 'sign', 'sigh', 'turquoise', 'turquois'],
+            'blue': ['blue', 'blew', 'glue', 'flew'],
+            'purple': ['purple', 'violet', 'people', 'papal'],
+            'white': ['white', 'wight', 'wright', 'bite', 'right']
+        }
+
+    def _setup_ros_integration(self):
+        """Setup ROS publishers and subscriptions."""
+        # Command state tracking
         self.command_in_progress = False
         self.command_completion_time = None
-        self.last_processed_command_id = None  # Track last command to avoid re-processing
-        
-        # Command mapping
-        self.command_mappings = {
-            # Wake word commands
-            1: 'wake_word',  # Custom wake word
-            2: 'wake_word',  # "Hello robot"
-            
-            # Turn off light commands
-            104: 'turn_off_light', # "Turn off the light"
-            
-            # Turn on light commands
-            103: 'turn_on_light',  # "Turn on the light"
-            
-            # Brightness control commands
-            105: 'increase_brightness',  # "Brighten the light"
-            106: 'decrease_brightness',  # "Dim the light"
-            107: 'set_brightness_max',   # "Adjust brightness to maximum"
-            108: 'set_brightness_min',   # "Adjust brightness to minimum"
-            
-            # Color temperature commands
-            109: 'increase_color_temp',  # "Increase color temperature" (warmer)
-            110: 'decrease_color_temp',  # "Decrease color temperature" (cooler)
-            111: 'set_color_temp_max',   # "Adjust color temperature to maximum" (warmest)
-            112: 'set_color_temp_min',   # "Adjust color temperature to minimum" (coolest)
-            
-            # Color setting commands
-            116: 'set_color_red',     # "Set to red"
-            117: 'set_color_orange',  # "Set to orange"
-            118: 'set_color_yellow',  # "Set to yellow"
-            119: 'set_color_green',   # "Set to green"
-            120: 'set_color_cyan',    # "Set to cyan"
-            121: 'set_color_blue',    # "Set to blue"
-            122: 'set_color_purple',  # "Set to purple"
-            123: 'set_color_white',   # "Set to white"
-            
-            # Wake up commands
-            80: 'wake_up', # "Start oscillating"
-            113: 'wake_up', # "Daylight mode"
-            115: 'wake_up', # "Color mode"
-            
-            # Go to sleep commands
-            81: 'go_to_sleep', # "Stop oscillating"
-            82: 'go_to_sleep', # "Reset"
-            93: 'go_to_sleep', # "Stop playing"
-            114: 'go_to_sleep', # "Moonlight mode"
-        }
-        
-        # Light state tracking
-        self.light_state = True  # Assume lights start on
-        self.sleep_state = False  # Track if robot is sleeping
-        self.sleep_start_time = None
-        
-        # Brightness and color tracking
-        self.current_brightness = 0.2  # Track current brightness level (0.0-1.0)
-        self.current_color_temp = 0.5  # Track color temperature (0.0=coolest, 1.0=warmest)
-        self.color_mode = None  # Track if we're in a specific color mode
-        
-        # Wake word state tracking
-        self.wake_word_active = False
-        self.wake_word_time = None
-        self.wake_word_timeout = 10.0  # Seconds to stay in USER_CONTROL after wake word
-        # Removed light_state_before_wake - no longer needed as we only use status LEDs
-        
-        # Threading for sensor polling
-        self.command_thread = None
-        self.command_thread_running = False
+        self.last_llm_interaction_time = None
+        self.user_control_timeout = 3.0
         self.command_lock = threading.Lock()
-        
-        # Initialize DFRobot hardware
-        self.dfrobot_sensor = None
-        self._initialize_dfrobot()
-        
-        # Create publishers for light control
-        self.light_control_publisher = self.node.create_publisher(
-            Bool,
-            '/luxo/light_control',
-            10
-        )
-        
-        # Create publishers for advanced light control
-        self.brightness_control_publisher = self.node.create_publisher(
-            String,
-            '/luxo/brightness_control',
-            10
-        )
-        
-        self.color_temp_control_publisher = self.node.create_publisher(
-            String,
-            '/luxo/color_temp_control',
-            10
-        )
-        
-        self.color_control_publisher = self.node.create_publisher(
-            String,
-            '/luxo/color_control',
-            10
-        )
-        
-        # Create publisher for voice pixel ring control
-        self.pixel_ring_control_publisher = self.node.create_publisher(
-            Bool,
-            '/voice/pixel_ring_control',
-            10
-        )
-        
-        # Start command monitoring if enabled
-        if self.voice_commands_enabled and self.dfrobot_sensor:
-            self._start_command_monitoring()
-        
-        self.node.get_logger().info(f"Voice commands enabled: {self.voice_commands_enabled}")
-    
-    def _initialize_dfrobot(self):
-        """Initialize DFRobot voice recognition sensor."""
-        if not DFROBOT_AVAILABLE:
-            self.node.get_logger().warn("DFRobot library not available - voice commands disabled")
-            return
-        else:
-            self.node.get_logger().info("DFRobot library available - initializing sensor")
-        try:
-            # Initialize I2C communication
-            self.dfrobot_sensor = DFRobot_DF2301Q_I2C(
-                i2c_addr=DF2301Q_I2C_ADDR, 
-                bus=self.dfrobot_i2c_bus
-            )
-            
-            # Configure sensor settings
-            self.dfrobot_sensor.set_volume(self.dfrobot_volume)
-            self.dfrobot_sensor.set_mute_mode(0)  # 0 = unmute
-            self.dfrobot_sensor.set_wake_time(self.dfrobot_wake_time)
-            
-            # Test sensor communication
-            wake_time = self.dfrobot_sensor.get_wake_time()
-            if wake_time == self.dfrobot_wake_time:
-                self.node.get_logger().info(f"DFRobot sensor initialized successfully (wake_time: {wake_time})")
-            else:
-                self.node.get_logger().warn(f"DFRobot sensor communication issue (expected wake_time: {self.dfrobot_wake_time}, got: {wake_time})")
-                
-        except Exception as e:
-            self.node.get_logger().error(f"Failed to initialize DFRobot sensor: {e}")
-            self.dfrobot_sensor = None
-    
-    def _start_command_monitoring(self):
-        """Start the command monitoring thread."""
-        if self.command_thread is not None and self.command_thread_running:
-            return
-        
-        self.command_thread_running = True
-        self.command_thread = threading.Thread(target=self._command_monitoring_loop, daemon=True)
-        self.command_thread.start()
-        self.node.get_logger().info("Command monitoring thread started")
-    
-    def _stop_command_monitoring(self):
-        """Stop the command monitoring thread."""
-        self.command_thread_running = False
-        if self.command_thread and self.command_thread.is_alive():
-            self.command_thread.join(timeout=1.0)
-        self.node.get_logger().info("Command monitoring thread stopped")
-    
-    def _command_monitoring_loop(self):
-        """Main loop for monitoring voice commands."""
-        while self.command_thread_running:
-            try:
-                if self.dfrobot_sensor and self.voice_commands_enabled:
-                    # Check for new commands
-                    command_id = self.dfrobot_sensor.get_CMDID()
-                    
-                    if command_id != 0:  # 0 means no command
-                        # Only process if it's a new command (not the same as last processed)
-                        if command_id != self.last_processed_command_id:
-                            self._handle_voice_command(command_id)
-                            self.last_processed_command_id = command_id
-                    else:
-                        # Reset when no command is detected
-                        self.last_processed_command_id = None
-                
-                # Sleep for the check interval
-                time.sleep(self.command_check_interval)
-                
-            except Exception as e:
-                self.node.get_logger().error(f"Error in command monitoring loop: {e}")
-                time.sleep(1.0)  # Longer sleep on error
-    
-    def _handle_voice_command(self, command_id: int):
-        """Handle received voice command."""
-        with self.command_lock:
+
+        # Create publishers for robot hardware control
+        self.light_control_publisher = self.node.create_publisher(Bool, '/luxo/light_control', 10)
+        self.brightness_control_publisher = self.node.create_publisher(Float32, '/luxo/brightness_control', 10)
+        self.color_temp_control_publisher = self.node.create_publisher(String, '/luxo/color_temp_control', 10)
+        self.color_control_publisher = self.node.create_publisher(String, '/luxo/color_control', 10)
+        self.pixel_ring_control_publisher = self.node.create_publisher(Bool, '/voice/pixel_ring_control', 10)
+        self.sleep_mode_publisher = self.node.create_publisher(Bool, '/luxo/sleep_mode', 10)
+
+        if self.verbose:
+            self.node.get_logger().info("ROS publishers created for command behavior")
+
+    # ===================================================================
+    # COMMAND DETECTION METHODS (used by luxopi_assistant_node)
+    # ===================================================================
+
+    def detect_command(self, text):
+        """
+        Detect ANY command (voice assistant OR robot hardware) from user speech.
+        Returns tuple: (command_type, command_data, canned_response)
+
+        command_type: 'voice_assistant', 'robot_hardware', 'quick_response', or None
+        command_data: dict with command details
+        canned_response: str to speak (skip LLM)
+        """
+        text_lower = text.lower().strip()
+
+        # Check cooldown
+        if self.last_command_time:
             current_time = self.node.get_clock().now()
-            
-            # Check cooldown (but allow wake words through)
             time_since_last = (current_time - self.last_command_time).nanoseconds / 1e9
-            if time_since_last < self.command_cooldown and command_id not in [1, 2]:
-                self.node.get_logger().info(f"Command {command_id} ignored due to cooldown")
-                return
-            
-            # Check if command is in our mapping
-            if command_id not in self.command_mappings:
-                self.node.get_logger().info(f"Unknown command ID: {command_id}")
-                return
-            
-            command_name = self.command_mappings[command_id]
-            self.node.get_logger().info(f"Voice command received: {command_name} (ID: {command_id})")
-            
-            # Update timing
-            self.last_command_time = current_time
-            self.current_command_id = command_id
-            
-            # Request USER_CONTROL state for command execution
-            if self._request_user_control_state():
-                # Execute the command
-                self._execute_command(command_name, command_id)
-            else:
-                self.node.get_logger().warn(f"Failed to request USER_CONTROL state for command: {command_name}")
-    
-    def _request_user_control_state(self) -> bool:
-        """Request transition to USER_CONTROL state for command execution."""
+            if time_since_last < self.command_cooldown:
+                return None, None, None
+
+        # Priority 1: Quick responses (highest priority - instant responses)
+        quick_response = self._check_quick_response(text_lower)
+        if quick_response:
+            return 'quick_response', {'response': quick_response}, quick_response
+
+        # Priority 2: Voice assistant commands (mute, volume, etc.)
+        # Mute/unmute
+        if self._check_mute_command(text_lower):
+            response = self._get_mute_confirmation()
+            return 'voice_assistant', {'action': 'mute'}, response
+
+        if self._check_unmute_command(text_lower):
+            response = self._get_unmute_confirmation()
+            return 'voice_assistant', {'action': 'unmute'}, response
+
+        # Volume
+        volume_change = self._check_volume_command(text_lower)
+        if volume_change:
+            response = self._get_volume_confirmation(volume_change)
+            return 'voice_assistant', {'action': 'volume_' + volume_change}, response
+
+        # Speed
+        speed_change = self._check_speed_command(text_lower)
+        if speed_change:
+            response = self._get_speed_confirmation(speed_change)
+            return 'voice_assistant', {'action': 'speed_' + speed_change}, response
+
+        # Pitch
+        pitch_change = self._check_pitch_command(text_lower)
+        if pitch_change:
+            response = self._get_pitch_confirmation(pitch_change)
+            return 'voice_assistant', {'action': 'pitch_' + pitch_change}, response
+
+        # Status
+        if self._check_status_command(text_lower):
+            response = self._get_status_message()
+            return 'voice_assistant', {'action': 'status'}, response
+
+        # Priority 3: Robot hardware commands (sleep, lights, etc.)
+        hw_command = self._detect_hardware_command(text_lower)
+        if hw_command:
+            response = self._get_hardware_confirmation(hw_command)
+            return 'robot_hardware', {'command': hw_command}, response
+
+        # No command detected
+        return None, None, None
+
+    def _detect_hardware_command(self, text):
+        """Detect robot hardware commands. Returns command name or None."""
+
+        # Sleep commands
+        if any(re.search(pattern, text) for pattern in self.sleep_patterns):
+            return 'go_to_sleep'
+
+        # Wake commands (but not "wake up" in unmute context)
+        if any(re.search(pattern, text) for pattern in self.wake_patterns):
+            # Make sure it's not an unmute command
+            if not self._check_unmute_command(text):
+                return 'wake_up'
+
+        # Light ON
+        if any(re.search(pattern, text) for pattern in self.light_on_patterns):
+            return 'turn_on_light'
+
+        # Light OFF
+        if any(re.search(pattern, text) for pattern in self.light_off_patterns):
+            return 'turn_off_light'
+
+        # Brightness - check max/min first
+        if 'min' in text or 'minimum' in text or 'dimmest' in text:
+            if 'bright' in text or 'light' in text:
+                return 'set_brightness_min'
+
+        if 'max' in text or 'maximum' in text or 'brightest' in text:
+            if 'bright' in text or 'light' in text:
+                return 'set_brightness_max'
+
+        # Then increase/decrease
+        if any(word in text for word in ['bright', 'brighten', 'brighter', 'writer', 'rider']):
+            return 'increase_brightness'
+
+        if any(word in text for word in ['dim', 'dimmer', 'darker', 'dimer', 'timer']):
+            return 'decrease_brightness'
+
+        # Color temperature
+        if any(word in text for word in ['warm', 'warmer', 'more warm', 'warm up', 'former']):
+            return 'increase_color_temp'
+
+        if any(word in text for word in ['cool', 'cooler', 'more cool', 'cool down', 'ruler']):
+            return 'decrease_color_temp'
+
+        # Colors
+        for color, variations in self.color_variations.items():
+            if any(var in text for var in variations):
+                return f'set_color_{color}'
+
+        return None
+
+    def _get_hardware_confirmation(self, command):
+        """Get canned response for hardware command."""
+        confirmations = {
+            'go_to_sleep': [
+                "Okay, going to sleep now.",
+                "Good night!",
+                "Alright, time for bed.",
+                "Sleep mode activated.",
+            ],
+            'wake_up': [
+                "Good morning!",
+                "I'm awake!",
+                "Ready and awake!",
+                "Waking up now.",
+            ],
+            'turn_on_light': [
+                "Lights on.",
+                "Turning on the lights.",
+                "Let there be light!",
+            ],
+            'turn_off_light': [
+                "Lights off.",
+                "Turning off the lights.",
+                "Going dark.",
+            ],
+            'increase_brightness': [
+                "Increasing brightness.",
+                "Making it brighter.",
+                "Brighter.",
+            ],
+            'decrease_brightness': [
+                "Decreasing brightness.",
+                "Making it dimmer.",
+                "Dimmer.",
+            ],
+            'set_brightness_max': [
+                "Maximum brightness.",
+                "Full bright.",
+                "Brightest setting.",
+            ],
+            'set_brightness_min': [
+                "Minimum brightness.",
+                "Very dim.",
+                "Lowest setting.",
+            ],
+            'increase_color_temp': [
+                "Making it warmer.",
+                "Warmer tone.",
+                "Increasing warmth.",
+            ],
+            'decrease_color_temp': [
+                "Making it cooler.",
+                "Cooler tone.",
+                "Decreasing warmth.",
+            ],
+        }
+
+        # Color commands
+        if command.startswith('set_color_'):
+            color = command.replace('set_color_', '')
+            return f"Setting color to {color}."
+
+        # Get confirmation or default
+        options = confirmations.get(command, ["Okay."])
+        return random.choice(options)
+
+    def execute_hardware_command(self, command):
+        """
+        Execute hardware command by publishing to ROS topics.
+        Called by luxopi_assistant_node after detection.
+        """
         try:
-            current_state = self._get_current_state()
-            
-            # Don't interrupt certain critical states
-            if current_state in [LuxoState.ESCAPE_MODE, LuxoState.ERROR]:
-                self.node.get_logger().warn(f"Cannot execute command in {current_state.name} state")
-                return False
-            
-            # If already in USER_CONTROL, just mark command in progress
-            if current_state == LuxoState.USER_CONTROL:
-                self.command_in_progress = True
-                self.node.get_logger().info("Already in USER_CONTROL state")
-                return True
-            
-            # Request transition with high priority
-            success = self._transition_to_state(LuxoState.USER_CONTROL)
-            if success:
-                self.command_in_progress = True
-                self.node.get_logger().info("Transitioned to USER_CONTROL state for voice command")
-                return True
-            else:
-                self.node.get_logger().warn("Failed to transition to USER_CONTROL state")
-                return False
-                
-        except Exception as e:
-            self.node.get_logger().error(f"Error requesting USER_CONTROL state: {e}")
-            return False
-    
-    def _execute_command(self, command_name: str, command_id: int):
-        """Execute the specified command."""
-        try:
-            if command_name == 'wake_word':
-                self.node.get_logger().info("Wake word detected! Entering USER_CONTROL mode")
-                self._handle_wake_word()
-            elif command_name == 'turn_on_light':
-                if self.light_state:
-                    self.node.get_logger().info("Lights are already ON")
-                    return
-                self.node.get_logger().info("Executing command: Turn ON light")
-                self._turn_on_light()
-            elif command_name == 'turn_off_light':
-                if not self.light_state:
-                    self.node.get_logger().info("Lights are already OFF")
-                    return
-                self.node.get_logger().info("Executing command: Turn OFF light")
-                self._turn_off_light()
-            elif command_name == 'wake_up':
-                if not self.sleep_state:
-                    self.node.get_logger().info("Robot is already awake")
-                    return
-                self.node.get_logger().info("Executing command: Wake up robot")
-                self._wake_up()
-            elif command_name == 'go_to_sleep':
-                if self.sleep_state:
-                    self.node.get_logger().info("Robot is already asleep")
-                    return
-                self.node.get_logger().info("Executing command: Go to sleep")
-                self._go_to_sleep()
-            # Brightness control commands
-            elif command_name == 'increase_brightness':
-                self.node.get_logger().info("Executing command: Increase brightness")
+            if command == 'go_to_sleep':
+                self._publish_sleep_mode(True)
+            elif command == 'wake_up':
+                self._publish_sleep_mode(False)
+            elif command == 'turn_on_light':
+                self._publish_light_state(True)
+            elif command == 'turn_off_light':
+                self._publish_light_state(False)
+            elif command == 'increase_brightness':
                 self._adjust_brightness(increase=True)
-            elif command_name == 'decrease_brightness':
-                self.node.get_logger().info("Executing command: Decrease brightness")
+            elif command == 'decrease_brightness':
                 self._adjust_brightness(increase=False)
-            elif command_name == 'set_brightness_max':
-                self.node.get_logger().info("Executing command: Set brightness to maximum")
-                self._set_brightness(0.3)
-            elif command_name == 'set_brightness_min':
-                self.node.get_logger().info("Executing command: Set brightness to minimum")
+            elif command == 'set_brightness_max':
+                self._set_brightness(1.0)
+            elif command == 'set_brightness_min':
                 self._set_brightness(0.1)
-            # Color temperature commands
-            elif command_name == 'increase_color_temp':
-                self.node.get_logger().info("Executing command: Increase color temperature (warmer)")
+            elif command == 'increase_color_temp':
                 self._adjust_color_temperature(increase=True)
-            elif command_name == 'decrease_color_temp':
-                self.node.get_logger().info("Executing command: Decrease color temperature (cooler)")
+            elif command == 'decrease_color_temp':
                 self._adjust_color_temperature(increase=False)
-            elif command_name == 'set_color_temp_max':
-                self.node.get_logger().info("Executing command: Set color temperature to maximum (warmest)")
-                self._set_color_temperature(1.0)
-            elif command_name == 'set_color_temp_min':
-                self.node.get_logger().info("Executing command: Set color temperature to minimum (coolest)")
-                self._set_color_temperature(0.0)
-            # Color setting commands
-            elif command_name == 'set_color_red':
-                self.node.get_logger().info("Executing command: Set color to red")
-                self._set_color('red')
-            elif command_name == 'set_color_orange':
-                self.node.get_logger().info("Executing command: Set color to orange")
-                self._set_color('orange')
-            elif command_name == 'set_color_yellow':
-                self.node.get_logger().info("Executing command: Set color to yellow")
-                self._set_color('yellow')
-            elif command_name == 'set_color_green':
-                self.node.get_logger().info("Executing command: Set color to green")
-                self._set_color('green')
-            elif command_name == 'set_color_cyan':
-                self.node.get_logger().info("Executing command: Set color to cyan")
-                self._set_color('cyan')
-            elif command_name == 'set_color_blue':
-                self.node.get_logger().info("Executing command: Set color to blue")
-                self._set_color('blue')
-            elif command_name == 'set_color_purple':
-                self.node.get_logger().info("Executing command: Set color to purple")
-                self._set_color('purple')
-            elif command_name == 'set_color_white':
-                self.node.get_logger().info("Executing command: Set color to white")
-                self._set_color('white')
-            else:
-                self.node.get_logger().warn(f"Unknown command: {command_name}")
-                return
-            
-            # Play confirmation sound using the command ID
-            if self.dfrobot_sensor:
-                try:
-                    self.dfrobot_sensor.play_by_CMDID(command_id)
-                except Exception as e:
-                    self.node.get_logger().info(f"Error playing confirmation sound: {e}")
-            
-            # Schedule command completion
-            self.command_completion_time = self.node.get_clock().now()
-            
-        except Exception as e:
-            self.node.get_logger().error(f"Error executing command {command_name}: {e}")
-            self._complete_command()
-    
-    def _handle_wake_word(self):
-        """Handle wake word detection - enter USER_CONTROL state with visual feedback."""
-        # Reset wake word timer even if already active (to extend timeout)
-        was_already_active = self.wake_word_active
-        self.wake_word_active = True
-        self.wake_word_time = self.node.get_clock().now()
-        # Make sure command_in_progress is True for proper tracking
-        self.command_in_progress = True
+            elif command.startswith('set_color_'):
+                color = command.replace('set_color_', '')
+                self._set_color(color)
 
-        # No longer need to manipulate light state since we're only using status LEDs
-        # The status LEDs will show the bouncing animation automatically via state manager
+            # Update timing
+            self.last_command_time = self.node.get_clock().now()
 
-        if was_already_active:
-            self.node.get_logger().info(f"Wake word timeout reset to {self.wake_word_timeout} seconds")
-        else:
-            # The state transition has already been done in _request_user_control_state
-            # We just need to set up the timeout
-            self.node.get_logger().info(f"Wake word active - will remain in USER_CONTROL for {self.wake_word_timeout} seconds")
-    
-    def _turn_on_light(self):
-        """Turn on the lights."""
-        self.light_state = True
-        self._publish_light_state(self.light_state)
-        self.node.get_logger().info("Lights turned ON")
-        
-        # No longer need to track light state for wake word
-        
-        # If robot was sleeping, wake it up too
-        if self.sleep_state:
-            self.sleep_state = False
-            self.sleep_start_time = None
-            self.node.get_logger().info("Robot waking up due to light command")
-        
-        # If wake word is active, complete immediately to exit USER_CONTROL
-        if self.wake_word_active:
-            self.node.get_logger().info("Exiting USER_CONTROL after light command")
-            self._schedule_command_completion(0.5)
-        else:
-            # Normal completion for non-wake-word initiated commands
-            self._schedule_command_completion(1.0)
-    
-    def _turn_off_light(self):
-        """Turn off the lights."""
-        self.light_state = False
-        self._publish_light_state(self.light_state)
-        self.node.get_logger().info("Lights turned OFF")
-        
-        # No longer need to track light state for wake word
-        
-        # If wake word is active, complete immediately to exit USER_CONTROL
-        if self.wake_word_active:
-            self.node.get_logger().info("Exiting USER_CONTROL after light command")
-            self._schedule_command_completion(0.5)
-        else:
-            # Normal completion for non-wake-word initiated commands
-            self._schedule_command_completion(1.0)
-    
-    def _wake_up(self):
-        """Wake up the robot."""
-        if self.sleep_state:
-            self.node.get_logger().info("Robot waking up - disabling DEMA and turning on lights")
-            
-            # Disable DEMA mode to allow movement
-            if hasattr(self.node, 'disable_dynamic_adaptation_mode'):
-                success = self.node.disable_dynamic_adaptation_mode()
-                if success:
-                    time.sleep(0.2)  # Allow time for DEMA to disable
-                    self.node.enable_torque()
-                    self.node.get_logger().info("Torque enabled for wake up")
-                    self.node.get_logger().info("DEMA disabled - robot can now move")
-                    # Set up for re-enabling DEMA after wake-up completes
-                    if hasattr(self.node, 'enable_dynamic_adaptation') and self.node.enable_dynamic_adaptation:
-                        self.node.dynamic_adaptation_pending_resume = True
-                        self.node.get_logger().info("DEMA will be re-enabled after wake-up movement completes")
-                else:
-                    self.node.get_logger().warn("Failed to disable DEMA for wake up")
-            
-            # Update sleep state
-            self.sleep_state = False
-            self.sleep_start_time = None
-            
-            # Turn on lights
-            self.light_state = True
-            self._publish_light_state(self.light_state)
-            
-            # Turn on voice direction pixel ring
-            self._publish_pixel_ring_state(True)
-            
-            # No longer need to track light state for wake word
-            
-            # Move to a neutral/home position if available
-            if hasattr(self, 'go_to_home_position'):
-                self.go_to_home_position("Wake up command")
-                self._schedule_command_completion(3.0)  # Wait for movement
-            else:
-                self._schedule_command_completion(1.0)
-        else:
-            self.node.get_logger().info("Robot already awake")
-            self._schedule_command_completion(1.0)
-    
-    def _go_to_sleep(self):
-        """Put the robot to sleep with sleep animation."""
-        self.sleep_state = True
-        self.sleep_start_time = self.node.get_clock().now()
-        self.node.get_logger().info("Robot going to sleep - starting sleep animation")
-        
-        # Turn off lights
-        self.light_state = False
-        self._publish_light_state(self.light_state)
-        
-        # Turn off voice direction pixel ring
-        self._publish_pixel_ring_state(False)
+        except Exception as e:
+            self.node.get_logger().error(f"Error executing hardware command {command}: {e}")
 
-        time.sleep(0.3)  # Short delay before starting animation
-        # First transition to ANIMATING state for the sleep animation
-        if self._transition_to_state(LuxoState.ANIMATING):
-            self.node.get_logger().info("Transitioned to ANIMATING state for sleep animation")
-            
-            # Now start the sleep animation
-            if hasattr(self, '_play_sleep_animation'):
-                success = self._play_sleep_animation()
-                if success:
-                    # Animation will handle completion and DEMA enabling
-                    self._schedule_command_completion(10.0)  # Sleep animation is typically long
-                else:
-                    # If animation fails, proceed with immediate sleep
-                    self._complete_sleep_sequence()
-            else:
-                # No animation capability, proceed with immediate sleep
-                self._complete_sleep_sequence()
-        else:
-            self.node.get_logger().warn("Failed to transition to ANIMATING state for sleep")
-            # Proceed with immediate sleep sequence
-            self._complete_sleep_sequence()
-    
-    def _play_sleep_animation(self):
-        """Play the sleep animation and set up completion callback."""
+    def _publish_sleep_mode(self, sleep: bool):
+        """Publish sleep mode command."""
         try:
-            # Create action client if it doesn't exist
-            if not hasattr(self, '_animation_client'):
-                self._animation_client = ActionClient(
-                    self.node, 
-                    PlayAnimation, 
-                    'play_animation'
-                )
-            
-            if not self._animation_client.wait_for_server(timeout_sec=2.0):
-                self.node.get_logger().warn("Animation server not available for sleep command")
-                return False
-            
-            # Create goal for sleep animation
-            goal_msg = PlayAnimation.Goal()
-            goal_msg.animation_name = 'sleep'
-            goal_msg.allow_interruption = False  # Don't allow interruption during sleep
-            
-            # Send goal with completion callback
-            future = self._animation_client.send_goal_async(goal_msg)
-            future.add_done_callback(self._sleep_animation_goal_callback)
-            
-            self.node.get_logger().info("Sleep animation requested")
-            return True
-            
+            msg = Bool()
+            msg.data = sleep
+            self.sleep_mode_publisher.publish(msg)
+            self.sleep_state = sleep
+            if self.verbose:
+                self.node.get_logger().info(f"Published sleep mode: {sleep}")
         except Exception as e:
-            self.node.get_logger().error(f"Error playing sleep animation: {e}")
-            return False
-    
-    def _sleep_animation_goal_callback(self, future):
-        """Handle sleep animation goal response."""
-        try:
-            goal_handle = future.result()
-            if not goal_handle.accepted:
-                self.sleep_state = False
-                self.node.get_logger().warn("Sleep animation goal rejected")
-                self._schedule_command_completion(1.0)
-                return
-            
-            self.node.get_logger().info("Sleep animation goal accepted")
-            
-            # Wait for animation completion
-            result_future = goal_handle.get_result_async()
-            result_future.add_done_callback(self._sleep_animation_result_callback)
-            
-        except Exception as e:
-            self.node.get_logger().error(f"Error in sleep animation goal callback: {e}")
-            self._complete_sleep_sequence()
-    
-    def _sleep_animation_result_callback(self, future):
-        """Handle sleep animation completion."""
-        try:
-            result = future.result()
-            if result.result.success:
-                self.node.get_logger().info("Sleep animation completed successfully")
-            else:
-                self.node.get_logger().warn(f"Sleep animation failed: {result.result.message}")
-            
-            # Complete the sleep sequence regardless of animation success
-            self._complete_sleep_sequence()
-            
-        except Exception as e:
-            self.node.get_logger().error(f"Error in sleep animation result callback: {e}")
-            self._complete_sleep_sequence()
-    
-    def _complete_sleep_sequence(self):
-        """Complete the sleep sequence: enable DEMA and turn off lights."""
-        try:
-            self.node.get_logger().info("Completing sleep sequence - enabling DEMA and turning off lights")
-            
-            # Enable DEMA mode to prevent movement
-            if hasattr(self.node, 'enable_dynamic_adaptation_mode'):
-                success = self.node.enable_dynamic_adaptation_mode()
-                if success:
-                    self.node.get_logger().info("DEMA enabled - robot is now immobilized for sleep")
-                    self.node.disable_torque()  # Disable torque to prevent movement
-                    self.node.get_logger().info("Torque disabled for sleep mode")
-                else:
-                    self.node.get_logger().warn("Failed to enable DEMA for sleep mode")
-            
-            # Schedule command completion
-            self._schedule_command_completion(1.0)
-            
-        except Exception as e:
-            self.node.get_logger().error(f"Error completing sleep sequence: {e}")
-            self._schedule_command_completion(1.0)
-    
+            self.node.get_logger().error(f"Error publishing sleep mode: {e}")
+
     def _publish_light_state(self, state: bool):
         """Publish light control command."""
         try:
             msg = Bool()
             msg.data = state
             self.light_control_publisher.publish(msg)
-            self.node.get_logger().info(f"Published light state: {state}")
+            self.light_state = state
+            if self.verbose:
+                self.node.get_logger().info(f"Published light state: {state}")
         except Exception as e:
             self.node.get_logger().error(f"Error publishing light state: {e}")
-    
+
     def _publish_pixel_ring_state(self, state: bool):
-        """Publish voice pixel ring control command."""
+        """Publish pixel ring control command."""
         try:
             msg = Bool()
             msg.data = state
             self.pixel_ring_control_publisher.publish(msg)
-            self.node.get_logger().info(f"Published pixel ring state: {state}")
+            if self.verbose:
+                self.node.get_logger().info(f"Published pixel ring state: {state}")
         except Exception as e:
             self.node.get_logger().error(f"Error publishing pixel ring state: {e}")
-    
-    def _schedule_command_completion(self, delay_seconds: float):
-        """Schedule command completion after a delay."""
-        # Create a timer for completion
-        def complete_after_delay():
-            time.sleep(delay_seconds)
-            self._complete_command()
-        
-        completion_thread = threading.Thread(target=complete_after_delay, daemon=True)
-        completion_thread.start()
-    
-    def _complete_command(self):
-        """Complete the current command and return to previous state."""
-        with self.command_lock:
-            if not self.command_in_progress:
-                self.node.get_logger().debug("_complete_command called but no command in progress")
-                return
-            
-            self.node.get_logger().info("Completing voice command - clearing state")
-            
-            # No longer need to manage light state for wake word since we only use status LEDs
-            
-            self.command_in_progress = False
-            self.current_command_id = None
-            self.command_completion_time = None
-            self.wake_word_active = False
-            self.wake_word_time = None
-            
-        # Release lock before transition to avoid deadlock
-        self.node.get_logger().info("Requesting transition to IDLE state")
-        # Try requesting with higher priority and force
-        try:
-            # Use the node's request method directly if available
-            if hasattr(self.node, 'request_state_transition'):
-                success = self.node.request_state_transition(LuxoState.IDLE, priority=150, force=True)
-                if success:
-                    self.node.get_logger().info("Voice command completed - transition to IDLE requested via node method")
-                else:
-                    self.node.get_logger().error("Failed to request transition to IDLE state via node method")
-            else:
-                # Fall back to the mixin method
-                success = self._transition_to_state(LuxoState.IDLE)
-                if success:
-                    self.node.get_logger().info("Voice command completed - transition to IDLE requested via mixin method")
-                else:
-                    self.node.get_logger().error("Failed to request transition to IDLE state via mixin method")
-        except Exception as e:
-            self.node.get_logger().error(f"Exception requesting transition to IDLE: {e}")
-    
-    def check_command_completion(self, current_time):
-        """Check if command should be completed (called from safety monitor)."""
-        should_complete = False
-        
-        with self.command_lock:
-            # Handle wake word timeout differently
-            if self.wake_word_active and self._is_in_state(LuxoState.USER_CONTROL):
-                time_since_wake = (current_time - self.wake_word_time).nanoseconds / 1e9
-                if time_since_wake > self.wake_word_timeout:
-                    self.node.get_logger().info("Wake word timeout - exiting USER_CONTROL")
-                    should_complete = True
-                    # Don't clear wake_word_active here - let _complete_command do it
-            elif (self.command_in_progress and 
-                  self.command_completion_time and 
-                  self._is_in_state(LuxoState.USER_CONTROL)):
-                # Normal command completion
-                time_since_completion = (current_time - self.command_completion_time).nanoseconds / 1e9
-                if time_since_completion > 0.5:  # 500ms grace period
-                    should_complete = True
-        
-        # Call _complete_command outside the lock to avoid deadlock
-        if should_complete:
-            self.node.get_logger().info("Calling _complete_command from check_command_completion")
-            try:
-                self._complete_command()
-                self.node.get_logger().info("_complete_command returned successfully")
-                return True
-            except Exception as e:
-                self.node.get_logger().error(f"Exception in _complete_command: {e}")
-                return False
-        
-        return False
-    
-    def is_sleeping(self) -> bool:
-        """Check if robot is in sleep state."""
-        return self.sleep_state
-    
-    def get_light_state(self) -> bool:
-        """Get current light state."""
-        return self.light_state
-    
-    def get_command_status(self) -> Dict:
-        """Get current command status for debugging."""
-        with self.command_lock:
-            return {
-                'enabled': self.voice_commands_enabled,
-                'sensor_available': self.dfrobot_sensor is not None,
-                'command_in_progress': self.command_in_progress,
-                'current_command_id': self.current_command_id,
-                'light_state': self.light_state,
-                'sleep_state': self.sleep_state,
-                'last_command_time': self.last_command_time
-            }
-    
+
     def _adjust_brightness(self, increase: bool):
-        """Adjust brightness up or down by steps."""
-        step = 0.2  # 20% steps
+        """Adjust brightness and publish."""
+        step = 0.1
         if increase:
             self.current_brightness = min(1.0, self.current_brightness + step)
         else:
-            self.current_brightness = max(0.1, self.current_brightness - step)  # Min 0.1 to keep some light
-        
+            self.current_brightness = max(0.1, self.current_brightness - step)
         self._publish_brightness_control(self.current_brightness)
-        self.node.get_logger().info(f"Brightness adjusted to {self.current_brightness:.1%}")
-        self._schedule_command_completion(0.5)
-    
+
     def _set_brightness(self, level: float):
-        """Set brightness to a specific level."""
-        self.current_brightness = max(0.0, min(1.0, level))  # Clamp between 0.0 and 1.0
+        """Set brightness to specific level and publish."""
+        self.current_brightness = max(0.0, min(1.0, level))
         self._publish_brightness_control(self.current_brightness)
-        self.node.get_logger().info(f"Brightness set to {self.current_brightness:.1%}")
-        self._schedule_command_completion(0.5)
-    
+
     def _adjust_color_temperature(self, increase: bool):
-        """Adjust color temperature warmer or cooler."""
-        step = 0.2  # 20% steps
-        if increase:  # Warmer
+        """Adjust color temperature and publish."""
+        step = 0.2
+        if increase:
             self.current_color_temp = min(1.0, self.current_color_temp + step)
-        else:  # Cooler
+        else:
             self.current_color_temp = max(0.0, self.current_color_temp - step)
-        
-        # If we're in a color mode, transition back to white first
-        if self.color_mode is not None:
+
+        # Clear color mode when adjusting temperature
+        if self.color_mode:
             self.color_mode = None
             self._publish_color_control('white')
-            time.sleep(0.1)  # Brief pause for color change
-        
+            time.sleep(0.1)
+
         self._publish_color_temperature(self.current_color_temp)
-        self.node.get_logger().info(f"Color temperature adjusted to {self.current_color_temp:.1%} (0=cool, 1=warm)")
-        self._schedule_command_completion(0.5)
-    
-    def _set_color_temperature(self, level: float):
-        """Set color temperature to a specific level."""
-        self.current_color_temp = max(0.0, min(1.0, level))  # Clamp between 0.0 and 1.0
-        
-        # If we're in a color mode, transition back to white first
-        if self.color_mode is not None:
-            self.color_mode = None
-            self._publish_color_control('white')
-            time.sleep(0.1)  # Brief pause for color change
-        
-        self._publish_color_temperature(self.current_color_temp)
-        self.node.get_logger().info(f"Color temperature set to {self.current_color_temp:.1%} (0=cool, 1=warm)")
-        self._schedule_command_completion(0.5)
-    
+
     def _set_color(self, color: str):
-        """Set the LED color."""
+        """Set LED color and publish."""
         if color == 'white':
-            # Return to white mode with current color temperature
             self.color_mode = None
             self._publish_color_control('white')
-            # Re-apply current color temperature
             self._publish_color_temperature(self.current_color_temp)
         else:
             self.color_mode = color
             self._publish_color_control(color)
-        
-        self.node.get_logger().info(f"Color set to {color}")
-        self._schedule_command_completion(0.5)
-    
+
     def _publish_brightness_control(self, brightness: float):
         """Publish brightness control message."""
         try:
-            msg = String()
-            msg.data = f"brightness:{brightness}"
+            msg = Float32()
+            msg.data = brightness
             self.brightness_control_publisher.publish(msg)
-            self.node.get_logger().info(f"Published brightness control: {brightness}")
         except Exception as e:
             self.node.get_logger().error(f"Error publishing brightness: {e}")
-    
+
     def _publish_color_temperature(self, temp: float):
         """Publish color temperature control message."""
         try:
             msg = String()
             msg.data = f"color_temp:{temp}"
             self.color_temp_control_publisher.publish(msg)
-            self.node.get_logger().info(f"Published color temperature control: {temp}")
         except Exception as e:
             self.node.get_logger().error(f"Error publishing color temperature: {e}")
-    
+
     def _publish_color_control(self, color: str):
         """Publish color control message."""
         try:
             msg = String()
             msg.data = f"color:{color}"
             self.color_control_publisher.publish(msg)
-            self.node.get_logger().info(f"Published color control: {color}")
         except Exception as e:
             self.node.get_logger().error(f"Error publishing color: {e}")
-    
-    def cleanup_command_behavior(self):
-        """Clean up command behavior resources."""
-        self._stop_command_monitoring()
+
+    # ===================================================================
+    # VOICE ASSISTANT METHODS
+    # ===================================================================
+
+    def _check_quick_response(self, text):
+        """Check if text has a quick response."""
+        # Direct match
+        if text in self.quick_responses:
+            return self.quick_responses[text]
+
+        # Partial match for common phrases
+        for trigger, response in self.quick_responses.items():
+            if trigger in text and len(text) < len(trigger) + 10:
+                return response
+
+        return None
+
+    def _check_mute_command(self, text):
+        """Check for mute command and update state."""
+        for pattern in self.mute_patterns:
+            if re.search(pattern, text):
+                if not self.is_muted:
+                    self.is_muted = True
+                    if self.verbose:
+                        self.node.get_logger().info(f"Mute command detected: '{text}'")
+                    return True
+                else:
+                    if self.verbose:
+                        self.node.get_logger().info("Already muted")
+                    return False
+        return False
+
+    def _check_unmute_command(self, text):
+        """Check for unmute command and update state."""
+        for pattern in self.unmute_patterns:
+            if re.search(pattern, text):
+                if self.is_muted:
+                    self.is_muted = False
+                    if self.verbose:
+                        self.node.get_logger().info(f"Unmute command detected: '{text}'")
+                    return True
+                else:
+                    if self.verbose:
+                        self.node.get_logger().info("Already unmuted")
+                    return False
+        return False
+
+    def _check_volume_command(self, text):
+        """Check for volume command and adjust."""
+        # Volume up
+        for pattern in self.volume_up_patterns:
+            if re.search(pattern, text):
+                old_volume = self.amplitude
+                self.amplitude = min(self.AMPLITUDE_MAX, self.amplitude + self.AMPLITUDE_STEP)
+                if self.verbose:
+                    self.node.get_logger().info(f"Volume up: {old_volume} → {self.amplitude}")
+                return "up"
+
+        # Volume down
+        for pattern in self.volume_down_patterns:
+            if re.search(pattern, text):
+                old_volume = self.amplitude
+                self.amplitude = max(self.AMPLITUDE_MIN, self.amplitude - self.AMPLITUDE_STEP)
+                if self.verbose:
+                    self.node.get_logger().info(f"Volume down: {old_volume} → {self.amplitude}")
+                return "down"
+
+        return None
+
+    def _check_speed_command(self, text):
+        """Check for speed command and adjust."""
+        # Speed up
+        for pattern in self.speed_up_patterns:
+            if re.search(pattern, text):
+                old_speed = self.speed
+                self.speed = min(self.SPEED_MAX, self.speed + self.SPEED_STEP)
+                if self.verbose:
+                    self.node.get_logger().info(f"Speed up: {old_speed} → {self.speed}")
+                return "up"
+
+        # Speed down
+        for pattern in self.speed_down_patterns:
+            if re.search(pattern, text):
+                old_speed = self.speed
+                self.speed = max(self.SPEED_MIN, self.speed - self.SPEED_STEP)
+                if self.verbose:
+                    self.node.get_logger().info(f"Speed down: {old_speed} → {self.speed}")
+                return "down"
+
+        return None
+
+    def _check_pitch_command(self, text):
+        """Check for pitch command and adjust."""
+        # Pitch up
+        for pattern in self.pitch_up_patterns:
+            if re.search(pattern, text):
+                old_pitch = self.pitch
+                self.pitch = min(self.PITCH_MAX, self.pitch + self.PITCH_STEP)
+                if self.verbose:
+                    self.node.get_logger().info(f"Pitch up: {old_pitch} → {self.pitch}")
+                return "up"
+
+        # Pitch down
+        for pattern in self.pitch_down_patterns:
+            if re.search(pattern, text):
+                old_pitch = self.pitch
+                self.pitch = max(self.PITCH_MIN, self.pitch - self.PITCH_STEP)
+                if self.verbose:
+                    self.node.get_logger().info(f"Pitch down: {old_pitch} → {self.pitch}")
+                return "down"
+
+        return None
+
+    def _check_status_command(self, text):
+        """Check for status request command."""
+        for pattern in self.status_patterns:
+            if re.search(pattern, text):
+                if self.verbose:
+                    self.node.get_logger().info("Status request detected")
+                return True
+        return False
+
+    def _get_status_message(self):
+        """Generate status message."""
+        mute_status = "muted" if self.is_muted else "unmuted"
+        volume_pct = int((self.amplitude / self.AMPLITUDE_MAX) * 100)
+
+        speed_desc = "normal"
+        if self.speed < 250:
+            speed_desc = "slow"
+        elif self.speed > 350:
+            speed_desc = "fast"
+
+        pitch_desc = "normal"
+        if self.pitch < 40:
+            pitch_desc = "low"
+        elif self.pitch > 60:
+            pitch_desc = "high"
+
+        return (f"I'm currently {mute_status}. "
+                f"Volume is at {volume_pct} percent. "
+                f"Speed is {speed_desc}. "
+                f"Pitch is {pitch_desc}.")
+
+    def _get_mute_confirmation(self):
+        """Get mute confirmation message."""
+        confirmations = [
+            "Okay, I'll be quiet now.",
+            "Sure, muting myself.",
+            "Alright, I'm silent.",
+            "Got it, no more talking.",
+            "Understood, going silent.",
+        ]
+        return random.choice(confirmations)
+
+    def _get_unmute_confirmation(self):
+        """Get unmute confirmation message."""
+        confirmations = [
+            "Okay, I can talk again!",
+            "Great, I'm back!",
+            "Unmuted!",
+            "Alright, ready to chat!",
+            "I'm listening again!",
+        ]
+        return random.choice(confirmations)
+
+    def _get_volume_confirmation(self, direction):
+        """Get volume confirmation message."""
+        if direction == "up":
+            return random.choice([
+                "Volume increased.",
+                "Speaking louder now.",
+                "Turning it up.",
+                "Louder.",
+            ])
+        else:
+            return random.choice([
+                "Volume decreased.",
+                "Speaking softer now.",
+                "Turning it down.",
+                "Quieter.",
+            ])
+
+    def _get_speed_confirmation(self, direction):
+        """Get speed confirmation message."""
+        if direction == "up":
+            return random.choice([
+                "Speaking faster now.",
+                "Speeding up.",
+                "Faster.",
+            ])
+        else:
+            return random.choice([
+                "Speaking slower now.",
+                "Slowing down.",
+                "Slower.",
+            ])
+
+    def _get_pitch_confirmation(self, direction):
+        """Get pitch confirmation message."""
+        if direction == "up":
+            return random.choice([
+                "Raising pitch.",
+                "Higher voice.",
+                "Pitch up.",
+            ])
+        else:
+            return random.choice([
+                "Lowering pitch.",
+                "Deeper voice.",
+                "Pitch down.",
+            ])
+
+    def should_speak(self):
+        """Returns True if assistant should speak (not muted)."""
+        return not self.is_muted
+
+    def clean_parentheticals(self, text):
+        """Remove or convert parenthetical expressions from LLM output."""
+        standalone_replacements = {
+            "(laughing)": "haha",
+            "(chuckling)": "haha",
+            "(giggling)": "hehe",
+            "(smiling)": "",
+            "(sighing)": "hmm",
+            "(groaning)": "ugh",
+            "(gasping)": "oh",
+            "(crying)": "aww",
+            "(yawning)": "yawn",
+            "(thinking)": "hmm",
+        }
+
+        text_stripped = text.strip()
+        text_lower = text_stripped.lower()
+
+        if text_lower in standalone_replacements:
+            replacement = standalone_replacements[text_lower]
+            return replacement if replacement else "..."
+
+        # Remove all parentheticals
+        cleaned = re.sub(r'\s*\([^)]*\)\s*', ' ', text)
+        cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+
+        return cleaned
+
+    def is_placeholder_response(self, text):
+        """Check if LLM response is a placeholder."""
+        text_lower = text.lower().strip()
+
+        placeholder_patterns = [
+            r'\[your response.*?\]',
+            r'\[response.*?\]',
+            r'\[.*?here\]',
+            r'\[insert.*?\]',
+            r'\[reply.*?\]',
+        ]
+
+        for pattern in placeholder_patterns:
+            if re.search(pattern, text_lower):
+                return True
+
+        if len(text.strip()) < 3:
+            return True
+
+        if not re.search(r'[a-zA-Z0-9]', text):
+            return True
+
+        return False
+
+    def get_random_fallback(self):
+        """Get random fallback response."""
+        fallbacks = [
+            "Mm-hmm",
+            "I see",
+            "Got it",
+            "Okay",
+            "Right",
+            "Uh-huh",
+            "Makes sense",
+            "Alright",
+            "Fair enough",
+            "Understood"
+        ]
+        return random.choice(fallbacks)
+
+    # ===================================================================
+    # COORDINATION METHODS (for behavior_coordinator)
+    # ===================================================================
+
+    def can_speak_during_state(self, state) -> bool:
+        """Check if speech is allowed in current state (for coordination)."""
+        # States that allow voice output
+        allowed_states = [
+            LuxoState.IDLE,
+            LuxoState.VOICE_FOLLOWING,
+            LuxoState.ANIMATING,
+            LuxoState.PETTING,
+            LuxoState.EMOTION_REACTING,
+            LuxoState.USER_CONTROL
+        ]
+        return state in allowed_states
+
+    def should_mute_for_safety(self, collision_active, severity) -> bool:
+        """Determine if we should temporarily mute for safety (for coordination)."""
+        # Mute during danger-level collisions
+        if collision_active and severity == 'danger':
+            return True
+        return False
+
+    def check_command_completion(self, current_time):
+        """
+        Check if command should be completed (called from behavior_coordinator).
+        Returns True if command was completed.
+        """
+        # This method is called by behavior_coordinator's safety_monitor_callback
+        # to check if voice commands have finished executing
+
+        should_complete = False
+
         with self.command_lock:
-            self.dfrobot_sensor = None
+            if (self.command_in_progress and
+                self.command_completion_time and
+                hasattr(self, '_is_in_state') and
+                self._is_in_state(LuxoState.USER_CONTROL)):
+                # Command completion after grace period
+                time_since_completion = (current_time - self.command_completion_time).nanoseconds / 1e9
+                if time_since_completion > 0.5:  # 500ms grace period
+                    should_complete = True
+
+        if should_complete:
+            try:
+                self._complete_command()
+                return True
+            except Exception as e:
+                if self.node:
+                    self.node.get_logger().error(f"Error in command completion: {e}")
+                return False
+
+        return False
+
+    def _complete_command(self):
+        """Complete the current command (used by behavior_coordinator)."""
+        with self.command_lock:
+            if not self.command_in_progress:
+                return
+
+            self.node.get_logger().info("Completing voice command")
             self.command_in_progress = False
+            self.command_completion_time = None
+
+        # Transition to IDLE if we have the method
+        if hasattr(self, '_transition_to_state'):
+            try:
+                self._transition_to_state(LuxoState.IDLE)
+            except Exception as e:
+                self.node.get_logger().error(f"Error transitioning to IDLE: {e}")
+
+    def cleanup_command_behavior(self):
+        """Clean up command behavior resources (for proper shutdown)."""
+        if hasattr(self, 'command_lock'):
+            with self.command_lock:
+                self.command_in_progress = False
+                self.command_completion_time = None
+
+        if self.node:
+            self.node.get_logger().info("CommandBehavior cleaned up")
