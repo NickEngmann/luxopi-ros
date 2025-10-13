@@ -476,6 +476,11 @@ class LuxopiAssistantNode(Node, CommandBehavior):
         if not text or self.is_speaking:
             return 0
 
+        # Block TTS during sleep mode
+        if self.is_sleep_mode:
+            self.get_logger().info("💤 Sleep mode active - skipping TTS (robot is muted)")
+            return 0
+
         tts_time = 0
         temp_files = []
         try:
@@ -797,6 +802,10 @@ class LuxopiAssistantNode(Node, CommandBehavior):
             # Keep reading from whisper output until stopped
             while self.running:
                 try:
+                    # CRITICAL: Spin ROS executor to process callbacks (like sleep_mode_callback)
+                    # Without this, subscriptions never receive messages!
+                    rclpy.spin_once(self, timeout_sec=0.0)
+
                     # Skip buffering during TTS (but keep reading to drain the pipe)
                     # Check for silence timeout BEFORE reading new line
                     # This ensures we process buffered speech even if no new audio comes in

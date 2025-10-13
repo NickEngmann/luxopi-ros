@@ -209,11 +209,18 @@ class CommandBehavior:
             r'(you\'?re|your|you|u).{0,10}(about|going|supposed).{0,10}(to|the)?.{0,10}(sleep|bed)',
             r'(you\'?re|your|you|u).{0,10}(should|need|have).{0,10}(to|the)?.{0,10}(sleep|bed)',
 
+            # Questions about being asleep
+            r'(are|r).{0,5}(you|u).{0,5}(asleep|sleeping)',
+            r'(you|u).{0,5}(asleep|sleeping)',
+
             # Natural commands
             r'(it\'?s|its)?.{0,5}(time|night).{0,10}(to|for|the)?.{0,10}(sleep|bed)',
             r'(it\'?s|its).{0,5}bed.?time',
-            r'sleep\s+(now|time)',
+            r'sleep\s+(now|time|mode)',
             r'(sleep|sleeping).{0,5}(mode|time)',
+
+            # Just the word "sleep" - MUST be last to avoid false positives
+            r'\b(sleep|asleep)\b',
 
             # Night time phrases
             r'good.?night',
@@ -524,8 +531,8 @@ class CommandBehavior:
             msg.data = sleep
             self.sleep_mode_publisher.publish(msg)
             self.sleep_state = sleep
-            if self.verbose:
-                self.node.get_logger().info(f"Published sleep mode: {sleep}")
+            # ALWAYS log this - it's critical for debugging
+            self.node.get_logger().info(f"📢 PUBLISHED sleep mode: {sleep} to /luxo/sleep_mode")
         except Exception as e:
             self.node.get_logger().error(f"Error publishing sleep mode: {e}")
 
