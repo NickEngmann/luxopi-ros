@@ -26,7 +26,7 @@ class StateVocalizationBehavior:
 
         # Vocalization state
         self.last_state_phrase_time = 0
-        self.state_phrase_cooldown = 3.0  # Seconds between state phrases (reduced for responsiveness)
+        self.state_phrase_cooldown = 4.0  # Seconds between state phrases (reduced for responsiveness)
         self.current_robot_state = None
         self.previous_robot_state = None  # Track previous state for transition detection
         self.last_vocalized_state = None

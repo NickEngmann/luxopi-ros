@@ -984,9 +984,9 @@ class BehaviorCoordinator(PettingBehavior, IdleBehavior, VoiceFollowingBehavior,
                 self.pixel_ring_control_publisher.publish(pixel_msg)
                 self.node.get_logger().info("Pixel ring turned OFF for sleep")
 
-                # Schedule DEMA enable after animation completes (sleep animation is ~6-8 seconds)
+                # Schedule DEMA enable after animation completes (sleep animation is ~2-4 seconds)
                 # Add some buffer time
-                sleep_animation_duration = 4.0
+                sleep_animation_duration = 3.5
                 self._schedule_dema_enable(sleep_animation_duration)
 
             elif not msg.data and self.sleep_state:
