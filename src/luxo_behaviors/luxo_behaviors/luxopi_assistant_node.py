@@ -20,6 +20,8 @@ from datetime import datetime
 from difflib import SequenceMatcher  # For text similarity comparison
 from pathlib import Path
 import tempfile
+import threading
+import random
 
 # ROS2 imports
 import rclpy
@@ -247,11 +249,37 @@ class LuxopiAssistantNode(Node, CommandBehavior):
         self.accumulated_speech_time = 0.0  # Track actual speech time (not silence)
         self.last_word_count = 0  # Track word count for stabilization detection
         self.word_count_stable_iterations = 0  # Count how many times word count stayed the same
-        self.silence_threshold = 0.8  # Reduced from 1.0s - respond faster!
-        self.max_speech_duration = 4.0
+        self.silence_threshold = 0.5  # Optimized: Detect silence after 0.5s (was 0.8s)
+        self.max_speech_duration = 10.0  # Max speech length in seconds for context
+        self.last_stt_time = 0.8  # Track actual STT time from hailo-whisper debug output (default fallback)
+        self.stt_start_time = None  # Track when STT processing started (from marker)
         self.similarity_threshold = 0.75  # If last 2 transcriptions are 75%+ similar, consider it final
         self.word_count_stability_threshold = 3  # Number of identical word counts before processing
         self.is_speaking = False  # Track if we're currently playing TTS
+
+        # Filler TTS (enabled by default in ROS architecture, fills gap during LLM processing)
+        self.enable_filler = True  # Always enabled in ROS mode
+        self.filler_active = threading.Event()  # Signal to stop filler
+        self.filler_thread = None  # Background thread for filler messages
+        self.filler_messages = [
+            # Generic thinking sounds
+            "Hmm",
+            "Let me think",
+            "One moment",
+            "Thinking",
+            "Let's see",
+            "Hold on",
+            "Give me a sec",
+            "Just a moment",
+            "Processing",
+            "Right",
+            # Lamp puns (because Luxopi is a robot lamp!)
+            "Brightening up",
+            "Illuminating",
+            "Shedding light",
+            "Bulb's warming up",
+            "Charging up"
+        ]
 
         # Verbose timing mode
         self.verbose = verbose
@@ -359,7 +387,7 @@ class LuxopiAssistantNode(Node, CommandBehavior):
             self.llama_server,
             "-m", self.llm_model,
             "--ctx-size", "512",     # Increased from 256 for better context
-            "--threads", "3",        # 3 threads for balance
+            "--threads", "4",        # 4 threads for balance
             "--port", str(self.server_port),
             "--host", "127.0.0.1",
             "-n", "50",              # Optimized response length
@@ -615,6 +643,130 @@ class LuxopiAssistantNode(Node, CommandBehavior):
 
         return tts_time
 
+    def _generate_and_play_tts(self, text, is_filler=False):
+        """Generate and play TTS without blocking whisper (for filler messages)
+
+        This is a simplified version of speak() that doesn't pause/resume whisper.
+        Used for filler messages that play DURING processing.
+        """
+        if not text or self.is_sleep_mode:
+            return
+
+        temp_files = []
+        try:
+            # espeak-ng parameters from preset or behavior settings
+            if self.voice_transformer and self.voice_transformer.preset_data:
+                preset_params = self.voice_transformer.preset_data.get('params', {})
+                voice = self.voice_transformer.preset_data.get('voice', 'en+m2')
+                speed = str(preset_params.get('speed', self.speed))
+                pitch = str(preset_params.get('pitch', self.pitch))
+                amplitude = str(preset_params.get('amplitude', self.amplitude))
+                word_gap = str(preset_params.get('word_gap', 10))
+                capitals = str(preset_params.get('capitals', 100))
+            else:
+                # Use behavior settings
+                voice = "en+m2"
+                speed = str(self.speed)
+                pitch = str(self.pitch)
+                amplitude = str(self.amplitude)
+                word_gap = "10"
+                capitals = "100"
+
+            # Generate to temp file if using transformations, otherwise play directly
+            if self.voice_transformer:
+                # Generate espeak output to temp file
+                temp_raw = tempfile.NamedTemporaryFile(suffix='.wav', delete=False)
+                temp_files.append(temp_raw.name)
+
+                cmd = [
+                    "espeak-ng",
+                    "-v", voice,
+                    "-s", speed,
+                    "-p", pitch,
+                    "-a", amplitude,
+                    "-g", word_gap,
+                    "-k", capitals,
+                    "-w", temp_raw.name,
+                    text
+                ]
+
+                subprocess.run(cmd, capture_output=True, timeout=10, check=True)
+
+                # Apply transformations (sox commands)
+                transformed_file = self.voice_transformer.transform_from_preset(temp_raw.name, verbose=False)
+                if transformed_file != temp_raw.name:
+                    temp_files.append(str(transformed_file))
+
+                # Play transformed audio using aplay with USB speaker device
+                play_cmd = ["aplay", "-q", "-D", self.speaker_device, str(transformed_file)]
+                subprocess.run(play_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10)
+            else:
+                # No transformation - play directly
+                cmd = [
+                    "espeak-ng",
+                    "-v", voice,
+                    "-s", speed,
+                    "-p", pitch,
+                    "-a", amplitude,
+                    "-g", word_gap,
+                    "-k", capitals,
+                    "-d", self.speaker_device,
+                    text
+                ]
+
+                subprocess.run(
+                    cmd,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    timeout=10
+                )
+
+        except Exception as e:
+            if self.verbose:
+                self.get_logger().info(f"  ⚠️ Filler TTS error: {e}")
+        finally:
+            # Clean up temp files
+            for temp_file in temp_files:
+                try:
+                    if os.path.exists(temp_file):
+                        os.unlink(temp_file)
+                except:
+                    pass
+
+    def play_filler_messages(self):
+        """Background thread that plays random filler messages in a loop"""
+        while not self.filler_active.is_set():
+            # Pick a random filler message
+            message = random.choice(self.filler_messages)
+
+            # Play it (non-blocking)
+            self._generate_and_play_tts(message, is_filler=True)
+
+            # Small delay between messages (0.3-0.8 seconds)
+            delay = random.uniform(0.3, 0.8)
+            if self.filler_active.wait(timeout=delay):
+                # Event was set (stop signal), exit loop
+                break
+
+    def start_filler_tts(self):
+        """Start playing filler messages in background thread"""
+        if self.enable_filler and not self.filler_thread:
+            self.filler_active.clear()  # Clear stop signal
+            self.filler_thread = threading.Thread(target=self.play_filler_messages, daemon=True)
+            self.filler_thread.start()
+
+            if self.verbose:
+                self.get_logger().info("  💬 Started filler TTS (thinking sounds)")
+
+    def stop_filler_tts(self):
+        """Stop filler messages and wait for thread to finish"""
+        if self.filler_thread:
+            self.filler_active.set()  # Signal thread to stop
+            self.filler_thread.join(timeout=2)  # Wait up to 2 seconds
+            self.filler_thread = None
+
+            if self.verbose:
+                self.get_logger().info("  🛑 Stopped filler TTS")
 
     def query_llm(self, text):
         """Query the LLM server"""
@@ -926,8 +1078,11 @@ class LuxopiAssistantNode(Node, CommandBehavior):
                                     self.word_count_stable_iterations = 0
                                     continue
 
-                                # IMPORTANT: The actual STT processing time for base.en on RPi5 is ~0.5-1s
-                                actual_stt_time = 0.8  # Approximate actual transcription time
+                                # Use tracked STT time (from marker or default fallback)
+                                actual_stt_time = self.last_stt_time
+
+                                # Start filler TTS to fill the gap during LLM processing
+                                self.start_filler_tts()
 
                                 # Process synchronously (no queue) to prevent double processing
                                 llm_start = time.time()
@@ -947,6 +1102,9 @@ class LuxopiAssistantNode(Node, CommandBehavior):
                                 self.metrics['fastest_llm'] = min(self.metrics['fastest_llm'], llm_actual)
                                 self.metrics['slowest_llm'] = max(self.metrics['slowest_llm'], llm_actual)
                                 self.metrics['llm_response_times'].append(llm_actual)
+
+                                # Stop filler TTS now that we're ready to speak the real response
+                                self.stop_filler_tts()
 
                                 # Speak the response and track timing
                                 tts_start = time.time()
@@ -1014,6 +1172,14 @@ class LuxopiAssistantNode(Node, CommandBehavior):
                         continue
 
                     line_stripped = line.strip()
+
+                    # Check for STT processing marker from hailo-whisper (for accurate timing)
+                    if line_stripped == "<<<PROCESSING_START>>>":
+                        self.stt_start_time = time.time()  # Capture STT start time
+                        if self.verbose:
+                            timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
+                            self.get_logger().info(f"  🚀 [{timestamp}] STT processing started (marker detected)")
+                        continue
 
                     # Skip completely empty lines without incrementing counter
                     if not line_stripped:
@@ -1155,6 +1321,13 @@ class LuxopiAssistantNode(Node, CommandBehavior):
                                         if not is_duplicate:
                                             # Append this final refined phrase to buffer
                                             self.audio_buffer.append(final_text)
+
+                                            # Calculate actual STT time from marker (if available)
+                                            if self.stt_start_time is not None:
+                                                self.last_stt_time = time.time() - self.stt_start_time
+                                                self.stt_start_time = None  # Reset for next run
+                                                if self.verbose:
+                                                    self.get_logger().info(f"  ⏱️  Calculated STT time: {self.last_stt_time:.3f}s (from marker)")
 
                                             # Accumulate time for this phrase
                                             self.accumulated_speech_time += self.whisper_step_ms / 1000.0
