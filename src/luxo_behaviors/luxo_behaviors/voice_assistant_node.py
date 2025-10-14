@@ -31,6 +31,9 @@ from std_msgs.msg import String, Bool
 # Unified Command Behavior (handles both voice assistant and robot hardware commands)
 from luxo_behaviors.command_behavior import CommandBehavior
 
+# State Vocalization Behavior (adds expressiveness through state-specific phrases)
+from luxo_behaviors.state_vocalization_behavior import StateVocalizationBehavior
+
 
 def text_similarity(text1, text2):
     """Calculate similarity ratio between two texts (0.0 to 1.0)"""
@@ -188,13 +191,16 @@ class VoiceTransformer:
             return input_audio_path
 
 
-class VoiceAssistantNode(Node, CommandBehavior):
+class VoiceAssistantNode(Node, CommandBehavior, StateVocalizationBehavior):
     """ROS2 node for Luxo voice assistant - handles speech recognition, language understanding, and text-to-speech"""
 
     def __init__(self):
         super().__init__('voice_assistant_node')
         # Note: self.node will be set to self for the mixin pattern
         self.node = self
+
+        # Initialize STT pipeline active flag (used by state vocalization to prioritize user speech)
+        self.stt_pipeline_active = False
 
         # CRITICAL: Wait for voice_direction_node to initialize loopback
         self.get_logger().info("⏳ Waiting 5 seconds for audio loopback to be ready...")
@@ -233,6 +239,9 @@ class VoiceAssistantNode(Node, CommandBehavior):
 
         # Initialize unified command behavior mixin (handles ALL commands - voice assistant AND robot hardware)
         self.setup_command_behavior(verbose=verbose)
+
+        # Initialize state vocalization behavior (state-specific phrases for expressiveness)
+        self.setup_state_vocalization()
 
         # Server settings
         self.server_port = 8081
@@ -664,6 +673,10 @@ class VoiceAssistantNode(Node, CommandBehavior):
 
         temp_files = []
         try:
+            # Publish TTS active status to prevent robot from following its own voice
+            tts_active_msg = Bool()
+            tts_active_msg.data = True
+            self.tts_active_pub.publish(tts_active_msg)
             # espeak-ng parameters from preset or behavior settings
             if self.voice_transformer and self.voice_transformer.preset_data:
                 preset_params = self.voice_transformer.preset_data.get('params', {})
@@ -742,6 +755,11 @@ class VoiceAssistantNode(Node, CommandBehavior):
                         os.unlink(temp_file)
                 except:
                     pass
+
+            # Publish TTS inactive status (filler finished playing)
+            tts_active_msg = Bool()
+            tts_active_msg.data = False
+            self.tts_active_pub.publish(tts_active_msg)
 
     def play_filler_messages(self):
         """Background thread that plays random filler messages in a loop"""
@@ -1013,6 +1031,9 @@ class VoiceAssistantNode(Node, CommandBehavior):
 
                                 self.get_logger().info(f"\n  ⏸️  [{processing_timestamp}] Processing ({process_reason}): '{combined_text}'")
 
+                                # Set STT pipeline active flag to prevent state vocalizations during user conversation
+                                self.stt_pipeline_active = True
+
                                 # ===== UNIFIED COMMAND DETECTION =====
                                 # Detect ANY command (voice assistant OR robot hardware) from user speech
                                 command_type, command_data, canned_response = self.detect_command(combined_text)
@@ -1090,6 +1111,9 @@ class VoiceAssistantNode(Node, CommandBehavior):
                                     self.accumulated_speech_time = 0.0
                                     self.last_word_count = 0
                                     self.word_count_stable_iterations = 0
+
+                                    # Clear STT pipeline active flag
+                                    self.stt_pipeline_active = False
                                     continue
 
                                 # If muted and no command detected, show transcription but don't respond
@@ -1107,6 +1131,9 @@ class VoiceAssistantNode(Node, CommandBehavior):
                                     self.accumulated_speech_time = 0.0
                                     self.last_word_count = 0
                                     self.word_count_stable_iterations = 0
+
+                                    # Clear STT pipeline active flag
+                                    self.stt_pipeline_active = False
                                     continue
 
                                 # Use tracked STT time (from marker or default fallback)
@@ -1173,6 +1200,9 @@ class VoiceAssistantNode(Node, CommandBehavior):
                             self.accumulated_speech_time = 0.0
                             self.last_word_count = 0  # Reset word count tracker
                             self.word_count_stable_iterations = 0  # Reset stability counter
+
+                            # Clear STT pipeline active flag - state vocalizations can now speak
+                            self.stt_pipeline_active = False
 
                     event_start = time.time()  # Start timing this event
 
