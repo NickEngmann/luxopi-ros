@@ -986,7 +986,7 @@ class BehaviorCoordinator(PettingBehavior, IdleBehavior, VoiceBehavior, Collisio
 
                 # Schedule DEMA enable after animation completes (sleep animation is ~6-8 seconds)
                 # Add some buffer time
-                sleep_animation_duration = 10.0
+                sleep_animation_duration = 4.0
                 self._schedule_dema_enable(sleep_animation_duration)
 
             elif not msg.data and self.sleep_state:
