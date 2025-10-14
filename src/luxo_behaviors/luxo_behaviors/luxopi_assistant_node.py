@@ -514,6 +514,11 @@ class LuxopiAssistantNode(Node, CommandBehavior):
         try:
             self.is_speaking = True
 
+            # Publish TTS active status for visual feedback (NeoPixel talking indicator)
+            tts_active_msg = Bool()
+            tts_active_msg.data = True
+            self.tts_active_pub.publish(tts_active_msg)
+
             # BOTH modes need to pause to prevent feedback loop
             # Stop Whisper stream (CPU or Hailo) to prevent it from hearing itself
             pause_start = time.time()
@@ -640,6 +645,11 @@ class LuxopiAssistantNode(Node, CommandBehavior):
 
             # Now it's safe to clear the speaking flag
             self.is_speaking = False
+
+            # Publish TTS inactive status (talking finished)
+            tts_active_msg = Bool()
+            tts_active_msg.data = False
+            self.tts_active_pub.publish(tts_active_msg)
 
         return tts_time
 

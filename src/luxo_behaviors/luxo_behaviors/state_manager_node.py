@@ -191,6 +191,18 @@ class StateManagerNode(Node):
             10
         )
 
+        # Add subscription for TTS active status (talking overlay)
+        self.tts_active_sub = self.create_subscription(
+            Bool,
+            '/voice/tts_active',
+            self.tts_active_callback,
+            10
+        )
+
+        # Talking overlay state
+        self._is_talking = False
+        self._talking_overlay_active = False
+
         # Timers
         self.update_timer = self.create_timer(0.1, self.update)  # 10Hz update
         self.publish_timer = self.create_timer(0.25, self.publish_state)  # 4Hz state publishing
@@ -652,6 +664,78 @@ class StateManagerNode(Node):
         except Exception as e:
             self.get_logger().error(f"Error in sleep mode callback: {e}")
 
+    def tts_active_callback(self, msg):
+        """Handle TTS active status for talking overlay visualization."""
+        try:
+            previous_state = self._is_talking
+            self._is_talking = msg.data
+
+            if self._is_talking and not previous_state:
+                # TTS started - activate talking overlay
+                self.get_logger().debug("🗣️ TTS started - activating talking overlay")
+                self._activate_talking_overlay()
+            elif not self._is_talking and previous_state:
+                # TTS stopped - deactivate talking overlay
+                self.get_logger().debug("🔇 TTS stopped - deactivating talking overlay")
+                self._deactivate_talking_overlay()
+        except Exception as e:
+            self.get_logger().error(f"Error in TTS active callback: {e}")
+
+    def _activate_talking_overlay(self):
+        """Activate the talking indicator overlay on NeoPixels."""
+        if not self._neopixel_controller:
+            return
+
+        try:
+            # Set overlay flag to prevent state updates from interfering
+            self._talking_overlay_active = True
+
+            # Stop any current effects
+            self._neopixel_controller.stop_effect()
+
+            # Start the spinning talking indicator
+            # Green background with white spinning indicator for talking
+            base_color = (0, 255, 100, 0)  # Green background
+            indicator_color = (255, 255, 255, 0)  # White spinning indicator
+
+            self._neopixel_controller.spinning_talking_indicator(
+                base_color=base_color,
+                indicator_color=indicator_color,
+                speed=0.08,  # 80ms between frames for smooth spinning
+                blocking=False
+            )
+
+            self.get_logger().debug("Talking overlay activated - spinning indicator running")
+
+        except Exception as e:
+            self.get_logger().error(f"Error activating talking overlay: {e}")
+            self._talking_overlay_active = False
+
+    def _deactivate_talking_overlay(self):
+        """Deactivate the talking indicator overlay and restore state visualization."""
+        if not self._neopixel_controller:
+            return
+
+        try:
+            # Stop the talking indicator effect
+            self._neopixel_controller.stop_effect()
+
+            # Clear overlay flag
+            self._talking_overlay_active = False
+
+            # Small delay to ensure effect is fully stopped
+            import time
+            time.sleep(0.1)
+
+            # Restore the current state's NeoPixel visualization
+            self._update_neopixel_for_state(self._current_state)
+
+            self.get_logger().debug(f"Talking overlay deactivated - restored {self._current_state.name} visualization")
+
+        except Exception as e:
+            self.get_logger().error(f"Error deactivating talking overlay: {e}")
+            self._talking_overlay_active = False
+
     def _trigger_animation(self, animation_name):
         """Helper method to trigger an animation via ROS2 action."""
         try:
@@ -702,7 +786,12 @@ class StateManagerNode(Node):
         """Update NeoPixel display based on current state"""
         if not self._neopixel_controller:
             return
-            
+
+        # Check if talking overlay is active - don't interrupt it
+        if self._talking_overlay_active:
+            self.get_logger().debug(f"Talking overlay active - deferring state update for {state.name}")
+            return
+
         # Check if lights are disabled - if so, don't update NeoPixels and force clear
         if not self._lights_enabled:
             if not self._neopixel_override_active:
