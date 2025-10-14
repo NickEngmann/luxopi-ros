@@ -951,7 +951,7 @@ class NeoPixelController:
                 self._log(f"Failed to set direction indicator: {e}", "error")
                 return False
 
-    def spinning_wake_word_indicator(self, base_color: Tuple[int, int, int, int] = (0, 100, 255, 0),
+    def spinning_talking_indicator(self, base_color: Tuple[int, int, int, int] = (0, 100, 255, 0),
                                      indicator_color: Tuple[int, int, int, int] = (255, 255, 255, 0),
                                      speed: float = 0.08, blocking: bool = False) -> bool:
         """
@@ -964,7 +964,7 @@ class NeoPixelController:
             speed: Delay between frames in seconds (default 0.08)
             blocking: Whether to block execution (default False)
         """
-        def _spinning_wake_word():
+        def _spinning_talking():
             position = 0
 
             while not self._stop_event.is_set():
@@ -990,9 +990,9 @@ class NeoPixelController:
             self._current_mode = NeoPixelMode.OFF
 
         if blocking:
-            _spinning_wake_word()
+            _spinning_talking()
         else:
-            self._run_effect(_spinning_wake_word)
+            self._run_effect(_spinning_talking)
         return True
     
     def get_current_mode(self) -> NeoPixelMode:

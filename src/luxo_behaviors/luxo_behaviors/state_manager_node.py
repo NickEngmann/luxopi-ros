@@ -797,11 +797,11 @@ class StateManagerNode(Node):
                 needs_animation_timer = False
             elif state == LuxoState.USER_CONTROL:
                 self.get_logger().debug("NeoPixel: Bouncing direction indicator on status pixels for USER_CONTROL state")
-                # Create a spinning white indicator on blue background for wake word detection
+                # Create a spinning white indicator on blue background for talking detection
                 # All 16 status LEDs will be blue with a white indicator spinning through them
                 base_color = (0, 100, 255, 0)  # Blue background for all status LEDs
                 indicator_color = (255, 255, 255, 0)  # White spinning indicator
-                self._neopixel_controller.spinning_wake_word_indicator(
+                self._neopixel_controller.spinning_talking_indicator(
                     base_color=base_color,
                     indicator_color=indicator_color,
                     speed=0.08,  # 80ms between frames for smooth spinning

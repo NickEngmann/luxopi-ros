@@ -1008,6 +1008,27 @@ class LuxopiAssistantNode(Node, CommandBehavior):
                                 command_type, command_data, canned_response = self.detect_command(combined_text)
 
                                 if command_type:
+                                    # ===== SLEEP MODE FILTER =====
+                                    # When in sleep mode, ONLY allow wake commands through
+                                    if self.is_sleep_mode:
+                                        # Check if this is a wake command
+                                        is_wake_command = (command_type == 'robot_hardware' and
+                                                          command_data.get('command') == 'wake_up')
+
+                                        if not is_wake_command:
+                                            # Ignore all non-wake commands during sleep mode
+                                            self.get_logger().info(f"💤 Sleep mode active - ignoring command: '{combined_text}'")
+
+                                            # Clear buffer and continue listening
+                                            self.audio_buffer = []
+                                            self.last_speech_time = None
+                                            self.first_speech_time = None
+                                            self.first_stt_timestamp = None
+                                            self.accumulated_speech_time = 0.0
+                                            self.last_word_count = 0
+                                            self.word_count_stable_iterations = 0
+                                            continue
+
                                     # Command detected - use canned response, skip LLM
                                     response = canned_response
                                     llm_time = 0
