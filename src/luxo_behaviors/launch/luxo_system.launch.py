@@ -451,11 +451,11 @@ def generate_launch_description():
         condition=IfCondition(LaunchConfiguration('enable_voice'))
     )
 
-    # LLM Voice Assistant node (depends on voice_direction_node for audio loopback)
-    luxopi_assistant_node = Node(
+    # Voice Assistant node (depends on voice_direction_node for audio loopback)
+    voice_assistant_node = Node(
         package='luxo_behaviors',
-        executable='luxopi_assistant_node',
-        name='luxopi_assistant_node',
+        executable='voice_assistant_node',
+        name='voice_assistant_node',
         output='screen',
         parameters=[
             {'use_hailo': LaunchConfiguration('llm_assistant_hailo')},
@@ -623,7 +623,7 @@ def generate_launch_description():
         troubleshooting_info,
         jsp_killer,
         voice_direction_node,
-        luxopi_assistant_node,
+        voice_assistant_node,
         # Launch files
         roarm_launch,
         

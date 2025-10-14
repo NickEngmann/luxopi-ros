@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-#voice_behavior.py
+#voice_following_behavior.py
 """
-Voice behavior module for Luxo robot.
+Voice following behavior module for Luxo robot.
 Handles voice direction following and face detection variations.
 """
 
@@ -13,7 +13,7 @@ from luxo_behaviors.state_machine import LuxoState
 import numpy as np
 
 
-class VoiceBehavior:
+class VoiceFollowingBehavior:
     """Mixin class for voice following behavior functionality."""
     
     def setup_voice_behavior(self):

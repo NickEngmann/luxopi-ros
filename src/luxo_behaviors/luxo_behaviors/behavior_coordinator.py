@@ -25,11 +25,11 @@ from luxo_behaviors.shared_utils import (
 
 from luxo_behaviors.petting_behavior import PettingBehavior
 from luxo_behaviors.idle_behavior import IdleBehavior
-from luxo_behaviors.voice_behavior import VoiceBehavior
+from luxo_behaviors.voice_following_behavior import VoiceFollowingBehavior
 from luxo_behaviors.collision_behavior import CollisionBehavior
 from luxo_behaviors.command_behavior import CommandBehavior
 
-class BehaviorCoordinator(PettingBehavior, IdleBehavior, VoiceBehavior, CollisionBehavior, CommandBehavior):
+class BehaviorCoordinator(PettingBehavior, IdleBehavior, VoiceFollowingBehavior, CollisionBehavior, CommandBehavior):
     """Class to handle behavior coordination for the Luxo robot."""
     
     def __init__(self, node, send_safe_joint_command_callback, publish_actual_joint_states_callback):

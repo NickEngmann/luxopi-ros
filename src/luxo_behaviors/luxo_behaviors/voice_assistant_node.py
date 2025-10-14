@@ -188,11 +188,11 @@ class VoiceTransformer:
             return input_audio_path
 
 
-class LuxopiAssistantNode(Node, CommandBehavior):
-    """ROS2 node for Luxopi voice assistant"""
+class VoiceAssistantNode(Node, CommandBehavior):
+    """ROS2 node for Luxo voice assistant - handles speech recognition, language understanding, and text-to-speech"""
 
     def __init__(self):
-        super().__init__('luxopi_assistant_node')
+        super().__init__('voice_assistant_node')
         # Note: self.node will be set to self for the mixin pattern
         self.node = self
 
@@ -1560,7 +1560,7 @@ class LuxopiAssistantNode(Node, CommandBehavior):
 
 def main(args=None):
     rclpy.init(args=args)
-    node = LuxopiAssistantNode()
+    node = VoiceAssistantNode()
 
     try:
         node.start()

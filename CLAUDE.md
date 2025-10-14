@@ -220,7 +220,7 @@ ros2 launch luxo_behaviors luxo_system.launch.py \
 - `/luxo/sleep_mode` (Bool): Sleep/wake commands
 
 **Key Nodes**:
-- `luxopi_assistant_node`: Main AI assistant (STT + LLM + TTS)
+- `voice_assistant_node`: Main AI assistant (STT + LLM + TTS)
 - `voice_direction_node`: Audio localization and tracking
 
 ## State Machine
@@ -445,7 +445,7 @@ luxo_behaviors/
 - `command_behavior.py`: Voice commands, behavior mapping
 - `petting_behavior.py`: Touch sensor responses (3 animations)
 - `collision_behavior.py`: Three-layer collision detection and avoidance
-- `voice_behavior.py`: Voice direction tracking with face visibility optimization
+- `voice_following_behavior.py`: Voice direction tracking with face visibility optimization
 - `idle_behavior.py`: Autonomous idle animations and head variations
 
 #### Hardware Communication
@@ -454,7 +454,7 @@ luxo_behaviors/
 
 #### Vision & Audio
 - `camera_interaction.py`: Vision, emotion detection
-- `luxopi_assistant_node.py`: AI voice assistant (Whisper + Qwen + espeak)
+- `voice_assistant_node.py`: AI voice assistant (Whisper + Qwen + espeak)
 - `voice_direction_node.py`: Voice tracking with motor awareness
 - `mic_array.py`: ReSpeaker microphone array interface
 - `gcc_phat.py`: Audio localization algorithm
