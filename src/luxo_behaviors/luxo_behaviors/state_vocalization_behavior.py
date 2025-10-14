@@ -9,19 +9,26 @@ import random
 import time
 import threading
 from std_msgs.msg import String
+from luxo_interfaces.msg import StateInfo
 from luxo_behaviors.state_machine import LuxoState
+from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSHistoryPolicy
 
 
 class StateVocalizationBehavior:
     """Mixin class for state-specific vocalizations."""
 
-    def setup_state_vocalization(self):
-        """Initialize state vocalization attributes and subscriptions."""
+    def setup_state_vocalization(self, callback_group=None):
+        """Initialize state vocalization attributes and subscriptions.
+
+        Args:
+            callback_group: Optional callback group for concurrent callback processing
+        """
 
         # Vocalization state
         self.last_state_phrase_time = 0
-        self.state_phrase_cooldown = 8.0  # Seconds between state phrases
+        self.state_phrase_cooldown = 3.0  # Seconds between state phrases (reduced for responsiveness)
         self.current_robot_state = None
+        self.previous_robot_state = None  # Track previous state for transition detection
         self.last_vocalized_state = None
         self.current_emotion = None
         self.collision_detected = False
@@ -29,29 +36,59 @@ class StateVocalizationBehavior:
         # Priority flag - STT->LLM->TTS pipeline is always prioritized
         self.stt_pipeline_active = False
 
-        # Subscribe to state changes
-        self.state_sub = self.node.create_subscription(
-            String,
-            '/luxo/current_state',
-            self.state_change_callback,
-            10
+        # Subscribe to state_info which includes previous_state for true transition detection
+        # This topic publishes whenever state changes, so we catch ALL transitions
+        # Use BEST_EFFORT QoS with KEEP_LAST to only process latest states, avoiding callback blocking
+        state_qos = QoSProfile(
+            reliability=QoSReliabilityPolicy.BEST_EFFORT,
+            history=QoSHistoryPolicy.KEEP_LAST,
+            depth=1  # Only keep latest state
         )
+
+        # Create subscription with callback group if provided (for concurrent processing)
+        if callback_group:
+            self.state_sub = self.node.create_subscription(
+                StateInfo,
+                '/luxo/state_info',
+                self.state_change_callback,
+                state_qos,
+                callback_group=callback_group
+            )
+        else:
+            self.state_sub = self.node.create_subscription(
+                StateInfo,
+                '/luxo/state_info',
+                self.state_change_callback,
+                state_qos
+            )
 
         # Subscribe to emotion detection
-        self.emotion_sub = self.node.create_subscription(
-            String,
-            '/camera/emotion',
-            self.emotion_callback,
-            10
+        emotion_qos = QoSProfile(
+            reliability=QoSReliabilityPolicy.BEST_EFFORT,
+            history=QoSHistoryPolicy.KEEP_LAST,
+            depth=1
         )
 
-        # Subscribe to collision severity
-        self.collision_sub = self.node.create_subscription(
-            String,
-            '/collision/severity',
-            self.collision_callback,
-            10
-        )
+        # Create subscription with callback group if provided (for concurrent processing)
+        if callback_group:
+            self.emotion_sub = self.node.create_subscription(
+                String,
+                '/camera/emotion',
+                self.emotion_callback,
+                emotion_qos,
+                callback_group=callback_group
+            )
+        else:
+            self.emotion_sub = self.node.create_subscription(
+                String,
+                '/camera/emotion',
+                self.emotion_callback,
+                emotion_qos
+            )
+
+        # NOTE: We rely exclusively on /luxo/current_state for COLLISION_AVOIDING and PETTING
+        # This topic updates 2x per second and already includes these states
+        # This simplifies the code and makes it more responsive
 
         # State-specific phrase dictionaries (10-20 variations each)
         self.state_phrases = {
@@ -169,9 +206,10 @@ class StateVocalizationBehavior:
             ]
         }
 
-        # Emotion-specific phrases (for EMOTION_REACTING state)
+        # Emotion-specific phrases
+        # NOTE: Camera publishes: happiness, sadness, anger, surprise, neutral, fear
         self.emotion_phrases = {
-            'happy': [
+            'happiness': [
                 "Yay!",
                 "So happy!",
                 "This is wonderful!",
@@ -189,7 +227,7 @@ class StateVocalizationBehavior:
                 "Smiling inside!"
             ],
 
-            'sad': [
+            'sadness': [
                 "Oh no",
                 "That's sad",
                 "Feeling blue",
@@ -207,7 +245,7 @@ class StateVocalizationBehavior:
                 "Compassion"
             ],
 
-            'angry': [
+            'anger': [
                 "Whoa",
                 "Easy there",
                 "Take it easy",
@@ -225,7 +263,7 @@ class StateVocalizationBehavior:
                 "Relax friend"
             ],
 
-            'surprised': [
+            'surprise': [
                 "Wow!",
                 "Oh my!",
                 "Surprising!",
@@ -283,54 +321,118 @@ class StateVocalizationBehavior:
         self.node.get_logger().info("State vocalization behavior initialized")
 
     def state_change_callback(self, msg):
-        """Handle state changes and speak appropriate phrases."""
-        new_state = msg.data
+        """Handle state changes and speak appropriate phrases.
+
+        Uses StateInfo message which includes both current_state and previous_state,
+        so we can detect ACTUAL state transitions, not just repeated state updates.
+
+        SMART DETECTION: If msg.previous_state doesn't match our last known state,
+        we MISSED a transition! We'll vocalize the missed state entry.
+        """
+        new_state = msg.current_state
+        prev_state = msg.previous_state
+        self.node.get_logger().debug(f"[StateVocalization] State change callback: {prev_state} → {new_state} (duration: {msg.state_duration:.1f}s)")
+
+        # Only process if there's an actual state change
+        if new_state == prev_state:
+            self.node.get_logger().debug(f"[StateVocalization] → No state change detected: {new_state}")
+            # No transition, skip silently
+            return
+
+        # Log the current transition
+        self.node.get_logger().debug(
+            f"[StateVocalization] 🔄 State transition: {prev_state} → {new_state} (duration: {msg.state_duration:.1f}s)"
+        )
+
+        # Update state tracking
+        self.previous_robot_state = prev_state
         self.current_robot_state = new_state
 
-        # Don't vocalize for IDLE state
-        if new_state == 'IDLE':
+        # Try to vocalize the new state
+        self._try_vocalize_state(new_state, f"{prev_state} → {new_state}")
+
+    def _try_vocalize_state(self, state, transition_desc):
+        """Helper to try vocalizing a state with all checks.
+
+        Args:
+            state: The state to vocalize
+            transition_desc: Description of the transition for logging
+        """
+        # Don't vocalize for IDLE or ANIMATING states
+        if state in ['IDLE', 'ANIMATING']:
+            self.node.get_logger().debug(f"[StateVocalization] → Skipping {state} state (no vocalization)")
             return
 
-        # Don't vocalize if we just vocalized this state recently
-        if new_state == self.last_vocalized_state:
-            return
-
-        # Check cooldown
-        current_time = time.time()
-        if current_time - self.last_state_phrase_time < self.state_phrase_cooldown:
-            return
-
-        # Priority: Don't interrupt STT pipeline
+        # Check if STT pipeline is active (but still log)
         if self.stt_pipeline_active or self.is_speaking:
+            self.node.get_logger().info(f"[StateVocalization] → Would vocalize '{state}' ({transition_desc}) but STT/TTS active")
             return
+
+        # Check sleep mode (but still log)
+        if self.is_sleep_mode:
+            self.node.get_logger().info(f"[StateVocalization] → Would vocalize '{state}' ({transition_desc}) but robot is sleeping 💤")
+            return
+
+        # Calculate time since last phrase
+        current_time = time.time()
+        time_since_last = current_time - self.last_state_phrase_time
+
+        # Check cooldown (but still log - just don't speak yet)
+        if time_since_last < self.state_phrase_cooldown:
+            self.node.get_logger().info(f"[StateVocalization] → Would vocalize '{state}' ({transition_desc}) but cooldown active ({time_since_last:.1f}s < {self.state_phrase_cooldown}s)")
+            return
+
+        self.node.get_logger().info(f"[StateVocalization] ✅ Triggering phrase for state: {state} ({transition_desc})")
 
         # Speak a phrase for this state (in a separate thread to avoid blocking)
         threading.Thread(
             target=self._speak_state_phrase,
-            args=(new_state,),
+            args=(state,),
             daemon=True
         ).start()
 
     def emotion_callback(self, msg):
-        """Handle emotion detection and speak appropriate phrases (only in EMOTION_REACTING state)."""
+        """Handle emotion detection and speak appropriate phrases.
+
+        NOTE: We vocalize immediately when emotion is detected, not when in EMOTION_REACTING state.
+        This is because by the time we check the state, it's already switched to ANIMATING.
+        The flow is: Emotion detected → EMOTION_REACTING → ANIMATING (emotion animation)
+        """
         self.current_emotion = msg.data.lower()
 
-        # Only vocalize emotions when in EMOTION_REACTING state
-        if self.current_robot_state != 'EMOTION_REACTING':
+        self.node.get_logger().info(f"[StateVocalization] Emotion detected: {self.current_emotion}, current state: {self.current_robot_state}")
+
+        # Skip if we're in high-priority states (don't interrupt user control or collision avoidance)
+        high_priority_states = ['USER_CONTROL', 'COLLISION_AVOIDING', 'ESCAPE_MODE', 'ERROR']
+        if self.current_robot_state in high_priority_states:
+            self.node.get_logger().info(f"[StateVocalization] → Skipping emotion (in high-priority state {self.current_robot_state})")
             return
 
         # Don't repeat same emotion
         if self.last_vocalized_state == f'EMOTION_{self.current_emotion}':
+            self.node.get_logger().info(f"[StateVocalization] → Already vocalized emotion {self.current_emotion}")
             return
 
-        # Check cooldown
-        current_time = time.time()
-        if current_time - self.last_state_phrase_time < self.state_phrase_cooldown:
-            return
-
-        # Priority: Don't interrupt STT pipeline
+        # Check if STT pipeline is active (but still log)
         if self.stt_pipeline_active or self.is_speaking:
+            self.node.get_logger().info(f"[StateVocalization] → Would vocalize emotion '{self.current_emotion}' but STT/TTS active (stt:{self.stt_pipeline_active}, speaking:{self.is_speaking})")
             return
+
+        # Check sleep mode (but still log)
+        if self.is_sleep_mode:
+            self.node.get_logger().info(f"[StateVocalization] → Would vocalize emotion '{self.current_emotion}' but robot is sleeping 💤")
+            return
+
+        # Calculate time since last phrase
+        current_time = time.time()
+        time_since_last = current_time - self.last_state_phrase_time
+
+        # Check cooldown (but still log - just don't speak yet)
+        if time_since_last < self.state_phrase_cooldown:
+            self.node.get_logger().info(f"[StateVocalization] → Would vocalize emotion '{self.current_emotion}' but cooldown active ({time_since_last:.1f}s < {self.state_phrase_cooldown}s)")
+            return
+
+        self.node.get_logger().info(f"[StateVocalization] ✅ Triggering phrase for emotion: {self.current_emotion}")
 
         # Speak an emotion phrase (in a separate thread)
         threading.Thread(
@@ -339,36 +441,21 @@ class StateVocalizationBehavior:
             daemon=True
         ).start()
 
-    def collision_callback(self, msg):
-        """Handle collision events and speak collision phrases."""
-        severity = msg.data
-
-        # Only speak on DANGER or COLLISION severity
-        if severity not in ['DANGER', 'COLLISION']:
-            return
-
-        # Don't spam collision phrases
-        current_time = time.time()
-        if current_time - self.last_state_phrase_time < 3.0:  # Shorter cooldown for collisions
-            return
-
-        # Priority: Don't interrupt STT pipeline
-        if self.stt_pipeline_active or self.is_speaking:
-            return
-
-        # Speak a collision phrase (in a separate thread)
-        threading.Thread(
-            target=self._speak_state_phrase,
-            args=('COLLISION_AVOIDING',),
-            daemon=True
-        ).start()
-
     def _speak_state_phrase(self, state):
         """Speak a random phrase for the given state."""
         try:
+            self.node.get_logger().info(f"[StateVocalization] _speak_state_phrase called for: {state}")
+
+            # Double-check priority flags to prevent race conditions
+            # (Check again in case user started speaking between callback and thread execution)
+            if self.stt_pipeline_active or self.is_speaking:
+                self.node.get_logger().info(f"[StateVocalization] State phrase '{state}' cancelled - STT/TTS active")
+                return
+
             # Get phrases for this state
             phrases = self.state_phrases.get(state, [])
             if not phrases:
+                self.node.get_logger().warn(f"[StateVocalization] No phrases found for state: {state}")
                 return
 
             # Pick a random phrase
@@ -378,19 +465,29 @@ class StateVocalizationBehavior:
             self.last_state_phrase_time = time.time()
             self.last_vocalized_state = state
 
+            self.node.get_logger().info(f"[StateVocalization] Speaking phrase: '{phrase}' for state: {state}")
+
             # Speak using the same method as filler TTS (respects voice transformer)
             self._generate_and_play_tts(phrase, is_filler=False)
 
         except Exception as e:
-            if self.verbose:
-                self.node.get_logger().error(f"Error speaking state phrase: {e}")
+            self.node.get_logger().error(f"[StateVocalization] Error speaking state phrase: {e}")
 
     def _speak_emotion_phrase(self, emotion):
         """Speak a random phrase for the given emotion."""
         try:
+            self.node.get_logger().info(f"[StateVocalization] _speak_emotion_phrase called for: {emotion}")
+
+            # Double-check priority flags to prevent race conditions
+            # (Check again in case user started speaking between callback and thread execution)
+            if self.stt_pipeline_active or self.is_speaking:
+                self.node.get_logger().info(f"[StateVocalization] Emotion phrase '{emotion}' cancelled - STT/TTS active")
+                return
+
             # Get phrases for this emotion
             phrases = self.emotion_phrases.get(emotion, [])
             if not phrases:
+                self.node.get_logger().warn(f"[StateVocalization] No phrases found for emotion: {emotion}")
                 return
 
             # Pick a random phrase
@@ -400,9 +497,10 @@ class StateVocalizationBehavior:
             self.last_state_phrase_time = time.time()
             self.last_vocalized_state = f'EMOTION_{emotion}'
 
+            self.node.get_logger().info(f"[StateVocalization] Speaking phrase: '{phrase}' for emotion: {emotion}")
+
             # Speak using the same method as filler TTS (respects voice transformer)
             self._generate_and_play_tts(phrase, is_filler=False)
 
         except Exception as e:
-            if self.verbose:
-                self.node.get_logger().error(f"Error speaking emotion phrase: {e}")
+            self.node.get_logger().error(f"[StateVocalization] Error speaking emotion phrase: {e}")

@@ -26,6 +26,7 @@ import random
 # ROS2 imports
 import rclpy
 from rclpy.node import Node
+from rclpy.callback_groups import ReentrantCallbackGroup
 from std_msgs.msg import String, Bool
 
 # Unified Command Behavior (handles both voice assistant and robot hardware commands)
@@ -237,11 +238,17 @@ class VoiceAssistantNode(Node, CommandBehavior, StateVocalizationBehavior):
         # Auto-detect USB audio output device
         self.speaker_device = self._detect_usb_speaker()
 
+        # Reentrant callback group allows callbacks to execute concurrently
+        # This prevents TTS from blocking state_change_callback
+        # IMPORTANT: Must be created BEFORE setup_state_vocalization()
+        self.callback_group = ReentrantCallbackGroup()
+
         # Initialize unified command behavior mixin (handles ALL commands - voice assistant AND robot hardware)
         self.setup_command_behavior(verbose=verbose)
 
         # Initialize state vocalization behavior (state-specific phrases for expressiveness)
-        self.setup_state_vocalization()
+        # Pass callback group for concurrent processing
+        self.setup_state_vocalization(callback_group=self.callback_group)
 
         # Server settings
         self.server_port = 8081
@@ -326,12 +333,13 @@ class VoiceAssistantNode(Node, CommandBehavior, StateVocalizationBehavior):
         self.llm_response_pub = self.create_publisher(String, '/voice/llm_response', 10)
         self.tts_active_pub = self.create_publisher(Bool, '/voice/tts_active', 10)
 
-        # ROS Subscribers
+        # ROS Subscribers (using reentrant callback group for concurrent processing)
         self.sleep_mode_sub = self.create_subscription(
             Bool,
             '/luxo/sleep_mode',
             self.sleep_mode_callback,
-            10
+            10,
+            callback_group=self.callback_group
         )
 
         # Sleep mode state
@@ -508,6 +516,41 @@ class VoiceAssistantNode(Node, CommandBehavior, StateVocalizationBehavior):
         except Exception as e:
             self.get_logger().error(f"Error in sleep mode callback: {e}")
 
+    def calculate_adjusted_speed(self, text, base_speed):
+        """Calculate adjusted espeak-ng speed based on word count.
+
+        Args:
+            text: The text to be spoken
+            base_speed: The base speed setting (from preset or behavior settings)
+
+        Returns:
+            Adjusted speed as integer
+
+        Speed adjustments:
+            - 1 word: 50% slower (multiply by 0.5)
+            - 2-4 words: 30% slower (multiply by 0.7)
+            - 5+ words: normal speed (no adjustment)
+        """
+        word_count = len(text.split())
+
+        # Convert base_speed to int if it's a string
+        base_speed_int = int(base_speed) if isinstance(base_speed, str) else base_speed
+
+        if word_count == 1:
+            adjusted_speed = int(base_speed_int * 0.5)
+            if self.verbose:
+                self.get_logger().info(f"    ⚡ Speed adjustment: {word_count} word -> {base_speed_int} * 0.5 = {adjusted_speed}")
+        elif 2 <= word_count <= 4:
+            adjusted_speed = int(base_speed_int * 0.7)
+            if self.verbose:
+                self.get_logger().info(f"    ⚡ Speed adjustment: {word_count} words -> {base_speed_int} * 0.7 = {adjusted_speed}")
+        else:
+            adjusted_speed = base_speed_int
+            if self.verbose:
+                self.get_logger().info(f"    ⚡ Speed adjustment: {word_count} words -> {base_speed_int} (no adjustment)")
+
+        return adjusted_speed
+
     def speak(self, text):
         """Speak text using espeak-ng with optional voice transformation"""
         if not text or self.is_speaking:
@@ -540,7 +583,7 @@ class VoiceAssistantNode(Node, CommandBehavior, StateVocalizationBehavior):
             if self.voice_transformer and self.voice_transformer.preset_data:
                 preset_params = self.voice_transformer.preset_data.get('params', {})
                 voice = self.voice_transformer.preset_data.get('voice', 'en+m2')
-                speed = str(preset_params.get('speed', self.speed))
+                base_speed = preset_params.get('speed', self.speed)
                 pitch = str(preset_params.get('pitch', self.pitch))
                 amplitude = str(preset_params.get('amplitude', self.amplitude))
                 word_gap = str(preset_params.get('word_gap', 10))
@@ -548,11 +591,14 @@ class VoiceAssistantNode(Node, CommandBehavior, StateVocalizationBehavior):
             else:
                 # Use behavior settings
                 voice = "en+m2"
-                speed = str(self.speed)
+                base_speed = self.speed
                 pitch = str(self.pitch)
                 amplitude = str(self.amplitude)
                 word_gap = "10"
                 capitals = "100"
+
+            # Apply dynamic speed adjustment based on word count
+            speed = str(self.calculate_adjusted_speed(text, base_speed))
 
             # Generate to temp file if using transformations, otherwise play directly
             if self.voice_transformer:
@@ -690,20 +736,27 @@ class VoiceAssistantNode(Node, CommandBehavior, StateVocalizationBehavior):
             if self.voice_transformer and self.voice_transformer.preset_data:
                 preset_params = self.voice_transformer.preset_data.get('params', {})
                 voice = self.voice_transformer.preset_data.get('voice', 'en+m2')
-                speed = str(preset_params.get('speed', self.speed))
+                base_speed = preset_params.get('speed', self.speed)
                 pitch = str(preset_params.get('pitch', self.pitch))
                 amplitude = str(preset_params.get('amplitude', self.amplitude))
                 word_gap = str(preset_params.get('word_gap', 10))
                 capitals = str(preset_params.get('capitals', 100))
-                self.get_logger().info(f"[TTS] Using voice transformer preset (voice={voice}, speed={speed}, pitch={pitch}, amp={amplitude})")
             else:
                 # Use behavior settings
                 voice = "en+m2"
-                speed = str(self.speed)
+                base_speed = self.speed
                 pitch = str(self.pitch)
                 amplitude = str(self.amplitude)
                 word_gap = "10"
                 capitals = "100"
+
+            # Apply dynamic speed adjustment based on word count
+            speed = str(self.calculate_adjusted_speed(text, base_speed))
+
+            # Log final settings
+            if self.voice_transformer and self.voice_transformer.preset_data:
+                self.get_logger().info(f"[TTS] Using voice transformer preset (voice={voice}, speed={speed}, pitch={pitch}, amp={amplitude})")
+            else:
                 self.get_logger().info(f"[TTS] Using behavior settings (voice={voice}, speed={speed}, pitch={pitch}, amp={amplitude})")
 
             # Generate to temp file if using transformations, otherwise play directly
@@ -1010,9 +1063,8 @@ class VoiceAssistantNode(Node, CommandBehavior, StateVocalizationBehavior):
             # Keep reading from whisper output until stopped
             while self.running:
                 try:
-                    # CRITICAL: Spin ROS executor to process callbacks (like sleep_mode_callback)
-                    # Without this, subscriptions never receive messages!
-                    rclpy.spin_once(self, timeout_sec=0.0)
+                    # ROS executor is now running in a separate thread, so callbacks are
+                    # processed even when this main loop is blocked by TTS
 
                     # Skip buffering during TTS (but keep reading to drain the pipe)
                     # Check for silence timeout BEFORE reading new line
@@ -1617,8 +1669,19 @@ class VoiceAssistantNode(Node, CommandBehavior, StateVocalizationBehavior):
 
 
 def main(args=None):
+    from rclpy.executors import MultiThreadedExecutor
+
     rclpy.init(args=args)
     node = VoiceAssistantNode()
+
+    # Use MultiThreadedExecutor to allow concurrent callback processing
+    # This is required for ReentrantCallbackGroup to work
+    executor = MultiThreadedExecutor()
+    executor.add_node(node)
+
+    # Start executor in background thread so node.start() can run
+    executor_thread = threading.Thread(target=executor.spin, daemon=True)
+    executor_thread.start()
 
     try:
         node.start()
@@ -1626,6 +1689,7 @@ def main(args=None):
         node.get_logger().info("🛑 Shutting down...")
     finally:
         node.stop()
+        executor.shutdown()
         node.destroy_node()
         rclpy.shutdown()
 

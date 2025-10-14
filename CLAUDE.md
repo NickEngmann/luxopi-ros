@@ -223,6 +223,56 @@ ros2 launch luxo_behaviors luxo_system.launch.py \
 - `voice_assistant_node`: Main AI assistant (STT + LLM + TTS)
 - `voice_direction_node`: Audio localization and tracking
 
+### TTS Speed Optimization
+
+The TTS system dynamically adjusts speech speed based on word count for better clarity:
+- **1 word**: 50% slower (easier to understand single words)
+- **2-4 words**: 30% slower (improved clarity for short phrases)
+- **5+ words**: Normal speed (natural for longer sentences)
+
+This applies to all TTS outputs including state vocalizations, emotion responses, and filler messages.
+
+### ROS2 Callback Concurrency Issue
+
+**Problem**: Long-running operations like TTS (3-5 seconds) can block the ROS executor thread, preventing callbacks from processing. This caused `state_change_callback` delays of 30-45 seconds because TTS was blocking the main thread.
+
+**Solution**: Use `ReentrantCallbackGroup` combined with `MultiThreadedExecutor`:
+
+1. **Create callback group** in `__init__`:
+```python
+self.callback_group = ReentrantCallbackGroup()
+```
+
+2. **Assign to subscriptions**:
+```python
+self.state_sub = self.node.create_subscription(
+    StateInfo,
+    '/luxo/state_info',
+    self.state_change_callback,
+    qos_profile,
+    callback_group=self.callback_group  # Enable concurrent execution
+)
+```
+
+3. **Use MultiThreadedExecutor** in `main()`:
+```python
+executor = MultiThreadedExecutor()
+executor.add_node(node)
+executor_thread = threading.Thread(target=executor.spin, daemon=True)
+executor_thread.start()
+```
+
+**Additional QoS Optimization**: Use `BEST_EFFORT` with `depth=1` to only process latest state:
+```python
+state_qos = QoSProfile(
+    reliability=QoSReliabilityPolicy.BEST_EFFORT,
+    history=QoSHistoryPolicy.KEEP_LAST,
+    depth=1  # Only keep latest message
+)
+```
+
+**Result**: Callbacks now process immediately even during TTS, eliminating multi-second delays.
+
 ## State Machine
 
 States and their responsibilities:
