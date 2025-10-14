@@ -663,13 +663,20 @@ class VoiceAssistantNode(Node, CommandBehavior, StateVocalizationBehavior):
         return tts_time
 
     def _generate_and_play_tts(self, text, is_filler=False):
-        """Generate and play TTS without blocking whisper (for filler messages)
+        """Generate and play TTS without blocking whisper (for filler messages and state vocalizations)
 
         This is a simplified version of speak() that doesn't pause/resume whisper.
-        Used for filler messages that play DURING processing.
+        Used for filler messages that play DURING processing and state vocalizations.
         """
-        if not text or self.is_sleep_mode:
+        if not text:
+            self.get_logger().info(f"[TTS] Skipping empty text")
             return
+
+        if self.is_sleep_mode:
+            self.get_logger().info(f"[TTS] Skipping TTS during sleep mode: '{text}'")
+            return
+
+        self.get_logger().info(f"[TTS] Starting TTS for: '{text}' (is_filler={is_filler})")
 
         temp_files = []
         try:
@@ -677,6 +684,8 @@ class VoiceAssistantNode(Node, CommandBehavior, StateVocalizationBehavior):
             tts_active_msg = Bool()
             tts_active_msg.data = True
             self.tts_active_pub.publish(tts_active_msg)
+            self.get_logger().info(f"[TTS] Published TTS active status")
+
             # espeak-ng parameters from preset or behavior settings
             if self.voice_transformer and self.voice_transformer.preset_data:
                 preset_params = self.voice_transformer.preset_data.get('params', {})
@@ -686,6 +695,7 @@ class VoiceAssistantNode(Node, CommandBehavior, StateVocalizationBehavior):
                 amplitude = str(preset_params.get('amplitude', self.amplitude))
                 word_gap = str(preset_params.get('word_gap', 10))
                 capitals = str(preset_params.get('capitals', 100))
+                self.get_logger().info(f"[TTS] Using voice transformer preset (voice={voice}, speed={speed}, pitch={pitch}, amp={amplitude})")
             else:
                 # Use behavior settings
                 voice = "en+m2"
@@ -694,12 +704,16 @@ class VoiceAssistantNode(Node, CommandBehavior, StateVocalizationBehavior):
                 amplitude = str(self.amplitude)
                 word_gap = "10"
                 capitals = "100"
+                self.get_logger().info(f"[TTS] Using behavior settings (voice={voice}, speed={speed}, pitch={pitch}, amp={amplitude})")
 
             # Generate to temp file if using transformations, otherwise play directly
             if self.voice_transformer:
+                self.get_logger().debug(f"[TTS] Generating with voice transformer")
+
                 # Generate espeak output to temp file
                 temp_raw = tempfile.NamedTemporaryFile(suffix='.wav', delete=False)
                 temp_files.append(temp_raw.name)
+                self.get_logger().debug(f"[TTS] Created temp file: {temp_raw.name}")
 
                 cmd = [
                     "espeak-ng",
@@ -713,17 +727,25 @@ class VoiceAssistantNode(Node, CommandBehavior, StateVocalizationBehavior):
                     text
                 ]
 
-                subprocess.run(cmd, capture_output=True, timeout=10, check=True)
+                self.get_logger().info(f"[TTS] Running espeak-ng: {' '.join(cmd[:8])}...")
+                result = subprocess.run(cmd, capture_output=True, timeout=10, check=True)
+                self.get_logger().debug(f"[TTS] espeak-ng completed successfully")
 
                 # Apply transformations (sox commands)
+                self.get_logger().debug(f"[TTS] Applying sox transformations...")
                 transformed_file = self.voice_transformer.transform_from_preset(temp_raw.name, verbose=False)
                 if transformed_file != temp_raw.name:
                     temp_files.append(str(transformed_file))
+                self.get_logger().debug(f"[TTS] Transformations complete: {transformed_file}")
 
                 # Play transformed audio using aplay with USB speaker device
                 play_cmd = ["aplay", "-q", "-D", self.speaker_device, str(transformed_file)]
+                self.get_logger().debug(f"[TTS] Playing with aplay: device={self.speaker_device}")
                 subprocess.run(play_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10)
+                self.get_logger().info(f"[TTS] Playback complete")
             else:
+                self.get_logger().info(f"[TTS] Playing directly without transformation")
+
                 # No transformation - play directly
                 cmd = [
                     "espeak-ng",
@@ -737,29 +759,35 @@ class VoiceAssistantNode(Node, CommandBehavior, StateVocalizationBehavior):
                     text
                 ]
 
+                self.get_logger().debug(f"[TTS] Running espeak-ng direct: {' '.join(cmd[:8])}...")
                 subprocess.run(
                     cmd,
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
                     timeout=10
                 )
+                self.get_logger().info(f"[TTS] Direct playback complete")
 
         except Exception as e:
-            if self.verbose:
-                self.get_logger().info(f"  ⚠️ Filler TTS error: {e}")
+            # ALWAYS log errors, regardless of verbose flag
+            self.get_logger().error(f"[TTS] ERROR generating/playing TTS for '{text}': {e}")
+            import traceback
+            self.get_logger().error(f"[TTS] Traceback: {traceback.format_exc()}")
         finally:
             # Clean up temp files
             for temp_file in temp_files:
                 try:
                     if os.path.exists(temp_file):
                         os.unlink(temp_file)
-                except:
-                    pass
+                        self.get_logger().debug(f"[TTS] Cleaned up temp file: {temp_file}")
+                except Exception as cleanup_error:
+                    self.get_logger().warn(f"[TTS] Failed to cleanup {temp_file}: {cleanup_error}")
 
             # Publish TTS inactive status (filler finished playing)
             tts_active_msg = Bool()
             tts_active_msg.data = False
             self.tts_active_pub.publish(tts_active_msg)
+            self.get_logger().info(f"[TTS] Published TTS inactive status")
 
     def play_filler_messages(self):
         """Background thread that plays random filler messages in a loop"""
