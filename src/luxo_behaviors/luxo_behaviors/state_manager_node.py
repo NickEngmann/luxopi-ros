@@ -682,7 +682,7 @@ class StateManagerNode(Node):
             self.get_logger().error(f"Error in TTS active callback: {e}")
 
     def _activate_talking_overlay(self):
-        """Activate the talking indicator overlay on NeoPixels."""
+        """Activate the talking indicator overlay on NeoPixels with state-aware colors."""
         if not self._neopixel_controller:
             return
 
@@ -693,10 +693,34 @@ class StateManagerNode(Node):
             # Stop any current effects
             self._neopixel_controller.stop_effect()
 
-            # Start the spinning talking indicator
-            # Green background with white spinning indicator for talking
-            base_color = (0, 255, 100, 0)  # Green background
-            indicator_color = (255, 255, 255, 0)  # White spinning indicator
+            # Get base color based on current state/emotion
+            # This makes the background match the current state (pink for petting, orange for collision, etc.)
+            if self._color_mode is not None:
+                # Use the custom color mode if set
+                color_map = {
+                    'red': (255, 0, 0, 0),
+                    'orange': (255, 128, 0, 0),
+                    'yellow': (255, 255, 0, 0),
+                    'green': (0, 255, 0, 0),
+                    'cyan': (0, 255, 255, 0),
+                    'blue': (0, 0, 255, 0),
+                    'purple': (128, 0, 255, 0)
+                }
+                base_color = color_map.get(self._color_mode, (0, 255, 100, 0))
+            else:
+                # Use state-based colors from the state color mapping
+                # Get the color for the current state
+                state_color = self._state_colors.get(self._current_state, (0, 255, 100, 0))
+
+                # If it's a white-ish color (high white component), use our temperature-adjusted white
+                # Otherwise use the state color directly
+                if state_color[3] > 50:  # Has significant white component
+                    base_color = self._default_white_color
+                else:
+                    base_color = state_color
+
+            # White spinning indicator works for all states
+            indicator_color = (255, 255, 255, 0)
 
             self._neopixel_controller.spinning_talking_indicator(
                 base_color=base_color,
@@ -704,8 +728,7 @@ class StateManagerNode(Node):
                 speed=0.08,  # 80ms between frames for smooth spinning
                 blocking=False
             )
-
-            self.get_logger().debug("Talking overlay activated - spinning indicator running")
+            self.get_logger().debug(f"Talking overlay activated - spinning indicator with {self._current_state.name} colors: {base_color}")
 
         except Exception as e:
             self.get_logger().error(f"Error activating talking overlay: {e}")
