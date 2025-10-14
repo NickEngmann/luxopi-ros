@@ -76,7 +76,10 @@ class VoiceFollowingBehavior:
         self.voice_following_previous_state = None
         self.voice_completion_timer = None
         self.voice_completion_timeout = 3.0  # seconds of no voice activity before completing
-        
+
+        # TTS state tracking - prevent robot from following its own voice
+        self.tts_active = False
+
         # Create subscribers for voice data
         self.voice_direction_sub = self.node.create_subscription(
             Float32,
@@ -84,21 +87,42 @@ class VoiceFollowingBehavior:
             self.voice_direction_callback,
             10
         )
-        
+
         self.voice_active_sub = self.node.create_subscription(
             Bool,
-            '/voice/active', 
+            '/voice/active',
             self.voice_active_callback,
             10
         )
-        
+
+        # Subscribe to TTS status to prevent following robot's own voice
+        self.tts_active_sub = self.node.create_subscription(
+            Bool,
+            '/voice/tts_active',
+            self.tts_active_callback,
+            10
+        )
+
         self.node.get_logger().info(f"Voice following enabled: {self.voice_follow_enabled}")
     
+    def tts_active_callback(self, msg):
+        """Handle TTS active status - prevent following robot's own voice."""
+        self.tts_active = msg.data
+        if self.tts_active:
+            self.node.get_logger().debug("TTS started - voice following will be suppressed")
+        else:
+            self.node.get_logger().debug("TTS finished - voice following re-enabled")
+
     def voice_direction_callback(self, msg):
         """Handle voice direction messages with cooldown and filtering."""
         if not self.voice_follow_enabled:
             return
-        
+
+        # Ignore voice directions when TTS is active to prevent following own voice
+        if self.tts_active:
+            self.node.get_logger().debug(f"Ignoring voice direction {msg.data:.1f}° - TTS is active (robot is speaking)")
+            return
+
         # Extract voice direction
         voice_direction = msg.data  # Angle in degrees
         current_time = self.node.get_clock().now()
