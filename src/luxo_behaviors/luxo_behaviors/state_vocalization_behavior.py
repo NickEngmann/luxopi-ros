@@ -363,6 +363,12 @@ class StateVocalizationBehavior:
             self.node.get_logger().debug(f"[StateVocalization] → Skipping {state} state (no vocalization)")
             return
 
+        # VOICE_FOLLOWING: Only vocalize 25% of the time (to avoid being too chatty)
+        if state == 'VOICE_FOLLOWING':
+            if random.random() > 0.25:  # 75% chance to skip
+                self.node.get_logger().debug(f"[StateVocalization] → Skipping VOICE_FOLLOWING vocalization (random skip)")
+                return
+
         # Check if STT pipeline is active (but still log)
         if self.stt_pipeline_active or self.is_speaking:
             self.node.get_logger().info(f"[StateVocalization] → Would vocalize '{state}' ({transition_desc}) but STT/TTS active")
