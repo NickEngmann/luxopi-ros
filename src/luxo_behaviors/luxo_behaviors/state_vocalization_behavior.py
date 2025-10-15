@@ -373,6 +373,11 @@ class StateVocalizationBehavior:
             self.node.get_logger().info(f"[StateVocalization] → Would vocalize '{state}' ({transition_desc}) but robot is sleeping 💤")
             return
 
+        # Check stay mode (but still log)
+        if self.is_stay_mode:
+            self.node.get_logger().info(f"[StateVocalization] → Would vocalize '{state}' ({transition_desc}) but robot is frozen 🧊")
+            return
+
         # Calculate time since last phrase
         current_time = time.time()
         time_since_last = current_time - self.last_state_phrase_time
@@ -421,6 +426,11 @@ class StateVocalizationBehavior:
         # Check sleep mode (but still log)
         if self.is_sleep_mode:
             self.node.get_logger().info(f"[StateVocalization] → Would vocalize emotion '{self.current_emotion}' but robot is sleeping 💤")
+            return
+
+        # Check stay mode (but still log)
+        if self.is_stay_mode:
+            self.node.get_logger().info(f"[StateVocalization] → Would vocalize emotion '{self.current_emotion}' but robot is frozen 🧊")
             return
 
         # Calculate time since last phrase

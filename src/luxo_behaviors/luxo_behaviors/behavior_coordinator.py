@@ -184,6 +184,14 @@ class BehaviorCoordinator(PettingBehavior, IdleBehavior, VoiceFollowingBehavior,
             10
         )
 
+        # Subscribe to stay mode commands for position freezing
+        self.stay_mode_subscription = self.node.create_subscription(
+            Bool,
+            '/luxo/stay_mode',
+            self._stay_mode_callback,
+            10
+        )
+
         # Create publishers for sleep mode control
         self.light_control_publisher = self.node.create_publisher(
             Bool,
@@ -200,6 +208,15 @@ class BehaviorCoordinator(PettingBehavior, IdleBehavior, VoiceFollowingBehavior,
         # Track sleep state
         self.sleep_state = False
         self.sleep_animation_in_progress = False
+
+        # Track stay state
+        self.stay_state = False
+        self.stay_frozen_position = None  # The position to stay frozen at
+        self.stay_timer = None  # Timer for continuously feeding position
+        self.stay_entry_retry_timer = None  # Timer for retrying STAY entry
+        self.stay_entry_requested = False  # Track if we're trying to enter STAY
+        self.stay_exit_retry_timer = None  # Timer for retrying STAY exit
+        self.stay_exit_requested = False  # Track if we're trying to exit STAY
 
     def _state_info_callback(self, msg):
         """Callback for state info updates."""
@@ -225,19 +242,38 @@ class BehaviorCoordinator(PettingBehavior, IdleBehavior, VoiceFollowingBehavior,
         current_state = self._get_current_state()
         return current_state in states
 
-    def _transition_to_state(self, new_state):
-        """Request a state transition."""
+    def _transition_to_state(self, new_state, wait_for_result=False, timeout_sec=1.0):
+        """Request a state transition.
+
+        Args:
+            new_state: The target state to transition to
+            wait_for_result: If True, wait for transition response (default: False for backward compatibility)
+            timeout_sec: Timeout for waiting when wait_for_result=True
+
+        Returns:
+            bool: True if transition succeeded (or if not waiting), False otherwise
+        """
         try:
             request = RequestStateTransition.Request()
             request.requested_state = new_state.name
             request.requesting_node = "behavior_coordinator"
             request.priority = 100  # High priority
-
             request.force = False
-            
+
             future = self.request_state_transition_client.call_async(request)
-            # Fire and forget - don't wait for response
-            return True
+
+            if wait_for_result:
+                # Wait for the response using future.result() - this blocks the current thread
+                # but doesn't interfere with the executor
+                try:
+                    response = future.result(timeout=timeout_sec)
+                    return response.success
+                except Exception as e:
+                    self.node.get_logger().warn(f"State transition request to {new_state.name} failed: {e}")
+                    return False
+            else:
+                # Fire and forget - assume success for backward compatibility
+                return True
         except Exception as e:
             self.node.get_logger().error(f"Error requesting state transition: {e}")
             return False
@@ -1044,3 +1080,211 @@ class BehaviorCoordinator(PettingBehavior, IdleBehavior, VoiceFollowingBehavior,
         import threading
         dema_thread = threading.Thread(target=enable_dema_after_delay, daemon=True)
         dema_thread.start()
+
+    def _stay_mode_callback(self, msg):
+        """Handle stay mode commands - freeze position without DEMA."""
+        current_state = self._get_current_state()
+        self.node.get_logger().info(f"🔔 _stay_mode_callback CALLED: msg.data={msg.data}, stay_state={self.stay_state}, actual_state={current_state.name}")
+        try:
+            if msg.data and not self.stay_state:
+                # Entering stay mode - mark as requested
+                self.stay_entry_requested = True
+                self.node.get_logger().info(f"🧊 Stay mode requested - current state is {current_state.name}")
+
+                # Capture current position
+                self.stay_frozen_position = self.current_joints[:5].copy()  # Only the first 5 joints
+
+                # Try to transition to STAY state
+                self._attempt_stay_entry()
+
+            elif not msg.data:
+                # FIXED: Exit STAY if we're actually IN the STAY state (check state machine, not just flag)
+                if current_state == LuxoState.STAY or self.stay_state or self.stay_entry_requested:
+                    # Exiting stay mode (or canceling entry attempt)
+                    self.node.get_logger().info("🔓 Stay mode exit requested - attempting to resume normal operation")
+
+                    # Mark exit as requested and cancel entry if it was in progress
+                    self.stay_exit_requested = True
+                    self.stay_entry_requested = False
+
+                    # Cancel the entry retry timer if active
+                    if self.stay_entry_retry_timer is not None:
+                        self.stay_entry_retry_timer.cancel()
+                        self.stay_entry_retry_timer = None
+
+                    # Attempt to exit STAY state with retry logic
+                    self._attempt_stay_exit()
+                else:
+                    self.node.get_logger().info(f"🔕 Ignoring STAY exit - not in STAY state (current: {current_state.name})")
+
+        except Exception as e:
+            self.node.get_logger().error(f"Error in stay mode callback: {e}")
+            # Clean up on error
+            self.stay_state = False
+            self.stay_entry_requested = False
+            self.stay_exit_requested = False
+            if self.stay_timer is not None:
+                self.stay_timer.cancel()
+                self.stay_timer = None
+            if self.stay_entry_retry_timer is not None:
+                self.stay_entry_retry_timer.cancel()
+                self.stay_entry_retry_timer = None
+            if self.stay_exit_retry_timer is not None:
+                self.stay_exit_retry_timer.cancel()
+                self.stay_exit_retry_timer = None
+            self.stay_frozen_position = None
+
+    def _stay_position_callback(self):
+        """Timer callback to continuously feed the frozen position."""
+        try:
+            if self.stay_state and self.stay_frozen_position is not None:
+                # Feed the frozen position to hardware
+                self.send_safe_joint_command(
+                    self.stay_frozen_position,
+                    "Stay mode - holding position"
+                )
+        except Exception as e:
+            self.node.get_logger().error(f"Error in stay position callback: {e}")
+
+    def _attempt_stay_entry(self):
+        """Attempt to enter STAY state, with retry logic."""
+        try:
+            # Cancel any existing retry timer
+            if self.stay_entry_retry_timer is not None:
+                self.stay_entry_retry_timer.cancel()
+                self.stay_entry_retry_timer = None
+
+            current_state = self._get_current_state()
+
+            # Try to transition to STAY
+            transition_success = self._transition_to_state(LuxoState.STAY, wait_for_result=True, timeout_sec=2.0)
+
+            if transition_success:
+                # Successfully entered STAY state
+                self.node.get_logger().info(f"✅ Stay mode activated - freezing current position")
+                self.stay_state = True
+                self.stay_entry_requested = False
+
+                # Create timer to continuously feed the same position (10Hz = 0.1s interval)
+                if self.stay_timer is not None:
+                    self.stay_timer.cancel()
+
+                self.stay_timer = self.node.create_timer(0.1, self._stay_position_callback)
+
+                self.node.get_logger().info(f"Position frozen at: {[round(p, 2) for p in self.stay_frozen_position]}")
+
+            else:
+                # Transition failed - retry after delay
+                self.node.get_logger().warn(
+                    f"⚠️ Cannot enter STAY from {current_state.name} - will retry in 1 second"
+                )
+
+                # Schedule retry
+                self.stay_entry_retry_timer = self.node.create_timer(1.0, self._retry_stay_entry, one_shot=True)
+
+        except Exception as e:
+            self.node.get_logger().error(f"Error attempting STAY entry: {e}")
+            # Retry on error
+            if self.stay_entry_requested:
+                self.stay_entry_retry_timer = self.node.create_timer(1.0, self._retry_stay_entry, one_shot=True)
+
+    def _retry_stay_entry(self):
+        """Timer callback to retry STAY entry."""
+        try:
+            # Check if we're still trying to enter STAY
+            if not self.stay_entry_requested or self.stay_state:
+                # No longer needed
+                return
+
+            self.node.get_logger().info("🔁 Retrying STAY entry...")
+            self._attempt_stay_entry()
+
+        except Exception as e:
+            self.node.get_logger().error(f"Error in STAY entry retry: {e}")
+
+    def _attempt_stay_exit(self):
+        """Attempt to exit STAY state, with retry logic."""
+        try:
+            # Cancel any existing retry timer
+            if self.stay_exit_retry_timer is not None:
+                self.stay_exit_retry_timer.cancel()
+                self.stay_exit_retry_timer = None
+
+            current_state = self._get_current_state()
+
+            # Try to transition to IDLE
+            transition_success = self._transition_to_state(LuxoState.IDLE, wait_for_result=True, timeout_sec=2.0)
+
+            if transition_success:
+                # Successfully exited STAY state
+                self.node.get_logger().info(f"✅ Stay mode deactivated - resuming normal operation")
+                self.stay_state = False
+                self.stay_exit_requested = False
+
+                # Cancel the position-feeding timer
+                if self.stay_timer is not None:
+                    self.stay_timer.cancel()
+                    self.stay_timer = None
+
+                # Clear frozen position
+                self.stay_frozen_position = None
+
+                # Schedule verification check after 5 seconds to ensure we actually left STAY
+                self.node.create_timer(5.0, self._verify_stay_exit, one_shot=True)
+
+            else:
+                # Transition failed - retry after delay
+                self.node.get_logger().warn(
+                    f"⚠️ Cannot exit STAY from {current_state.name} - will retry in 1 second"
+                )
+
+                # Schedule retry
+                self.stay_exit_retry_timer = self.node.create_timer(1.0, self._retry_stay_exit, one_shot=True)
+
+        except Exception as e:
+            self.node.get_logger().error(f"Error attempting STAY exit: {e}")
+            # Retry on error
+            if self.stay_exit_requested:
+                self.stay_exit_retry_timer = self.node.create_timer(1.0, self._retry_stay_exit, one_shot=True)
+
+    def _retry_stay_exit(self):
+        """Timer callback to retry STAY exit."""
+        try:
+            # Check if we're still trying to exit STAY
+            if not self.stay_exit_requested or not self.stay_state:
+                # No longer needed
+                return
+
+            self.node.get_logger().info("🔁 Retrying STAY exit...")
+            self._attempt_stay_exit()
+
+        except Exception as e:
+            self.node.get_logger().error(f"Error in STAY exit retry: {e}")
+
+    def _verify_stay_exit(self):
+        """Verify that we actually exited STAY state after move command."""
+        try:
+            current_state = self._get_current_state()
+
+            if current_state == LuxoState.STAY:
+                # Still in STAY after 5 seconds - force transition to IDLE
+                self.node.get_logger().warn(
+                    "⚠️ Still in STAY state 5 seconds after exit command - forcing IDLE transition"
+                )
+
+                # Force transition with higher priority
+                success = self._transition_to_state(LuxoState.IDLE, wait_for_result=True, timeout_sec=2.0)
+
+                if success:
+                    self.node.get_logger().info("✅ Successfully forced IDLE transition after STAY verification failure")
+                else:
+                    self.node.get_logger().error(
+                        "❌ Failed to force IDLE transition - STAY state may be stuck. "
+                        "Manual intervention may be required."
+                    )
+            else:
+                # Successfully exited STAY (could be in IDLE, ANIMATING, VOICE_FOLLOWING, etc - any state is fine)
+                self.node.get_logger().info(f"✅ STAY exit verified - successfully transitioned to {current_state.name}")
+
+        except Exception as e:
+            self.node.get_logger().error(f"Error in stay exit verification: {e}")

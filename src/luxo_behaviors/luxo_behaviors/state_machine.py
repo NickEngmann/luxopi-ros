@@ -16,6 +16,7 @@ class LuxoState(Enum):
     USER_CONTROL = auto()  # Dynamic adaptation mode
     EMOTION_REACTING = auto()
     PETTING = auto()  # High-priority state for petting interactions
+    STAY = auto()  # Robot stays frozen in current position
     ERROR = auto()
     INITIALIZING = auto()
     SHUTDOWN = auto()

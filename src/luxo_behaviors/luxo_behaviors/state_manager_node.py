@@ -110,6 +110,7 @@ class StateManagerNode(Node):
             LuxoState.USER_CONTROL: (255, 255, 0, 0),          # Yellow (user input)
             LuxoState.EMOTION_REACTING: (255, 100, 255, 0),    # Purple (emotional)
             LuxoState.PETTING: (255, 0, 180, 0),               # Pink (affection)
+            LuxoState.STAY: (100, 200, 255, 0),                # Light blue (frozen/waiting)
             LuxoState.ERROR: (255, 0, 0, 0),                   # Red (error)
             LuxoState.SHUTDOWN: (50, 50, 50, 0)                # Dim gray
         }
@@ -215,6 +216,10 @@ class StateManagerNode(Node):
         self._update_count = 0
         self._publish_count = 0
         self.health_timer = self.create_timer(30.0, self.check_health)  # Health check every 30s
+
+        # ERROR state auto-recovery tracking
+        self._error_entry_time = None
+        self._error_recovery_timeout = 10.0  # 10 seconds in ERROR before auto-recovery to IDLE
         
         # Initialize state machine
         self._setup_default_transitions()
@@ -907,6 +912,10 @@ class StateManagerNode(Node):
                 self.get_logger().debug("NeoPixel: Pink status pixels for PETTING state")
                 self._neopixel_controller.fill_status_pixels(color[0], color[1], color[2], color[3])
                 needs_animation_timer = False
+            elif state == LuxoState.STAY:
+                self.get_logger().debug("NeoPixel: Light blue status pixels for STAY state")
+                self._neopixel_controller.fill_status_pixels(color[0], color[1], color[2], color[3])
+                needs_animation_timer = False
             elif state == LuxoState.USER_CONTROL:
                 self.get_logger().debug("NeoPixel: Bouncing direction indicator on status pixels for USER_CONTROL state")
                 # Create a spinning white indicator on blue background for talking detection
@@ -1051,7 +1060,21 @@ class StateManagerNode(Node):
         self.add_transition(LuxoState.PETTING, LuxoState.VOICE_FOLLOWING)
         self.add_transition(LuxoState.PETTING, LuxoState.EMOTION_REACTING)
         self.add_transition(LuxoState.PETTING, LuxoState.COLLISION_AVOIDING)
-        
+
+        # To STAY from multiple states (flexible stay command - can freeze from almost any state)
+        self.add_transition(LuxoState.IDLE, LuxoState.STAY)
+        self.add_transition(LuxoState.ANIMATING, LuxoState.STAY)
+        self.add_transition(LuxoState.VOICE_FOLLOWING, LuxoState.STAY)
+        self.add_transition(LuxoState.EMOTION_REACTING, LuxoState.STAY)
+        self.add_transition(LuxoState.RETURNING_HOME, LuxoState.STAY)
+        self.add_transition(LuxoState.PETTING, LuxoState.STAY)
+        self.add_transition(LuxoState.USER_CONTROL, LuxoState.STAY)
+
+        # From STAY - ONLY allow explicit user exit to IDLE
+        # STAY is the highest priority state - nothing can interrupt it
+        self.add_transition(LuxoState.STAY, LuxoState.IDLE)  # Exit stay mode via user command only
+        self.add_transition(LuxoState.STAY, LuxoState.ERROR)  # Only for critical system errors
+
         # From ERROR
         self.add_transition(LuxoState.ERROR, LuxoState.IDLE)
         self.add_transition(LuxoState.ERROR, LuxoState.INITIALIZING)
@@ -1269,12 +1292,35 @@ class StateManagerNode(Node):
                 except Exception as e:
                     self.get_logger().error(f"Recovery transition failed: {e}")
         
-        # Check publish timer health  
+        # Check publish timer health
         publish_age = current_time - self._last_publish_time
         if publish_age > 5.0:  # Should publish at 4Hz, so 5s is way too long
             self.get_logger().error(f"Publish timer appears stuck! Last publish {publish_age:.1f}s ago")
             self.get_logger().error(f"Publish count: {self._publish_count}")
-        
+
+        # ERROR state auto-recovery
+        with self._state_lock:
+            if self._current_state == LuxoState.ERROR:
+                if self._error_entry_time is None:
+                    # Just entered ERROR - record entry time
+                    self._error_entry_time = current_time
+                    self.get_logger().info(f"ERROR state entered - will auto-recover to IDLE in {self._error_recovery_timeout:.1f}s")
+                else:
+                    # Check if we've been in ERROR too long
+                    error_duration = current_time - self._error_entry_time
+                    if error_duration > self._error_recovery_timeout:
+                        self.get_logger().warn(
+                            f"ERROR state timeout ({error_duration:.1f}s) - auto-recovering to IDLE"
+                        )
+                        try:
+                            self.transition_to(LuxoState.IDLE, force=True)
+                            self._error_entry_time = None
+                        except Exception as e:
+                            self.get_logger().error(f"ERROR auto-recovery failed: {e}")
+            else:
+                # Not in ERROR state - reset entry time
+                self._error_entry_time = None
+
         # Log health status periodically
         self.get_logger().info(f"Health check - Updates: {self._update_count}, Publishes: {self._publish_count}")
         self.get_logger().info(f"Update age: {update_age:.1f}s, Publish age: {publish_age:.1f}s")

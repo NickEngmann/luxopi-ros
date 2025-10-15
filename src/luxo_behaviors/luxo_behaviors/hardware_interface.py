@@ -237,6 +237,9 @@ class RoArmHardwareInterface(Node):
                 '/roarm/movement_source',
                 10
             )
+
+        # Stay mode position freezing
+        self.stay_frozen_position = None  # Frozen position when in STAY mode
         
         if self.connection_active:
             # Initialize the collision avoidance system (no state machine passed)
@@ -460,6 +463,8 @@ class RoArmHardwareInterface(Node):
             self._on_enter_escape_mode()
         elif new_state == LuxoState.USER_CONTROL:
             self._on_enter_user_control()
+        elif new_state == LuxoState.STAY:
+            self._on_enter_stay()
         elif new_state == LuxoState.ERROR:
             self._on_enter_error()
         elif new_state == LuxoState.SHUTDOWN:
@@ -472,6 +477,8 @@ class RoArmHardwareInterface(Node):
             self._on_exit_returning_home()
         elif old_state == LuxoState.USER_CONTROL:
             self._on_exit_user_control()
+        elif old_state == LuxoState.STAY:
+            self._on_exit_stay()
         elif old_state == LuxoState.COLLISION_AVOIDING:
             self._on_exit_collision_avoiding()
 
@@ -562,7 +569,18 @@ class RoArmHardwareInterface(Node):
         if self.is_in_state(LuxoState.USER_CONTROL) and hasattr(self, 'user_control_position') and self.user_control_position:
             # Send the stored position to maintain it
             self.send_safe_joint_command(self.user_control_position, "USER_CONTROL position maintenance")
-    
+
+    def _on_enter_stay(self):
+        """Called when entering STAY state - freeze current position."""
+        # Capture current position as frozen position
+        self.stay_frozen_position = self.current_joints[:5].copy()  # Only first 5 joints
+        self.get_logger().info(f"🧊 STAY mode activated - position frozen at: {[round(p, 2) for p in self.stay_frozen_position]}")
+
+    def _on_exit_stay(self):
+        """Called when exiting STAY state."""
+        self.get_logger().info("Exiting STAY mode - resuming normal operation")
+        self.stay_frozen_position = None
+
     def _on_enter_error(self):
         """Called when entering ERROR state."""
         self.get_logger().error("Entering ERROR state")
@@ -1257,7 +1275,19 @@ class RoArmHardwareInterface(Node):
         """Send a joint command with safety checks applied"""
         if not self.is_connected():
             return False
-        
+
+        # STAY MODE GATE: If in STAY mode, ignore all incoming commands and resend frozen position
+        if self.is_in_state(LuxoState.STAY) and self.stay_frozen_position is not None:
+            self.get_logger().debug(f"STAY mode active - blocking command: '{description}' and resending frozen position")
+            # Override positions with frozen position
+            positions = self.stay_frozen_position.copy()
+            # Add default values for acceleration and antenna if needed
+            if len(positions) < 6:
+                positions = positions + [10.0]  # Default acceleration
+            if len(positions) < 7:
+                positions = positions + [1.5]  # Default antenna position
+            description = "STAY mode - position frozen"
+
         time.sleep(0.05)  # delay between commands
 
         # Apply base joint limits first

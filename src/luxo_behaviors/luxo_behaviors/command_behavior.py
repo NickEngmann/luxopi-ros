@@ -88,6 +88,12 @@ class CommandBehavior:
             self.last_llm_interaction_time = None
             self.user_control_timeout = 3.0
             self.command_lock = threading.Lock()
+
+            # Initialize stay mode tracking even without publishers
+            self.stay_mode_active = False
+            self.stay_mode_timer = None
+            self.stay_mode_publish_count = 0
+
             if self.node:
                 self.node.get_logger().info("CommandBehavior mixin initialized (coordination only, no publishers)")
 
@@ -254,6 +260,42 @@ class CommandBehavior:
             r'turn.{0,5}on',
         ]
 
+        # Stay patterns - Robot freezes in current position
+        self.stay_patterns = [
+            # Stop commands - Most natural way to say "freeze" (MUST come before mute checks)
+            r'(please|can.{0,5}you).{0,5}stop',  # "please stop", "can you stop"
+            r'stop.{0,5}(now|please|it|there|right.{0,5}there)',  # "stop now", "stop please", etc.
+            r'(just.{0,5})?stop.{0,5}(for.{0,5}a.{0,5})?(second|moment|minute)',  # "just stop for a moment"
+
+            # Direct stay commands
+            r'\bstay\b',
+            r'stay.{0,5}(there|still|put|right.{0,5}there)',
+            r'(don\'?t|dont|do not).{0,5}move',
+            r'(stop|hold).{0,5}(moving|motion)',  # "stop moving" - more specific
+            r'freeze',
+            r'hold.{0,5}(that.{0,5})?position',
+            r'keep.{0,5}(your.{0,5})?position',
+            r'stay.{0,5}in.{0,5}place',
+            r'\bpause\b',  # "pause" as synonym for stay
+
+            # "You should stay" patterns
+            r'(you\'?re|your|you|u).{0,10}(should|need|have).{0,10}to.{0,10}stay',
+            r'(you\'?re|your|you|u).{0,10}(going|supposed).{0,10}to.{0,10}stay',
+        ]
+
+        # Move patterns - Exit stay mode and resume normal operation
+        self.move_patterns = [
+            # Direct move commands
+            r'\bmove\b',
+            r'(you.{0,5})?can.{0,5}move.{0,5}(now|again)?',
+            r'start.{0,5}moving.{0,5}(again)?',
+            r'(un|undo).{0,5}freeze',
+            r'(un|undo).{0,5}stay',
+            r'resume',
+            r'go.{0,5}ahead.{0,5}(and.{0,5})?move',
+            r'(it\'?s.{0,5})?okay.{0,5}to.{0,5}move',
+        ]
+
         # Light ON patterns
         self.light_on_patterns = [
             r'(turn|turns|torn).{0,5}(on|in|and).{0,5}(the|a|an)?.{0,5}(light|lights|like)',
@@ -291,6 +333,11 @@ class CommandBehavior:
         self.user_control_timeout = 3.0
         self.command_lock = threading.Lock()
 
+        # Stay mode continuous publishing state
+        self.stay_mode_active = False
+        self.stay_mode_timer = None
+        self.stay_mode_publish_count = 0
+
         # Create publishers for robot hardware control
         self.light_control_publisher = self.node.create_publisher(Bool, '/luxo/light_control', 10)
         self.brightness_control_publisher = self.node.create_publisher(Float32, '/luxo/brightness_control', 10)
@@ -298,6 +345,7 @@ class CommandBehavior:
         self.color_control_publisher = self.node.create_publisher(String, '/luxo/color_control', 10)
         self.pixel_ring_control_publisher = self.node.create_publisher(Bool, '/voice/pixel_ring_control', 10)
         self.sleep_mode_publisher = self.node.create_publisher(Bool, '/luxo/sleep_mode', 10)
+        self.stay_mode_publisher = self.node.create_publisher(Bool, '/luxo/stay_mode', 10)
 
         if self.verbose:
             self.node.get_logger().info("ROS publishers created for command behavior")
@@ -384,6 +432,14 @@ class CommandBehavior:
             if not self._check_unmute_command(text):
                 return 'wake_up'
 
+        # Stay commands
+        if any(re.search(pattern, text) for pattern in self.stay_patterns):
+            return 'stay'
+
+        # Move commands (exit stay mode)
+        if any(re.search(pattern, text) for pattern in self.move_patterns):
+            return 'move'
+
         # Light ON
         if any(re.search(pattern, text) for pattern in self.light_on_patterns):
             return 'turn_on_light'
@@ -436,6 +492,18 @@ class CommandBehavior:
                 "I'm awake!",
                 "Ready and awake!",
                 "Waking up now.",
+            ],
+            'stay': [
+                "Okay, staying still.",
+                "Freezing in place.",
+                "Holding position.",
+                "I won't move.",
+            ],
+            'move': [
+                "Okay, I can move again.",
+                "Resuming movement.",
+                "Unfrozen.",
+                "Moving now.",
             ],
             'turn_on_light': [
                 "Lights on.",
@@ -498,6 +566,10 @@ class CommandBehavior:
                 self._publish_sleep_mode(True)
             elif command == 'wake_up':
                 self._publish_sleep_mode(False)
+            elif command == 'stay':
+                self._publish_stay_mode(True)
+            elif command == 'move':
+                self._publish_stay_mode(False)
             elif command == 'turn_on_light':
                 self._publish_light_state(True)
             elif command == 'turn_off_light':
@@ -535,6 +607,50 @@ class CommandBehavior:
             self.node.get_logger().info(f"📢 PUBLISHED sleep mode: {sleep} to /luxo/sleep_mode")
         except Exception as e:
             self.node.get_logger().error(f"Error publishing sleep mode: {e}")
+
+    def _publish_stay_mode(self, stay: bool):
+        """Publish stay mode command and setup continuous publishing."""
+        try:
+            self.stay_mode_active = stay
+            self.stay_mode_publish_count = 0  # Track how many times we've published
+
+            # Publish immediately
+            msg = Bool()
+            msg.data = stay
+            self.stay_mode_publisher.publish(msg)
+            self.node.get_logger().info(f"📢 PUBLISHED stay mode: {stay} to /luxo/stay_mode")
+
+            # Always start/restart timer for continuous publishing (both True and False)
+            if self.stay_mode_timer is not None:
+                self.stay_mode_timer.cancel()
+            self.stay_mode_timer = self.node.create_timer(5.0, self._stay_mode_timer_callback)
+
+            if stay:
+                self.node.get_logger().info("🔄 Started continuous STAY=True publishing (every 5s)")
+            else:
+                self.node.get_logger().info("🔄 Started continuous STAY=False publishing (every 5s for 30s)")
+        except Exception as e:
+            self.node.get_logger().error(f"Error publishing stay mode: {e}")
+
+    def _stay_mode_timer_callback(self):
+        """Timer callback to continuously publish stay mode state."""
+        try:
+            self.stay_mode_publish_count += 1
+
+            # Publish current state
+            msg = Bool()
+            msg.data = self.stay_mode_active
+            self.stay_mode_publisher.publish(msg)
+            self.node.get_logger().debug(f"🔄 Republished STAY mode: {self.stay_mode_active} (count: {self.stay_mode_publish_count})")
+
+            # If publishing False (exit mode), stop after 30 seconds (6 publications)
+            if not self.stay_mode_active and self.stay_mode_publish_count >= 6:
+                self.node.get_logger().info("⏹️ Stopped continuous STAY=False publishing after 30s")
+                if self.stay_mode_timer is not None:
+                    self.stay_mode_timer.cancel()
+                    self.stay_mode_timer = None
+        except Exception as e:
+            self.node.get_logger().error(f"Error in stay mode timer callback: {e}")
 
     def _publish_light_state(self, state: bool):
         """Publish light control command."""

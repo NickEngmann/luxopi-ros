@@ -342,9 +342,20 @@ class VoiceAssistantNode(Node, CommandBehavior, StateVocalizationBehavior):
             callback_group=self.callback_group
         )
 
+        self.stay_mode_sub = self.create_subscription(
+            Bool,
+            '/luxo/stay_mode',
+            self.stay_mode_callback,
+            10,
+            callback_group=self.callback_group
+        )
+
         # Sleep mode state
         self.is_sleep_mode = False
         self.saved_amplitude = None
+
+        # Stay mode state
+        self.is_stay_mode = False
 
         self.get_logger().info("✅ ROS publishers and subscribers created")
         self.get_logger().info(f"🔧 Hailo mode: {use_hailo}")
@@ -516,6 +527,15 @@ class VoiceAssistantNode(Node, CommandBehavior, StateVocalizationBehavior):
         except Exception as e:
             self.get_logger().error(f"Error in sleep mode callback: {e}")
 
+    def stay_mode_callback(self, msg):
+        """Handle stay mode for TTS blocking."""
+        try:
+            self.is_stay_mode = msg.data
+            mode_str = "activated" if msg.data else "deactivated"
+            self.get_logger().info(f"🧊 Stay mode {mode_str} - TTS {'blocked' if msg.data else 'unblocked'}")
+        except Exception as e:
+            self.get_logger().error(f"Error in stay mode callback: {e}")
+
     def calculate_adjusted_speed(self, text, base_speed):
         """Calculate adjusted espeak-ng speed based on word count.
 
@@ -559,6 +579,11 @@ class VoiceAssistantNode(Node, CommandBehavior, StateVocalizationBehavior):
         # Block TTS during sleep mode
         if self.is_sleep_mode:
             self.get_logger().info("💤 Sleep mode active - skipping TTS (robot is muted)")
+            return 0
+
+        # Block TTS during stay mode
+        if self.is_stay_mode:
+            self.get_logger().info("🧊 Stay mode active - skipping TTS (robot is frozen)")
             return 0
 
         tts_time = 0
@@ -720,6 +745,10 @@ class VoiceAssistantNode(Node, CommandBehavior, StateVocalizationBehavior):
 
         if self.is_sleep_mode:
             self.get_logger().info(f"[TTS] Skipping TTS during sleep mode: '{text}'")
+            return
+
+        if self.is_stay_mode:
+            self.get_logger().info(f"[TTS] Skipping TTS during stay mode: '{text}'")
             return
 
         self.get_logger().info(f"[TTS] Starting TTS for: '{text}' (is_filler={is_filler})")
@@ -1148,7 +1177,14 @@ class VoiceAssistantNode(Node, CommandBehavior, StateVocalizationBehavior):
                                     # Execute hardware commands (publishes to ROS topics)
                                     if command_type == 'robot_hardware':
                                         hw_command = command_data.get('command', 'unknown')
-                                        self.execute_hardware_command(hw_command)
+                                        self.get_logger().info(f"  🚀 BEFORE execute_hardware_command({hw_command})")
+                                        try:
+                                            self.execute_hardware_command(hw_command)
+                                            self.get_logger().info(f"  ✅ AFTER execute_hardware_command({hw_command}) - SUCCESS")
+                                        except Exception as cmd_err:
+                                            self.get_logger().error(f"  ❌ execute_hardware_command({hw_command}) FAILED: {cmd_err}")
+                                            import traceback
+                                            self.get_logger().error(f"Traceback: {traceback.format_exc()}")
                                         self.get_logger().info(f"  🤖 Executing hardware command: {hw_command}")
 
                                     # Log output
