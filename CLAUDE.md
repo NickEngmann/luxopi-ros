@@ -273,6 +273,249 @@ state_qos = QoSProfile(
 
 **Result**: Callbacks now process immediately even during TTS, eliminating multi-second delays.
 
+## Implementing Voice Commands with State Navigation
+
+When adding voice commands that need to change robot states (like STAY mode, SLEEP mode, etc.), follow this critical pattern to ensure reliable operation across all nodes.
+
+### Critical Architecture Pattern
+
+Voice commands that change states must coordinate between three components:
+
+1. **Voice Assistant Node** (`voice_assistant_node.py`) - Detects command and publishes to topic
+2. **Behavior Coordinator** (`behavior_coordinator.py`) - Subscribes to topic and requests state transition
+3. **State Manager** (`state_manager_node.py`) - Manages state machine and grants transitions
+
+### Implementation Requirements
+
+#### 1. Continuous Topic Publishing (CRITICAL)
+
+**Problem**: If a subscriber misses the initial message, the state transition never happens.
+
+**Solution**: Continuously republish state commands until acknowledged.
+
+```python
+# In command_behavior.py
+def _publish_stay_mode(self, stay: bool):
+    """Publish stay mode command and setup continuous publishing."""
+    try:
+        self.stay_mode_active = stay
+        self.stay_mode_publish_count = 0
+
+        # Publish immediately
+        msg = Bool()
+        msg.data = stay
+        self.stay_mode_publisher.publish(msg)
+
+        # Setup continuous publishing (every 5 seconds)
+        if self.stay_mode_timer is not None:
+            self.stay_mode_timer.cancel()
+        self.stay_mode_timer = self.node.create_timer(5.0, self._stay_mode_timer_callback)
+
+        if stay:
+            self.node.get_logger().info("🔄 Started continuous STAY=True publishing")
+        else:
+            # Continue publishing False for 30 seconds to ensure exit
+            self.node.get_logger().info("🔄 Started continuous STAY=False publishing (30s)")
+    except Exception as e:
+        self.node.get_logger().error(f"Error publishing stay mode: {e}")
+
+def _stay_mode_timer_callback(self):
+    """Timer callback to continuously publish stay mode state."""
+    try:
+        self.stay_mode_publish_count += 1
+
+        # Republish current state
+        msg = Bool()
+        msg.data = self.stay_mode_active
+        self.stay_mode_publisher.publish(msg)
+
+        # Stop publishing False after 30 seconds (6 publications @ 5s interval)
+        if not self.stay_mode_active and self.stay_mode_publish_count >= 6:
+            if self.stay_mode_timer is not None:
+                self.stay_mode_timer.cancel()
+                self.stay_mode_timer = None
+    except Exception as e:
+        self.node.get_logger().error(f"Error in stay mode timer callback: {e}")
+```
+
+**Why This Matters**: ROS2 message delivery is not guaranteed. Continuous publishing ensures the message eventually reaches all subscribers, even if they were temporarily busy or had callback delays.
+
+#### 2. Check Actual State Machine State (CRITICAL)
+
+**Problem**: Local flags can become out of sync with the actual state machine.
+
+**Solution**: Always check the actual state machine state, not just local tracking flags.
+
+```python
+# WRONG - Only checks local flag
+def _stay_mode_callback(self, msg):
+    if not msg.data and self.stay_state:  # ❌ Can miss exits if flag is wrong
+        self._attempt_stay_exit()
+
+# CORRECT - Checks actual state machine
+def _stay_mode_callback(self, msg):
+    current_state = self._get_current_state()  # Query actual state
+
+    if not msg.data:
+        # Exit if ACTUALLY in STAY state OR if local flags indicate it
+        if current_state == LuxoState.STAY or self.stay_state or self.stay_entry_requested:
+            self._attempt_stay_exit()
+        else:
+            self.node.get_logger().info(f"Ignoring exit - not in STAY (current: {current_state.name})")
+```
+
+**Why This Matters**: The state machine is the source of truth. Local flags may not update if transitions fail or if there are race conditions. Always validate against the actual state.
+
+#### 3. Retry Logic for State Transitions
+
+**Problem**: State transitions can fail if the robot is in an incompatible state.
+
+**Solution**: Implement retry logic with exponential backoff.
+
+```python
+def _attempt_stay_exit(self):
+    """Attempt to exit STAY state, with retry logic."""
+    try:
+        # Cancel any existing retry timer
+        if self.stay_exit_retry_timer is not None:
+            self.stay_exit_retry_timer.cancel()
+            self.stay_exit_retry_timer = None
+
+        current_state = self._get_current_state()
+
+        # Try to transition to IDLE (wait for result with timeout)
+        transition_success = self._transition_to_state(
+            LuxoState.IDLE,
+            wait_for_result=True,  # CRITICAL: Wait for confirmation
+            timeout_sec=2.0
+        )
+
+        if transition_success:
+            # Clean up state tracking
+            self.stay_state = False
+            self.stay_exit_requested = False
+
+            # Stop position-feeding timer
+            if self.stay_timer is not None:
+                self.stay_timer.cancel()
+                self.stay_timer = None
+        else:
+            # Transition failed - retry after delay
+            self.node.get_logger().warn(
+                f"⚠️ Cannot exit STAY from {current_state.name} - will retry in 1 second"
+            )
+            # Schedule retry
+            self.stay_exit_retry_timer = self.node.create_timer(
+                1.0, self._retry_stay_exit, one_shot=True
+            )
+    except Exception as e:
+        self.node.get_logger().error(f"Error attempting STAY exit: {e}")
+        # Retry on error
+        if self.stay_exit_requested:
+            self.stay_exit_retry_timer = self.node.create_timer(
+                1.0, self._retry_stay_exit, one_shot=True
+            )
+
+def _retry_stay_exit(self):
+    """Timer callback to retry STAY exit."""
+    if not self.stay_exit_requested or not self.stay_state:
+        return  # No longer needed
+
+    self.node.get_logger().info("🔁 Retrying STAY exit...")
+    self._attempt_stay_exit()
+```
+
+**Why This Matters**: State transitions can fail due to priority conflicts or timing issues. Retry logic ensures eventual consistency.
+
+#### 4. Multi-Node Coordination Checklist
+
+When implementing a new state-navigating voice command:
+
+**In `command_behavior.py`:**
+- [ ] Add command pattern detection to `_detect_hardware_command()`
+- [ ] Add canned response to `_get_hardware_confirmation()`
+- [ ] Add command execution to `execute_hardware_command()`
+- [ ] Create publisher for command topic
+- [ ] Implement continuous publishing with timer callback
+
+**In `behavior_coordinator.py`:**
+- [ ] Add subscription to command topic
+- [ ] Implement callback that checks **actual state** (not just flags)
+- [ ] Add state entry method with retry logic
+- [ ] Add state exit method with retry logic
+- [ ] Add retry timer callbacks
+- [ ] Add state verification after transition
+
+**In `state_manager_node.py`:**
+- [ ] Add new state to `states` enum
+- [ ] Add state to `state_priorities` dict
+- [ ] Add allowed transitions to/from new state using `add_transition()`
+
+**In `hardware_interface.py`:**
+- [ ] Add `_on_enter_[state]()` handler
+- [ ] Add `_on_exit_[state]()` handler
+- [ ] Update state callback switch statement
+
+### Example: STAY Mode Implementation
+
+**Topics:**
+- `/luxo/stay_mode` (Bool) - Published by voice_assistant_node, subscribed by behavior_coordinator
+
+**State Flow:**
+1. User says "stay" → Voice assistant detects command
+2. Voice assistant publishes `True` to `/luxo/stay_mode` (every 5s continuously)
+3. Behavior coordinator receives message, checks actual state
+4. Behavior coordinator requests `STAY` state transition
+5. State manager grants transition (if allowed from current state)
+6. Hardware interface calls `_on_enter_stay()` to freeze position
+
+**Exit Flow:**
+1. User says "move" → Voice assistant detects command
+2. Voice assistant publishes `False` to `/luxo/stay_mode` (every 5s for 30s)
+3. Behavior coordinator receives message, checks if `current_state == LuxoState.STAY`
+4. Behavior coordinator requests `IDLE` state transition with retry
+5. State manager grants transition
+6. Hardware interface calls `_on_exit_stay()` to resume normal operation
+
+### Common Pitfalls to Avoid
+
+1. **❌ Publishing once without retry** - Message can be missed
+2. **❌ Checking only local flags** - Can become out of sync with state machine
+3. **❌ Not waiting for transition result** - Can cause race conditions
+4. **❌ No retry logic** - Transition failures become permanent
+5. **❌ Forgetting cleanup in exit handlers** - Leaves timers/resources dangling
+6. **❌ Not verifying transition success** - Silent failures
+
+### Testing State Navigation Commands
+
+```bash
+# Test command detection
+ros2 topic echo /luxo/stay_mode
+
+# Monitor state transitions
+ros2 topic echo /luxo/current_state
+
+# Check behavior coordinator logs
+ros2 topic echo /rosout | grep behavior_coordinator
+
+# Verify continuous publishing
+ros2 topic hz /luxo/stay_mode
+
+# Force state transition (manual testing)
+ros2 service call /luxo/request_state_transition \
+    luxo_interfaces/srv/RequestStateTransition \
+    "{requested_state: 'STAY', requesting_node: 'manual_test', priority: 100, force: false}"
+```
+
+### Performance Considerations
+
+- **Publish Interval**: 5 seconds balances responsiveness vs network overhead
+- **Retry Delay**: 1 second prevents flooding while being responsive
+- **Exit Publish Duration**: 30 seconds ensures exit even with slow callbacks
+- **Transition Timeout**: 2 seconds allows state manager to respond
+
+This pattern has been battle-tested with STAY mode and SLEEP mode. Use it as a template for all future state-navigating voice commands.
+
 ## State Machine
 
 States and their responsibilities:
