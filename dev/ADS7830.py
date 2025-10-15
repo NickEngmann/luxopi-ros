@@ -6,6 +6,7 @@
 
 import time
 import board
+import argparse
 import adafruit_ads7830.ads7830 as ADC
 from adafruit_ads7830.analog_in import AnalogIn
 
@@ -141,40 +142,171 @@ def calibrate_mode():
         print("\n=== EXITING CALIBRATION ===\n")
         return
 
-# Optional: Run calibration first to check your specific setup
-# Uncomment the next line to enable calibration mode on startup
-# calibrate_mode()
+def main():
+    """Main function with argument parsing"""
+    global ADC_MIN, ADC_MAX, THRESHOLDS
 
-print(f"FSR Pressure Detection - Auto-Scaled")
-print(f"Range: {ADC_MAX} (not pressed) to {ADC_MIN} (max press)")
-print("=" * 50)
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(
+        description='Read analog input from ADS7830 with FSR pressure detection',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  %(prog)s                          # Normal mode (compact output)
+  %(prog)s -v                       # Verbose mode (show all values)
+  %(prog)s -c                       # Calibration mode
+  %(prog)s --channels 2 6           # Only monitor channels 2 and 6
+  %(prog)s -v --channels 0 1 2      # Verbose mode, channels 0, 1, 2 only
+  %(prog)s --adc-min 48000 --adc-max 59000  # Custom ADC range
+  %(prog)s -v -r 0.1                # Verbose mode, 10Hz sample rate
+        """
+    )
 
-while True:
-    # Build output string
-    output_parts = []
-    active_channels = []
-    
-    for i in range(8):
-        value = channels[i].value
-        state_num, state_name, symbol = get_pressure_state(value)
-        
-        # Track active channels
-        if state_num > 0:
-            active_channels.append((i, value, state_num, state_name))
-        
-        output_parts.append(format_channel_output(i, value))
-    
-    # Print compact status line
-    print(" ".join(output_parts))
-    
-    # If any channels are active, show detailed info on next line
-    if active_channels:
-        details = []
-        for ch, val, state, name in active_channels:
-            # Calculate pressure percentage for display
-            pressure_pct = max(0, min(100, ((ADC_MAX - val) / (ADC_MAX - ADC_MIN)) * 100))
-            details.append(f"  Ch{ch}: {name} ({val} = {pressure_pct:.0f}%)")
-        print("\n".join(details))
-        print()  # Extra line for readability
-    
-    time.sleep(0.25)
+    parser.add_argument(
+        '-v', '--verbose',
+        action='store_true',
+        help='Verbose mode: show all channel values continuously'
+    )
+
+    parser.add_argument(
+        '-c', '--calibrate',
+        action='store_true',
+        help='Run calibration mode to determine ADC min/max values'
+    )
+
+    parser.add_argument(
+        '--adc-min',
+        type=int,
+        default=ADC_MIN,
+        metavar='VALUE',
+        help=f'Minimum ADC value at maximum pressure (default: {ADC_MIN})'
+    )
+
+    parser.add_argument(
+        '--adc-max',
+        type=int,
+        default=ADC_MAX,
+        metavar='VALUE',
+        help=f'Maximum ADC value at no pressure (default: {ADC_MAX})'
+    )
+
+    parser.add_argument(
+        '-r', '--rate',
+        type=float,
+        default=0.25,
+        metavar='SECONDS',
+        help='Sample rate in seconds (default: 0.25)'
+    )
+
+    parser.add_argument(
+        '--channels',
+        type=int,
+        nargs='+',
+        metavar='N',
+        help='Only monitor specific channels (0-7). Example: --channels 2 6'
+    )
+
+    args = parser.parse_args()
+
+    # Validate and setup channel filter
+    if args.channels is not None:
+        # Validate channel numbers
+        for ch in args.channels:
+            if ch < 0 or ch > 7:
+                parser.error(f"Channel {ch} is out of range. Valid channels are 0-7.")
+        # Remove duplicates and sort
+        args.channels = sorted(set(args.channels))
+    else:
+        # Default: all channels
+        args.channels = list(range(8))
+
+    # Update configuration from arguments
+    if args.adc_min != ADC_MIN or args.adc_max != ADC_MAX:
+        ADC_MIN = args.adc_min
+        ADC_MAX = args.adc_max
+        THRESHOLDS = calculate_thresholds()
+
+    # Run calibration mode if requested
+    if args.calibrate:
+        calibrate_mode()
+        return
+
+    # Print header
+    print(f"FSR Pressure Detection - Auto-Scaled")
+    print(f"Range: {ADC_MAX} (not pressed) to {ADC_MIN} (max press)")
+    if args.verbose:
+        print("Mode: VERBOSE (showing all channel values)")
+    else:
+        print("Mode: COMPACT (showing only active channels)")
+
+    # Show which channels are being monitored
+    if len(args.channels) < 8:
+        print(f"Monitoring channels: {', '.join(map(str, args.channels))}")
+    else:
+        print("Monitoring channels: All (0-7)")
+
+    print("=" * 70)
+    print("Press Ctrl+C to exit\n")
+
+    try:
+        while True:
+            if args.verbose:
+                # Verbose mode: show all channels with full details
+                print(f"\n{'=' * 70}")
+                print(f"Timestamp: {time.strftime('%H:%M:%S')}")
+                print(f"{'=' * 70}")
+
+                for i in args.channels:
+                    value = channels[i].value
+                    state_num, state_name, symbol = get_pressure_state(value)
+
+                    # Calculate pressure percentage
+                    if ADC_MAX > ADC_MIN:
+                        pressure_pct = max(0, min(100, ((ADC_MAX - value) / (ADC_MAX - ADC_MIN)) * 100))
+                    else:
+                        pressure_pct = 0
+
+                    # Create pressure bar
+                    bar_length = int(pressure_pct / 2)  # Scale to 50 chars max
+                    bar = '█' * bar_length
+
+                    # Format state indicator
+                    state_indicator = f"[{symbol}] {state_name}" if state_num > 0 else "[-] Not Pressed"
+
+                    print(f"Channel {i}: {value:5d} ({pressure_pct:3.0f}%) {bar}")
+                    print(f"           State: {state_indicator}")
+            else:
+                # Compact mode: original behavior
+                output_parts = []
+                active_channels = []
+
+                for i in args.channels:
+                    value = channels[i].value
+                    state_num, state_name, symbol = get_pressure_state(value)
+
+                    # Track active channels
+                    if state_num > 0:
+                        active_channels.append((i, value, state_num, state_name))
+
+                    output_parts.append(format_channel_output(i, value))
+
+                # Print compact status line
+                print(" ".join(output_parts))
+
+                # If any channels are active, show detailed info on next line
+                if active_channels:
+                    details = []
+                    for ch, val, state, name in active_channels:
+                        # Calculate pressure percentage for display
+                        pressure_pct = max(0, min(100, ((ADC_MAX - val) / (ADC_MAX - ADC_MIN)) * 100))
+                        details.append(f"  Ch{ch}: {name} ({val} = {pressure_pct:.0f}%)")
+                    print("\n".join(details))
+                    print()  # Extra line for readability
+
+            time.sleep(args.rate)
+
+    except KeyboardInterrupt:
+        print("\n\nExiting...")
+
+if __name__ == '__main__':
+    main()

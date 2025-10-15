@@ -189,7 +189,7 @@ class ADS7830Sensor(I2CSensor):
 
         # ADC configuration for pressure detection
         self.ADC_MIN = 48000  # ADC value at maximum pressure (fully pressed)
-        self.ADC_MAX = 59000  # ADC value at no pressure (not pressed)
+        self.ADC_MAX = 65200  # ADC value at no pressure (not pressed)
 
         # Pressure level percentages (0% = not pressed, 100% = maximum pressure)
         self.PRESSURE_LEVELS = [

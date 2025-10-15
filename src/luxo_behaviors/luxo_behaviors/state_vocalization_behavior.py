@@ -147,25 +147,25 @@ class StateVocalizationBehavior:
             ],
 
             'PETTING': [
-                "Purr",
-                "Mmm",
+                "Prrrrr",
+                "Mmmmmmm",
                 "That feels nice",
                 "I like that",
                 "Keep going",
                 "So nice",
-                "Purring",
+                "Prr prrrr",
                 "Mmmhmm",
                 "Wonderful",
                 "This is great",
                 "Love this",
-                "Purrfect",
+                "HMMMMMMMMMMM",
                 "More please",
                 "Feels good",
                 "So soothing",
                 "Yes yes yes",
                 "Happy noises",
-                "Purr purr",
-                "Contentment",
+                "Brr brrrrr",
+                "I loooovee this",
                 "Blissful"
             ],
 
@@ -369,6 +369,12 @@ class StateVocalizationBehavior:
                 self.node.get_logger().debug(f"[StateVocalization] → Skipping VOICE_FOLLOWING vocalization (random skip)")
                 return
 
+        # COLLISION_AVOIDING: Only vocalize 85% of the time (to reduce verbosity)
+        if state == 'COLLISION_AVOIDING':
+            if random.random() > 0.85:  # 15% chance to skip
+                self.node.get_logger().debug(f"[StateVocalization] → Skipping COLLISION_AVOIDING vocalization (random skip)")
+                return
+
         # Check if STT pipeline is active (but still log)
         if self.stt_pipeline_active or self.is_speaking:
             self.node.get_logger().info(f"[StateVocalization] → Would vocalize '{state}' ({transition_desc}) but STT/TTS active")
@@ -446,6 +452,12 @@ class StateVocalizationBehavior:
         # Check cooldown (but still log - just don't speak yet)
         if time_since_last < self.state_phrase_cooldown:
             self.node.get_logger().info(f"[StateVocalization] → Would vocalize emotion '{self.current_emotion}' but cooldown active ({time_since_last:.1f}s < {self.state_phrase_cooldown}s)")
+            return
+
+        # Probabilistic response: 75% for most emotions, 5% for neutral
+        response_probability = 0.05 if self.current_emotion == 'neutral' else 0.75
+        if random.random() > response_probability:
+            self.node.get_logger().info(f"[StateVocalization] → Skipping emotion '{self.current_emotion}' (random skip, {int(response_probability*100)}% response rate)")
             return
 
         self.node.get_logger().info(f"[StateVocalization] ✅ Triggering phrase for emotion: {self.current_emotion}")
