@@ -210,7 +210,7 @@ class CameraInteraction(Node):
         self.frame_type = dai.ImgFrame.Type.BGR888p
 
         if self.args.fps_limit is None:
-            self.args.fps_limit = 2
+            self.args.fps_limit = 4
             self.get_logger().info(
                 f"FPS limit set to {self.args.fps_limit} for RVC2. Use --fps_limit flag to customize."
             )
