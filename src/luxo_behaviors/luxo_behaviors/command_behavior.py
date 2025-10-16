@@ -289,6 +289,14 @@ class CommandBehavior:
             r'(it\'?s.{0,5})?okay.{0,5}to.{0,5}move',
         ]
 
+        # Shutdown patterns - REQUIRES "shutdown" to appear 3+ times for safety
+        # This prevents accidental shutdowns
+        # Detection handled by _detect_shutdown_command() which counts occurrences
+        self.shutdown_variations = [
+            'shutdown', 'shut down', 'shutting down', 'shut-down',
+            'power off', 'power down', 'turn off'
+        ]
+
         # Light ON patterns
         self.light_on_patterns = [
             r'(turn|turns|torn).{0,5}(on|in|and).{0,5}(the|a|an)?.{0,5}(light|lights|like)',
@@ -415,6 +423,10 @@ class CommandBehavior:
     def _detect_hardware_command(self, text):
         """Detect robot hardware commands. Returns command name or None."""
 
+        # Shutdown commands - MUST appear 3+ times for safety
+        if self._detect_shutdown_command(text):
+            return 'shutdown'
+
         # Sleep commands
         if any(re.search(pattern, text) for pattern in self.sleep_patterns):
             return 'go_to_sleep'
@@ -471,9 +483,52 @@ class CommandBehavior:
 
         return None
 
+    def _detect_shutdown_command(self, text):
+        """
+        Detect shutdown command - REQUIRES "shutdown" to appear 3+ times for safety.
+
+        Returns True if shutdown variations appear at least 3 times in the text.
+        This prevents accidental shutdowns from casual conversation.
+
+        Examples that trigger:
+        - "shutdown shutdown shutdown"
+        - "please shutdown now shutdown please shutdown"
+        - "power off power off power off"
+
+        Examples that DON'T trigger:
+        - "shutdown now" (only 1 occurrence)
+        - "please shutdown the system" (only 1 occurrence)
+        """
+        text_lower = text.lower()
+
+        # Count occurrences of any shutdown variation
+        count = 0
+        for variation in self.shutdown_variations:
+            # Count how many times this variation appears
+            # Use word boundaries for exact matches to avoid false positives
+            count += len(re.findall(r'\b' + re.escape(variation) + r'\b', text_lower))
+
+        # Log for debugging
+        if count > 0:
+            if self.verbose:
+                self.node.get_logger().info(f"Shutdown variations detected: {count} occurrences (need 3+)")
+
+        # Require 3+ occurrences for safety
+        if count >= 3:
+            self.node.get_logger().warn(f"⚠️  SHUTDOWN COMMAND DETECTED ({count} occurrences) - initiating shutdown sequence")
+            return True
+
+        return False
+
     def _get_hardware_confirmation(self, command):
         """Get canned response for hardware command."""
         confirmations = {
+            'shutdown': [
+                "Shutting down now. Goodbye!",
+                "Initiating shutdown sequence.",
+                "Goodbye! Shutting down.",
+                "Shutdown confirmed. Goodbye.",
+            ],
             'go_to_sleep': [
                 "Okay, going to sleep now.",
                 "Good night!",
@@ -555,7 +610,9 @@ class CommandBehavior:
         Called by luxopi_assistant_node after detection.
         """
         try:
-            if command == 'go_to_sleep':
+            if command == 'shutdown':
+                self._request_shutdown()
+            elif command == 'go_to_sleep':
                 self._publish_sleep_mode(True)
             elif command == 'wake_up':
                 self._publish_sleep_mode(False)
@@ -588,6 +645,26 @@ class CommandBehavior:
 
         except Exception as e:
             self.node.get_logger().error(f"Error executing hardware command {command}: {e}")
+
+    def _request_shutdown(self):
+        """Request SHUTDOWN state transition."""
+        try:
+            # Import StateUtils for requesting state transitions
+            from luxo_behaviors.shared_utils import StateUtils
+
+            self.node.get_logger().warn("🛑 Requesting SHUTDOWN state transition from voice command")
+
+            # Request SHUTDOWN state with high priority and force flag
+            StateUtils.request_state_transition(
+                self.node,
+                LuxoState.SHUTDOWN,
+                priority=100,
+                force=True
+            )
+
+            self.node.get_logger().info("✅ SHUTDOWN state requested - shutdown sequence will begin")
+        except Exception as e:
+            self.node.get_logger().error(f"Error requesting shutdown: {e}")
 
     def _publish_sleep_mode(self, sleep: bool):
         """Publish sleep mode command."""
