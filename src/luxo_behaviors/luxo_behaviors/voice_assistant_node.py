@@ -22,6 +22,7 @@ from pathlib import Path
 import tempfile
 import threading
 import random
+import logging  # For file logging
 
 # ROS2 imports
 import rclpy
@@ -361,6 +362,52 @@ class VoiceAssistantNode(Node, CommandBehavior, StateVocalizationBehavior):
         self.get_logger().info(f"🔧 Hailo mode: {use_hailo}")
         self.get_logger().info(f"🔧 Voice preset: {voice_preset if voice_preset else 'None'}")
         self.get_logger().info(f"🔧 Whisper step: {whisper_step_ms}ms")
+
+        # Setup file logging for voice analysis
+        self._setup_voice_logging()
+
+    def _setup_voice_logging(self):
+        """Setup dated file logging for voice analysis (memory efficient)"""
+        try:
+            # Create logs directory if it doesn't exist
+            log_dir = Path.home() / "luxopi-ros" / "logs" / "voice_analysis"
+            log_dir.mkdir(parents=True, exist_ok=True)
+
+            # Create dated log filename
+            today = datetime.now().strftime("%Y-%m-%d")
+            log_file = log_dir / f"voice_log_{today}.log"
+
+            # Setup file logger (separate from ROS logger)
+            self.voice_logger = logging.getLogger("voice_analysis")
+            self.voice_logger.setLevel(logging.INFO)
+
+            # Remove existing handlers to avoid duplicates
+            self.voice_logger.handlers.clear()
+
+            # Create file handler (append mode, memory efficient)
+            file_handler = logging.FileHandler(log_file, mode='a', encoding='utf-8')
+            file_handler.setLevel(logging.INFO)
+
+            # Create formatter with timestamp
+            formatter = logging.Formatter(
+                '%(asctime)s | %(message)s',
+                datefmt='%Y-%m-%d %H:%M:%S'
+            )
+            file_handler.setFormatter(formatter)
+
+            # Add handler to logger
+            self.voice_logger.addHandler(file_handler)
+
+            # Log session start
+            self.voice_logger.info("="*80)
+            self.voice_logger.info("VOICE ASSISTANT SESSION STARTED")
+            self.voice_logger.info("="*80)
+
+            self.get_logger().info(f"📝 Voice logging enabled: {log_file}")
+
+        except Exception as e:
+            self.get_logger().error(f"Failed to setup voice logging: {e}")
+            self.voice_logger = None
 
     def _detect_usb_speaker(self):
         """Auto-detect USB audio output device (not ReSpeaker)"""
@@ -1205,6 +1252,11 @@ class VoiceAssistantNode(Node, CommandBehavior, StateVocalizationBehavior):
                                     if command_type == 'robot_hardware':
                                         hw_command = command_data.get('command', 'unknown')
                                         self.get_logger().info(f"  🚀 BEFORE execute_hardware_command({hw_command})")
+
+                                        # Log command to file for analysis
+                                        if hasattr(self, 'voice_logger') and self.voice_logger:
+                                            self.voice_logger.info(f"CMD | TYPE: robot_hardware | COMMAND: {hw_command} | INPUT: {combined_text}")
+
                                         try:
                                             self.execute_hardware_command(hw_command)
                                             self.get_logger().info(f"  ✅ AFTER execute_hardware_command({hw_command}) - SUCCESS")
@@ -1222,6 +1274,11 @@ class VoiceAssistantNode(Node, CommandBehavior, StateVocalizationBehavior):
                                     # Show command type details
                                     if command_type == 'voice_assistant':
                                         action = command_data.get('action', 'unknown')
+
+                                        # Log command to file for analysis
+                                        if hasattr(self, 'voice_logger') and self.voice_logger:
+                                            self.voice_logger.info(f"CMD | TYPE: voice_assistant | ACTION: {action} | INPUT: {combined_text}")
+
                                         if action in ['mute', 'unmute']:
                                             # For UNMUTE: unmute FIRST so we can hear the response
                                             # For MUTE: speak FIRST so we hear the goodbye
@@ -1260,6 +1317,10 @@ class VoiceAssistantNode(Node, CommandBehavior, StateVocalizationBehavior):
                                         if self.should_speak():
                                             self.speak(response)
                                     elif command_type == 'quick_response':
+                                        # Log command to file for analysis
+                                        if hasattr(self, 'voice_logger') and self.voice_logger:
+                                            self.voice_logger.info(f"CMD | TYPE: quick_response | INPUT: {combined_text}")
+
                                         self.get_logger().info(f"⚡ Quick response (no LLM)")
                                         # Speak response if not muted
                                         if self.should_speak():
@@ -1312,6 +1373,10 @@ class VoiceAssistantNode(Node, CommandBehavior, StateVocalizationBehavior):
                                 llm_actual = time.time() - llm_start
                                 timestamp_llm = datetime.now().strftime('%H:%M:%S.%f')[:-3]
                                 self.get_logger().info(f"  🧠 [{timestamp_llm}] LLM responded in {llm_actual:.3f}s")
+
+                                # Log LLM response to file for analysis
+                                if hasattr(self, 'voice_logger') and self.voice_logger:
+                                    self.voice_logger.info(f"LLM | INPUT: {combined_text} | RESPONSE: {response} | TIME: {llm_actual:.3f}s")
 
                                 response_time = actual_stt_time + llm_time
 
@@ -1429,6 +1494,10 @@ class VoiceAssistantNode(Node, CommandBehavior, StateVocalizationBehavior):
 
                     # Remove ANSI escape codes (like [2K which is "clear line")
                     text = re.sub(r'\[\d+[A-Za-z]', '', text).strip()
+
+                    # Log ALL Whisper output for debugging (before filters)
+                    if hasattr(self, 'voice_logger') and self.voice_logger and text:
+                        self.voice_logger.info(f"WHISPER_RAW | {text}")
 
                     # Only count this as an event since we're actually processing it
                     if text:  # Double-check we have content
@@ -1561,6 +1630,10 @@ class VoiceAssistantNode(Node, CommandBehavior, StateVocalizationBehavior):
                                             stt_timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
                                             self.get_logger().info(f"🎧 [{stt_timestamp}] {final_text}")
 
+                                            # Log to file for analysis
+                                            if hasattr(self, 'voice_logger') and self.voice_logger:
+                                                self.voice_logger.info(f"STT | {final_text}")
+
                                             # HAILO MODE: Process immediately when we receive a transcription
                                             # Hailo already does VAD/silence detection internally, so when it
                                             # outputs a transcription, it's final and ready to process
@@ -1589,6 +1662,10 @@ class VoiceAssistantNode(Node, CommandBehavior, StateVocalizationBehavior):
                                     event_count = 1
                                 filter_time = time.time() - event_start
 
+                                # Log filtered speech for debugging
+                                if hasattr(self, 'voice_logger') and self.voice_logger:
+                                    self.voice_logger.info(f"FILTERED | REASON: too_short | TEXT: {text}")
+
                                 if self.verbose:
                                     # Clean text to prevent newlines in output
                                     text_display = text.replace('\n', '\\n').replace('\r', '\\r')
@@ -1601,16 +1678,25 @@ class VoiceAssistantNode(Node, CommandBehavior, StateVocalizationBehavior):
                             filter_time = time.time() - event_start
 
                             if is_noise:
+                                # Log filtered speech for debugging
+                                if hasattr(self, 'voice_logger') and self.voice_logger:
+                                    self.voice_logger.info(f"FILTERED | REASON: noise | TEXT: {text}")
                                 if self.verbose:
                                     text_display = text.replace('\n', '\\n').replace('\r', '\\r')
                                     self.get_logger().info(f"  🔇 [{event_count}] Noise: '{text_display}'")
                                 self.metrics['filtered_noise'] += 1
                             elif is_parenthetical:
+                                # Log filtered speech for debugging
+                                if hasattr(self, 'voice_logger') and self.voice_logger:
+                                    self.voice_logger.info(f"FILTERED | REASON: parenthetical | TEXT: {text}")
                                 if self.verbose:
                                     text_display = text.replace('\n', '\\n').replace('\r', '\\r')
                                     self.get_logger().info(f"  🔇 [{event_count}] Background/whisper (parenthetical): '{text_display}'")
                                 self.metrics['filtered_noise'] += 1
                             else:
+                                # Log filtered speech for debugging
+                                if hasattr(self, 'voice_logger') and self.voice_logger:
+                                    self.voice_logger.info(f"FILTERED | REASON: no_content | TEXT: {text}")
                                 if self.verbose:
                                     text_display = text.replace('\n', '\\n').replace('\r', '\\r')
                                     self.get_logger().info(f"  🔇 [{event_count}] No content: '{text_display}'")
@@ -1722,6 +1808,12 @@ class VoiceAssistantNode(Node, CommandBehavior, StateVocalizationBehavior):
     def stop(self):
         """Clean shutdown with memory cleanup"""
         self.running = False
+
+        # Log session end
+        if hasattr(self, 'voice_logger') and self.voice_logger:
+            self.voice_logger.info("="*80)
+            self.voice_logger.info("VOICE ASSISTANT SESSION ENDED")
+            self.voice_logger.info("="*80)
 
         # Stop Whisper
         if self.whisper_proc:
