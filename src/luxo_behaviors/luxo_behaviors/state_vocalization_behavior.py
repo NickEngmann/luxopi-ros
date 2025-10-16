@@ -375,6 +375,11 @@ class StateVocalizationBehavior:
                 self.node.get_logger().debug(f"[StateVocalization] → Skipping COLLISION_AVOIDING vocalization (random skip)")
                 return
 
+        # Check if muted (but still log)
+        if self.is_muted:
+            self.node.get_logger().info(f"[StateVocalization] → Would vocalize '{state}' ({transition_desc}) but assistant is muted 🔇")
+            return
+
         # Check if STT pipeline is active (but still log)
         if self.stt_pipeline_active or self.is_speaking:
             self.node.get_logger().info(f"[StateVocalization] → Would vocalize '{state}' ({transition_desc}) but STT/TTS active")
@@ -430,6 +435,11 @@ class StateVocalizationBehavior:
             self.node.get_logger().info(f"[StateVocalization] → Already vocalized emotion {self.current_emotion}")
             return
 
+        # Check if muted (but still log)
+        if self.is_muted:
+            self.node.get_logger().info(f"[StateVocalization] → Would vocalize emotion '{self.current_emotion}' but assistant is muted 🔇")
+            return
+
         # Check if STT pipeline is active (but still log)
         if self.stt_pipeline_active or self.is_speaking:
             self.node.get_logger().info(f"[StateVocalization] → Would vocalize emotion '{self.current_emotion}' but STT/TTS active (stt:{self.stt_pipeline_active}, speaking:{self.is_speaking})")
@@ -476,8 +486,8 @@ class StateVocalizationBehavior:
 
             # Double-check priority flags to prevent race conditions
             # (Check again in case user started speaking between callback and thread execution)
-            if self.stt_pipeline_active or self.is_speaking:
-                self.node.get_logger().info(f"[StateVocalization] State phrase '{state}' cancelled - STT/TTS active")
+            if self.is_muted or self.stt_pipeline_active or self.is_speaking:
+                self.node.get_logger().info(f"[StateVocalization] State phrase '{state}' cancelled - muted or STT/TTS active")
                 return
 
             # Get phrases for this state
@@ -508,8 +518,8 @@ class StateVocalizationBehavior:
 
             # Double-check priority flags to prevent race conditions
             # (Check again in case user started speaking between callback and thread execution)
-            if self.stt_pipeline_active or self.is_speaking:
-                self.node.get_logger().info(f"[StateVocalization] Emotion phrase '{emotion}' cancelled - STT/TTS active")
+            if self.is_muted or self.stt_pipeline_active or self.is_speaking:
+                self.node.get_logger().info(f"[StateVocalization] Emotion phrase '{emotion}' cancelled - muted or STT/TTS active")
                 return
 
             # Get phrases for this emotion

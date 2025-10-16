@@ -760,11 +760,10 @@ class CommandBehavior:
         return None
 
     def _check_mute_command(self, text):
-        """Check for mute command and update state."""
+        """Check for mute command (detection only, doesn't change state)."""
         for pattern in self.mute_patterns:
             if re.search(pattern, text):
                 if not self.is_muted:
-                    self.is_muted = True
                     if self.verbose:
                         self.node.get_logger().info(f"Mute command detected: '{text}'")
                     return True
@@ -775,11 +774,10 @@ class CommandBehavior:
         return False
 
     def _check_unmute_command(self, text):
-        """Check for unmute command and update state."""
+        """Check for unmute command (detection only, doesn't change state)."""
         for pattern in self.unmute_patterns:
             if re.search(pattern, text):
                 if self.is_muted:
-                    self.is_muted = False
                     if self.verbose:
                         self.node.get_logger().info(f"Unmute command detected: '{text}'")
                     return True
@@ -958,6 +956,22 @@ class CommandBehavior:
     def should_speak(self):
         """Returns True if assistant should speak (not muted)."""
         return not self.is_muted
+
+    def execute_voice_assistant_command(self, action):
+        """Execute voice assistant commands (called after speaking confirmation).
+
+        Args:
+            action: The voice assistant action ('mute', 'unmute', etc.)
+        """
+        if action == 'mute':
+            self.is_muted = True
+            if self.node:
+                self.node.get_logger().info("🔇 Voice assistant muted")
+        elif action == 'unmute':
+            self.is_muted = False
+            if self.node:
+                self.node.get_logger().info("🔊 Voice assistant unmuted")
+        # Volume, speed, pitch changes are already applied during detection
 
     def clean_parentheticals(self, text):
         """Remove or convert parenthetical expressions from LLM output."""

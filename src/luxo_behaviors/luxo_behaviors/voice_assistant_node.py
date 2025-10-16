@@ -576,6 +576,11 @@ class VoiceAssistantNode(Node, CommandBehavior, StateVocalizationBehavior):
         if not text or self.is_speaking:
             return 0
 
+        # Block TTS when muted
+        if self.is_muted:
+            self.get_logger().info("🔇 Muted - skipping TTS")
+            return 0
+
         # Block TTS during sleep mode
         if self.is_sleep_mode:
             self.get_logger().info("💤 Sleep mode active - skipping TTS (robot is muted)")
@@ -741,6 +746,10 @@ class VoiceAssistantNode(Node, CommandBehavior, StateVocalizationBehavior):
         """
         if not text:
             self.get_logger().info(f"[TTS] Skipping empty text")
+            return
+
+        if self.is_muted:
+            self.get_logger().info(f"[TTS] Skipping TTS during mute: '{text}'")
             return
 
         if self.is_sleep_mode:
@@ -1195,29 +1204,50 @@ class VoiceAssistantNode(Node, CommandBehavior, StateVocalizationBehavior):
                                     # Show command type details
                                     if command_type == 'voice_assistant':
                                         action = command_data.get('action', 'unknown')
-                                        if action == 'mute':
-                                            self.get_logger().info(f"🔇 Voice assistant muted")
-                                        elif action == 'unmute':
-                                            self.get_logger().info(f"🔊 Voice assistant unmuted")
+                                        if action in ['mute', 'unmute']:
+                                            # For UNMUTE: unmute FIRST so we can hear the response
+                                            # For MUTE: speak FIRST so we hear the goodbye
+                                            if action == 'unmute':
+                                                # Unmute before speaking so we can hear the response
+                                                self.execute_voice_assistant_command(action)
+                                                self.speak(response)
+                                            else:  # mute
+                                                # Speak before muting so we hear the goodbye
+                                                self.speak(response)
+                                                self.execute_voice_assistant_command(action)
                                         elif action in ['volume_up', 'volume_down']:
                                             self.get_logger().info(f"🔊 Volume: {self.amplitude}/200")
+                                            # Speak confirmation if not muted
+                                            if self.should_speak():
+                                                self.speak(response)
                                         elif action in ['speed_up', 'speed_down']:
                                             self.get_logger().info(f"⚡ Speed: {self.speed} wpm")
+                                            # Speak confirmation if not muted
+                                            if self.should_speak():
+                                                self.speak(response)
                                         elif action in ['pitch_up', 'pitch_down']:
                                             self.get_logger().info(f"🎵 Pitch: {self.pitch}")
+                                            # Speak confirmation if not muted
+                                            if self.should_speak():
+                                                self.speak(response)
                                         elif action == 'status':
                                             self.get_logger().info(f"📊 Status reported")
+                                            # Speak status if not muted
+                                            if self.should_speak():
+                                                self.speak(response)
                                     elif command_type == 'robot_hardware':
                                         hw_command = command_data.get('command', 'unknown')
                                         self.get_logger().info(f"🤖 Hardware command: {hw_command}")
+                                        # Speak response if not muted
+                                        if self.should_speak():
+                                            self.speak(response)
                                     elif command_type == 'quick_response':
                                         self.get_logger().info(f"⚡ Quick response (no LLM)")
+                                        # Speak response if not muted
+                                        if self.should_speak():
+                                            self.speak(response)
 
                                     self.get_logger().info(f"{'='*50}\n")
-
-                                    # Speak response if not muted
-                                    if self.should_speak():
-                                        self.speak(response)
 
                                     # Clear buffer and continue
                                     self.audio_buffer = []
