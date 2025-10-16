@@ -1327,18 +1327,53 @@ class StateManagerNode(Node):
 
 
 def main(args=None):
+    import signal
+
     rclpy.init(args=args)
-    
+
     state_manager = StateManagerNode()
-    
+
+    # Flag to track if shutdown was requested
+    shutdown_requested = [False]  # Use list so we can modify in nested function
+
+    def signal_handler(sig, frame):
+        """Handle Ctrl+C and request graceful shutdown"""
+        if not shutdown_requested[0]:
+            shutdown_requested[0] = True
+            state_manager.get_logger().info("⚠️  Shutdown signal received (Ctrl+C) - requesting SHUTDOWN state...")
+
+            # Request transition to SHUTDOWN state
+            try:
+                state_manager.transition_to(LuxoState.SHUTDOWN, force=True)
+                state_manager.get_logger().info("✅ SHUTDOWN state requested - letting hardware handle shutdown sequence...")
+            except Exception as e:
+                state_manager.get_logger().error(f"Error requesting SHUTDOWN state: {e}")
+
+        # Don't block - let the ROS executor continue to process the shutdown state
+        # The hardware interface will handle the actual shutdown sequence
+
+    # Register signal handlers for graceful shutdown
+    original_sigint = signal.signal(signal.SIGINT, signal_handler)  # Ctrl+C
+    original_sigterm = signal.signal(signal.SIGTERM, signal_handler)  # Termination signal
+
     try:
         rclpy.spin(state_manager)
     except KeyboardInterrupt:
+        # This will be caught after signal_handler runs
+        if shutdown_requested[0]:
+            state_manager.get_logger().info("⚠️  Interrupt received during shutdown - allowing hardware to complete...")
         pass
     finally:
+        state_manager.get_logger().info("🔄 Cleaning up state manager...")
+
+        # Restore original signal handlers before cleanup
+        signal.signal(signal.SIGINT, original_sigint)
+        signal.signal(signal.SIGTERM, original_sigterm)
+
         state_manager.cleanup()
         state_manager.destroy_node()
         rclpy.shutdown()
+        state_manager.get_logger().info("👋 State manager shutdown complete")
 
 
 if __name__ == '__main__':

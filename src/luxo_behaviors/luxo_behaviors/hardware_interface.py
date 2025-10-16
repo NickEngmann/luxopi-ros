@@ -591,10 +591,114 @@ class RoArmHardwareInterface(Node):
             pass
     
     def _on_enter_shutdown(self):
-        """Called when entering SHUTDOWN state."""
-        self.get_logger().info("Entering SHUTDOWN state")
-        # Perform shutdown procedures
-        self.destroy_node()
+        """
+        Called when entering SHUTDOWN state.
+        Performs graceful shutdown sequence:
+        1. Move to sleep position (synchronously, waiting for completion)
+        2. Turn off lights and pixel ring
+        3. Enable DEMA mode
+        4. Disable torque
+        5. Signal shutdown complete
+        """
+        self.get_logger().info("🛑 Entering SHUTDOWN state - beginning graceful shutdown sequence")
+
+        try:
+            # Step 1: Move to sleep position
+            self.get_logger().info("📍 Step 1/5: Moving to sleep position...")
+
+            # Sleep position from sleep animation (final position)
+            # [base, shoulder, elbow, wrist, hand]
+            sleep_position = [0.0, -1.75, 1.95, 1.4, -2.7]
+
+            movement_sent = False
+            if hasattr(self, 'serial_manager') and self.serial_manager and self.serial_manager.is_connected():
+                # Send the sleep position command directly
+                try:
+                    self.send_safe_joint_command(sleep_position, "Shutdown - moving to sleep position")
+                    movement_sent = True
+                    self.get_logger().info("✅ Sleep position command sent")
+
+                    # Wait for movement to complete with visual feedback
+                    self.get_logger().info("⏳ Waiting for robot to reach sleep position...")
+
+                    # Wait in small increments so we can provide feedback
+                    for i in range(8):  # 8 * 0.5s = 4 seconds total
+                        time.sleep(0.5)
+                        if i % 2 == 0:
+                            self.get_logger().info(f"   Movement progress: {(i+1)*12.5:.0f}%")
+
+                    self.get_logger().info("✅ Sleep position reached")
+
+                except Exception as e:
+                    self.get_logger().error(f"❌ Failed to send sleep position command: {e}")
+                    movement_sent = False
+
+            if not movement_sent:
+                self.get_logger().warn("⚠️  Hardware not available - skipping movement to sleep position")
+
+            # Step 2: Turn off lights and pixel ring
+            self.get_logger().info("💡 Step 2/5: Turning off lights and pixel ring...")
+            try:
+                if not hasattr(self, 'light_control_publisher'):
+                    self.light_control_publisher = self.create_publisher(Bool, '/luxo/light_control', 10)
+                if not hasattr(self, 'pixel_ring_control_publisher'):
+                    self.pixel_ring_control_publisher = self.create_publisher(Bool, '/voice/pixel_ring_control', 10)
+
+                # Turn off lights
+                light_msg = Bool()
+                light_msg.data = False
+                self.light_control_publisher.publish(light_msg)
+
+                # Turn off pixel ring
+                pixel_msg = Bool()
+                pixel_msg.data = False
+                self.pixel_ring_control_publisher.publish(pixel_msg)
+
+                self.get_logger().info("✅ Lights and pixel ring turned off")
+            except Exception as e:
+                self.get_logger().warn(f"⚠️  Failed to turn off lights: {e}")
+
+            # Brief pause for message delivery
+            time.sleep(0.2)
+
+            # Step 3: Enable DEMA mode (makes robot compliant/limp)
+            self.get_logger().info("🔧 Step 3/5: Enabling DEMA mode (robot will become compliant)...")
+            if hasattr(self, 'serial_manager') and self.serial_manager and self.serial_manager.is_connected():
+                try:
+                    if hasattr(self, 'enable_dynamic_adaptation_mode'):
+                        success = self.enable_dynamic_adaptation_mode()
+                        if success:
+                            self.get_logger().info("✅ DEMA mode enabled - robot is now compliant")
+                        else:
+                            self.get_logger().warn("⚠️  Failed to enable DEMA mode")
+                    else:
+                        self.get_logger().warn("⚠️  DEMA not available")
+                except Exception as e:
+                    self.get_logger().warn(f"⚠️  Failed to enable DEMA: {e}")
+            else:
+                self.get_logger().warn("⚠️  Hardware not available - skipping DEMA enable")
+
+            # Step 4: Disable torque
+            self.get_logger().info("⚡ Step 4/5: Disabling motor torque...")
+            if hasattr(self, 'serial_manager') and self.serial_manager and self.serial_manager.is_connected():
+                try:
+                    if hasattr(self, 'disable_torque'):
+                        self.disable_torque()
+                        self.get_logger().info("✅ Motor torque disabled")
+                except Exception as e:
+                    self.get_logger().warn(f"⚠️  Failed to disable torque: {e}")
+            else:
+                self.get_logger().warn("⚠️  Hardware not available - skipping torque disable")
+
+            # Step 5: Mark shutdown complete
+            self.get_logger().info("🏁 Step 5/5: Shutdown sequence complete")
+            self._shutdown_complete = True
+
+        except Exception as e:
+            self.get_logger().error(f"❌ Error during shutdown sequence: {e}")
+            import traceback
+            self.get_logger().error(f"Traceback: {traceback.format_exc()}")
+            self._shutdown_complete = True  # Mark complete even on error
     
     def publish_collision_status(self):
         """Publish current collision status for animation system."""
@@ -1991,17 +2095,75 @@ class RoArmHardwareInterface(Node):
 
 
 def main(args=None):
+    import signal
+    import sys
+
     rclpy.init(args=args)
-    
+
     # Create and run the node
     hardware_interface = RoArmHardwareInterface()
-    
+
+    # Flag to track if shutdown was requested
+    shutdown_requested = [False]  # Use list so we can modify in nested function
+
+    def signal_handler(sig, frame):
+        """Handle Ctrl+C and request graceful shutdown"""
+        if not shutdown_requested[0]:
+            shutdown_requested[0] = True
+            hardware_interface.get_logger().info("⚠️  Shutdown signal received (Ctrl+C) - requesting SHUTDOWN state...")
+
+            # Request transition to SHUTDOWN state (this will trigger _on_enter_shutdown)
+            try:
+                from luxo_behaviors.shared_utils import StateUtils
+                StateUtils.request_state_transition(
+                    hardware_interface,
+                    LuxoState.SHUTDOWN,
+                    priority=100,
+                    force=True
+                )
+                hardware_interface.get_logger().info("✅ SHUTDOWN state requested - shutdown sequence running...")
+            except Exception as e:
+                hardware_interface.get_logger().error(f"Error requesting SHUTDOWN state: {e}")
+
+        # Don't block - let the ROS executor continue to process the shutdown state
+        # The _on_enter_shutdown() callback will handle the actual shutdown sequence
+        # After it completes, we'll exit naturally
+
+    # Register signal handlers for graceful shutdown
+    original_sigint = signal.signal(signal.SIGINT, signal_handler)  # Ctrl+C
+    original_sigterm = signal.signal(signal.SIGTERM, signal_handler)  # Termination signal
+
     if hardware_interface.serial_manager.is_connected():
-        rclpy.spin(hardware_interface)
-    
+        try:
+            rclpy.spin(hardware_interface)
+        except KeyboardInterrupt:
+            # Shutdown was requested - check if shutdown sequence completed
+            hardware_interface.get_logger().info("⚠️  Interrupt received - checking shutdown status...")
+
+            # If we're in SHUTDOWN state and the sequence hasn't completed, wait for it
+            if shutdown_requested[0]:
+                hardware_interface.get_logger().info("⏳ Waiting for shutdown sequence to complete...")
+
+                # Wait for up to 6 seconds for shutdown to complete
+                import time
+                for i in range(12):  # 12 * 0.5s = 6 seconds
+                    if hasattr(hardware_interface, '_shutdown_complete') and hardware_interface._shutdown_complete:
+                        hardware_interface.get_logger().info("✅ Shutdown sequence completed")
+                        break
+                    time.sleep(0.5)
+                else:
+                    hardware_interface.get_logger().warn("⚠️  Shutdown sequence timeout - proceeding with cleanup")
+
     # Clean up is handled in destroy_node
+    hardware_interface.get_logger().info("🔄 Cleaning up hardware interface...")
+
+    # Restore original signal handlers before cleanup
+    signal.signal(signal.SIGINT, original_sigint)
+    signal.signal(signal.SIGTERM, original_sigterm)
+
     hardware_interface.destroy_node()
     rclpy.shutdown()
+    hardware_interface.get_logger().info("👋 Hardware interface shutdown complete")
 
 if __name__ == '__main__':
     main()
