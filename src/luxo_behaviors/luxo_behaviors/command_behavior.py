@@ -30,7 +30,7 @@ class CommandBehavior:
     2. LuxopiAssistantNode (luxopi_assistant_node.py) - For command detection from speech
     """
 
-    def setup_command_behavior(self, verbose=False, amplitude=120, speed=120, pitch=70, setup_publishers=True):
+    def setup_command_behavior(self, verbose=False, amplitude=120, speed=100, pitch=30, setup_publishers=True):
         """
         Initialize command behavior (mixin setup method).
 
