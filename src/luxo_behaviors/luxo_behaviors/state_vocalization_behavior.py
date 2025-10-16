@@ -367,12 +367,16 @@ class StateVocalizationBehavior:
         if state == 'VOICE_FOLLOWING':
             if random.random() > 0.25:  # 75% chance to skip
                 self.node.get_logger().debug(f"[StateVocalization] → Skipping VOICE_FOLLOWING vocalization (random skip)")
+                # Update cooldown timer so the skip counts towards cooldown
+                self.last_state_phrase_time = time.time()
                 return
 
         # COLLISION_AVOIDING: Only vocalize 85% of the time (to reduce verbosity)
         if state == 'COLLISION_AVOIDING':
             if random.random() > 0.85:  # 15% chance to skip
                 self.node.get_logger().debug(f"[StateVocalization] → Skipping COLLISION_AVOIDING vocalization (random skip)")
+                # Update cooldown timer so the skip counts towards cooldown
+                self.last_state_phrase_time = time.time()
                 return
 
         # Check if muted (but still log)
@@ -468,6 +472,8 @@ class StateVocalizationBehavior:
         response_probability = 0.05 if self.current_emotion == 'neutral' else 0.75
         if random.random() > response_probability:
             self.node.get_logger().info(f"[StateVocalization] → Skipping emotion '{self.current_emotion}' (random skip, {int(response_probability*100)}% response rate)")
+            # Update cooldown timer so the skip counts towards cooldown
+            self.last_state_phrase_time = time.time()
             return
 
         self.node.get_logger().info(f"[StateVocalization] ✅ Triggering phrase for emotion: {self.current_emotion}")
