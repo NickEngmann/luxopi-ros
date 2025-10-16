@@ -739,10 +739,10 @@ class VoiceAssistantNode(Node, CommandBehavior, StateVocalizationBehavior):
         return tts_time
 
     def _generate_and_play_tts(self, text, is_filler=False):
-        """Generate and play TTS without blocking whisper (for filler messages and state vocalizations)
+        """Generate and play TTS with Whisper pause/resume (for filler messages and state vocalizations)
 
-        This is a simplified version of speak() that doesn't pause/resume whisper.
         Used for filler messages that play DURING processing and state vocalizations.
+        IMPORTANT: Now pauses/resumes Whisper to prevent feedback loop.
         """
         if not text:
             self.get_logger().info(f"[TTS] Skipping empty text")
@@ -769,6 +769,13 @@ class VoiceAssistantNode(Node, CommandBehavior, StateVocalizationBehavior):
             tts_active_msg.data = True
             self.tts_active_pub.publish(tts_active_msg)
             self.get_logger().info(f"[TTS] Published TTS active status")
+
+            # CRITICAL: Pause Whisper to prevent feedback loop
+            pause_start = time.time()
+            self.pause_whisper()
+            pause_time = time.time() - pause_start
+            if self.verbose:
+                self.get_logger().info(f"    ⏸️  Paused Whisper in {pause_time:.3f}s")
 
             # espeak-ng parameters from preset or behavior settings
             if self.voice_transformer and self.voice_transformer.preset_data:
@@ -873,6 +880,17 @@ class VoiceAssistantNode(Node, CommandBehavior, StateVocalizationBehavior):
                         self.get_logger().debug(f"[TTS] Cleaned up temp file: {temp_file}")
                 except Exception as cleanup_error:
                     self.get_logger().warn(f"[TTS] Failed to cleanup {temp_file}: {cleanup_error}")
+
+            # CRITICAL: Wait 0.1s before resuming Whisper to let audio settle
+            time.sleep(0.1)
+
+            # Resume Whisper after TTS completes
+            resume_start = time.time()
+            self.resume_whisper()
+            resume_time = time.time() - resume_start
+
+            if self.verbose:
+                self.get_logger().info(f"    ▶️  Resumed Whisper in {resume_time:.3f}s (after 0.1s settle delay)")
 
             # Publish TTS inactive status (filler finished playing)
             tts_active_msg = Bool()

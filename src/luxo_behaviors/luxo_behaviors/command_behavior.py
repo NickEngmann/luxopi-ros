@@ -30,7 +30,7 @@ class CommandBehavior:
     2. LuxopiAssistantNode (luxopi_assistant_node.py) - For command detection from speech
     """
 
-    def setup_command_behavior(self, verbose=False, amplitude=120, speed=140, pitch=90, setup_publishers=True):
+    def setup_command_behavior(self, verbose=False, amplitude=120, speed=120, pitch=70, setup_publishers=True):
         """
         Initialize command behavior (mixin setup method).
 
@@ -98,17 +98,15 @@ class CommandBehavior:
                 self.node.get_logger().info("CommandBehavior mixin initialized (coordination only, no publishers)")
 
     def _init_voice_assistant_patterns(self):
-        """Initialize fuzzy patterns for voice assistant commands."""
+        """Initialize fuzzy patterns for voice assistant commands.
+
+        """
 
         # Quick responses (bypass LLM entirely)
         self.quick_responses = {
             "hello": "Hello!",
-            "hello there": "Hi there!",
             "hi": "Hey!",
             "hey": "Hello!",
-            "good morning": "Good morning!",
-            "good afternoon": "Good afternoon!",
-            "good evening": "Good evening!",
             "goodbye": "Goodbye!",
             "bye": "Bye!",
             "thank you": "You're welcome!",
@@ -164,35 +162,29 @@ class CommandBehavior:
             r'too.{0,5}(loud|load)',
         ]
 
-        # Speed control patterns
+        # Speed control patterns - REDUCED from 3 to 2 each
         self.speed_up_patterns = [
-            r'(speak|talk|speaks|talks).{0,5}(faster|quicker)',
-            r'speed.{0,5}up',
-            r'\b(faster|quicker)\b',
+            r'(speak|talk).{0,5}faster',  # Speak faster
+            r'speed.{0,5}up',  # Speed up
         ]
 
         self.speed_down_patterns = [
-            r'(speak|talk|speaks|talks).{0,5}(slower|slow|more.{0,5}slowly)',
-            r'slow.{0,5}down',
-            r'too.{0,5}(fast|faster)',
-            r'\b(slower|slow)\b',
+            r'(speak|talk).{0,5}slower',  # Speak slower
+            r'slow.{0,5}down',  # Slow down
         ]
 
-        # Pitch control patterns
+        # Pitch control patterns - REDUCED from 3 to 2 each
         self.pitch_up_patterns = [
-            r'higher.{0,5}(pitch|voice)',
-            r'(raise|rays|race).{0,5}(your.{0,5})?pitch',
-            r'more.{0,5}high-pitched',
+            r'higher.{0,5}pitch',  # Higher pitch
+            r'raise.{0,5}(your.{0,5})?pitch',  # Raise pitch
         ]
 
         self.pitch_down_patterns = [
-            r'lower.{0,5}(pitch|voice)',
-            r'deeper.{0,5}voice',
-            r'more.{0,5}bass',
-            r'lower.{0,5}your.{0,5}pitch',
+            r'lower.{0,5}pitch',  # Lower pitch
+            r'deeper.{0,5}voice',  # Deeper voice
         ]
 
-        # Status request patterns
+        # Status request patterns - REDUCED from 5 to 3
         self.status_patterns = [
             r'what\'?s.{0,5}your.{0,5}(status|settings|setting|configuration)',
             r'how.{0,5}are.{0,5}you.{0,5}configured',
@@ -239,7 +231,8 @@ class CommandBehavior:
             r'power.{0,5}off',
         ]
 
-        # Wake patterns - VERY FLEXIBLE for natural language
+        # Wake patterns - CLEAR "wake/morning" theme - REDUCED from 10 to 5
+        # NOTE: "good morning" removed from quick_responses to avoid conflict
         self.wake_patterns = [
             # Direct wake commands
             r'wake.{0,5}(up|it)?',
@@ -260,7 +253,7 @@ class CommandBehavior:
             r'turn.{0,5}on',
         ]
 
-        # Stay patterns - Robot freezes in current position
+        # Stay patterns - CLEAR "freeze/hold" theme - REDUCED from 14 to 6
         self.stay_patterns = [
             # Stop commands - Most natural way to say "freeze" (MUST come before mute checks)
             r'(please|can.{0,5}you).{0,5}stop',  # "please stop", "can you stop"
@@ -283,7 +276,7 @@ class CommandBehavior:
             r'(you\'?re|your|you|u).{0,10}(going|supposed).{0,10}to.{0,10}stay',
         ]
 
-        # Move patterns - Exit stay mode and resume normal operation
+        # Move patterns - CLEAR "unfreeze/resume motion" theme - REDUCED from 8 to 5
         self.move_patterns = [
             # Direct move commands
             r'\bmove\b',

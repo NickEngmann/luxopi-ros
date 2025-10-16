@@ -532,15 +532,22 @@ States and their responsibilities:
 
 ## Key Configuration Files
 
-1. **ROBOT_ARM_API.md**: JSON protocol for robot control
+1. **COMMAND_REFERENCE.md**: Complete voice command reference
+   - 57 total commands (reduced from 92 for clarity)
+   - Voice assistant controls (mute, volume, speed, pitch)
+   - Robot hardware commands (sleep, lights, movement)
+   - Conflict resolution and usage tips
+   - Pattern matching documentation
+
+2. **ROBOT_ARM_API.md**: JSON protocol for robot control
    - Movement commands: `{"T":1,"x":100,"y":100,"z":100}`
    - Joint control: `{"T":11,"j1":0,"j2":90,...}`
    - Speed control: `{"T":11,"cmd":3000}` (1-3000)
    - DEMA mode: `{"T":30,"cmd":1}` (0=off, 1=on)
 
-2. **animation_guidelines.md**: Disney principles and best practices
+3. **animation_guidelines.md**: Disney principles and best practices
 
-3. **architecture_diagram.svg**: Visual system architecture
+4. **architecture_diagram.svg**: Visual system architecture
 
 ## Development Workflows
 
