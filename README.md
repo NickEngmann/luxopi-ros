@@ -257,6 +257,15 @@ When waking up, everything restores automatically!
 - **CPU Usage**: 40-50% on Raspberry Pi 5
 - **With Hailo-8**: 20-30% CPU, 2-3x faster
 
+#### Mute Visual Feedback
+
+When the robot is muted, it provides clear visual feedback using red NeoPixel LEDs:
+- **Mute command**: Red flash for 2 seconds (confirms command worked)
+- **Attempted speech**: Red flash for 2 seconds (shows robot is blocked)
+- **Unmute**: Returns to normal green/white talking colors
+
+This non-verbal feedback ensures you always know when the robot is muted, even when it can't speak.
+
 #### Monitoring Assistant
 
 ```bash
@@ -271,6 +280,9 @@ ros2 topic echo /voice/direction
 
 # Monitor sleep mode
 ros2 topic echo /luxo/sleep_mode
+
+# Check mute status
+ros2 topic echo /voice/muted_status
 ```
 
 ### Dynamic Adaptation
@@ -359,6 +371,37 @@ ros2 node info /animation_command
 # View service calls
 ros2 service list
 ```
+
+### ROS2 Best Practices
+
+#### Avoiding Race Conditions
+
+When publishing to multiple topics that have dependent state, callbacks can execute in unpredictable order. Always add a small delay between publications:
+
+```python
+# WRONG - Race condition possible
+status_pub.publish(status_msg)
+trigger_pub.publish(trigger_msg)  # May fire before status callback executes
+
+# CORRECT - Delayed publishing ensures order
+status_pub.publish(status_msg)
+
+def delayed_trigger():
+    trigger_pub.publish(trigger_msg)
+    delay_timer.cancel()
+
+# 0.2 second delay ensures status callback fires first
+delay_timer = self.create_timer(0.2, delayed_trigger, callback_group=self.callback_group)
+```
+
+**Key Points**:
+- Never use `time.sleep()` - it blocks ROS executor
+- Use ROS timers for non-blocking delays
+- Use `ReentrantCallbackGroup` for concurrent execution
+- Add detailed logging to debug callback order
+- Test with `tail -f` to verify execution sequence
+
+**Example**: The mute visual feedback system uses this pattern in three locations to ensure the mute status is set before triggering LED feedback. See `CLAUDE.md` for full implementation details.
 
 ## Autostart Service
 

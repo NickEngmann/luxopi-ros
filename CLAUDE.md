@@ -273,6 +273,104 @@ state_qos = QoSProfile(
 
 **Result**: Callbacks now process immediately even during TTS, eliminating multi-second delays.
 
+### ROS2 Race Conditions and Topic Publishing Order
+
+**Problem**: When publishing to multiple topics nearly simultaneously, callbacks can execute in unpredictable order due to ROS2's asynchronous nature. This creates race conditions where dependent state checks see stale values.
+
+**Example Case - Mute Visual Feedback**:
+When implementing red NeoPixel feedback for mute status, publishing both `/voice/muted_status` and `/voice/tts_active` at the same time caused the wrong callback order:
+
+```python
+# WRONG - Race condition
+muted_status_pub.publish(True)   # Published at T+0ms
+tts_active_pub.publish(True)     # Published at T+1ms
+
+# Callbacks may execute in WRONG order:
+# 1. tts_active_callback fires first → checks _is_muted (still False) → WHITE LEDs
+# 2. muted_status_callback fires → sets _is_muted = True (too late!)
+```
+
+**Solution**: Add small delay (0.2s) between dependent topic publications to ensure proper callback ordering:
+
+```python
+# CORRECT - Delayed publishing ensures order
+# Publish muted status FIRST
+muted_msg = Bool()
+muted_msg.data = True
+self.muted_status_pub.publish(muted_msg)
+self.get_logger().info("📢 Published muted_status = True")
+
+# Delay tts_active to ensure muted_status is processed first
+def delayed_tts_active():
+    tts_active_msg = Bool()
+    tts_active_msg.data = True
+    self.tts_active_pub.publish(tts_active_msg)
+    self.get_logger().info("📢 Published tts_active = True (after delay)")
+    delay_timer.cancel()
+
+    # Schedule timer for visual feedback duration
+    def turn_off_indicator():
+        tts_msg = Bool()
+        tts_msg.data = False
+        self.tts_active_pub.publish(tts_msg)
+        timer.cancel()
+
+    timer = self.create_timer(2.0, turn_off_indicator, callback_group=self.callback_group)
+
+# Small delay (0.2s) to ensure muted_status callback fires first
+delay_timer = self.create_timer(0.2, delayed_tts_active, callback_group=self.callback_group)
+```
+
+**Mute Visual Feedback Implementation**:
+The robot provides red NeoPixel feedback for 2 seconds when muted, implemented in three code paths:
+
+1. **Mute Command** (`command_behavior.py:1062-1103`): When user says "mute"
+2. **speak() Method** (`voice_assistant_node.py:627-658`): When robot tries to speak while muted
+3. **STT Processing** (`voice_assistant_node.py:1373-1406`): When user talks to muted robot
+
+**Topics**:
+- `/voice/muted_status` (Bool): Signals mute state (True = muted, False = unmuted)
+- `/voice/tts_active` (Bool): Triggers NeoPixel talking overlay
+
+**State Manager Integration** (`state_manager_node.py:702-730`):
+```python
+def muted_status_callback(self, msg):
+    """Track muted state for visual feedback."""
+    self._is_muted = msg.data
+
+def tts_active_callback(self, msg):
+    """Activate talking overlay with mute-aware colors."""
+    if self._is_talking and not previous_state:
+        self._activate_talking_overlay()  # Checks _is_muted for RED color
+
+def _activate_talking_overlay(self):
+    """Use RED NeoPixels when muted."""
+    if self._is_muted:
+        base_color = (255, 0, 0, 0)  # Bright RED
+        indicator_color = (0, 0, 0, 255)  # White spinner
+    # ... normal color logic
+```
+
+**Key Takeaways**:
+1. **Never use blocking operations** (`time.sleep()`) - always use ROS timers
+2. **Add delays for dependent topics** - 0.2s is safe for callback ordering
+3. **Use detailed logging** - emoji-tagged logs (📢 🔴 🔊) help debug timing
+4. **Test callback order** - verify logs show correct execution sequence
+5. **Use ReentrantCallbackGroup** - allows concurrent callback execution
+
+**Debugging Race Conditions**:
+```bash
+# Monitor topic publishing order
+tail -f ~/luxopi-ros/logs/luxopi.log | grep -E "(📢|🔴|🔊)"
+
+# Verify callback execution sequence (should see muted_status BEFORE tts_active)
+# Expected:
+# 📢 Published muted_status = True
+# 🔴 Muted status callback: _is_muted = True (was False)
+# 📢 Published tts_active = True (after delay)
+# 🔴 TTS started while muted - activating RED overlay
+```
+
 ## Implementing Voice Commands with State Navigation
 
 When adding voice commands that need to change robot states (like STAY mode, SLEEP mode, etc.), follow this critical pattern to ensure reliable operation across all nodes.
