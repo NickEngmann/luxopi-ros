@@ -129,15 +129,24 @@ class CommandBehavior:
             r'quiet.{0,5}down',
         ]
 
-        # Unmute command patterns
+        # Unmute command patterns - BALANCED (optional "you", but require command structure)
         self.unmute_patterns = [
-            r'(you.{0,5}can.{0,5})?talk.{0,5}(again|now)?',
-            r'(you.{0,5}can.{0,5})?speak.{0,5}(again|now)?',
+            # "you can talk/speak" OR just "can talk/speak" (avoid plain "talk/speak")
+            r'(you.{0,5})?can.{0,5}(talk|speak).{0,5}(again|now)?',
+            r'(you.{0,5})?can.{0,5}(talk|speak)',
+
+            # "start talking/speaking" with optional qualifiers
+            r'(you.{0,5})?(can.{0,5})?(start.{0,5})?(talking|speaking).{0,5}(again|now)?',
+
+            # Explicit unmute commands
             r'(unmute|un.{0,5}mute|unmuting).{0,5}(yourself)?',
-            r'start.{0,5}(talking|speaking).{0,5}(again)?',
-            r'go.{0,5}ahead.{0,5}(and.{0,5})?(talk|speak)?',
+
+            # Permission phrases
+            r'go.{0,5}ahead.{0,5}(and.{0,5})?(talk|speak)',
             r'(it\'?s.{0,5})?okay.{0,5}(to.{0,5})?(talk|speak).{0,5}(now)?',
             r'(you\'?re.{0,5})?allowed.{0,5}to.{0,5}(talk|speak)',
+
+            # Resume commands
             r'\bresume\b',
             r'back.{0,5}on',
         ]
@@ -231,26 +240,24 @@ class CommandBehavior:
             r'power.{0,5}off',
         ]
 
-        # Wake patterns - CLEAR "wake/morning" theme - REDUCED from 10 to 5
+        # Wake patterns - CLEAR "wake/morning" theme - MORE SPECIFIC to reduce false positives
         # NOTE: "good morning" removed from quick_responses to avoid conflict
         self.wake_patterns = [
-            # Direct wake commands
+            # Direct wake commands (most specific)
             r'wake.{0,5}(up|it)?',
             r'(get|git).{0,5}up',
             r'(rise|rice).{0,5}(and.{0,5})?shine',
 
-            # Morning greetings
+            # Morning greetings (ONLY "good morning", not just "morning")
             r'good\s+morning',
-            r'morning',
 
             # "You should..." / "Time to..." patterns
             r'(you\'?re|your|you|u).{0,10}(should|need|have).{0,10}(to|the)?.{0,10}(wake|get).{0,10}up',
             r'time.{0,10}(to|for).{0,10}(wake|get).{0,10}up',
 
-            # Power commands
+            # Power commands (REMOVED generic "turn on" - too broad)
             r'power\s+(on|up)',
             r'(start|boot).{0,5}up',
-            r'turn.{0,5}on',
         ]
 
         # Stay patterns - CLEAR "freeze/hold" theme - REDUCED from 14 to 6
@@ -276,17 +283,16 @@ class CommandBehavior:
             r'(you\'?re|your|you|u).{0,10}(going|supposed).{0,10}to.{0,10}stay',
         ]
 
-        # Move patterns - CLEAR "unfreeze/resume motion" theme - REDUCED from 8 to 5
+        # Move patterns - CLEAR "unfreeze/resume motion" theme - MORE SPECIFIC
         self.move_patterns = [
-            # Direct move commands
-            r'\bmove\b',
-            r'(you.{0,5})?can.{0,5}move.{0,5}(now|again)?',
+            # Direct move commands (require explicit context to avoid false positives)
+            r'(you.{0,5})?can.{0,5}move.{0,5}(now|again)',
+            r'(okay.{0,5})?(to.{0,5})?move.{0,5}(now|again)',
             r'start.{0,5}moving.{0,5}(again)?',
             r'(un|undo).{0,5}freeze',
             r'(un|undo).{0,5}stay',
-            r'resume',
+            r'resume.{0,5}(moving|motion)?',
             r'go.{0,5}ahead.{0,5}(and.{0,5})?move',
-            r'(it\'?s.{0,5})?okay.{0,5}to.{0,5}move',
         ]
 
         # Shutdown patterns - REQUIRES "shutdown" to appear 3+ times for safety
@@ -297,32 +303,31 @@ class CommandBehavior:
             'power off', 'power down', 'turn off'
         ]
 
-        # Light ON patterns
+        # Light ON patterns - REMOVED "like" to avoid false positives
         self.light_on_patterns = [
-            r'(turn|turns|torn).{0,5}(on|in|and).{0,5}(the|a|an)?.{0,5}(light|lights|like)',
-            r'(turn|turns|torn).{0,5}(the|a|an)?.{0,5}(light|lights|like).{0,5}(on|in|and)',
-            r'(light|lights|like).{0,5}(on|in|and)',
+            r'(turn|turns|torn).{0,5}(on|in|and).{0,5}(the|a|an)?.{0,5}(light|lights)\b',
+            r'(turn|turns|torn).{0,5}(the|a|an)?.{0,5}(light|lights).{0,5}(on|in|and)',
             r'(switch|switches).{0,5}(light|lights).{0,5}on',
         ]
 
-        # Light OFF patterns
+        # Light OFF patterns - REMOVED "like" to avoid false positives
         self.light_off_patterns = [
-            r'(turn|turns|torn).{0,5}(off|of|out).{0,5}(the|a|an)?.{0,5}(light|lights|like)',
-            r'(turn|turns|torn).{0,5}(the|a|an)?.{0,5}(light|lights|like).{0,5}(off|of|out)',
-            r'(light|lights|like).{0,5}(off|of|out)',
+            r'(turn|turns|torn).{0,5}(off|of|out).{0,5}(the|a|an)?.{0,5}(light|lights)\b',
+            r'(turn|turns|torn).{0,5}(the|a|an)?.{0,5}(light|lights).{0,5}(off|of|out)',
             r'(switch|switches).{0,5}(light|lights).{0,5}off',
         ]
 
-        # Color map for fuzzy matching
+        # Color map for fuzzy matching - TIGHTENED to reduce false positives
+        # Removed overly broad variations like "right"→white, "like"→light, "sign"→cyan
         self.color_variations = {
-            'red': ['red', 'read', 'rad', 'rid'],
-            'orange': ['orange', 'ornge', 'arrange'],
-            'yellow': ['yellow', 'yello', 'mellow'],
-            'green': ['green', 'grain', 'grin', 'scene'],
-            'cyan': ['cyan', 'sign', 'sigh', 'turquoise', 'turquois'],
-            'blue': ['blue', 'blew', 'glue', 'flew'],
-            'purple': ['purple', 'violet', 'people', 'papal'],
-            'white': ['white', 'wight', 'wright', 'bite', 'right']
+            'red': ['red', 'read'],
+            'orange': ['orange', 'ornge'],
+            'yellow': ['yellow', 'yello'],
+            'green': ['green', 'grain'],  # Removed 'grin', 'scene' - too loose
+            'cyan': ['cyan', 'turquoise', 'turquois'],  # Removed 'sign', 'sigh' - too loose
+            'blue': ['blue', 'blew'],  # Removed 'glue', 'flew' - too loose
+            'purple': ['purple', 'violet'],  # Removed 'people', 'papal' - too loose
+            'white': ['white', 'wight']  # Removed 'wright', 'bite', 'right' - too loose
         }
 
     def _setup_ros_integration(self):
@@ -462,24 +467,45 @@ class CommandBehavior:
             if 'bright' in text or 'light' in text:
                 return 'set_brightness_max'
 
-        # Then increase/decrease
-        if any(word in text for word in ['bright', 'brighten', 'brighter', 'writer', 'rider']):
+        # Then increase/decrease - MORE SPECIFIC
+        # Removed 'writer', 'rider', 'timer' - too loose
+        if any(word in text for word in ['brighten', 'brighter']) or \
+           ('bright' in text and any(word in text for word in ['more', 'increase', 'up'])):
             return 'increase_brightness'
 
-        if any(word in text for word in ['dim', 'dimmer', 'darker', 'dimer', 'timer']):
+        if any(word in text for word in ['dimmer', 'darker']) or \
+           ('dim' in text and any(word in text for word in ['more', 'decrease', 'down'])):
             return 'decrease_brightness'
 
-        # Color temperature
-        if any(word in text for word in ['warm', 'warmer', 'more warm', 'warm up', 'former']):
+        # Color temperature - MORE SPECIFIC (require explicit temperature context)
+        # Removed 'former', 'ruler' - too loose
+        # Require "warm" + direction word OR "warmer"
+        if 'warmer' in text or \
+           ('warm' in text and any(word in text for word in ['more', 'increase', 'up', 'make it'])):
             return 'increase_color_temp'
 
-        if any(word in text for word in ['cool', 'cooler', 'more cool', 'cool down', 'ruler']):
+        # Require "cool" + direction word OR "cooler", AND check for light context
+        if ('cooler' in text or \
+           ('cool' in text and any(word in text for word in ['more', 'make it', 'down']))) and \
+           any(word in text for word in ['light', 'temperature', 'temp', 'tone']):
             return 'decrease_color_temp'
 
-        # Colors
+        # Colors - MORE SPECIFIC (require command context or standalone usage)
         for color, variations in self.color_variations.items():
-            if any(var in text for var in variations):
-                return f'set_color_{color}'
+            for var in variations:
+                # Check for explicit color commands
+                if any(pattern in text for pattern in [
+                    f'set {var}', f'make it {var}', f'color {var}',
+                    f'turn {var}', f'change to {var}', f'set to {var}',
+                    f'set color {var}', f'color to {var}'
+                ]):
+                    return f'set_color_{color}'
+
+                # Or standalone color word (isolated, not in middle of sentence)
+                if re.search(rf'\b{var}\b', text):
+                    # Check if it's standalone (at start, end, or isolated)
+                    if text.strip() == var or text.startswith(var + ' ') or text.endswith(' ' + var):
+                        return f'set_color_{color}'
 
         return None
 
@@ -1037,10 +1063,41 @@ class CommandBehavior:
             self.is_muted = True
             if self.node:
                 self.node.get_logger().info("🔇 Voice assistant muted")
+
+                # Flash red NeoPixels for 1 second to confirm mute command
+                if hasattr(self.node, 'muted_status_pub') and hasattr(self.node, 'tts_active_pub'):
+                    import time
+                    from std_msgs.msg import Bool
+
+                    # Publish muted status
+                    muted_msg = Bool()
+                    muted_msg.data = True
+                    self.node.muted_status_pub.publish(muted_msg)
+
+                    # Activate red flash
+                    tts_active_msg = Bool()
+                    tts_active_msg.data = True
+                    self.node.tts_active_pub.publish(tts_active_msg)
+
+                    # Show for 1 second
+                    time.sleep(1.0)
+
+                    # Turn off
+                    tts_active_msg.data = False
+                    self.node.tts_active_pub.publish(tts_active_msg)
+
         elif action == 'unmute':
             self.is_muted = False
             if self.node:
                 self.node.get_logger().info("🔊 Voice assistant unmuted")
+
+                # Clear muted status
+                if hasattr(self.node, 'muted_status_pub'):
+                    from std_msgs.msg import Bool
+                    muted_msg = Bool()
+                    muted_msg.data = False
+                    self.node.muted_status_pub.publish(muted_msg)
+
         # Volume, speed, pitch changes are already applied during detection
 
     def clean_parentheticals(self, text):
