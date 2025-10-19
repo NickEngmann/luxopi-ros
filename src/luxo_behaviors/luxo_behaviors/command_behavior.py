@@ -1064,27 +1064,43 @@ class CommandBehavior:
             if self.node:
                 self.node.get_logger().info("🔇 Voice assistant muted")
 
-                # Flash red NeoPixels for 1 second to confirm mute command
+                # Flash red NeoPixels for 4 seconds to confirm mute command
                 if hasattr(self.node, 'muted_status_pub') and hasattr(self.node, 'tts_active_pub'):
-                    import time
                     from std_msgs.msg import Bool
 
-                    # Publish muted status
+                    # Publish muted status FIRST
                     muted_msg = Bool()
                     muted_msg.data = True
                     self.node.muted_status_pub.publish(muted_msg)
+                    self.node.get_logger().info("📢 Published muted_status = True (mute command)")
 
-                    # Activate red flash
-                    tts_active_msg = Bool()
-                    tts_active_msg.data = True
-                    self.node.tts_active_pub.publish(tts_active_msg)
+                    # Delay tts_active to ensure muted_status is processed first (fix race condition)
+                    def delayed_tts_active_mute():
+                        tts_active_msg = Bool()
+                        tts_active_msg.data = True
+                        self.node.tts_active_pub.publish(tts_active_msg)
+                        self.node.get_logger().info("📢 Published tts_active = True (mute command, after delay)")
+                        delay_timer.cancel()
 
-                    # Show for 1 second
-                    time.sleep(1.0)
+                        # Schedule non-blocking timer to turn off after 4 seconds
+                        def turn_off_mute_flash():
+                            tts_msg = Bool()
+                            tts_msg.data = False
+                            self.node.tts_active_pub.publish(tts_msg)
+                            self.node.get_logger().info("📢 Published tts_active = False (mute flash off)")
+                            timer.cancel()
 
-                    # Turn off
-                    tts_active_msg.data = False
-                    self.node.tts_active_pub.publish(tts_active_msg)
+                        # Use callback_group if available for concurrent execution
+                        if hasattr(self.node, 'callback_group'):
+                            timer = self.node.create_timer(2.0, turn_off_mute_flash, callback_group=self.node.callback_group)
+                        else:
+                            timer = self.node.create_timer(2.0, turn_off_mute_flash)
+
+                    # Small delay (0.2s) to ensure muted_status callback fires first
+                    if hasattr(self.node, 'callback_group'):
+                        delay_timer = self.node.create_timer(0.2, delayed_tts_active_mute, callback_group=self.node.callback_group)
+                    else:
+                        delay_timer = self.node.create_timer(0.2, delayed_tts_active_mute)
 
         elif action == 'unmute':
             self.is_muted = False

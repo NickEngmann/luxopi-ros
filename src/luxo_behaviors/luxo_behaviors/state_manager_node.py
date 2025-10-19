@@ -200,9 +200,18 @@ class StateManagerNode(Node):
             10
         )
 
+        # Add subscription for muted status (for red visual feedback)
+        self.muted_status_sub = self.create_subscription(
+            Bool,
+            '/voice/muted_status',
+            self.muted_status_callback,
+            10
+        )
+
         # Talking overlay state
         self._is_talking = False
         self._talking_overlay_active = False
+        self._is_muted = False  # Track muted state for red feedback
 
         # Timers
         self.update_timer = self.create_timer(0.1, self.update)  # 10Hz update
@@ -677,7 +686,11 @@ class StateManagerNode(Node):
 
             if self._is_talking and not previous_state:
                 # TTS started - activate talking overlay
-                self.get_logger().debug("🗣️ TTS started - activating talking overlay")
+                # LOG MUTE STATE FOR DEBUGGING
+                if self._is_muted:
+                    self.get_logger().info("🔴 TTS started while muted - activating RED overlay")
+                else:
+                    self.get_logger().info("🗣️ TTS started while unmuted - activating normal overlay")
                 self._activate_talking_overlay()
             elif not self._is_talking and previous_state:
                 # TTS stopped - deactivate talking overlay
@@ -685,6 +698,18 @@ class StateManagerNode(Node):
                 self._deactivate_talking_overlay()
         except Exception as e:
             self.get_logger().error(f"Error in TTS active callback: {e}")
+
+    def muted_status_callback(self, msg):
+        """Handle muted status for red visual feedback."""
+        try:
+            previous_muted = self._is_muted
+            self._is_muted = msg.data
+            if self._is_muted:
+                self.get_logger().info(f"🔴 Muted status callback: _is_muted = True (was {previous_muted})")
+            else:
+                self.get_logger().info(f"🔊 Muted status callback: _is_muted = False (was {previous_muted})")
+        except Exception as e:
+            self.get_logger().error(f"Error in muted status callback: {e}")
 
     def _activate_talking_overlay(self):
         """Activate the talking indicator overlay on NeoPixels with state-aware colors."""
@@ -698,9 +723,14 @@ class StateManagerNode(Node):
             # Stop any current effects
             self._neopixel_controller.stop_effect()
 
+            # MUTED OVERRIDE: Use RED when muted (highest priority)
+            if self._is_muted:
+                base_color = (255, 0, 0, 0)  # Bright RED
+                indicator_color = (0, 0, 0, 255)  # White spinner
+                self.get_logger().info(f"🔴 MUTED - using RED base_color={base_color} indicator_color={indicator_color}")
             # Get base color based on current state/emotion
             # This makes the background match the current state (pink for petting, orange for collision, etc.)
-            if self._color_mode is not None:
+            elif self._color_mode is not None:
                 # Use the custom color mode if set
                 color_map = {
                     'red': (255, 0, 0, 0),
@@ -724,8 +754,8 @@ class StateManagerNode(Node):
                 else:
                     base_color = state_color
 
-            # White spinning indicator works for all states
-            indicator_color = (255, 255, 255, 0)
+                # White spinning indicator works for all states
+                indicator_color = (0, 0, 0, 255)
 
             self._neopixel_controller.spinning_talking_indicator(
                 base_color=base_color,

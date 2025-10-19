@@ -333,6 +333,7 @@ class VoiceAssistantNode(Node, CommandBehavior, StateVocalizationBehavior):
         self.transcription_pub = self.create_publisher(String, '/voice/transcription', 10)
         self.llm_response_pub = self.create_publisher(String, '/voice/llm_response', 10)
         self.tts_active_pub = self.create_publisher(Bool, '/voice/tts_active', 10)
+        self.muted_status_pub = self.create_publisher(Bool, '/voice/muted_status', 10)
 
         # ROS Subscribers (using reentrant callback group for concurrent processing)
         self.sleep_mode_sub = self.create_subscription(
@@ -623,9 +624,37 @@ class VoiceAssistantNode(Node, CommandBehavior, StateVocalizationBehavior):
         if not text or self.is_speaking:
             return 0
 
-        # Block TTS when muted
+        # Block TTS when muted (but show visual feedback)
         if self.is_muted:
-            self.get_logger().info("🔇 Muted - skipping TTS")
+            self.get_logger().info("🔇 Muted - skipping TTS (showing red flash)")
+
+            # Publish muted status FIRST (so state_manager knows to use red)
+            muted_msg = Bool()
+            muted_msg.data = True
+            self.muted_status_pub.publish(muted_msg)
+            self.get_logger().info("📢 Published muted_status = True (speak() method)")
+
+            # Delay tts_active to ensure muted_status is processed first (fix race condition)
+            def delayed_tts_active_speak():
+                tts_active_msg = Bool()
+                tts_active_msg.data = True
+                self.tts_active_pub.publish(tts_active_msg)
+                self.get_logger().info("📢 Published tts_active = True (speak() method, after delay)")
+                delay_timer.cancel()
+
+                # Schedule non-blocking timer to turn off after 2 seconds
+                def turn_off_red_flash():
+                    tts_active_msg = Bool()
+                    tts_active_msg.data = False
+                    self.tts_active_pub.publish(tts_active_msg)
+                    self.get_logger().info("📢 Published tts_active = False (speak() flash off)")
+                    timer.cancel()
+
+                timer = self.create_timer(2.0, turn_off_red_flash, callback_group=self.callback_group)
+
+            # Small delay (0.2s) to ensure muted_status callback fires first
+            delay_timer = self.create_timer(0.2, delayed_tts_active_speak, callback_group=self.callback_group)
+
             return 0
 
         # Block TTS during sleep mode
@@ -1345,8 +1374,36 @@ class VoiceAssistantNode(Node, CommandBehavior, StateVocalizationBehavior):
                                 if not self.should_speak():
                                     self.get_logger().info(f"\n{'='*50}")
                                     self.get_logger().info(f"👤 USER: {combined_text}")
-                                    self.get_logger().info(f"🔇 (Muted - not responding)")
+                                    self.get_logger().info(f"🔇 (Muted - not responding, showing red flash)")
                                     self.get_logger().info(f"{'='*50}\n")
+
+                                    # Flash red NeoPixels to indicate muted attempt
+                                    # Publish muted status first
+                                    muted_msg = Bool()
+                                    muted_msg.data = True
+                                    self.muted_status_pub.publish(muted_msg)
+                                    self.get_logger().info("📢 Published muted_status = True")
+
+                                    # Delay tts_active slightly to ensure muted_status is processed first
+                                    def delayed_tts_active():
+                                        tts_active_msg = Bool()
+                                        tts_active_msg.data = True
+                                        self.tts_active_pub.publish(tts_active_msg)
+                                        self.get_logger().info("📢 Published tts_active = True (after muted_status)")
+                                        delay_timer.cancel()
+
+                                        # Schedule timer to turn off after 2 seconds
+                                        def turn_off_red_flash_stt():
+                                            tts_msg = Bool()
+                                            tts_msg.data = False
+                                            self.tts_active_pub.publish(tts_msg)
+                                            self.get_logger().info("📢 Published tts_active = False (turn off red)")
+                                            timer_stt.cancel()
+
+                                        timer_stt = self.create_timer(2.0, turn_off_red_flash_stt, callback_group=self.callback_group)
+
+                                    # Small delay (0.2s) to ensure muted_status callback fires first
+                                    delay_timer = self.create_timer(0.2, delayed_tts_active, callback_group=self.callback_group)
 
                                     # Clear buffer and continue
                                     self.audio_buffer = []
