@@ -7,7 +7,7 @@ Type=simple
 User=pi
 WorkingDirectory=/home/pi/luxopi-ros
 ExecStart=/bin/bash /home/pi/luxopi-ros/start_luxopi.sh
-ExecStop=/bin/bash /home/pi/luxopi-ros/stop_luxopi.sh
+ExecStop=/bin/bash /home/pi/luxopi-ros/request_shutdown.sh
 Restart=on-failure
 RestartSec=5s
 
