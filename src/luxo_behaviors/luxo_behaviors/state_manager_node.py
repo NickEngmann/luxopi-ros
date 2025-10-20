@@ -43,9 +43,9 @@ class StateManagerNode(Node):
         # Priority management for state requests
         self._node_priorities = {
             'behavior_coordinator': 100,  # Highest priority - safety first
-            'voice_following': 90,  # Very high priority for voice commands (increased from 75)
             'escape_mode': 90,
             'user_control': 80,
+            'voice_following': 75,  # Higher than animation
             'petting': 60,
             'emotion': 50,
             'animation': 40,
