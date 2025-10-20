@@ -243,17 +243,21 @@ class CommandBehavior:
         # Wake patterns - CLEAR "wake/morning" theme - MORE SPECIFIC to reduce false positives
         # NOTE: "good morning" removed from quick_responses to avoid conflict
         self.wake_patterns = [
-            # Direct wake commands (most specific)
+            # Direct wake commands (most specific) - INCLUDES PHONETIC ALTERNATIVES
             r'wake.{0,5}(up|it)?',
+            r'way.{0,5}up',  # Common transcription error for "wake up"
+            r'weigh.{0,5}up',  # Another phonetic variant
             r'(get|git).{0,5}up',
             r'(rise|rice).{0,5}(and.{0,5})?shine',
 
             # Morning greetings (ONLY "good morning", not just "morning")
             r'good\s+morning',
+            r'good\s+mornin',  # Common informal variant
 
-            # "You should..." / "Time to..." patterns
-            r'(you\'?re|your|you|u).{0,10}(should|need|have).{0,10}(to|the)?.{0,10}(wake|get).{0,10}up',
-            r'time.{0,10}(to|for).{0,10}(wake|get).{0,10}up',
+            # "You should..." / "Time to..." patterns - MORE FLEXIBLE
+            r'(you\'?re|your|you|u).{0,10}(should|need|have).{0,10}(to|the)?.{0,10}(wake|way|weigh|get).{0,10}up',
+            r'time.{0,10}(to|for).{0,10}(wake|way|weigh|get).{0,10}up',
+            r'(let\'?s|lets).{0,5}(wake|way).{0,5}up',  # "Let's wake up"
 
             # Power commands (REMOVED generic "turn on" - too broad)
             r'power\s+(on|up)',
