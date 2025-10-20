@@ -36,9 +36,9 @@ class VoiceFollowingBehavior:
         if not self.node.has_parameter('voice_variation_interval'):
             self.node.declare_parameter('voice_variation_interval', 2.0)
         if not self.node.has_parameter('voice_look_up_range'):
-            self.node.declare_parameter('voice_look_up_range', 1.0)
+            self.node.declare_parameter('voice_look_up_range', 1.1)  # Increased 15%
         if not self.node.has_parameter('voice_look_down_range'):
-            self.node.declare_parameter('voice_look_down_range', 0.2)
+            self.node.declare_parameter('voice_look_down_range', 0.1)  # Decreased 20%
         
         # Load parameters
         self.voice_follow_enabled = self.node.get_parameter('enable_voice_following').value

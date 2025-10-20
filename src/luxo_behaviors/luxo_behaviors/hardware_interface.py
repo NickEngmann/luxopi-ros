@@ -90,8 +90,8 @@ class RoArmHardwareInterface(Node):
         self.declare_parameter('enable_idle_head_variation', True)
         self.declare_parameter('idle_head_variation_interval', 5.0)  # Time between subtle movements
         self.declare_parameter('idle_head_base_rotation_range', 0.3)  # Max base rotation in radians
-        self.declare_parameter('idle_head_look_up_range', 0.6)  # How much to look up (shoulder adjustment)
-        self.declare_parameter('idle_head_look_down_range', 0.15)  # How much to look down
+        self.declare_parameter('idle_head_look_up_range', 1.1)  # How much to look up (shoulder adjustment) - increased 15%
+        self.declare_parameter('idle_head_look_down_range', 0.1)  # How much to look down - decreased 20%
         self.declare_parameter('idle_head_variation_speed', 3.5)  # Acceleration for head movements (reduced from 8.0)
 
         # Voice following parameters
@@ -469,18 +469,26 @@ class RoArmHardwareInterface(Node):
             self._on_enter_escape_mode()
         elif new_state == LuxoState.USER_CONTROL:
             self._on_enter_user_control()
+        elif new_state == LuxoState.VOICE_FOLLOWING:
+            self._on_enter_voice_following()
+        elif new_state == LuxoState.PETTING:
+            self._on_enter_petting()
         elif new_state == LuxoState.STAY:
             self._on_enter_stay()
         elif new_state == LuxoState.ERROR:
             self._on_enter_error()
         elif new_state == LuxoState.SHUTDOWN:
             self._on_enter_shutdown()
-        
+
         # Handle state exit actions
         if old_state == LuxoState.ANIMATING:
             self._on_exit_animating()
         elif old_state == LuxoState.RETURNING_HOME:
             self._on_exit_returning_home()
+        elif old_state == LuxoState.VOICE_FOLLOWING:
+            self._on_exit_voice_following()
+        elif old_state == LuxoState.PETTING:
+            self._on_exit_petting()
         elif old_state == LuxoState.USER_CONTROL:
             self._on_exit_user_control()
         elif old_state == LuxoState.STAY:
@@ -575,6 +583,25 @@ class RoArmHardwareInterface(Node):
         if self.is_in_state(LuxoState.USER_CONTROL) and hasattr(self, 'user_control_position') and self.user_control_position:
             # Send the stored position to maintain it
             self.send_safe_joint_command(self.user_control_position, "USER_CONTROL position maintenance")
+
+    def _on_enter_voice_following(self):
+        """Called when entering VOICE_FOLLOWING state."""
+        self.get_logger().info("🎤 Entering VOICE_FOLLOWING state - voice commands now have priority")
+        # Voice following state is now active - behavior_coordinator will handle continuous updates
+        # No position maintenance timer needed here since behavior_coordinator manages voice targets
+
+    def _on_exit_voice_following(self):
+        """Called when exiting VOICE_FOLLOWING state."""
+        self.get_logger().info("Exiting VOICE_FOLLOWING state")
+        # Voice following cleanup is handled by behavior_coordinator
+
+    def _on_enter_petting(self):
+        """Called when entering PETTING state."""
+        self.get_logger().info("💕 Entering PETTING state")
+
+    def _on_exit_petting(self):
+        """Called when exiting PETTING state."""
+        self.get_logger().info("Exiting PETTING state")
 
     def _on_enter_stay(self):
         """Called when entering STAY state - freeze current position."""
