@@ -93,6 +93,12 @@ class RoArmHardwareInterface(Node):
         self.declare_parameter('idle_head_look_up_range', 0.6)  # How much to look up (shoulder adjustment)
         self.declare_parameter('idle_head_look_down_range', 0.15)  # How much to look down
         self.declare_parameter('idle_head_variation_speed', 3.5)  # Acceleration for head movements (reduced from 8.0)
+
+        # Voice following parameters
+        self.declare_parameter('enable_voice_following', True)  # Enable voice direction following
+        self.declare_parameter('voice_follow_speed', 0.3)  # Speed of voice following movements
+        self.declare_parameter('voice_follow_deadzone', 15.0)  # Deadzone in degrees for voice following
+        self.declare_parameter('voice_follow_smoothing', 0.3)  # Smoothing factor for voice direction
         self.enable_idle_head_variation = self.get_parameter('enable_idle_head_variation').value
         self.idle_head_variation_interval = self.get_parameter('idle_head_variation_interval').value
         self.idle_head_base_rotation_range = self.get_parameter('idle_head_base_rotation_range').value

@@ -66,10 +66,10 @@ class VoiceFollowingBehavior:
         self.voice_on_target_threshold = 2.0  # seconds to wait before starting variations
         
         # Voice command cooldown and direction filtering
-        self.voice_command_cooldown = 2.5  # seconds between voice commands
+        self.voice_command_cooldown = 1.0  # seconds between voice commands (reduced for better responsiveness)
         self.last_voice_command_time = None  # Initialize to None to allow immediate first command
         self.last_acted_voice_direction = None  # Last direction we actually sent a command for
-        self.voice_direction_filter_threshold = 5.0  # degrees - ignore directions within this range
+        self.voice_direction_filter_threshold = 5.0  # degrees - ignore directions within this range if already at target
         
         # Voice state management
         self.voice_following_state_requested = False
@@ -116,28 +116,31 @@ class VoiceFollowingBehavior:
     def voice_direction_callback(self, msg):
         """Handle voice direction messages with cooldown and filtering."""
         if not self.voice_follow_enabled:
+            self.node.get_logger().warn(f"🚫 Voice following DISABLED - ignoring direction {msg.data:.1f}°")
             return
 
         # Ignore voice directions when TTS is active to prevent following own voice
         if self.tts_active:
-            self.node.get_logger().debug(f"Ignoring voice direction {msg.data:.1f}° - TTS is active (robot is speaking)")
+            self.node.get_logger().info(f"🔇 Ignoring voice direction {msg.data:.1f}° - TTS is active (robot is speaking)")
             return
 
         # Extract voice direction
         voice_direction = msg.data  # Angle in degrees
         current_time = self.node.get_clock().now()
-        
+
+        self.node.get_logger().info(f"📡 Received voice direction: {voice_direction:.1f}°")
+
         # Request transition to VOICE_FOLLOWING state if not already there
         current_state = self._get_current_state()
         if current_state != LuxoState.VOICE_FOLLOWING and not self.voice_following_state_requested:
             self.voice_following_previous_state = current_state
             self.voice_following_state_requested = True
             self._transition_to_voice_following_state()
-            self.node.get_logger().info(f"Voice command received - transitioning from {current_state.name} to VOICE_FOLLOWING")
-        
+            self.node.get_logger().info(f"🔄 Voice command received - transitioning from {current_state.name} to VOICE_FOLLOWING")
+
         # Check if we can process voice commands based on current state
         if not self._can_process_voice_command():
-            self.node.get_logger().debug(f"Ignoring voice direction in state: {self._get_current_state().name}")
+            self.node.get_logger().info(f"⏸️  Cannot process voice in state: {self._get_current_state().name}")
             return
         
         # Cooldown check - skip if too soon since last command
@@ -145,31 +148,53 @@ class VoiceFollowingBehavior:
             time_since_last_command = (current_time - self.last_voice_command_time).nanoseconds / 1e9
             if time_since_last_command < self.voice_command_cooldown:
                 remaining_cooldown = self.voice_command_cooldown - time_since_last_command
-                self.node.get_logger().debug(
-                    f"Voice command on cooldown for {remaining_cooldown:.1f}s more "
+                self.node.get_logger().info(
+                    f"⏳ Voice command on cooldown for {remaining_cooldown:.1f}s more "
                     f"(direction: {voice_direction:.1f}°)"
                 )
                 # Still update tracking even if we don't send command
                 self.last_voice_direction = voice_direction
                 self.last_voice_time = current_time
                 return
-        
-        # Direction filtering - ignore if too close to last acted direction
+
+        # Direction filtering - only ignore if similar direction AND robot is already at target
         if self.last_acted_voice_direction is not None:
             direction_diff = abs(voice_direction - self.last_acted_voice_direction)
             # Handle wraparound
             if direction_diff > 180:
                 direction_diff = 360 - direction_diff
-            
+
+            # Check if direction is similar to last acted direction
             if direction_diff < self.voice_direction_filter_threshold:
-                self.node.get_logger().debug(
-                    f"Ignoring similar voice direction: {voice_direction:.1f}° "
-                    f"(last: {self.last_acted_voice_direction:.1f}°, diff: {direction_diff:.1f}°)"
-                )
-                # Still update tracking but don't send command
-                self.last_voice_direction = voice_direction
-                self.last_voice_time = current_time
-                return
+                # Also check if robot has reached the target position
+                # Convert voice direction to target angle
+                target_angle_rad = np.deg2rad(voice_direction)
+                target_angle = self.position_utils.normalize_angle(target_angle_rad)
+
+                # Get current base position
+                current_base = self.current_joints[0] if self.current_joints else 0
+
+                # Calculate how far we are from the target
+                angle_to_target = abs(self.position_utils.normalize_angle(target_angle - current_base))
+                angle_to_target_deg = np.rad2deg(angle_to_target)
+
+                # Only filter if we're already close to the target (within 10 degrees)
+                if angle_to_target_deg < 10.0:
+                    self.node.get_logger().info(
+                        f"📍 Ignoring similar voice direction: {voice_direction:.1f}° "
+                        f"(last: {self.last_acted_voice_direction:.1f}°, diff: {direction_diff:.1f}°, "
+                        f"already at target: {angle_to_target_deg:.1f}° away)"
+                    )
+                    # Still update tracking but don't send command
+                    self.last_voice_direction = voice_direction
+                    self.last_voice_time = current_time
+                    return
+                else:
+                    # Similar direction but NOT at target - resend command
+                    self.node.get_logger().info(
+                        f"🔄 Resending command for similar direction: {voice_direction:.1f}° "
+                        f"(robot still {angle_to_target_deg:.1f}° from target)"
+                    )
         
         # Update voice tracking
         self.last_voice_direction = voice_direction
@@ -181,7 +206,20 @@ class VoiceFollowingBehavior:
         # Convert voice direction to target angle with intelligent wraparound
         target_angle_rad = np.deg2rad(voice_direction)
         target_angle = self.position_utils.normalize_angle(target_angle_rad)
-        
+
+        # Log current robot position and target for debugging
+        current_base = self.current_joints[0] if self.current_joints else 0
+        current_base_deg = np.rad2deg(current_base)
+        target_deg = np.rad2deg(target_angle)
+        angle_diff = np.rad2deg(self.position_utils.normalize_angle(target_angle - current_base))
+
+        self.node.get_logger().info(
+            f"🎤 Voice Command: direction={voice_direction:.1f}°, "
+            f"current_base={current_base_deg:.1f}°, "
+            f"target={target_deg:.1f}°, "
+            f"diff={angle_diff:.1f}°"
+        )
+
         # Check if we need wraparound due to base limits
         if target_angle > self.base_max_limit:
             if self.enable_base_wraparound:
@@ -226,7 +264,15 @@ class VoiceFollowingBehavior:
         # Record this as an acted direction and update cooldown
         self.last_acted_voice_direction = voice_direction
         self.last_voice_command_time = current_time
-        
+
+        # Update rest position to current target so robot doesn't reset later
+        # This is the key to preventing the robot from returning to its original position
+        if hasattr(self, 'last_rest_position') and self.last_rest_position is not None:
+            self.last_rest_position[0] = self.target_voice_angle
+            self.node.get_logger().info(
+                f"Updated rest position to voice target: {np.rad2deg(self.target_voice_angle):.1f}°"
+            )
+
         # Check if we're on target for variation purposes
         current_base = self.current_joints[0] if self.current_joints else 0
         angle_error = abs(self.position_utils.normalize_angle(self.target_voice_angle - current_base))
@@ -403,21 +449,43 @@ class VoiceFollowingBehavior:
                 return_state = self.voice_following_previous_state
             else:
                 return_state = LuxoState.IDLE  # Default fallback
-            
+
+            # IMPORTANT: Store the final position BEFORE clearing voice state
+            # This prevents the robot from resetting back to where it was
+            if self.current_joints and len(self.current_joints) > 0:
+                final_base_position = self.current_joints[0]
+                self.node.get_logger().info(
+                    f"💾 Voice following completed - preserving final position: {np.rad2deg(final_base_position):.1f}°"
+                )
+
+                # Update idle behavior's rest position to match where we ended up
+                # This prevents idle animations from moving the robot back
+                if hasattr(self, 'last_rest_position') and self.last_rest_position is not None:
+                    # Update the base (first element) of the rest position
+                    self.last_rest_position[0] = final_base_position
+                    self.node.get_logger().info(
+                        f"📍 Updated rest position base to: {np.rad2deg(final_base_position):.1f}°"
+                    )
+
+                # Delay idle animations to prevent immediate movement
+                if hasattr(self, 'last_activity_time'):
+                    self.last_activity_time = self.node.get_clock().now()
+                    self.node.get_logger().info("⏰ Reset idle timer - delaying animations")
+
             self.node.get_logger().info(f"Voice following completed - returning to {return_state.name}")
-            
+
             # Reset voice following state tracking
             self.voice_following_state_requested = False
             self.voice_following_previous_state = None
             self.voice_completion_timer = None
-            
+
             # Clear voice following state
             self.voice_influence = 0.0
             self.target_voice_angle = None
             self.voice_on_target_start_time = None
             self.last_voice_variation_time = None
             self.current_voice_variation = None
-            
+
             # Request transition back to previous state
             if hasattr(self, '_transition_to_state'):
                 self._transition_to_state(return_state)
@@ -486,10 +554,17 @@ class VoiceFollowingBehavior:
 
         # Add acceleration as the 6th element
         voice_position_with_accel = voice_position + [acceleration]
-        
+
+        # Get current base for comparison
+        current_base_deg = np.rad2deg(self.current_joints[0]) if self.current_joints else 0.0
+        target_base_deg = np.rad2deg(self.target_voice_angle)
+        movement_deg = target_base_deg - current_base_deg
+
         self.node.get_logger().info(
-            f"Sending voice command: base to {np.rad2deg(self.target_voice_angle):.1f}° "
-            f"with position: {[round(p, 2) for p in voice_position]}"
+            f"📤 Sending voice command: "
+            f"current_base={current_base_deg:.1f}° → target={target_base_deg:.1f}° "
+            f"(movement: {movement_deg:+.1f}°) "
+            f"position: {[round(p, 2) for p in voice_position]}"
         )
         
         # Send the command with high priority

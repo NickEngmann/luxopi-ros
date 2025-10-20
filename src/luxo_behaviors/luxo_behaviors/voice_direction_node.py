@@ -107,7 +107,7 @@ class VoiceDirectionNode(Node):
                 'base_velocity_threshold': 0.05,  # rad/s - threshold for "motor active"
                 'position_change_threshold': 0.02,  # rad - threshold for significant position change
                 'suppression_duration': 1.5,  # seconds to suppress voice after motor activity
-                'cooldown_duration': 0.5,  # seconds to wait before re-enabling after motor stops
+                'cooldown_duration': 0.3,  # seconds to wait before re-enabling after motor stops (reduced for better responsiveness)
                 'monitoring_window': 0.5  # seconds of history to check for motor activity
             },
             # NEW: Coordinate frame transformation configuration
@@ -450,7 +450,12 @@ class VoiceDirectionNode(Node):
         if abs(correction) > 1.0:  # Only log significant corrections
             self.get_logger().info(f"Parallax correction: {mic_angle:.1f}° → {robot_angle_corrected:.1f}° "
                                  f"(correction: {correction:.1f}°, distance: {estimated_distance:.1f}m)")
-        
+        else:
+            self.get_logger().info(f"No significant parallax correction needed: {mic_angle:.1f}°")
+            self.get_logger().info(f"Robot angle (unadjusted): {robot_angle_deg:.1f}°")
+            self.get_logger().info(f"Robot angle (corrected): {robot_angle_corrected:.1f}°")
+            self.get_logger().info(f"Parallax correction applied: {correction:.1f}°")
+
         return robot_angle_corrected
     
     def estimate_sound_distance(self, amplitude, peak_amplitude):
@@ -551,6 +556,7 @@ class VoiceDirectionNode(Node):
                                 if not self.sleep_mode_active:
                                     pixel_ring.off()
                                     self.leds_on = False
+                                    self.get_logger().info(f'🔴 Pixel ring OFF (no speech for {self.config["vad"]["timeout"]}s)')
                             self.direction_history.clear()  # Clear history when speech stops
 
                         self.chunks.append(chunk)
@@ -581,18 +587,23 @@ class VoiceDirectionNode(Node):
                                     
                                     # Add to direction history - exactly from vad_doa.py
                                     if direction is not None:
+                                        # ALWAYS update pixel ring for real-time visual feedback
+                                        # Even if direction is unstable, users should see where sound is coming from
+                                        with self.sleep_state_lock:
+                                            if not self.sleep_mode_active:
+                                                pixel_ring.set_direction(int(direction))
+                                                self.leds_on = True
+                                                self.get_logger().info(f'💡 Pixel ring → {int(direction)}°')
+                                            else:
+                                                self.get_logger().debug(f'💤 Skipping pixel ring update (sleep mode)')
+
                                         # Skip stability filtering if disabled for debugging - exactly from vad_doa.py
                                         if self.config['debug'].get('disable_stability_filter', False):
-                                            # Only update LEDs if not in sleep mode
-                                            with self.sleep_state_lock:
-                                                if not self.sleep_mode_active:
-                                                    pixel_ring.set_direction(int(direction))
-                                                    self.leds_on = True
                                             self.last_direction = int(direction)
-                                            
+
                                             # Publish for ROS (instead of print) - with motor awareness
                                             self.publish_voice_direction(direction, avg_amplitude)
-                                            
+
                                             if self.config['debug']['print_amplitude']:
                                                 self.get_logger().info(f'{int(direction)}° (amplitude: {int(avg_amplitude)}, ratio: {amplitude_ratio:.2f}) [NO FILTER]')
                                             else:
@@ -602,7 +613,7 @@ class VoiceDirectionNode(Node):
                                             self.direction_history.append(direction)
                                             if len(self.direction_history) > self.history_size:
                                                 self.direction_history.pop(0)
-                                        
+
                                         # Only update display if we have enough consistent readings - exactly from vad_doa.py
                                         if len(self.direction_history) >= 2:
                                             # Check for consistency (handle wraparound at 0/360) - exactly from vad_doa.py
@@ -622,10 +633,10 @@ class VoiceDirectionNode(Node):
                                             
                                             # Only update if directions are reasonably consistent - exactly from vad_doa.py
                                             if angular_std < self.max_angular_std:  # Within configured standard deviation
-                                                pixel_ring.set_direction(int(avg_direction))
-                                                self.leds_on = True
+                                                # Don't update pixel_ring here - already updated above for real-time feedback
+                                                # Only update last_direction for tracking
                                                 self.last_direction = int(avg_direction)
-                                                
+
                                                 # Publish for ROS (instead of print) - with motor awareness
                                                 self.publish_voice_direction(avg_direction, avg_amplitude)
                                                 
