@@ -215,16 +215,29 @@ class CommandBehavior:
             # "You're about to..." / "You should..." patterns
             r'(you\'?re|your|you|u).{0,10}(about|going|supposed).{0,10}(to|the)?.{0,10}(sleep|bed)',
             r'(you\'?re|your|you|u).{0,10}(should|need|have).{0,10}(to|the)?.{0,10}(sleep|bed)',
+            r'(you\'?re|your|you|u).{0,10}(can|may).{0,10}(sleep|rest).{0,10}(now)?',
 
             # Questions about being asleep
             r'(are|r).{0,5}(you|u).{0,5}(asleep|sleeping)',
             r'(you|u).{0,5}(asleep|sleeping)',
 
-            # Natural commands
-            r'(it\'?s|its)?.{0,5}(time|night).{0,10}(to|for|the)?.{0,10}(sleep|bed)',
-            r'(it\'?s|its).{0,5}bed.?time',
+            # Natural commands and time-based
+            r'(it\'?s|its).{0,10}(time|night).{0,10}(to|for|the)?.{0,10}(sleep|bed)',
+            r'(it\'?s|its).{0,10}bed.?time',
+            r'(it\'?s|its).{0,10}(your.{0,5})?bed.?time',
+            r'time.{0,10}for.{0,10}(you.{0,5}to.{0,5})?(sleep|bed)',
             r'sleep\s+(now|time|mode)',
             r'(sleep|sleeping).{0,5}(mode|time)',
+
+            # Permission/polite requests
+            r'(can|may).{0,5}(i|we).{0,10}(put.{0,5}you.{0,5}to).{0,10}(sleep|bed)',
+            r'(could|would).{0,5}you.{0,10}(please.{0,5})?(go.{0,5}to).{0,10}(sleep|bed)',
+            r'(would|could).{0,5}you.{0,10}(mind.{0,5})?(sleeping|going.{0,5}to.{0,5}(sleep|bed))',
+            r'(please|pls).{0,10}(go.{0,5}to).{0,10}(sleep|bed)',
+
+            # Flexible/suggestive commands
+            r'(why.{0,5}don\'?t.{0,5}you|how.{0,5}about).{0,10}(go.{0,5}to.{0,5})?(sleep|bed)',
+            r'you.{0,5}(better|ought.{0,5}to).{0,10}(sleep|rest|go.{0,5}to.{0,5}bed)',
 
             # Just the word "sleep" - MUST be last to avoid false positives
             r'\b(sleep|asleep)\b',
@@ -233,6 +246,7 @@ class CommandBehavior:
             r'good.?night',
             r'nighty.{0,5}night',
             r'sweet.{0,5}dreams',
+            r'night.{0,5}night',
 
             # Power commands
             r'power.{0,5}down',
