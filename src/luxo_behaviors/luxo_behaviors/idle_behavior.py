@@ -38,7 +38,7 @@ class IdleBehavior:
         self.idle_head_variation_enabled = False  # Will be set by hardware interface
         self.idle_head_variation_interval = 1.25  # Maximum interval - actual will be random 0.2 to this value (very frequent)
         self.idle_head_base_rotation_range = 0.5  # Back to original for more movement
-        self.idle_head_look_up_range = 1.1  # Increased 15% for more upward movement
+        self.idle_head_look_up_range = 0.75  # Increased 15% for more upward movement
         self.idle_head_look_down_range = 0.1  # Decreased 20% to reduce downward movement
         self.last_idle_head_variation_time = self.node.get_clock().now()
         self.current_idle_head_target = None
@@ -473,7 +473,7 @@ class IdleBehavior:
         # For other joints, use the idle base position as reference with strong looking up bias
         look_type = random.random()
         if look_type < 0.85:  # Look up (85% chance - much more common)
-            shoulder_variation = random.uniform(0.15, self.idle_head_look_up_range)  # Much more dramatic upward
+            shoulder_variation = random.uniform(0.2, self.idle_head_look_up_range)  # Much more dramatic upward
             base_position[1] = self.idle_base_position[1] - shoulder_variation
             variation_description = f"looking up (+{shoulder_variation:.2f})"
             emotion = 'alert' if shoulder_variation > 0.4 else 'curious'

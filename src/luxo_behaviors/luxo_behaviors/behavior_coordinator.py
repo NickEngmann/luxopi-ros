@@ -1086,58 +1086,76 @@ class BehaviorCoordinator(PettingBehavior, IdleBehavior, VoiceFollowingBehavior,
         """
         Staged wake-up sequence to gradually reduce DEMA compliance.
 
-        Stage 1 (4s): Very high torque limits (900 - most compliant, gentle wake)
-        Stage 2 (3s): High torque limits (700 - still quite compliant)
-        Stage 3 (2s): Medium torque limits (400 - firming up)
-        Stage 4: DEMA off, full motor control
+        DEMA uses LOWER values for more compliance (sleep = 50).
+        Wake-up gradually INCREASES values towards 1000 (disabled).
+
+        Stage 1 (4s): 100 - Very compliant, still sleepy
+        Stage 2 (3s): 150 - Firming up slightly
+        Stage 3 (2s): 200 - More resistance
+        Stage 4 (1s): 400 - Almost normal resistance
+        Stage 5: DEMA off, full motor control
         """
         def wake_up_sequence():
             try:
-                # Stage 1: Very high torque limits (most compliant)
-                # Using higher values = more compliant (easier to move manually)
-                self.node.get_logger().info("🌅 Wake Stage 1/4: Gentle wake-up (very high compliance) - 4 seconds")
+                # Stage 1: Low torque limits (very compliant, still sleepy)
+                # Lower values = more compliant (easier to move manually)
+                self.node.get_logger().info("🌅 Wake Stage 1/5: Gentle wake-up (very compliant) - 4 seconds")
                 if hasattr(self.node, 'serial_manager'):
                     self.node.serial_manager.set_dynamic_adaptation(
                         mode=1,
-                        base=900,      # Very compliant
-                        shoulder=950,
-                        elbow=900,
-                        wrist=900,
-                        roll=900,
-                        hand=900
+                        base=100,      # Very compliant
+                        shoulder=100,
+                        elbow=100,
+                        wrist=100,
+                        roll=100,
+                        hand=100
                     )
                 time.sleep(4.0)
 
-                # Stage 2: High torque limits (still quite compliant)
-                self.node.get_logger().info("🌅 Wake Stage 2/4: Gradual firming - 3 seconds")
+                # Stage 2: Slightly higher torque limits (firming up a bit)
+                self.node.get_logger().info("🌅 Wake Stage 2/5: Firming up slightly - 3 seconds")
                 if hasattr(self.node, 'serial_manager'):
                     self.node.serial_manager.set_dynamic_adaptation(
                         mode=1,
-                        base=750,      # High compliance
-                        shoulder=750,
-                        elbow=750,
-                        wrist=750,
-                        roll=750,
-                        hand=750
+                        base=150,      # Starting to firm up
+                        shoulder=150,
+                        elbow=150,
+                        wrist=150,
+                        roll=150,
+                        hand=150
                     )
                 time.sleep(3.0)
 
-                # Stage 3: Medium torque limits (firming up)
-                self.node.get_logger().info("🌅 Wake Stage 3/4: Increasing resistance - 2 seconds")
+                # Stage 3: Medium torque limits (more resistance)
+                self.node.get_logger().info("🌅 Wake Stage 3/5: More resistance - 2 seconds")
                 if hasattr(self.node, 'serial_manager'):
                     self.node.serial_manager.set_dynamic_adaptation(
                         mode=1,
-                        base=450,      # Medium compliance
-                        shoulder=450,
-                        elbow=450,
-                        wrist=450,
-                        roll=450,
-                        hand=450
+                        base=200,      # Medium resistance
+                        shoulder=200,
+                        elbow=200,
+                        wrist=200,
+                        roll=200,
+                        hand=200
                     )
                 time.sleep(2.0)
 
-                # Stage 4: Disable DEMA completely and enable torque
-                self.node.get_logger().info("🌅 Wake Stage 4/4: Full motor control - DEMA OFF")
+                # Stage 4: Higher torque limits (almost normal)
+                self.node.get_logger().info("🌅 Wake Stage 4/5: Almost full control - 1 second")
+                if hasattr(self.node, 'serial_manager'):
+                    self.node.serial_manager.set_dynamic_adaptation(
+                        mode=1,
+                        base=400,      # Almost normal
+                        shoulder=400,
+                        elbow=400,
+                        wrist=400,
+                        roll=400,
+                        hand=400
+                    )
+                time.sleep(1.0)
+
+                # Stage 5: Disable DEMA completely and enable torque
+                self.node.get_logger().info("🌅 Wake Stage 5/5: Full motor control - DEMA OFF")
                 if hasattr(self.node, 'disable_dynamic_adaptation_mode'):
                     success = self.node.disable_dynamic_adaptation_mode()
                     if success:
