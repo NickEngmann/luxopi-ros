@@ -80,6 +80,19 @@ class VoiceFollowingBehavior:
         # Voice position feeding timer (continuously spam position like STAY mode)
         self.voice_position_timer = None
 
+        # Adaptive movement tracking - prevent wild spinning in noisy environments
+        self.movement_history = []  # List of (timestamp, base_position) tuples
+        self.movement_history_duration = 20.0  # Track last 20 seconds of movement
+        self.direction_reversal_threshold = 2.1  # radians (~120 degrees)
+        self.thrashing_reversal_count = 3  # Number of reversals to trigger adaptive mode (reduced for faster detection)
+        self.thrashing_time_window = 10.0  # Time window to count reversals (seconds)
+        self.is_thrashing = False
+        self.adaptive_cooldown_multiplier = 1.0  # Multiplier for cooldown (1.0 = normal, 6.0 = max)
+        self.adaptive_filter_multiplier = 1.0  # Multiplier for direction filter
+        self.last_adaptive_check_time = self.node.get_clock().now()
+        self.adaptive_recovery_rate = 0.95  # Recovery multiplier per second (5% reduction)
+        self.last_movement_direction = 0  # 1 = positive, -1 = negative, 0 = unknown
+
         # TTS state tracking - prevent robot from following its own voice
         self.tts_active = False
 
@@ -146,14 +159,17 @@ class VoiceFollowingBehavior:
             self.node.get_logger().info(f"⏸️  Cannot process voice in state: {self._get_current_state().name}")
             return
         
-        # Cooldown check - skip if too soon since last command
+        # Cooldown check - skip if too soon since last command (with adaptive multiplier)
         if self.last_voice_command_time is not None:
+            # Apply adaptive cooldown multiplier to prevent thrashing
+            effective_cooldown = self.voice_command_cooldown * self.adaptive_cooldown_multiplier
             time_since_last_command = (current_time - self.last_voice_command_time).nanoseconds / 1e9
-            if time_since_last_command < self.voice_command_cooldown:
-                remaining_cooldown = self.voice_command_cooldown - time_since_last_command
+            if time_since_last_command < effective_cooldown:
+                remaining_cooldown = effective_cooldown - time_since_last_command
+                adaptive_status = f" [ADAPTIVE x{self.adaptive_cooldown_multiplier:.1f}]" if self.adaptive_cooldown_multiplier > 1.0 else ""
                 self.node.get_logger().info(
                     f"⏳ Voice command on cooldown for {remaining_cooldown:.1f}s more "
-                    f"(direction: {voice_direction:.1f}°)"
+                    f"(direction: {voice_direction:.1f}°){adaptive_status}"
                 )
                 # Still update tracking even if we don't send command
                 self.last_voice_direction = voice_direction
@@ -161,14 +177,18 @@ class VoiceFollowingBehavior:
                 return
 
         # Direction filtering - only ignore if similar direction AND robot is already at target
+        # Apply adaptive filter multiplier to prevent thrashing
         if self.last_acted_voice_direction is not None:
             direction_diff = abs(voice_direction - self.last_acted_voice_direction)
             # Handle wraparound
             if direction_diff > 180:
                 direction_diff = 360 - direction_diff
 
+            # Apply adaptive filter threshold (increases when thrashing detected)
+            effective_filter_threshold = self.voice_direction_filter_threshold * self.adaptive_filter_multiplier
+
             # Check if direction is similar to last acted direction
-            if direction_diff < self.voice_direction_filter_threshold:
+            if direction_diff < effective_filter_threshold:
                 # Also check if robot has reached the target position
                 # Convert voice direction to target angle
                 target_angle_rad = np.deg2rad(voice_direction)
@@ -273,7 +293,22 @@ class VoiceFollowingBehavior:
         if hasattr(self, 'last_rest_position') and self.last_rest_position is not None:
             self.last_rest_position[0] = self.target_voice_angle
             self.node.get_logger().info(
-                f"Updated rest position to voice target: {np.rad2deg(self.target_voice_angle):.1f}°"
+                f"Updated last_rest_position to voice target: {np.rad2deg(self.target_voice_angle):.1f}°"
+            )
+
+        # CRITICAL: Also update base_rest_position so it persists across state changes
+        # Without this, _generate_rest_position() will use the old base position
+        if hasattr(self, 'base_rest_position') and self.base_rest_position is not None:
+            self.base_rest_position[0] = self.target_voice_angle
+            self.node.get_logger().info(
+                f"🔒 Updated base_rest_position to voice target: {np.rad2deg(self.target_voice_angle):.1f}° (STICKY)"
+            )
+
+        # Also update idle_base_position to prevent idle head variations from resetting
+        if hasattr(self, 'idle_base_position') and self.idle_base_position is not None:
+            self.idle_base_position[0] = self.target_voice_angle
+            self.node.get_logger().debug(
+                f"Updated idle_base_position to voice target: {np.rad2deg(self.target_voice_angle):.1f}°"
             )
 
         # Check if we're on target for variation purposes
@@ -291,9 +326,12 @@ class VoiceFollowingBehavior:
             self.last_voice_variation_time = None
             self.current_voice_variation = None
         
+        # Track movement for adaptive behavior (before sending command)
+        self._track_movement_history(current_time)
+
         # Send direct command to follow voice
         self._send_voice_following_command()
-        
+
         # Reset completion timer since we received new voice input
         self.voice_completion_timer = current_time
     
@@ -405,7 +443,128 @@ class VoiceFollowingBehavior:
         )
         
         return varied_position
-    
+
+    def _track_movement_history(self, current_time):
+        """Track base movement to detect thrashing behavior."""
+        try:
+            # Get current base position
+            if not self.current_joints or len(self.current_joints) == 0:
+                return
+
+            current_base = self.current_joints[0]
+
+            # Add to movement history
+            self.movement_history.append((current_time, current_base))
+
+            # Clean old entries (older than movement_history_duration)
+            cutoff_time = current_time.nanoseconds / 1e9 - self.movement_history_duration
+            self.movement_history = [
+                (t, pos) for t, pos in self.movement_history
+                if t.nanoseconds / 1e9 > cutoff_time
+            ]
+
+            # Detect thrashing (check every 0.5 seconds to avoid overhead)
+            time_since_check = (current_time - self.last_adaptive_check_time).nanoseconds / 1e9
+            if time_since_check > 0.5:
+                self._detect_and_adapt_thrashing(current_time)
+                self.last_adaptive_check_time = current_time
+
+        except Exception as e:
+            self.node.get_logger().error(f"Error tracking movement history: {e}")
+
+    def _detect_and_adapt_thrashing(self, current_time):
+        """Detect thrashing (rapid back-and-forth) and adapt parameters."""
+        try:
+            # Need at least 3 data points to detect reversals
+            if len(self.movement_history) < 3:
+                return
+
+            # Count direction reversals in recent history
+            reversals = 0
+            cutoff_time = current_time.nanoseconds / 1e9 - self.thrashing_time_window
+
+            # Get recent movements within the time window
+            recent_movements = [
+                (t, pos) for t, pos in self.movement_history
+                if t.nanoseconds / 1e9 > cutoff_time
+            ]
+
+            if len(recent_movements) < 3:
+                # Not enough recent data, apply gradual recovery
+                self._apply_adaptive_recovery()
+                return
+
+            # Detect direction reversals (>120 degree changes)
+            last_direction = 0
+            for i in range(1, len(recent_movements)):
+                prev_pos = recent_movements[i-1][1]
+                curr_pos = recent_movements[i][1]
+
+                # Calculate movement delta
+                delta = self.position_utils.normalize_angle(curr_pos - prev_pos)
+
+                # Determine direction (positive or negative)
+                current_direction = 1 if delta > 0 else -1 if delta < 0 else 0
+
+                # Check for large movement (>120 degrees)
+                if abs(delta) > self.direction_reversal_threshold:
+                    # Check if direction reversed
+                    if last_direction != 0 and current_direction != 0 and last_direction != current_direction:
+                        reversals += 1
+                    last_direction = current_direction
+
+            # Determine if we're thrashing
+            was_thrashing = self.is_thrashing
+            self.is_thrashing = (reversals >= self.thrashing_reversal_count)
+
+            if self.is_thrashing:
+                # Apply adaptive penalties
+                if not was_thrashing:
+                    self.node.get_logger().warn(
+                        f"🌀 THRASHING DETECTED: {reversals} reversals in {self.thrashing_time_window:.1f}s - "
+                        f"applying adaptive cooldown"
+                    )
+
+                # Increase cooldown and filter thresholds
+                # Max multiplier of 6.0 (cooldown goes from 0.3s to 1.8s)
+                self.adaptive_cooldown_multiplier = min(6.0, self.adaptive_cooldown_multiplier + 0.5)
+                self.adaptive_filter_multiplier = min(3.0, self.adaptive_filter_multiplier + 0.3)
+
+                self.node.get_logger().info(
+                    f"📊 Adaptive params: cooldown={self.voice_command_cooldown * self.adaptive_cooldown_multiplier:.2f}s "
+                    f"(x{self.adaptive_cooldown_multiplier:.1f}), "
+                    f"filter={self.voice_direction_filter_threshold * self.adaptive_filter_multiplier:.1f}° "
+                    f"(x{self.adaptive_filter_multiplier:.1f})"
+                )
+            else:
+                # Apply gradual recovery when stable
+                self._apply_adaptive_recovery()
+
+        except Exception as e:
+            self.node.get_logger().error(f"Error detecting thrashing: {e}")
+
+    def _apply_adaptive_recovery(self):
+        """Gradually reduce adaptive penalties when movement stabilizes."""
+        try:
+            # Only recover if we have penalties applied
+            if self.adaptive_cooldown_multiplier <= 1.0 and self.adaptive_filter_multiplier <= 1.0:
+                return
+
+            # Gradually reduce multipliers (5% per check, which is ~10% per second)
+            old_cooldown = self.adaptive_cooldown_multiplier
+            old_filter = self.adaptive_filter_multiplier
+
+            self.adaptive_cooldown_multiplier = max(1.0, self.adaptive_cooldown_multiplier * self.adaptive_recovery_rate)
+            self.adaptive_filter_multiplier = max(1.0, self.adaptive_filter_multiplier * self.adaptive_recovery_rate)
+
+            # Log when fully recovered
+            if old_cooldown > 1.0 and self.adaptive_cooldown_multiplier == 1.0:
+                self.node.get_logger().info("✅ Adaptive cooldown fully recovered - back to normal responsiveness")
+                self.is_thrashing = False
+
+        except Exception as e:
+            self.node.get_logger().error(f"Error applying adaptive recovery: {e}")
+
     def _voice_position_callback(self):
         """Timer callback to continuously feed voice target position (10Hz like STAY mode)."""
         try:
@@ -486,7 +645,23 @@ class VoiceFollowingBehavior:
                     # Update the base (first element) of the rest position
                     self.last_rest_position[0] = final_base_position
                     self.node.get_logger().info(
-                        f"📍 Updated rest position base to: {np.rad2deg(final_base_position):.1f}°"
+                        f"📍 Updated last_rest_position base to: {np.rad2deg(final_base_position):.1f}°"
+                    )
+
+                # CRITICAL: Also update base_rest_position to make it PERMANENT
+                # This ensures the position persists even after _generate_rest_position() is called
+                if hasattr(self, 'base_rest_position') and self.base_rest_position is not None:
+                    self.base_rest_position[0] = final_base_position
+                    self.node.get_logger().info(
+                        f"🔒 Updated base_rest_position to final: {np.rad2deg(final_base_position):.1f}° (PERMANENT)"
+                    )
+
+                # CRITICAL: Also update idle_base_position to prevent idle head variations from resetting base
+                # idle_base_position is used as reference in idle head variation generation
+                if hasattr(self, 'idle_base_position') and self.idle_base_position is not None:
+                    self.idle_base_position[0] = final_base_position
+                    self.node.get_logger().info(
+                        f"🔒 Updated idle_base_position to final: {np.rad2deg(final_base_position):.1f}° (STICKY IDLE)"
                     )
 
                 # Delay idle animations to prevent immediate movement
@@ -513,6 +688,14 @@ class VoiceFollowingBehavior:
             self.voice_on_target_start_time = None
             self.last_voice_variation_time = None
             self.current_voice_variation = None
+
+            # Reset adaptive tracking
+            self.movement_history.clear()
+            self.is_thrashing = False
+            self.adaptive_cooldown_multiplier = 1.0
+            self.adaptive_filter_multiplier = 1.0
+            self.last_movement_direction = 0
+            self.node.get_logger().debug("Reset adaptive movement tracking")
 
             # Request transition back to previous state
             if hasattr(self, '_transition_to_state'):
