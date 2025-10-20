@@ -66,7 +66,7 @@ class VoiceFollowingBehavior:
         self.voice_on_target_threshold = 2.0  # seconds to wait before starting variations
         
         # Voice command cooldown and direction filtering
-        self.voice_command_cooldown = 1.0  # seconds between voice commands (reduced for better responsiveness)
+        self.voice_command_cooldown = 0.3  # seconds between voice commands (reduced from 1.0 for faster response)
         self.last_voice_command_time = None  # Initialize to None to allow immediate first command
         self.last_acted_voice_direction = None  # Last direction we actually sent a command for
         self.voice_direction_filter_threshold = 5.0  # degrees - ignore directions within this range if already at target
@@ -76,6 +76,9 @@ class VoiceFollowingBehavior:
         self.voice_following_previous_state = None
         self.voice_completion_timer = None
         self.voice_completion_timeout = 3.0  # seconds of no voice activity before completing
+
+        # Voice position feeding timer (continuously spam position like STAY mode)
+        self.voice_position_timer = None
 
         # TTS state tracking - prevent robot from following its own voice
         self.tts_active = False
@@ -403,13 +406,32 @@ class VoiceFollowingBehavior:
         
         return varied_position
     
+    def _voice_position_callback(self):
+        """Timer callback to continuously feed voice target position (10Hz like STAY mode)."""
+        try:
+            # Only feed position if we're in VOICE_FOLLOWING state and have a target
+            if (self._get_current_state() == LuxoState.VOICE_FOLLOWING and
+                self.target_voice_angle is not None):
+
+                # Send voice following command continuously until target is reached
+                self._send_voice_following_command()
+
+        except Exception as e:
+            self.node.get_logger().error(f"Error in voice position callback: {e}")
+
     def _transition_to_voice_following_state(self):
         """Request transition to VOICE_FOLLOWING state."""
         try:
             if hasattr(self, '_transition_to_state'):
                 success = self._transition_to_state(LuxoState.VOICE_FOLLOWING)
                 if success:
-                    self.node.get_logger().info("Successfully transitioned to VOICE_FOLLOWING state")
+                    self.node.get_logger().info("✅ Successfully transitioned to VOICE_FOLLOWING state")
+
+                    # Start continuous position feeding timer (10Hz = 0.1s interval)
+                    if self.voice_position_timer is not None:
+                        self.voice_position_timer.cancel()
+                    self.voice_position_timer = self.node.create_timer(0.1, self._voice_position_callback)
+                    self.node.get_logger().info("🔄 Started continuous voice position feeding at 10Hz")
                 else:
                     self.node.get_logger().warn("Failed to transition to VOICE_FOLLOWING state")
             elif hasattr(self, 'request_state_transition_client'):
@@ -432,7 +454,7 @@ class VoiceFollowingBehavior:
             request = RequestStateTransition.Request()
             request.requested_state = 'VOICE_FOLLOWING'
             request.requesting_node = 'voice_following'
-            request.priority = 75  # High priority for voice commands
+            request.priority = 90  # Very high priority for voice commands (increased from 75)
             request.force = False
             
             future = self.request_state_transition_client.call_async(request)
@@ -473,6 +495,12 @@ class VoiceFollowingBehavior:
                     self.node.get_logger().info("⏰ Reset idle timer - delaying animations")
 
             self.node.get_logger().info(f"Voice following completed - returning to {return_state.name}")
+
+            # Stop continuous position feeding timer
+            if self.voice_position_timer is not None:
+                self.voice_position_timer.cancel()
+                self.voice_position_timer = None
+                self.node.get_logger().info("⏹️  Stopped continuous voice position feeding")
 
             # Reset voice following state tracking
             self.voice_following_state_requested = False
@@ -617,17 +645,24 @@ class VoiceFollowingBehavior:
     
     def update_voice_decay(self, current_time):
         """Update voice influence decay over time."""
-        # Check for voice following completion
-        if (self.voice_following_state_requested and 
-            self.voice_completion_timer and 
-            self._get_current_state() == LuxoState.VOICE_FOLLOWING):
-            
-            time_since_last_voice = (current_time - self.voice_completion_timer).nanoseconds / 1e9
-            if time_since_last_voice > self.voice_completion_timeout:
-                self.node.get_logger().info(f"Voice inactive for {time_since_last_voice:.1f}s - completing voice following")
-                self._complete_voice_following()
-                return
-        
+        current_state = self._get_current_state()
+
+        # CRITICAL: When in VOICE_FOLLOWING state, keep voice influence at maximum
+        # This prevents decay from clearing the target while we're actively following
+        if current_state == LuxoState.VOICE_FOLLOWING:
+            self.voice_influence = 1.0  # Always max influence when in VOICE_FOLLOWING state
+
+            # Check for voice following completion timeout
+            if (self.voice_following_state_requested and
+                self.voice_completion_timer):
+
+                time_since_last_voice = (current_time - self.voice_completion_timer).nanoseconds / 1e9
+                if time_since_last_voice > self.voice_completion_timeout:
+                    self.node.get_logger().info(f"Voice inactive for {time_since_last_voice:.1f}s - completing voice following")
+                    self._complete_voice_following()
+            return  # Don't decay while in VOICE_FOLLOWING state
+
+        # For other states, apply normal decay logic
         if self.last_voice_time:
             time_since_voice = (current_time - self.last_voice_time).nanoseconds / 1e9
             if time_since_voice > 0.5:  # Start decaying after 0.5 seconds
