@@ -1032,30 +1032,25 @@ class BehaviorCoordinator(PettingBehavior, IdleBehavior, VoiceFollowingBehavior,
                 self._schedule_dema_enable(sleep_animation_duration)
 
             elif not msg.data and self.sleep_state:
-                # Waking up
-                self.node.get_logger().info("Wake mode activated - disabling DEMA and turning on lights")
+                # Waking up - use staged sequence to gradually reduce DEMA
+                self.node.get_logger().info("Wake mode activated - turning on lights and starting staged DEMA reduction")
                 self.sleep_state = False
                 self.sleep_animation_in_progress = False
 
-                # Disable DEMA mode
-                if hasattr(self.node, 'disable_dynamic_adaptation_mode'):
-                    success = self.node.disable_dynamic_adaptation_mode()
-                    if success:
-                        time.sleep(0.2)
-                        self.node.enable_torque()
-                        self.node.get_logger().info("DEMA disabled and torque enabled for wake up")
-
-                # Turn on lights
+                # Turn on lights immediately
                 light_msg = Bool()
                 light_msg.data = True
                 self.light_control_publisher.publish(light_msg)
                 self.node.get_logger().info("Lights turned ON for wake up")
 
-                # Turn on pixel ring
+                # Turn on pixel ring immediately
                 pixel_msg = Bool()
                 pixel_msg.data = True
                 self.pixel_ring_control_publisher.publish(pixel_msg)
                 self.node.get_logger().info("Pixel ring turned ON for wake up")
+
+                # Start the staged wake-up sequence for DEMA reduction only
+                self._staged_wake_up()
 
         except Exception as e:
             self.node.get_logger().error(f"Error in sleep mode callback: {e}")
@@ -1086,6 +1081,86 @@ class BehaviorCoordinator(PettingBehavior, IdleBehavior, VoiceFollowingBehavior,
         import threading
         dema_thread = threading.Thread(target=enable_dema_after_delay, daemon=True)
         dema_thread.start()
+
+    def _staged_wake_up(self):
+        """
+        Staged wake-up sequence to gradually reduce DEMA compliance.
+
+        Stage 1 (4s): Very high torque limits (900 - most compliant, gentle wake)
+        Stage 2 (3s): High torque limits (700 - still quite compliant)
+        Stage 3 (2s): Medium torque limits (400 - firming up)
+        Stage 4: DEMA off, full motor control
+        """
+        def wake_up_sequence():
+            try:
+                # Stage 1: Very high torque limits (most compliant)
+                # Using higher values = more compliant (easier to move manually)
+                self.node.get_logger().info("🌅 Wake Stage 1/4: Gentle wake-up (very high compliance) - 4 seconds")
+                if hasattr(self.node, 'serial_manager'):
+                    self.node.serial_manager.set_dynamic_adaptation(
+                        mode=1,
+                        base=900,      # Very compliant
+                        shoulder=950,
+                        elbow=900,
+                        wrist=900,
+                        roll=900,
+                        hand=900
+                    )
+                time.sleep(4.0)
+
+                # Stage 2: High torque limits (still quite compliant)
+                self.node.get_logger().info("🌅 Wake Stage 2/4: Gradual firming - 3 seconds")
+                if hasattr(self.node, 'serial_manager'):
+                    self.node.serial_manager.set_dynamic_adaptation(
+                        mode=1,
+                        base=750,      # High compliance
+                        shoulder=750,
+                        elbow=750,
+                        wrist=750,
+                        roll=750,
+                        hand=750
+                    )
+                time.sleep(3.0)
+
+                # Stage 3: Medium torque limits (firming up)
+                self.node.get_logger().info("🌅 Wake Stage 3/4: Increasing resistance - 2 seconds")
+                if hasattr(self.node, 'serial_manager'):
+                    self.node.serial_manager.set_dynamic_adaptation(
+                        mode=1,
+                        base=450,      # Medium compliance
+                        shoulder=450,
+                        elbow=450,
+                        wrist=450,
+                        roll=450,
+                        hand=450
+                    )
+                time.sleep(2.0)
+
+                # Stage 4: Disable DEMA completely and enable torque
+                self.node.get_logger().info("🌅 Wake Stage 4/4: Full motor control - DEMA OFF")
+                if hasattr(self.node, 'disable_dynamic_adaptation_mode'):
+                    success = self.node.disable_dynamic_adaptation_mode()
+                    if success:
+                        time.sleep(0.2)
+                        self.node.enable_torque()
+                        self.node.get_logger().info("✅ Wake-up complete! DEMA disabled, torque enabled, full control restored")
+                    else:
+                        self.node.get_logger().error("❌ Failed to disable DEMA in final wake stage")
+
+            except Exception as e:
+                self.node.get_logger().error(f"Error in staged wake-up sequence: {e}")
+                # Fallback: try to disable DEMA anyway
+                try:
+                    if hasattr(self.node, 'disable_dynamic_adaptation_mode'):
+                        self.node.disable_dynamic_adaptation_mode()
+                        self.node.enable_torque()
+                except:
+                    pass
+
+        # Start thread for staged wake-up
+        import threading
+        wake_thread = threading.Thread(target=wake_up_sequence, daemon=True)
+        wake_thread.start()
 
     def _stay_mode_callback(self, msg):
         """Handle stay mode commands - freeze position without DEMA."""
