@@ -473,9 +473,9 @@ Examples:
         # Save to file (either specified or default)
         output_path = args.output if args.output else default_filename
 
-        # Create animations/python directory if using default
+        # Create python directory if using default (relative to current directory)
         if not args.output:
-            output_dir = Path('animations/python')
+            output_dir = Path('./python')
             output_dir.mkdir(parents=True, exist_ok=True)
             output_path = output_dir / default_filename
 

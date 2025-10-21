@@ -16,7 +16,7 @@
         "acc": 10.0
       },
       "timing": 1.0,
-      "duration": 0.4
+      "duration": 0.6
     },
     {
       "servos": {
@@ -30,7 +30,7 @@
         "acc": 10.0
       },
       "timing": 1.0,
-      "duration": 1.3
+      "duration": 1.5
     },
     {
       "servos": {
@@ -44,7 +44,7 @@
         "acc": 10.0
       },
       "timing": 1.0,
-      "duration": 0.4
+      "duration": 0.6
     },
     {
       "servos": {
@@ -72,7 +72,7 @@
         "acc": 10.0
       },
       "timing": 1.0,
-      "duration": 0.9
+      "duration": 1.1
     },
     {
       "servos": {
