@@ -116,22 +116,27 @@ The main launch file `luxo_system.launch.py` supports these parameters:
    - **Transition**: Smooth movement between states
    - **Interactive**: Responsive to stimuli
 
-### Available Animations (47 total)
+### Available Animations (28 currently loaded)
+
+**Note:** The system was originally designed for 47 animations, but currently only 28 are loaded.
 
 #### Idle Animations (16)
-`gentle_sway`, `curious_exploration`, `breathing`, `attentive_listening`, `playful_bob`, `scanning_watch`, `settling_adjust`, `dreamy_drift`, `neck_stretch`, `sleep`, `yawning_stretch`, `shoulder_shimmy`, `look_around_casual`, `contented_sigh`, `head_bobbing`, `tail_wag`, `pondering`
+`attentive_listening`, `breathing`, `contented_sigh`, `curious_exploration`, `dreamy_drift`, `gentle_sway`, `head_bobbing`, `look_around_casual`, `neck_stretch`, `playful_bob`, `pondering`, `scanning_watch`, `settling_adjust`, `shoulder_shimmy`, `sleep`, `tail_wag`, `yawning_stretch`
 
-#### Action Animations (5)
-`curious`, `think`, `stretch`, `dance`, `idle`
+#### Action Animations (2)
+`curious`, `think`
 
-#### Emotion Animations (4)
-`excited`, `sad`, `playful`, `startled`
+#### Emotion Animations (1)
+`startled`
 
 #### Response Animations (4)
 `nod`, `shake`, `close`, `stop`
 
 #### Petting Animations (3)
 `folded_wiggle`, `bouncy_wiggle`, `sleepy_melt`
+
+#### Not Currently Loaded
+`stretch`, `dance`, `idle`, `excited`, `sad`, `playful` - These animations are referenced in documentation but not currently available in the system.
 
 ## AI Voice Assistant System
 
@@ -618,15 +623,21 @@ This pattern has been battle-tested with STAY mode and SLEEP mode. Use it as a t
 
 States and their responsibilities:
 - `IDLE`: Default state, can trigger idle animations
-- `ANIMATING`: Playing animations, blocks other actions
+- `ANIMATING`: Playing animations. Can transition to/from VOICE_FOLLOWING for seamless behavior
 - `COLLISION_AVOIDING`: Active obstacle avoidance
 - `RETURNING_HOME`: Moving to safe position
 - `USER_CONTROL`: Direct user commands
-- `PETTING`: Responding to touch sensors
-- `VOICE_FOLLOWING`: Tracking voice direction
+- `PETTING`: Responding to touch sensors. Can start animations during petting
+- `VOICE_FOLLOWING`: Tracking voice direction. **Can trigger animations while following voice**
 - `ESCAPE_MODE`: Emergency collision response
 - `EMOTION_REACTING`: Responding to detected emotions
 - `ERROR`: Error recovery state
+- `STAY`: Freeze in current position (voice command controlled)
+
+**Key State Transitions:**
+- `VOICE_FOLLOWING` ↔ `ANIMATING`: Bidirectional - animations can interrupt voice following and vice versa
+- `PETTING` → `ANIMATING`: Animations allowed during petting responses
+- `ANIMATING` → Most states: Animations can be interrupted by higher-priority behaviors
 
 ## Key Configuration Files
 
@@ -650,16 +661,29 @@ States and their responsibilities:
 ## Development Workflows
 
 ### Testing Animations
+
+**Recommended Method - Action Goals (Most Reliable):**
 ```bash
-# Test specific animation
-ros2 topic pub --once /roarm/animation_command std_msgs/String "data: excited"
+# Basic animation
+ros2 action send_goal /play_animation luxo_interfaces/action/PlayAnimation "{animation_name: 'curious'}"
 
-# Test with speed modifier
-ros2 topic pub --once /roarm/animation_command std_msgs/String "data: dance 1.5"
+# With speed multiplier (1.5x faster)
+ros2 action send_goal /play_animation luxo_interfaces/action/PlayAnimation "{animation_name: 'think', speed_multiplier: 1.5}"
 
-# Trigger idle animation
+# Allow interruption
+ros2 action send_goal /play_animation luxo_interfaces/action/PlayAnimation "{animation_name: 'startled', allow_interruption: true}"
+```
+
+**Alternative Methods:**
+```bash
+# Simple topic (less reliable, may be rejected)
+ros2 topic pub --once /roarm/animation_command std_msgs/String "data: curious"
+
+# Trigger random idle animation
 ros2 service call /trigger_idle_animation std_srvs/srv/Trigger
 ```
+
+**Note:** Some animations from the original design are not currently loaded. Use `curious`, `think`, `startled`, `nod`, `shake`, `close`, `stop`, or any of the idle animations listed below.
 
 ### Monitoring System
 ```bash
