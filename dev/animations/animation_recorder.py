@@ -21,6 +21,7 @@ import tty
 import argparse
 import math
 import os
+import subprocess
 from pathlib import Path
 from typing import List, Dict, Optional
 from datetime import datetime
@@ -476,8 +477,60 @@ class AnimationRecorder:
         except ValueError:
             print("✗ Invalid input")
 
+    def convert_json_to_python(self, json_filepath: Path) -> bool:
+        """
+        Convert JSON animation to Python using json_to_animation.py script.
+
+        Args:
+            json_filepath: Path to the JSON file to convert
+
+        Returns:
+            True if conversion successful, False otherwise
+        """
+        try:
+            # Create python output directory
+            python_dir = Path('./python')
+            python_dir.mkdir(parents=True, exist_ok=True)
+
+            # Get the json_to_animation.py script path (same directory as this script)
+            script_dir = Path(__file__).parent
+            converter_script = script_dir / 'json_to_animation.py'
+
+            if not converter_script.exists():
+                print(f"  ⚠ Warning: Converter script not found at {converter_script}")
+                return False
+
+            # Run the converter script
+            print(f"\n  Converting to Python animation...")
+            python_filename = f"{json_filepath.stem}.py"
+            result = subprocess.run(
+                [sys.executable, str(converter_script), str(json_filepath), '-o', str(python_dir / python_filename)],
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
+
+            if result.returncode == 0:
+                # Extract output filename from the converter's output
+                for line in result.stdout.split('\n'):
+                    if 'written to:' in line:
+                        print(f"  ✓ {line.strip()}")
+                        return True
+                print(f"  ✓ Python animation generated in {python_dir}")
+                return True
+            else:
+                print(f"  ⚠ Conversion failed: {result.stderr}")
+                return False
+
+        except subprocess.TimeoutExpired:
+            print(f"  ⚠ Conversion timed out")
+            return False
+        except Exception as e:
+            print(f"  ⚠ Error during conversion: {e}")
+            return False
+
     def save_animation(self):
-        """Save animation to JSON file in animations/json/ folder."""
+        """Save animation to JSON file in animations/json/ folder and convert to Python."""
         if not self.keyframes:
             print("\n✗ No keyframes to save")
             return
@@ -501,7 +554,7 @@ class AnimationRecorder:
         }
 
         # Create animations/json directory if it doesn't exist
-        output_dir = Path('animations/json')
+        output_dir = Path('./json')
         output_dir.mkdir(parents=True, exist_ok=True)
 
         # Generate filename
@@ -513,6 +566,10 @@ class AnimationRecorder:
             with open(filepath, 'w') as f:
                 json.dump(animation_data, f, indent=2)
             print(f"\n✓ Animation saved to: {filepath}")
+
+            # Automatically convert to Python
+            self.convert_json_to_python(filepath)
+
         except Exception as e:
             print(f"\n✗ Error saving animation: {e}")
 
@@ -1053,7 +1110,7 @@ class AnimationRecorder:
         print("\n✓ DEMA disabled - robot holding new position")
 
     def _save_edited_animation(self, original_json_file: str, original_data: Dict):
-        """Save the edited animation with a new timestamp."""
+        """Save the edited animation with a new timestamp and convert to Python."""
         print("\n" + "="*60)
         print("SAVE EDITED ANIMATION")
         print("="*60)
@@ -1078,7 +1135,7 @@ class AnimationRecorder:
         # Generate filename with timestamp
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         filename = f"animation_{self.animation_name}_{timestamp}.json"
-        filepath = Path("animations/json") / filename
+        filepath = Path("./json") / filename
 
         # Ensure directory exists
         filepath.parent.mkdir(parents=True, exist_ok=True)
@@ -1091,6 +1148,10 @@ class AnimationRecorder:
             print(f"\n✓ Animation saved to: {filepath}")
             print(f"  Name: {self.animation_name}")
             print(f"  Keyframes: {len(self.keyframes)}")
+
+            # Automatically convert to Python
+            self.convert_json_to_python(filepath)
+
         except Exception as e:
             print(f"\n✗ Error saving animation: {e}")
 
@@ -1278,7 +1339,7 @@ Examples:
   python3 animation_recorder.py
 
   # Preview an existing animation
-  python3 animation_recorder.py --preview animations/json/animation_hopping.json
+  python3 animation_recorder.py --preview ./json/animation_hopping.json
 
   # Use a different serial port
   python3 animation_recorder.py --port /dev/ttyUSB0
