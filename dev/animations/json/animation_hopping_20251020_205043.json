@@ -16,7 +16,7 @@
         "acc": 10.0
       },
       "timing": 1.0,
-      "duration": 0.5
+      "duration": 1.4
     },
     {
       "servos": {
@@ -30,7 +30,7 @@
         "acc": 10.0
       },
       "timing": 1.0,
-      "duration": 0.5
+      "duration": 1.2
     },
     {
       "servos": {
@@ -44,7 +44,7 @@
         "acc": 10.0
       },
       "timing": 1.0,
-      "duration": 0.5
+      "duration": 0.9
     },
     {
       "servos": {
@@ -58,7 +58,7 @@
         "acc": 10.0
       },
       "timing": 1.0,
-      "duration": 0.5
+      "duration": 1.8
     },
     {
       "servos": {
@@ -72,7 +72,7 @@
         "acc": 10.0
       },
       "timing": 1.0,
-      "duration": 0.5
+      "duration": 0.9
     },
     {
       "servos": {
@@ -86,7 +86,7 @@
         "acc": 10.0
       },
       "timing": 1.0,
-      "duration": 0.5
+      "duration": 1.5
     },
     {
       "servos": {
@@ -100,7 +100,7 @@
         "acc": 10.0
       },
       "timing": 1.0,
-      "duration": 0.5
+      "duration": 1.5
     },
     {
       "servos": {
@@ -114,7 +114,7 @@
         "acc": 10.0
       },
       "timing": 1.0,
-      "duration": 0.5
+      "duration": 2.0
     },
     {
       "servos": {
@@ -128,7 +128,7 @@
         "acc": 10.0
       },
       "timing": 1.0,
-      "duration": 0.5
+      "duration": 1.5
     },
     {
       "servos": {
@@ -142,7 +142,7 @@
         "acc": 10.0
       },
       "timing": 1.0,
-      "duration": 0.5
+      "duration": 2.2
     },
     {
       "servos": {
@@ -156,7 +156,7 @@
         "acc": 10.0
       },
       "timing": 1.0,
-      "duration": 0.5
+      "duration": 1.7
     },
     {
       "servos": {
@@ -170,7 +170,7 @@
         "acc": 10.0
       },
       "timing": 1.0,
-      "duration": 0.5
+      "duration": 1.6
     }
   ],
   "keyframe_count": 12

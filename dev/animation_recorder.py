@@ -337,13 +337,18 @@ class AnimationRecorder:
         print(f"      Hand:     {self.rad_to_deg(current['hand']):7.2f}° ({current['hand']:.4f} rad) [error: {errors_deg['hand']:6.2f}°]")
         return False
 
-    def replay_animation(self):
-        """Replay the recorded animation."""
+    def replay_animation(self, skip_dema_prompt: bool = False):
+        """
+        Replay the recorded animation.
+
+        Args:
+            skip_dema_prompt: If True, don't ask about re-enabling DEMA at the end
+        """
         if not self.keyframes:
             print("\n✗ No keyframes to replay")
             return
 
-        print(f"\n▶ Replaying animation with {len(self.keyframes)} keyframes...")
+        print(f"▶ Replaying animation with {len(self.keyframes)} keyframes...")
 
         # Disable DEMA for controlled playback
         print("\n  Disabling DEMA for playback...")
@@ -375,11 +380,12 @@ class AnimationRecorder:
 
         print("\n✓ Playback complete")
 
-        # Ask if user wants to re-enable DEMA
-        print("\nRe-enable DEMA mode? (y/n): ", end='', flush=True)
-        response = input().strip().lower()
-        if response == 'y':
-            self.enable_full_dema()
+        # Ask if user wants to re-enable DEMA (unless skipped)
+        if not skip_dema_prompt:
+            print("\nRe-enable DEMA mode? (y/n): ", end='', flush=True)
+            response = input().strip().lower()
+            if response == 'y':
+                self.enable_full_dema()
 
     def edit_animation(self):
         """Edit animation keyframes."""
@@ -624,6 +630,181 @@ class AnimationRecorder:
 
         return 'quit'
 
+    def preview_animation(self, json_file: str):
+        """Preview an animation from a JSON file and optionally calibrate durations."""
+        print("\n" + "="*60)
+        print("LuxoPi Animation Preview")
+        print("="*60)
+
+        # Load JSON file
+        print(f"\nLoading animation from: {json_file}")
+        try:
+            with open(json_file, 'r') as f:
+                data = json.load(f)
+        except FileNotFoundError:
+            print(f"✗ File not found: {json_file}")
+            return
+        except json.JSONDecodeError as e:
+            print(f"✗ Invalid JSON: {e}")
+            return
+
+        animation_name = data.get('name', 'unknown')
+        self.keyframes = data.get('keyframes', [])
+
+        if not self.keyframes:
+            print("✗ No keyframes found in animation")
+            return
+
+        print(f"✓ Loaded animation: {animation_name}")
+        print(f"  Keyframes: {len(self.keyframes)}")
+        print(f"  Category: {data.get('category', 'unknown')}")
+
+        # Connect to robot
+        if not self.connect():
+            return
+
+        # Start serial read thread
+        self.start_read_thread()
+
+        # Wait for initial connection
+        print("\nWaiting for robot to initialize (3 seconds)...")
+        for i in range(3, 0, -1):
+            print(f"\r  {i} seconds remaining...", end='', flush=True)
+            time.sleep(1)
+        print("\r  Ready!                    ")
+
+        print("\nWaiting 2 seconds for robot to stabilize...")
+        time.sleep(2)
+
+        # Play animation and measure actual durations
+        print(f"\nPlaying animation '{animation_name}'...\n")
+        actual_durations = self._replay_and_measure(skip_dema_prompt=True)
+
+        # Turn on DEMA
+        print("\nTurning on DEMA...")
+        self.enable_full_dema()
+        time.sleep(1)
+
+        # Compare actual vs prescribed durations
+        if actual_durations:
+            self._check_duration_calibration(json_file, data, actual_durations)
+
+        # Cleanup
+        print("\nPreview complete!")
+        self.running = False
+        if self.ser:
+            self.ser.close()
+
+        print("✓ Goodbye! (DEMA left enabled)")
+
+    def _replay_and_measure(self, skip_dema_prompt: bool = False) -> List[float]:
+        """
+        Replay animation and measure actual time to reach each keyframe.
+
+        Returns:
+            List of actual durations (time to reach each keyframe)
+        """
+        if not self.keyframes:
+            print("\n✗ No keyframes to replay")
+            return []
+
+        print(f"▶ Replaying animation with {len(self.keyframes)} keyframes...")
+
+        # Disable DEMA for controlled playback
+        print("\n  Disabling DEMA for playback...")
+        self.disable_dema()
+        time.sleep(1)
+
+        actual_durations = []
+
+        # Play through keyframes
+        print("\n  Playing keyframes and measuring durations...")
+        for i, keyframe in enumerate(self.keyframes):
+            print(f"\n  → Keyframe {i+1}/{len(self.keyframes)}")
+
+            # Start timing
+            start_time = time.time()
+
+            # Send movement command
+            self.move_to_position(keyframe)
+
+            # Wait for robot to reach position (ignore prescribed duration)
+            if not self.wait_for_position(keyframe, tolerance_deg=12.0, timeout=30.0):
+                print("    ⚠ Warning: Robot did not reach target position")
+                print("    Continue anyway? (y/n): ", end='', flush=True)
+                response = input().strip().lower()
+                if response != 'y':
+                    print("\n✗ Playback cancelled")
+                    return []
+
+            # Measure actual time
+            actual_time = time.time() - start_time
+            actual_durations.append(round(actual_time, 2))
+
+            prescribed_duration = keyframe.get('duration', 0.5)
+            print(f"    Actual time: {actual_time:.2f}s (prescribed: {prescribed_duration:.2f}s)")
+
+        print("\n✓ Playback complete")
+        return actual_durations
+
+    def _check_duration_calibration(self, json_file: str, data: Dict, actual_durations: List[float]):
+        """
+        Check if actual durations differ significantly from prescribed ones.
+        Offer to update the JSON file if needed.
+        """
+        prescribed_durations = [kf.get('duration', 0.5) for kf in self.keyframes]
+
+        # Calculate differences
+        differences = []
+        for i, (actual, prescribed) in enumerate(zip(actual_durations, prescribed_durations)):
+            diff = abs(actual - prescribed)
+            diff_pct = (diff / max(prescribed, 0.1)) * 100  # Avoid division by zero
+            differences.append((i, actual, prescribed, diff, diff_pct))
+
+        # Check if any differences are significant (>30% or >0.5s)
+        significant_diffs = [d for d in differences if d[3] > 0.5 or d[4] > 30]
+
+        if not significant_diffs:
+            print("\n✓ Duration calibration looks good! All keyframes within tolerance.")
+            return
+
+        # Show significant differences
+        print("\n" + "="*60)
+        print("DURATION CALIBRATION ANALYSIS")
+        print("="*60)
+        print("\nSignificant differences detected:")
+
+        for i, actual, prescribed, diff, diff_pct in significant_diffs:
+            print(f"\n  Keyframe {i+1}:")
+            print(f"    Prescribed: {prescribed:.2f}s")
+            print(f"    Actual:     {actual:.2f}s")
+            print(f"    Difference: {diff:.2f}s ({diff_pct:.1f}%)")
+
+        # Offer to update
+        print("\n" + "="*60)
+        print(f"Update {json_file} with measured durations? (y/n): ", end='', flush=True)
+        response = input().strip().lower()
+
+        if response == 'y':
+            # Update durations in data
+            for i, actual in enumerate(actual_durations):
+                if i < len(self.keyframes):
+                    self.keyframes[i]['duration'] = actual
+                    data['keyframes'][i]['duration'] = actual
+
+            # Write back to file
+            try:
+                with open(json_file, 'w') as f:
+                    json.dump(data, f, indent=2)
+                print(f"\n✓ Updated {json_file} with calibrated durations")
+                print("\nUpdated durations:")
+                for i, actual in enumerate(actual_durations):
+                    print(f"  Keyframe {i+1}: {actual:.2f}s")
+            except Exception as e:
+                print(f"\n✗ Error updating file: {e}")
+        else:
+            print("\n✓ Durations not updated")
+
     def run(self):
         """Main application loop."""
         print("\n" + "="*60)
@@ -696,7 +877,13 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
+  # Record a new animation
   python3 animation_recorder.py
+
+  # Preview an existing animation
+  python3 animation_recorder.py --preview animations/json/animation_hopping.json
+
+  # Use a different serial port
   python3 animation_recorder.py --port /dev/ttyUSB0
         """
     )
@@ -714,12 +901,22 @@ Examples:
         help='Baud rate (default: 115200)'
     )
 
+    parser.add_argument(
+        '--preview',
+        metavar='JSON_FILE',
+        help='Preview/test an animation from a JSON file (auto disables/enables DEMA)'
+    )
+
     args = parser.parse_args()
 
     recorder = AnimationRecorder(port=args.port, baudrate=args.baudrate)
 
     try:
-        recorder.run()
+        # Check if preview mode is enabled
+        if args.preview:
+            recorder.preview_animation(args.preview)
+        else:
+            recorder.run()
     except KeyboardInterrupt:
         print("\n\nInterrupted by user")
         recorder.cleanup()
