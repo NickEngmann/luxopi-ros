@@ -327,9 +327,10 @@ class AnimationCommandActionServer(Node):
             LuxoState.ANIMATING,  # Allow if already animating
             LuxoState.EMOTION_REACTING,  # Allow if already reacting
             LuxoState.USER_CONTROL, # Allow if in user control mode
-            LuxoState.RETURNING_HOME  # Allow animations to interrupt return to home
+            LuxoState.RETURNING_HOME,  # Allow animations to interrupt return to home
+            LuxoState.VOICE_FOLLOWING,  # Allow animations during voice following
         ]
-        
+
         return self.is_in_state(*allowed_states)
     
     def _determine_animation_state(self, animation_name: str) -> LuxoState:
