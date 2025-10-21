@@ -311,7 +311,10 @@ class AnimationRecorder:
 
             # Convert to degrees for display
             errors_deg = {k: self.rad_to_deg(v) for k, v in errors_rad.items()}
-            max_error_rad = max(errors_rad.values())
+
+            # Calculate max error EXCLUDING hand (hand doesn't need to be exact)
+            structural_joints = ['base', 'shoulder', 'elbow', 'wrist']
+            max_error_rad = max(errors_rad[joint] for joint in structural_joints)
             max_error_deg = self.rad_to_deg(max_error_rad)
 
             if max_error_rad <= tolerance_rad:
@@ -631,7 +634,7 @@ class AnimationRecorder:
         return 'quit'
 
     def preview_animation(self, json_file: str):
-        """Preview an animation from a JSON file and optionally calibrate durations."""
+        """Interactive preview/editing mode for animations from JSON."""
         print("\n" + "="*60)
         print("LuxoPi Animation Preview")
         print("="*60)
@@ -649,6 +652,7 @@ class AnimationRecorder:
             return
 
         animation_name = data.get('name', 'unknown')
+        self.animation_name = animation_name
         self.keyframes = data.get('keyframes', [])
 
         if not self.keyframes:
@@ -676,8 +680,64 @@ class AnimationRecorder:
         print("\nWaiting 2 seconds for robot to stabilize...")
         time.sleep(2)
 
-        # Play animation and measure actual durations
-        print(f"\nPlaying animation '{animation_name}'...\n")
+        # Main preview menu (interactive mode)
+        self._preview_main_menu(json_file, data)
+
+        # Cleanup
+        print("\nPreview complete!")
+        self.running = False
+        if self.ser:
+            self.ser.close()
+
+        print("✓ Goodbye!")
+
+    def _preview_main_menu(self, json_file: str, original_data: Dict):
+        """Main interactive preview menu."""
+        while True:
+            print("\n" + "="*60)
+            print("PREVIEW MAIN MENU")
+            print("="*60)
+            print(f"\nAnimation: {self.animation_name}")
+            print(f"Keyframes: {len(self.keyframes)}")
+            print("\nWhat would you like to do?")
+            print("  [P] - Play full animation (with duration calibration)")
+            print("  [S] - Step through from specific keyframe")
+            print("  [E] - Edit a specific keyframe")
+            print("  [L] - List all keyframes")
+            print("  [V] - Save edited animation")
+            print("  [Q] - Quit")
+            print("\nChoice: ", end='', flush=True)
+
+            choice = input().strip().upper()
+
+            if choice == 'P':
+                self._play_full_animation(json_file, original_data)
+            elif choice == 'S':
+                self._step_through_mode()
+            elif choice == 'E':
+                self._edit_keyframe_position()
+            elif choice == 'L':
+                self._list_keyframes()
+            elif choice == 'V':
+                self._save_edited_animation(json_file, original_data)
+            elif choice == 'Q':
+                print("\nQuit preview? (y/n): ", end='', flush=True)
+                if input().strip().lower() == 'y':
+                    break
+
+    def _play_full_animation(self, json_file: str, original_data: Dict):
+        """Play the full animation and offer duration calibration."""
+        print("\n" + "="*60)
+        print("PLAY FULL ANIMATION")
+        print("="*60)
+
+        # Disable DEMA for playback
+        print("\nDisabling DEMA for playback...")
+        self.disable_dema()
+        time.sleep(1)
+
+        # Play and measure
+        print(f"\nPlaying animation '{self.animation_name}'...\n")
         actual_durations = self._replay_and_measure(skip_dema_prompt=True)
 
         # Turn on DEMA
@@ -687,15 +747,352 @@ class AnimationRecorder:
 
         # Compare actual vs prescribed durations
         if actual_durations:
-            self._check_duration_calibration(json_file, data, actual_durations)
+            self._check_duration_calibration(json_file, original_data, actual_durations)
 
-        # Cleanup
-        print("\nPreview complete!")
-        self.running = False
-        if self.ser:
-            self.ser.close()
+    def _step_through_mode(self):
+        """Step through animation keyframe by keyframe."""
+        print("\n" + "="*60)
+        print("STEP-THROUGH MODE")
+        print("="*60)
 
-        print("✓ Goodbye! (DEMA left enabled)")
+        # Ask which keyframe to start at
+        print(f"\nAnimation has {len(self.keyframes)} keyframes")
+        print(f"Start at keyframe number (1-{len(self.keyframes)}): ", end='', flush=True)
+
+        try:
+            start_kf = int(input().strip())
+            if start_kf < 1 or start_kf > len(self.keyframes):
+                print("✗ Invalid keyframe number")
+                return
+        except ValueError:
+            print("✗ Invalid input")
+            return
+
+        # Start step-through at specified keyframe
+        current_kf_idx = start_kf - 1
+
+        # Disable DEMA for controlled movement
+        print("\nDisabling DEMA for step-through...")
+        self.disable_dema()
+        time.sleep(1)
+
+        # Flag to track if we just edited (so we can skip moving to position)
+        just_edited = False
+
+        while True:
+            print("\n" + "="*60)
+            print(f"KEYFRAME {current_kf_idx + 1} / {len(self.keyframes)}")
+            print("="*60)
+
+            keyframe = self.keyframes[current_kf_idx]
+            servos = keyframe['servos']
+
+            # Show keyframe info
+            print(f"\nPosition:")
+            print(f"  Base={self.rad_to_deg(servos.get('base', 0)):7.2f}° "
+                  f"Shoulder={self.rad_to_deg(servos.get('shoulder', 0)):7.2f}° "
+                  f"Elbow={self.rad_to_deg(servos.get('elbow', 0)):7.2f}°")
+            print(f"  Wrist={self.rad_to_deg(servos.get('wrist', 0)):7.2f}° "
+                  f"Hand={self.rad_to_deg(servos.get('hand', 0)):7.2f}°")
+            print(f"  Duration: {keyframe['duration']:.2f}s")
+
+            # Move to this keyframe (unless we just edited it - robot is already there!)
+            if just_edited:
+                print(f"\n✓ Already at keyframe {current_kf_idx + 1} (just edited)")
+                just_edited = False  # Reset flag
+            else:
+                print(f"\nMoving to keyframe {current_kf_idx + 1}...")
+                self.move_to_position(keyframe)
+                self.wait_for_position(keyframe, tolerance_deg=12.0, timeout=20.0)
+
+            # Step-through menu
+            print("\n" + "-"*60)
+            print("What next?")
+            print("  [N] - Next keyframe")
+            print("  [P] - Previous keyframe")
+            print("  [E] - Edit this keyframe")
+            print("  [J] - Jump to specific keyframe")
+            print("  [M] - Back to main menu")
+            print("\nChoice: ", end='', flush=True)
+
+            choice = input().strip().upper()
+
+            if choice == 'N':
+                if current_kf_idx < len(self.keyframes) - 1:
+                    current_kf_idx += 1
+                    just_edited = False  # Moving to different keyframe
+                else:
+                    print("✓ Already at last keyframe")
+                    time.sleep(1)
+            elif choice == 'P':
+                if current_kf_idx > 0:
+                    current_kf_idx -= 1
+                    just_edited = False  # Moving to different keyframe
+                else:
+                    print("✓ Already at first keyframe")
+                    time.sleep(1)
+            elif choice == 'E':
+                # Edit current keyframe
+                self._edit_specific_keyframe(current_kf_idx)
+                # After edit, DEMA is disabled, perfect for continuing step-through
+                just_edited = True  # Skip moving to position on next loop
+            elif choice == 'J':
+                # Jump to specific keyframe
+                print(f"\nJump to keyframe (1-{len(self.keyframes)}): ", end='', flush=True)
+                try:
+                    jump_to = int(input().strip())
+                    if 1 <= jump_to <= len(self.keyframes):
+                        current_kf_idx = jump_to - 1
+                        just_edited = False  # Moving to different keyframe
+                    else:
+                        print("✗ Invalid keyframe number")
+                        time.sleep(1)
+                except ValueError:
+                    print("✗ Invalid input")
+                    time.sleep(1)
+            elif choice == 'M':
+                # Return to main menu - enable DEMA first
+                print("\nReturning to main menu...")
+                print("Enabling DEMA...")
+                self.enable_full_dema()
+                time.sleep(1)
+                break
+
+    def _edit_specific_keyframe(self, kf_idx: int):
+        """Edit a specific keyframe (used during step-through)."""
+        kf_num = kf_idx + 1
+        keyframe = self.keyframes[kf_idx]
+        servos = keyframe['servos']
+
+        print("\n" + "="*60)
+        print(f"EDIT KEYFRAME {kf_num}")
+        print("="*60)
+
+        print(f"\nCurrent position:")
+        print(f"  Base={self.rad_to_deg(servos.get('base', 0)):7.2f}° "
+              f"Shoulder={self.rad_to_deg(servos.get('shoulder', 0)):7.2f}° "
+              f"Elbow={self.rad_to_deg(servos.get('elbow', 0)):7.2f}°")
+        print(f"  Wrist={self.rad_to_deg(servos.get('wrist', 0)):7.2f}° "
+              f"Hand={self.rad_to_deg(servos.get('hand', 0)):7.2f}°")
+
+        # Robot should already be at this position from step-through
+        # Ask user if ready to enable DEMA
+        print("\n" + "="*60)
+        print("READY TO ENABLE DEMA")
+        print("="*60)
+        print("\n⚠️  Robot is at the current keyframe position.")
+        print("When you press ENTER, DEMA will enable and the robot will go LIMP.")
+        print("Make sure you are ready to support/reposition the robot!")
+        print("\nPress ENTER to enable DEMA (or 'c' to cancel): ", end='', flush=True)
+
+        response = input().strip().lower()
+        if response == 'c':
+            print("✗ Edit cancelled")
+            return
+
+        # Enable DEMA for manual positioning
+        print("\nEnabling DEMA (robot will go limp)...")
+        self.enable_full_dema()
+        time.sleep(1.5)
+
+        # Wait for user to position robot
+        print("\n" + "="*60)
+        print("MANUAL POSITIONING")
+        print("="*60)
+        print("\n✓ DEMA enabled - robot is now limp")
+        print("\nMove the robot to the new position for this keyframe.")
+        print("Press ENTER when ready to record new position...")
+        input()
+
+        # Disable DEMA to read position
+        print("\nDisabling DEMA to read position...")
+        self.disable_dema()
+        time.sleep(0.5)
+
+        # Record new position
+        new_position = self.current_position.copy()
+
+        # Update keyframe
+        keyframe['servos'] = {
+            'base': new_position['base'],
+            'shoulder': new_position['shoulder'],
+            'elbow': new_position['elbow'],
+            'wrist': new_position['wrist'],
+            'hand': new_position['hand'],
+            'roll': servos.get('roll', -1.5),
+            'spd': servos.get('spd', 0),
+            'acc': servos.get('acc', 10.0)
+        }
+
+        print(f"\n✓ Keyframe {kf_num} updated!")
+        print(f"  New position:")
+        print(f"  Base={self.rad_to_deg(new_position['base']):7.2f}° "
+              f"Shoulder={self.rad_to_deg(new_position['shoulder']):7.2f}° "
+              f"Elbow={self.rad_to_deg(new_position['elbow']):7.2f}°")
+        print(f"  Wrist={self.rad_to_deg(new_position['wrist']):7.2f}° "
+              f"Hand={self.rad_to_deg(new_position['hand']):7.2f}°")
+
+        # Leave DEMA disabled so we can continue step-through
+        print("\n✓ DEMA disabled - ready to continue step-through")
+
+    def _list_keyframes(self):
+        """List all keyframes with details."""
+        print("\n" + "="*60)
+        print("KEYFRAME LIST")
+        print("="*60)
+
+        for i, kf in enumerate(self.keyframes):
+            servos = kf['servos']
+            print(f"\n{i+1}. Keyframe {i+1}:")
+            print(f"   Base={self.rad_to_deg(servos.get('base', 0)):7.2f}° "
+                  f"Shoulder={self.rad_to_deg(servos.get('shoulder', 0)):7.2f}° "
+                  f"Elbow={self.rad_to_deg(servos.get('elbow', 0)):7.2f}°")
+            print(f"   Wrist={self.rad_to_deg(servos.get('wrist', 0)):7.2f}° "
+                  f"Hand={self.rad_to_deg(servos.get('hand', 0)):7.2f}°")
+            print(f"   Duration: {kf['duration']:.2f}s  Timing: {kf['timing']:.1f}x")
+
+    def _edit_keyframe_position(self):
+        """Edit a specific keyframe by moving robot to new position."""
+        print("\n" + "="*60)
+        print("EDIT KEYFRAME POSITION")
+        print("="*60)
+
+        # Show keyframe list
+        print("\nAvailable keyframes:")
+        for i in range(len(self.keyframes)):
+            print(f"  {i+1}. Keyframe {i+1}")
+
+        # Get keyframe number
+        try:
+            kf_num = int(input("\nEnter keyframe number to edit (0 to cancel): "))
+            if kf_num == 0:
+                return
+
+            if kf_num < 1 or kf_num > len(self.keyframes):
+                print("✗ Invalid keyframe number")
+                return
+
+            kf_idx = kf_num - 1
+        except ValueError:
+            print("✗ Invalid input")
+            return
+
+        # Show current position
+        keyframe = self.keyframes[kf_idx]
+        servos = keyframe['servos']
+        print(f"\nCurrent position for Keyframe {kf_num}:")
+        print(f"  Base={self.rad_to_deg(servos.get('base', 0)):7.2f}° "
+              f"Shoulder={self.rad_to_deg(servos.get('shoulder', 0)):7.2f}° "
+              f"Elbow={self.rad_to_deg(servos.get('elbow', 0)):7.2f}°")
+        print(f"  Wrist={self.rad_to_deg(servos.get('wrist', 0)):7.2f}° "
+              f"Hand={self.rad_to_deg(servos.get('hand', 0)):7.2f}°")
+
+        # Ensure DEMA is OFF before moving
+        print(f"\nDisabling DEMA to move to Keyframe {kf_num}...")
+        self.disable_dema()
+        time.sleep(1)
+
+        # Move to current position
+        print(f"Moving to current Keyframe {kf_num} position...")
+        self.move_to_position(keyframe)
+        self.wait_for_position(keyframe, tolerance_deg=12.0, timeout=15.0)
+
+        # Wait for user confirmation that robot is at position
+        print("\n" + "="*60)
+        print("READY TO ENABLE DEMA")
+        print("="*60)
+        print("\n⚠️  Robot is at the current keyframe position.")
+        print("When you press ENTER, DEMA will enable and the robot will go LIMP.")
+        print("Make sure you are ready to support/reposition the robot!")
+        print("\nPress ENTER to enable DEMA...", end='', flush=True)
+        input()
+
+        # Enable DEMA for manual positioning
+        print("\nEnabling DEMA (robot will go limp)...")
+        self.enable_full_dema()
+        time.sleep(1.5)
+
+        # Wait for user to position robot
+        print("\n" + "="*60)
+        print("MANUAL POSITIONING")
+        print("="*60)
+        print("\n✓ DEMA enabled - robot is now limp")
+        print("\nMove the robot to the new position for this keyframe.")
+        print("Press ENTER when ready to record new position...")
+        input()
+
+        # Disable DEMA to read position
+        print("\nDisabling DEMA to read position...")
+        self.disable_dema()
+        time.sleep(0.5)
+
+        # Record new position
+        new_position = self.current_position.copy()
+
+        # Update keyframe
+        keyframe['servos'] = {
+            'base': new_position['base'],
+            'shoulder': new_position['shoulder'],
+            'elbow': new_position['elbow'],
+            'wrist': new_position['wrist'],
+            'hand': new_position['hand'],
+            'roll': servos.get('roll', -1.5),
+            'spd': servos.get('spd', 0),
+            'acc': servos.get('acc', 10.0)
+        }
+
+        print(f"\n✓ Keyframe {kf_num} updated!")
+        print(f"  New position:")
+        print(f"  Base={self.rad_to_deg(new_position['base']):7.2f}° "
+              f"Shoulder={self.rad_to_deg(new_position['shoulder']):7.2f}° "
+              f"Elbow={self.rad_to_deg(new_position['elbow']):7.2f}°")
+        print(f"  Wrist={self.rad_to_deg(new_position['wrist']):7.2f}° "
+              f"Hand={self.rad_to_deg(new_position['hand']):7.2f}°")
+
+        # Leave DEMA disabled so robot holds new position
+        print("\n✓ DEMA disabled - robot holding new position")
+
+    def _save_edited_animation(self, original_json_file: str, original_data: Dict):
+        """Save the edited animation with a new timestamp."""
+        print("\n" + "="*60)
+        print("SAVE EDITED ANIMATION")
+        print("="*60)
+
+        # Ask for new name (optional)
+        print(f"\nCurrent name: '{self.animation_name}'")
+        print("Enter new name (or press ENTER to keep current name): ", end='', flush=True)
+        new_name = input().strip()
+        if new_name:
+            self.animation_name = new_name
+
+        # Build new JSON data
+        data = {
+            "name": self.animation_name,
+            "description": original_data.get('description', 'Edited animation'),
+            "category": original_data.get('category', 'custom'),
+            "created": datetime.now().isoformat(),
+            "keyframes": self.keyframes,
+            "keyframe_count": len(self.keyframes)
+        }
+
+        # Generate filename with timestamp
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        filename = f"animation_{self.animation_name}_{timestamp}.json"
+        filepath = Path("animations/json") / filename
+
+        # Ensure directory exists
+        filepath.parent.mkdir(parents=True, exist_ok=True)
+
+        # Save JSON
+        try:
+            with open(filepath, 'w') as f:
+                json.dump(data, f, indent=2)
+
+            print(f"\n✓ Animation saved to: {filepath}")
+            print(f"  Name: {self.animation_name}")
+            print(f"  Keyframes: {len(self.keyframes)}")
+        except Exception as e:
+            print(f"\n✗ Error saving animation: {e}")
 
     def _replay_and_measure(self, skip_dema_prompt: bool = False) -> List[float]:
         """
