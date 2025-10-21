@@ -2,7 +2,7 @@
 """
 Watchdog node for monitoring critical system topics and triggering recovery.
 
-This node monitors critical topics like /luxo/current_state and /joint_states
+This node monitors critical topics like /luxo/state_info and /joint_states
 to detect when nodes stop publishing (silent failure mode). When a failure is
 detected, it can trigger various recovery mechanisms.
 """
@@ -17,7 +17,7 @@ from datetime import datetime, timedelta
 import rclpy
 from rclpy.node import Node
 from rclpy.time import Time
-from std_msgs.msg import String, Header, Bool
+from std_msgs.msg import String, Header, Bool, Float32
 from sensor_msgs.msg import JointState
 from std_srvs.srv import Trigger
 from luxo_interfaces.msg import StateInfo
@@ -39,9 +39,11 @@ class WatchdogNode(Node):
         self.declare_parameter('movement_source_timeout', 30.0)  # seconds without movement source updates
         self.declare_parameter('stuck_state_duration', 300.0)  # 5 minutes in same state
         self.declare_parameter('stuck_joint_duration', 120.0)  # 2 minutes without joint movement
+        self.declare_parameter('voice_node_check_interval', 180.0)  # 3 minutes between node existence checks
+        self.declare_parameter('llama_process_check_interval', 180.0)  # 3 minutes between llama-server checks
         self.declare_parameter('recovery_delay', 10.0)  # seconds between recovery attempts
         self.declare_parameter('max_recovery_attempts', 3)
-        self.declare_parameter('enable_node_restart', False)  # Whether to kill/restart nodes
+        self.declare_parameter('enable_node_restart', True)  # Whether to kill/restart nodes (enabled for voice recovery)
         self.declare_parameter('enable_state_recovery', True)  # Whether to try state transitions
         
         # Get parameters
@@ -52,6 +54,8 @@ class WatchdogNode(Node):
         self.movement_source_timeout = self.get_parameter('movement_source_timeout').value
         self.stuck_state_duration = self.get_parameter('stuck_state_duration').value
         self.stuck_joint_duration = self.get_parameter('stuck_joint_duration').value
+        self.voice_node_check_interval = self.get_parameter('voice_node_check_interval').value
+        self.llama_process_check_interval = self.get_parameter('llama_process_check_interval').value
         self.recovery_delay = self.get_parameter('recovery_delay').value
         self.max_recovery_attempts = self.get_parameter('max_recovery_attempts').value
         self.enable_node_restart = self.get_parameter('enable_node_restart').value
@@ -64,6 +68,10 @@ class WatchdogNode(Node):
         self.last_serial_feedback = None
         self.last_movement_source = None
         self.last_animation_status = None
+
+        # Voice node/process monitoring - timing
+        self.last_voice_node_check = None
+        self.last_llama_process_check = None
         
         # Topic monitoring - content
         self.last_state_value = None
@@ -79,25 +87,32 @@ class WatchdogNode(Node):
         self.stuck_state_detected = False
         self.stuck_joints_detected = False
         self.silent_failure_detected = False
+        self.voice_assistant_failure_detected = False
+        self.voice_direction_failure_detected = False
+        self.llama_server_failure_detected = False
         
         # Recovery tracking
         self.recovery_attempts = {
-            'state': 0, 'joint': 0, 'animation': 0, 
-            'serial': 0, 'stuck': 0, 'silent': 0
+            'state': 0, 'joint': 0, 'animation': 0,
+            'serial': 0, 'stuck': 0, 'silent': 0,
+            'voice_assistant': 0, 'voice_direction': 0, 'llama_server': 0
         }
         self.last_recovery_time = {
             'state': None, 'joint': None, 'animation': None,
-            'serial': None, 'stuck': None, 'silent': None
+            'serial': None, 'stuck': None, 'silent': None,
+            'voice_assistant': None, 'voice_direction': None, 'llama_server': None
         }
         # Track when we've given up on recovery
         self.recovery_exhausted = {
             'state': None, 'joint': None, 'animation': None,
-            'serial': None, 'stuck': None, 'silent': None
+            'serial': None, 'stuck': None, 'silent': None,
+            'voice_assistant': None, 'voice_direction': None, 'llama_server': None
         }
         # Track last error log time to prevent spam
         self.last_error_log = {
             'state': None, 'joint': None, 'animation': None,
-            'serial': None, 'stuck': None, 'silent': None
+            'serial': None, 'stuck': None, 'silent': None,
+            'voice_assistant': None, 'voice_direction': None, 'llama_server': None
         }
         
         # Lock for thread safety
@@ -106,7 +121,7 @@ class WatchdogNode(Node):
         # Subscribers - Core topics
         self.state_sub = self.create_subscription(
             StateInfo,
-            '/luxo/current_state',
+            '/luxo/state_info',
             self.state_callback,
             10
         )
@@ -148,7 +163,7 @@ class WatchdogNode(Node):
             self.movement_source_callback,
             10
         )
-        
+
         # Publishers
         self.watchdog_status_pub = self.create_publisher(
             String,
@@ -173,14 +188,18 @@ class WatchdogNode(Node):
         
         # Timer for cross-topic correlation
         self.correlation_timer = self.create_timer(5.0, self.check_correlations)
-        
+
+        # Timer for voice system health (runs every 3 minutes)
+        self.voice_health_timer = self.create_timer(180.0, self.check_voice_health)
+
         # Watchdog self-health
         self._last_check_time = time.time()
         self._check_count = 0
         self._startup_time = self.get_clock().now()
-        
+
         self.get_logger().info('Watchdog node initialized')
         self.get_logger().info(f'Monitoring timeouts - State: {self.state_timeout}s, Joint: {self.joint_timeout}s')
+        self.get_logger().info(f'Voice monitoring - Node check: every {self.voice_node_check_interval}s, Llama check: every {self.llama_process_check_interval}s')
     
     def state_callback(self, msg):
         """Record timestamp and content of state message."""
@@ -373,6 +392,12 @@ class WatchdogNode(Node):
             self.recover_stuck_system()
         elif failure_type == 'silent':
             self.recover_silent_failure()
+        elif failure_type == 'voice_assistant':
+            self.recover_voice_assistant()
+        elif failure_type == 'voice_direction':
+            self.recover_voice_direction()
+        elif failure_type == 'llama_server':
+            self.recover_llama_server()
     
     def recover_state_manager(self):
         """Attempt to recover the state manager."""
@@ -554,18 +579,150 @@ class WatchdogNode(Node):
             request.priority = 90
             request.force = True
             request.completion = False
-            
+
             future = self.state_transition_client.call_async(request)
             future.add_done_callback(
                 lambda f: self.get_logger().info('Silent failure recovery: Returned to IDLE')
             )
-            
+
             # Clear the silent failure flag after recovery attempt
             with self.lock:
                 self.silent_failure_detected = False
-                
+
         except Exception as e:
             self.get_logger().error(f'Failed to request IDLE: {e}')
+
+    def check_voice_health(self):
+        """Check if voice assistant nodes and llama-server process are healthy."""
+        current_time = time.time()
+
+        # Check voice_assistant_node
+        if self.is_node_missing('voice_assistant'):
+            if not self.voice_assistant_failure_detected:
+                self.voice_assistant_failure_detected = True
+                self.get_logger().error('Voice assistant node not found in ROS graph!')
+                self.trigger_recovery('voice_assistant')
+        else:
+            if self.voice_assistant_failure_detected:
+                self.get_logger().info('Voice assistant node recovered')
+                self.voice_assistant_failure_detected = False
+                self.recovery_attempts['voice_assistant'] = 0
+                self.recovery_exhausted['voice_assistant'] = None
+
+        # Check voice_direction_node
+        if self.is_node_missing('voice_direction'):
+            if not self.voice_direction_failure_detected:
+                self.voice_direction_failure_detected = True
+                self.get_logger().error('Voice direction node not found in ROS graph!')
+                self.trigger_recovery('voice_direction')
+        else:
+            if self.voice_direction_failure_detected:
+                self.get_logger().info('Voice direction node recovered')
+                self.voice_direction_failure_detected = False
+                self.recovery_attempts['voice_direction'] = 0
+                self.recovery_exhausted['voice_direction'] = None
+
+        # Check llama-server process
+        if not self.is_process_running('llama-server'):
+            if not self.llama_server_failure_detected:
+                self.llama_server_failure_detected = True
+                self.get_logger().error('llama-server process not running!')
+                self.trigger_recovery('llama_server')
+        else:
+            if self.llama_server_failure_detected:
+                self.get_logger().info('llama-server process recovered')
+                self.llama_server_failure_detected = False
+                self.recovery_attempts['llama_server'] = 0
+                self.recovery_exhausted['llama_server'] = None
+
+        self.last_voice_node_check = current_time
+        self.last_llama_process_check = current_time
+
+    def is_node_missing(self, node_name_fragment):
+        """Check if a node with the given name fragment exists in the ROS graph."""
+        try:
+            node_names = self.get_node_names()
+            # Check if any node contains the fragment
+            for name in node_names:
+                if node_name_fragment in name:
+                    return False  # Node exists
+            return True  # Node not found
+        except Exception as e:
+            self.get_logger().error(f'Error checking node existence for {node_name_fragment}: {e}')
+            return False  # Assume node exists on error
+
+    def is_process_running(self, process_name):
+        """Check if a process with the given name is running."""
+        try:
+            result = subprocess.run(
+                ['pgrep', '-f', process_name],
+                capture_output=True,
+                text=True
+            )
+            return result.returncode == 0  # 0 means process found
+        except Exception as e:
+            self.get_logger().error(f'Error checking process {process_name}: {e}')
+            return True  # Assume running on error to avoid false alarms
+
+    def recover_voice_assistant(self):
+        """Recover the voice assistant node."""
+        self.get_logger().warning('Attempting to restart voice_assistant_node...')
+
+        if not self.enable_node_restart:
+            self.get_logger().error('Node restart disabled, cannot restart voice_assistant')
+            return
+
+        try:
+            # Kill existing voice_assistant processes
+            subprocess.run(['pkill', '-f', 'voice_assistant_node'], timeout=5)
+            time.sleep(2)
+
+            # Launch new voice_assistant_node (assumes it's part of the launch file)
+            # Note: This is a simplified restart - ideally handled by launch system
+            self.get_logger().info('Voice assistant node should restart via launch file watchdog')
+
+        except Exception as e:
+            self.get_logger().error(f'Failed to restart voice_assistant: {e}')
+
+    def recover_voice_direction(self):
+        """Recover the voice direction node."""
+        self.get_logger().warning('Attempting to restart voice_direction_node...')
+
+        if not self.enable_node_restart:
+            self.get_logger().error('Node restart disabled, cannot restart voice_direction')
+            return
+
+        try:
+            # Kill existing voice_direction processes
+            subprocess.run(['pkill', '-f', 'voice_direction_node'], timeout=5)
+            time.sleep(2)
+
+            # Launch new voice_direction_node
+            self.get_logger().info('Voice direction node should restart via launch file watchdog')
+
+        except Exception as e:
+            self.get_logger().error(f'Failed to restart voice_direction: {e}')
+
+    def recover_llama_server(self):
+        """Recover the llama-server process."""
+        self.get_logger().warning('Attempting to restart llama-server...')
+
+        if not self.enable_node_restart:
+            self.get_logger().error('Process restart disabled, cannot restart llama-server')
+            return
+
+        try:
+            # Kill existing llama-server processes
+            self.get_logger().info('Killing llama-server processes...')
+            subprocess.run(['pkill', '-f', 'llama-server'], timeout=5)
+            time.sleep(2)
+
+            # Note: The voice_assistant_node will automatically restart llama-server
+            # when it detects it's missing, so we just need to kill it
+            self.get_logger().info('llama-server killed - voice_assistant will restart it automatically')
+
+        except Exception as e:
+            self.get_logger().error(f'Failed to restart llama-server: {e}')
     
     def publish_status(self):
         """Publish watchdog status."""
@@ -617,6 +774,9 @@ class WatchdogNode(Node):
             if self.stuck_state_detected: failures.append('STUCK_STATE')
             if self.stuck_joints_detected: failures.append('STUCK_JOINT')
             if self.silent_failure_detected: failures.append('SILENT_FAIL')
+            if self.voice_assistant_failure_detected: failures.append('VOICE_ASST')
+            if self.voice_direction_failure_detected: failures.append('VOICE_DIR')
+            if self.llama_server_failure_detected: failures.append('LLAMA')
             
             if failures:
                 status_parts.append(f'FAIL: {",".join(failures)}')

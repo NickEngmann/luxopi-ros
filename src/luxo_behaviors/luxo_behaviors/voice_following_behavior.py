@@ -79,6 +79,7 @@ class VoiceFollowingBehavior:
 
         # Voice position feeding timer (continuously spam position like STAY mode)
         self.voice_position_timer = None
+        self.voice_position_timer_active = False
 
         # Adaptive movement tracking - prevent wild spinning in noisy environments
         self.movement_history = []  # List of (timestamp, base_position) tuples
@@ -331,6 +332,18 @@ class VoiceFollowingBehavior:
 
         # Send direct command to follow voice
         self._send_voice_following_command()
+
+        # Ensure continuous position feeding timer is running if we're in VOICE_FOLLOWING state
+        current_state = self._get_current_state()
+        if current_state == LuxoState.VOICE_FOLLOWING:
+            # Check if timer is not already running
+            if self.voice_position_timer is None or not hasattr(self, 'voice_position_timer_active'):
+                # Start continuous position feeding timer (10Hz = 0.1s interval)
+                if self.voice_position_timer is not None:
+                    self.voice_position_timer.cancel()
+                self.voice_position_timer = self.node.create_timer(0.1, self._voice_position_callback)
+                self.voice_position_timer_active = True
+                self.node.get_logger().info("🔄 Started continuous voice position feeding at 10Hz")
 
         # Reset completion timer since we received new voice input
         self.voice_completion_timer = current_time
@@ -675,6 +688,7 @@ class VoiceFollowingBehavior:
             if self.voice_position_timer is not None:
                 self.voice_position_timer.cancel()
                 self.voice_position_timer = None
+                self.voice_position_timer_active = False
                 self.node.get_logger().info("⏹️  Stopped continuous voice position feeding")
 
             # Reset voice following state tracking
