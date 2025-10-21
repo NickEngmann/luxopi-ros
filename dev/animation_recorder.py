@@ -185,9 +185,42 @@ class AnimationRecorder:
         """Convert degrees to radians."""
         return degrees * math.pi / 180.0
 
+    def calculate_duration_from_previous(self, new_position: Dict, base_speed: float = 2.0) -> float:
+        """
+        Calculate realistic duration based on movement from previous keyframe.
+
+        Args:
+            new_position: New position dict
+            base_speed: Base speed in radians/second (default: 2.0)
+
+        Returns:
+            Estimated duration in seconds
+        """
+        if not self.keyframes:
+            return 0.5  # First keyframe - no previous movement
+
+        prev_servos = self.keyframes[-1]['servos']
+
+        # Calculate total angular distance
+        distance = 0.0
+        distance += abs(new_position['base'] - prev_servos.get('base', 0))
+        distance += abs(new_position['shoulder'] - prev_servos.get('shoulder', 0))
+        distance += abs(new_position['elbow'] - prev_servos.get('elbow', 0))
+        distance += abs(new_position['wrist'] - prev_servos.get('wrist', 0))
+        distance += abs(new_position['hand'] - prev_servos.get('hand', 0))
+
+        # Calculate time based on distance and speed
+        # Minimum duration of 0.3s for very small movements
+        duration = max(0.3, distance / base_speed)
+
+        return round(duration, 2)
+
     def record_keyframe(self):
         """Record current position as a keyframe (stored in RADIANS)."""
         position = self.get_current_position()
+
+        # Calculate realistic duration based on movement from previous keyframe
+        duration = self.calculate_duration_from_previous(position)
 
         # Store keyframe in RADIANS (as received from robot)
         keyframe = {
@@ -202,14 +235,14 @@ class AnimationRecorder:
                 'acc': 10.0    # Acceleration
             },
             'timing': 1.0,  # Default timing multiplier
-            'duration': 0.5  # Default duration in seconds
+            'duration': duration  # Calculated based on movement
         }
 
         self.keyframes.append(keyframe)
 
         # Display in degrees for readability
         # Note: Terminal should be in normal mode when this is called
-        print(f"✓ Keyframe {len(self.keyframes)} recorded:")
+        print(f"✓ Keyframe {len(self.keyframes)} recorded (duration: {duration:.2f}s):")
         print(f"  Base:     {self.rad_to_deg(position['base']):7.2f}° ({position['base']:.4f} rad)")
         print(f"  Shoulder: {self.rad_to_deg(position['shoulder']):7.2f}° ({position['shoulder']:.4f} rad)")
         print(f"  Elbow:    {self.rad_to_deg(position['elbow']):7.2f}° ({position['elbow']:.4f} rad)")
