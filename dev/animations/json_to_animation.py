@@ -207,11 +207,22 @@ def json_to_python_plugin(
     else:
         hand_variations = [kf['servos'].get('hand', 1.5) for kf in keyframes_data]
 
-    # Generate acceleration variations if requested
-    if auto_acceleration:
+    # Check if acceleration values are already customized (not all defaults)
+    existing_acc_values = [kf['servos'].get('acc', 10.0) for kf in keyframes_data]
+    has_custom_acceleration = any(acc != 10.0 for acc in existing_acc_values)
+
+    # Generate acceleration variations if requested AND not already customized
+    if auto_acceleration and not has_custom_acceleration:
+        # Only auto-suggest if all values are at default (10.0)
         acc_variations = suggest_acceleration_variations(keyframes_data)
+        print(f"  Auto-suggesting acceleration (all values were default 10.0)")
+    elif has_custom_acceleration:
+        # Preserve custom acceleration values
+        acc_variations = existing_acc_values
+        print(f"  Preserving custom acceleration values (range: {min(existing_acc_values):.1f}-{max(existing_acc_values):.1f})")
     else:
-        acc_variations = [kf['servos'].get('acc', 10.0) for kf in keyframes_data]
+        # Use existing values from JSON
+        acc_variations = existing_acc_values
 
     # Normalize base positions around 0.0 and add subtle variations
     base_positions = [kf['servos'].get('base', 0.0) for kf in keyframes_data]

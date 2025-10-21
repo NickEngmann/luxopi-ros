@@ -1,0 +1,373 @@
+{
+  "name": "small_bounces",
+  "description": "Animation created with recorder on 2025-10-21 17:38",
+  "category": "custom",
+  "created": "2025-10-21T17:59:05.195561",
+  "keyframes": [
+    {
+      "servos": {
+        "base": 0.09817477,
+        "shoulder": -0.882038953,
+        "elbow": 1.079922475,
+        "wrist": 1.267068131,
+        "hand": 3.129320807,
+        "roll": -1.5,
+        "spd": 0,
+        "acc": 0.0
+      },
+      "timing": 1.0,
+      "duration": 0.4
+    },
+    {
+      "servos": {
+        "base": -0.084368943,
+        "shoulder": -1.497165249,
+        "elbow": 1.685844886,
+        "wrist": 1.357572997,
+        "hand": 3.129320807,
+        "roll": -1.5,
+        "spd": 0,
+        "acc": 0.0
+      },
+      "timing": 1.0,
+      "duration": 0.7
+    },
+    {
+      "servos": {
+        "base": -0.29145635,
+        "shoulder": -0.923456434,
+        "elbow": 1.007825378,
+        "wrist": 1.337631247,
+        "hand": 3.129320807,
+        "roll": -1.5,
+        "spd": 0,
+        "acc": 0.0
+      },
+      "timing": 1.0,
+      "duration": 0.7
+    },
+    {
+      "servos": {
+        "base": -0.302194215,
+        "shoulder": -1.47875748,
+        "elbow": 1.779417714,
+        "wrist": 1.339165228,
+        "hand": 3.129320807,
+        "roll": -1.5,
+        "spd": 0,
+        "acc": 0.0
+      },
+      "timing": 1.0,
+      "duration": 0.6
+    },
+    {
+      "servos": {
+        "base": 0.115048559,
+        "shoulder": -1.001689454,
+        "elbow": 1.170427341,
+        "wrist": 1.280873958,
+        "hand": 3.129320807,
+        "roll": -1.5,
+        "spd": 0,
+        "acc": 0.0
+      },
+      "timing": 1.0,
+      "duration": 0.7
+    },
+    {
+      "servos": {
+        "base": 0.108912636,
+        "shoulder": -1.606077885,
+        "elbow": 1.759475964,
+        "wrist": 1.345301151,
+        "hand": 3.129320807,
+        "roll": -1.5,
+        "spd": 0,
+        "acc": 0.0
+      },
+      "timing": 1.0,
+      "duration": 0.6
+    },
+    {
+      "servos": {
+        "base": -0.243902945,
+        "shoulder": -1.135145783,
+        "elbow": 1.113670052,
+        "wrist": 1.339165228,
+        "hand": 3.129320807,
+        "roll": -1.5,
+        "spd": 0,
+        "acc": 0.0
+      },
+      "timing": 1.0,
+      "duration": 0.7
+    },
+    {
+      "servos": {
+        "base": -0.251572849,
+        "shoulder": -1.641359443,
+        "elbow": 1.782485676,
+        "wrist": 1.34376717,
+        "hand": 3.129320807,
+        "roll": -1.5,
+        "spd": 0,
+        "acc": 0.0
+      },
+      "timing": 1.0,
+      "duration": 0.6
+    },
+    {
+      "servos": {
+        "base": -0.668815624,
+        "shoulder": -0.892776819,
+        "elbow": 1.020097224,
+        "wrist": 1.336097266,
+        "hand": 3.129320807,
+        "roll": -1.5,
+        "spd": 0,
+        "acc": 0.0
+      },
+      "timing": 1.0,
+      "duration": 0.8
+    },
+    {
+      "servos": {
+        "base": -0.668815624,
+        "shoulder": -1.428136114,
+        "elbow": 1.853048792,
+        "wrist": 1.334563285,
+        "hand": 3.129320807,
+        "roll": -1.5,
+        "spd": 0,
+        "acc": 0.0
+      },
+      "timing": 1.0,
+      "duration": 0.7
+    },
+    {
+      "servos": {
+        "base": -0.561436968,
+        "shoulder": -1.555456519,
+        "elbow": 0.77926224,
+        "wrist": 0.559902988,
+        "hand": 3.129320807,
+        "roll": -1.5,
+        "spd": 0,
+        "acc": 0.0
+      },
+      "timing": 1.0,
+      "duration": 0.8
+    },
+    {
+      "servos": {
+        "base": -0.490873852,
+        "shoulder": -1.613747789,
+        "elbow": 1.802427426,
+        "wrist": 0.951068088,
+        "hand": 3.129320807,
+        "roll": -1.5,
+        "spd": 0,
+        "acc": 0.0
+      },
+      "timing": 1.0,
+      "duration": 0.7
+    },
+    {
+      "servos": {
+        "base": -0.487805891,
+        "shoulder": -1.687378867,
+        "elbow": 0.866699145,
+        "wrist": 0.375825293,
+        "hand": 3.129320807,
+        "roll": -1.5,
+        "spd": 0,
+        "acc": 0.0
+      },
+      "timing": 1.0,
+      "duration": 0.7
+    },
+    {
+      "servos": {
+        "base": 0.168737887,
+        "shoulder": -1.5569905,
+        "elbow": 1.952757543,
+        "wrist": 1.05231082,
+        "hand": 3.129320807,
+        "roll": -1.5,
+        "spd": 0,
+        "acc": 0.0
+      },
+      "timing": 1.0,
+      "duration": 0.8
+    },
+    {
+      "servos": {
+        "base": -0.13652429,
+        "shoulder": -1.653631289,
+        "elbow": 1.113670052,
+        "wrist": 0.440252486,
+        "hand": 3.129320807,
+        "roll": -1.5,
+        "spd": 0,
+        "acc": 0.0
+      },
+      "timing": 1.0,
+      "duration": 0.7
+    },
+    {
+      "servos": {
+        "base": 0.380427235,
+        "shoulder": -1.5569905,
+        "elbow": 2.011048813,
+        "wrist": 0.984815666,
+        "hand": 3.129320807,
+        "roll": -1.5,
+        "spd": 0,
+        "acc": 0.0
+      },
+      "timing": 1.0,
+      "duration": 0.7
+    },
+    {
+      "servos": {
+        "base": -0.219359253,
+        "shoulder": -1.549320596,
+        "elbow": 1.224116669,
+        "wrist": 0.543029199,
+        "hand": 3.129320807,
+        "roll": -1.5,
+        "spd": 0,
+        "acc": 0.0
+      },
+      "timing": 1.0,
+      "duration": 0.7
+    },
+    {
+      "servos": {
+        "base": -0.279184503,
+        "shoulder": -1.641359443,
+        "elbow": 1.940485697,
+        "wrist": 0.894310799,
+        "hand": 3.129320807,
+        "roll": -1.5,
+        "spd": 0,
+        "acc": 0.0
+      },
+      "timing": 1.0,
+      "duration": 0.6
+    },
+    {
+      "servos": {
+        "base": -0.279184503,
+        "shoulder": -1.242524438,
+        "elbow": 1.328427362,
+        "wrist": 0.753184567,
+        "hand": 3.129320807,
+        "roll": -1.5,
+        "spd": 0,
+        "acc": 0.0
+      },
+      "timing": 1.0,
+      "duration": 0.7
+    },
+    {
+      "servos": {
+        "base": -0.279184503,
+        "shoulder": -1.42200019,
+        "elbow": 2.112291545,
+        "wrist": 0.862097203,
+        "hand": 3.129320807,
+        "roll": -1.5,
+        "spd": 0,
+        "acc": 0.0
+      },
+      "timing": 1.0,
+      "duration": 0.6
+    },
+    {
+      "servos": {
+        "base": 0.09817477,
+        "shoulder": -1.228718611,
+        "elbow": 1.414330286,
+        "wrist": 0.598252507,
+        "hand": 3.129320807,
+        "roll": -1.5,
+        "spd": 0,
+        "acc": 0.0
+      },
+      "timing": 1.0,
+      "duration": 0.7
+    },
+    {
+      "servos": {
+        "base": 0.19481556,
+        "shoulder": -1.595340019,
+        "elbow": 2.150641065,
+        "wrist": 0.748582624,
+        "hand": 3.129320807,
+        "roll": -1.5,
+        "spd": 0,
+        "acc": 0.0
+      },
+      "timing": 1.0,
+      "duration": 0.6
+    },
+    {
+      "servos": {
+        "base": 0.385029178,
+        "shoulder": -1.282407939,
+        "elbow": 1.474155537,
+        "wrist": 0.647339892,
+        "hand": 3.129320807,
+        "roll": -1.5,
+        "spd": 0,
+        "acc": 0.0
+      },
+      "timing": 1.0,
+      "duration": 0.7
+    },
+    {
+      "servos": {
+        "base": 0.355883543,
+        "shoulder": -1.630621578,
+        "elbow": 2.012582794,
+        "wrist": 0.874369049,
+        "hand": 3.129320807,
+        "roll": -1.5,
+        "spd": 0,
+        "acc": 0.0
+      },
+      "timing": 1.0,
+      "duration": 0.6
+    },
+    {
+      "servos": {
+        "base": 0.104310694,
+        "shoulder": -1.293145804,
+        "elbow": 1.314621535,
+        "wrist": 0.820679722,
+        "hand": 3.129320807,
+        "roll": -1.5,
+        "spd": 0,
+        "acc": 0.0
+      },
+      "timing": 1.0,
+      "duration": 0.8
+    },
+    {
+      "servos": {
+        "base": 0.104310694,
+        "shoulder": -1.07071859,
+        "elbow": 1.170427341,
+        "wrist": 1.306951631,
+        "hand": 3.129320807,
+        "roll": -1.5,
+        "spd": 0,
+        "acc": 0.0
+      },
+      "timing": 1.0,
+      "duration": 0.5
+    }
+  ],
+  "keyframe_count": 26
+}
