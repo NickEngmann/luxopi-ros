@@ -1,5 +1,13 @@
 # Animation Tools Summary
 
+**⚠️ NOTE**: This document is now superseded by the comprehensive toolchain documentation.
+
+**For complete documentation, see**:
+- **[ANIMATION_TOOLCHAIN.md](ANIMATION_TOOLCHAIN.md)** - Complete end-to-end workflows and best practices
+- **[ANIMATION_QUICK_REFERENCE.md](ANIMATION_QUICK_REFERENCE.md)** - Quick command reference
+
+---
+
 ## Completed Tasks
 
 ### 1. ✅ animation_to_json.py Script

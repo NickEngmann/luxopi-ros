@@ -1,6 +1,12 @@
 # Animation Creation Workflow
 
-Complete workflow for creating expressive animations for LuxoPi.
+**⚠️ NOTE**: This document is now superseded by the comprehensive toolchain documentation.
+
+**For complete documentation, see**:
+- **[ANIMATION_TOOLCHAIN.md](ANIMATION_TOOLCHAIN.md)** - Complete end-to-end workflows and best practices
+- **[ANIMATION_QUICK_REFERENCE.md](ANIMATION_QUICK_REFERENCE.md)** - Quick command reference
+
+This file is kept for reference on the original recording workflow.
 
 ## Overview
 
