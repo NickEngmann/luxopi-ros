@@ -1,0 +1,177 @@
+{
+  "name": "hopping",
+  "description": "Animation created with recorder on 2025-10-20 20:50",
+  "category": "custom",
+  "created": "2025-10-20T20:50:43.561422",
+  "keyframes": [
+    {
+      "servos": {
+        "base": -0.062893212,
+        "shoulder": -1.527844865,
+        "elbow": 2.343922644,
+        "wrist": 0.567572892,
+        "hand": 1.093728302,
+        "roll": -1.5,
+        "spd": 0,
+        "acc": 10.0
+      },
+      "timing": 1.0,
+      "duration": 0.5
+    },
+    {
+      "servos": {
+        "base": -0.062893212,
+        "shoulder": -1.429670094,
+        "elbow": 1.842310926,
+        "wrist": 0.556835026,
+        "hand": 1.093728302,
+        "roll": -1.5,
+        "spd": 0,
+        "acc": 10.0
+      },
+      "timing": 1.0,
+      "duration": 0.5
+    },
+    {
+      "servos": {
+        "base": -0.062893212,
+        "shoulder": -1.474155537,
+        "elbow": 2.43289353,
+        "wrist": 0.627398142,
+        "hand": 1.093728302,
+        "roll": -1.5,
+        "spd": 0,
+        "acc": 10.0
+      },
+      "timing": 1.0,
+      "duration": 0.5
+    },
+    {
+      "servos": {
+        "base": -0.062893212,
+        "shoulder": -1.115204033,
+        "elbow": 1.44040796,
+        "wrist": 0.553767064,
+        "hand": 1.093728302,
+        "roll": -1.5,
+        "spd": 0,
+        "acc": 10.0
+      },
+      "timing": 1.0,
+      "duration": 0.5
+    },
+    {
+      "servos": {
+        "base": -0.062893212,
+        "shoulder": -1.063048686,
+        "elbow": 1.925145889,
+        "wrist": 1.156621514,
+        "hand": 1.093728302,
+        "roll": -1.5,
+        "spd": 0,
+        "acc": 10.0
+      },
+      "timing": 1.0,
+      "duration": 0.5
+    },
+    {
+      "servos": {
+        "base": -0.062893212,
+        "shoulder": -0.889708857,
+        "elbow": 1.089126359,
+        "wrist": 0.527689391,
+        "hand": 1.093728302,
+        "roll": -1.5,
+        "spd": 0,
+        "acc": 10.0
+      },
+      "timing": 1.0,
+      "duration": 0.5
+    },
+    {
+      "servos": {
+        "base": -0.070563116,
+        "shoulder": -1.701184694,
+        "elbow": 2.437495472,
+        "wrist": 0.385029178,
+        "hand": 1.093728302,
+        "roll": -1.5,
+        "spd": 0,
+        "acc": 10.0
+      },
+      "timing": 1.0,
+      "duration": 0.5
+    },
+    {
+      "servos": {
+        "base": -0.062893212,
+        "shoulder": -0.917320511,
+        "elbow": 1.079922475,
+        "wrist": 0.337475773,
+        "hand": 1.093728302,
+        "roll": -1.5,
+        "spd": 0,
+        "acc": 10.0
+      },
+      "timing": 1.0,
+      "duration": 0.5
+    },
+    {
+      "servos": {
+        "base": -0.062893212,
+        "shoulder": -1.118271994,
+        "elbow": 2.348524586,
+        "wrist": 0.727106893,
+        "hand": 1.093728302,
+        "roll": -1.5,
+        "spd": 0,
+        "acc": 10.0
+      },
+      "timing": 1.0,
+      "duration": 0.5
+    },
+    {
+      "servos": {
+        "base": -0.062893212,
+        "shoulder": -0.630466104,
+        "elbow": 0.678019508,
+        "wrist": 0.380427235,
+        "hand": 1.093728302,
+        "roll": -1.5,
+        "spd": 0,
+        "acc": 10.0
+      },
+      "timing": 1.0,
+      "duration": 0.5
+    },
+    {
+      "servos": {
+        "base": -0.062893212,
+        "shoulder": -1.612213808,
+        "elbow": 2.215068258,
+        "wrist": 0.717903009,
+        "hand": 1.093728302,
+        "roll": -1.5,
+        "spd": 0,
+        "acc": 10.0
+      },
+      "timing": 1.0,
+      "duration": 0.5
+    },
+    {
+      "servos": {
+        "base": -0.069029135,
+        "shoulder": -1.133611802,
+        "elbow": 1.391320575,
+        "wrist": 0.555301045,
+        "hand": 1.093728302,
+        "roll": -1.5,
+        "spd": 0,
+        "acc": 10.0
+      },
+      "timing": 1.0,
+      "duration": 0.5
+    }
+  ],
+  "keyframe_count": 12
+}

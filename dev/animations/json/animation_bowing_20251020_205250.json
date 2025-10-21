@@ -1,0 +1,93 @@
+{
+  "name": "bowing",
+  "description": "Animation created with recorder on 2025-10-20 20:52",
+  "category": "custom",
+  "created": "2025-10-20T20:52:50.128186",
+  "keyframes": [
+    {
+      "servos": {
+        "base": -0.069029135,
+        "shoulder": -1.038504993,
+        "elbow": 1.403592421,
+        "wrist": 0.816077779,
+        "hand": 1.093728302,
+        "roll": -1.5,
+        "spd": 0,
+        "acc": 10.0
+      },
+      "timing": 1.0,
+      "duration": 0.5
+    },
+    {
+      "servos": {
+        "base": -0.069029135,
+        "shoulder": -0.760854471,
+        "elbow": 0.599786488,
+        "wrist": 1.251728323,
+        "hand": 1.093728302,
+        "roll": -1.5,
+        "spd": 0,
+        "acc": 10.0
+      },
+      "timing": 1.0,
+      "duration": 0.5
+    },
+    {
+      "servos": {
+        "base": -0.064427193,
+        "shoulder": -0.495475794,
+        "elbow": 0.469398121,
+        "wrist": 1.270136092,
+        "hand": 1.093728302,
+        "roll": -1.5,
+        "spd": 0,
+        "acc": 10.0
+      },
+      "timing": 1.0,
+      "duration": 0.5
+    },
+    {
+      "servos": {
+        "base": -0.070563116,
+        "shoulder": -0.363553447,
+        "elbow": 2.274893508,
+        "wrist": 0.716369028,
+        "hand": 1.093728302,
+        "roll": -1.5,
+        "spd": 0,
+        "acc": 10.0
+      },
+      "timing": 1.0,
+      "duration": 0.5
+    },
+    {
+      "servos": {
+        "base": -0.069029135,
+        "shoulder": 0.334407812,
+        "elbow": 2.27796147,
+        "wrist": 0.415708794,
+        "hand": 1.093728302,
+        "roll": -1.5,
+        "spd": 0,
+        "acc": 10.0
+      },
+      "timing": 1.0,
+      "duration": 0.5
+    },
+    {
+      "servos": {
+        "base": -0.069029135,
+        "shoulder": -1.03236907,
+        "elbow": 1.136679764,
+        "wrist": 1.018563243,
+        "hand": 1.093728302,
+        "roll": -1.5,
+        "spd": 0,
+        "acc": 10.0
+      },
+      "timing": 1.0,
+      "duration": 0.5
+    }
+  ],
+  "keyframe_count": 6
+}
