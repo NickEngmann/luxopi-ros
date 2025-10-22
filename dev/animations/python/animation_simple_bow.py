@@ -3,19 +3,19 @@
 Animation created with recorder on 2025-10-20 20:52
 
 Generated from JSON by json_to_animation.py
-Original file: 2025-10-20T20:52:50.128186
+Original file: 2025-10-21T19:57:30.449938
 """
 
 from typing import List, Tuple, Optional
 from luxo_behaviors.animation_plugin_base import AnimationPlugin
 
 
-class BowingAnimation(AnimationPlugin):
+class SimpleBowAnimation(AnimationPlugin):
     """Animation created with recorder on 2025-10-20 20:52"""
 
     @property
     def name(self) -> str:
-        return "bowing"
+        return "simple_bow"
 
     @property
     def description(self) -> str:
@@ -51,14 +51,14 @@ class BowingAnimation(AnimationPlugin):
         base_pos = 0.0
         
         keyframes = [
-            [base_pos +0.05, -1.04, 1.40, 0.82, -1.50, 10.8, 1.60],
-            [base_pos -0.03, -0.76, 0.60, 1.25, -1.50, 14.8, 1.40],
-            [base_pos +0.02, -0.50, 0.47, 1.27, -1.50, 11.2, 1.95],
-            [base_pos +0.05, -0.36, 2.27, 0.72, -1.50, 13.0, 2.01],
-            [base_pos -0.03, 0.33, 2.28, 0.42, -1.50, 11.6, 1.80],
-            [base_pos +0.02, -1.03, 1.14, 1.02, -1.50, 11.0, 1.50],
+            [base_pos, -1.04, 1.40, 0.82, -1.26, 10.8, 1.60],
+            [base_pos -0.08, -0.76, 0.60, 1.25, -1.80, 14.8, 1.40],
+            [base_pos -0.03, -0.50, 0.47, 1.27, -1.12, 11.2, 1.50],
+            [base_pos, -0.36, 2.27, 0.72, -2.00, 13.0, 2.01],
+            [base_pos -0.08, 0.33, 2.28, 0.42, -1.06, 11.6, 1.80],
+            [base_pos -0.03, -1.03, 1.14, 1.02, -1.50, 11.0, 1.50],
         ]
 
-        durations = [0.76, 0.30, 1.25, 0.50, 1.56, 0.50]
+        durations = [0.90, 0.51, 1.29, 0.64, 1.73, 0.50]
 
         return keyframes, durations

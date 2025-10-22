@@ -120,6 +120,50 @@ def suggest_hand_variations(keyframes: List[Dict]) -> List[float]:
     return variations
 
 
+def suggest_roll_variations(keyframes: List[Dict]) -> List[float]:
+    """
+    Suggest roll (wrist) variations to add expressiveness.
+
+    The roll adds subtle personality and prevents robotic rigidity.
+
+    Range: -2.25 to -0.75 radians
+    - Neutral: -1.5
+    - Variation adds character and life-like imperfection
+    - Always ends at neutral position for clean animation loops
+    """
+    import random
+
+    variations = []
+
+    for i, kf in enumerate(keyframes):
+        # Last keyframe should always be neutral for clean ending
+        if i == len(keyframes) - 1:
+            variations.append(-1.5)
+            continue
+
+        # Start with neutral position
+        roll = -1.5
+
+        # Add subtle random variation (±0.3 to ±0.6)
+        # This creates natural "imperfection" like human movement
+        variation_amount = random.uniform(0.3, 0.6)
+
+        # Alternate direction to create natural sway
+        if i % 2 == 0:
+            roll += variation_amount
+        else:
+            roll -= variation_amount
+
+        # Add smaller random offset for more organic feel
+        roll += random.uniform(-0.1, 0.1)
+
+        # Clamp to valid range (-2.25 to -0.75)
+        roll = max(-2.25, min(-0.75, roll))
+        variations.append(round(roll, 2))
+
+    return variations
+
+
 def suggest_acceleration_variations(keyframes: List[Dict]) -> List[float]:
     """
     Suggest acceleration variations based on movement characteristics.
@@ -206,6 +250,20 @@ def json_to_python_plugin(
         hand_variations = suggest_hand_variations(keyframes_data)
     else:
         hand_variations = [kf['servos'].get('hand', 1.5) for kf in keyframes_data]
+
+    # Generate roll variations to add expressiveness
+    # Always add roll variations unless they are already varied in the source
+    existing_roll_values = [kf['servos'].get('roll', -1.5) for kf in keyframes_data]
+    all_same_roll = all(abs(r - existing_roll_values[0]) < 0.01 for r in existing_roll_values)
+
+    if all_same_roll:
+        # All roll values are the same (e.g., all -1.5), add variations
+        roll_variations = suggest_roll_variations(keyframes_data)
+        print(f"  Auto-suggesting roll variations (all values were constant at {existing_roll_values[0]:.2f})")
+    else:
+        # Preserve existing roll variations
+        roll_variations = existing_roll_values
+        print(f"  Preserving existing roll values (range: {min(existing_roll_values):.2f} to {max(existing_roll_values):.2f})")
 
     # Check if acceleration values are already customized (not all defaults)
     existing_acc_values = [kf['servos'].get('acc', 10.0) for kf in keyframes_data]
@@ -315,7 +373,7 @@ class {class_name}(AnimationPlugin):
         shoulder = servos.get('shoulder', 0.0)
         elbow = servos.get('elbow', 0.0)
         wrist = servos.get('wrist', 0.0)
-        roll = servos.get('roll', -1.5)
+        roll = roll_variations[i]  # Use generated variation instead of static value
         acc = acc_variations[i]
         hand = hand_variations[i]
 

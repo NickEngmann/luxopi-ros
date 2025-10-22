@@ -8,6 +8,8 @@ can physically move the arm to desired positions.
 
 Usage:
     python3 animation_recorder.py [--port /dev/ttyAMA0]
+    python3 animation_recorder.py --preview animation.json
+    python3 animation_recorder.py --preview animation.py
 """
 
 import serial
@@ -606,7 +608,7 @@ class AnimationRecorder:
         output_dir.mkdir(parents=True, exist_ok=True)
 
         # Generate filename
-        filename = f"animation_{self.animation_name.lower().replace(' ', '_')}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        filename = f"animation_{self.animation_name.lower().replace(' ', '_')}.json"
         filepath = output_dir / filename
 
         # Save to file
@@ -754,22 +756,121 @@ class AnimationRecorder:
 
         return 'quit'
 
-    def preview_animation(self, json_file: str):
-        """Interactive preview/editing mode for animations from JSON."""
+    def _convert_python_to_json_data(self, py_file: str) -> Optional[Dict]:
+        """Convert a Python animation file to JSON data format."""
+        import importlib.util
+        import inspect
+
+        py_path = Path(py_file)
+        if not py_path.exists():
+            print(f"✗ File not found: {py_file}")
+            return None
+
+        # Load the Python module
+        try:
+            spec = importlib.util.spec_from_file_location("temp_animation", py_path)
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+        except Exception as e:
+            print(f"✗ Error loading Python file: {e}")
+            return None
+
+        # Find the animation class
+        animation_class = None
+        for name, obj in inspect.getmembers(module):
+            if (inspect.isclass(obj) and
+                name.endswith('Animation') and
+                hasattr(obj, 'get_keyframes')):
+                animation_class = obj
+                break
+
+        if not animation_class:
+            print(f"✗ No animation class found in {py_file}")
+            return None
+
+        # Create a mock node object for AnimationPlugin
+        class MockLogger:
+            def info(self, msg): pass
+            def error(self, msg): pass
+            def warn(self, msg): pass
+            def debug(self, msg): pass
+
+        class MockNode:
+            def get_logger(self):
+                return MockLogger()
+
+        # Instantiate and extract data
+        try:
+            mock_node = MockNode()
+            anim = animation_class(mock_node)
+            keyframes_data, durations = anim.get_keyframes()
+
+            # Convert to JSON format
+            json_keyframes = []
+            for i, kf in enumerate(keyframes_data):
+                # Keyframe format: [base, shoulder, elbow, wrist, roll, acc, hand]
+                json_kf = {
+                    'servos': {
+                        'base': kf[0],
+                        'shoulder': kf[1],
+                        'elbow': kf[2],
+                        'wrist': kf[3],
+                        'roll': kf[4],
+                        'acc': kf[5],
+                        'hand': kf[6]
+                    },
+                    'duration': durations[i] if i < len(durations) else 1.0
+                }
+                json_keyframes.append(json_kf)
+
+            data = {
+                'name': anim.name,
+                'description': anim.description,
+                'category': anim.get_category(),
+                'keyframes': json_keyframes
+            }
+
+            return data
+
+        except Exception as e:
+            print(f"✗ Error extracting animation data: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
+
+    def preview_animation(self, animation_file: str):
+        """Interactive preview/editing mode for animations from JSON or Python files."""
         print("\n" + "="*60)
         print("LuxoPi Animation Preview")
         print("="*60)
 
-        # Load JSON file
-        print(f"\nLoading animation from: {json_file}")
-        try:
-            with open(json_file, 'r') as f:
-                data = json.load(f)
-        except FileNotFoundError:
-            print(f"✗ File not found: {json_file}")
-            return
-        except json.JSONDecodeError as e:
-            print(f"✗ Invalid JSON: {e}")
+        # Detect file type and load appropriately
+        file_path = Path(animation_file)
+        print(f"\nLoading animation from: {animation_file}")
+
+        if file_path.suffix == '.py':
+            # Convert Python file to JSON data in memory
+            print("  (Converting Python animation to JSON format...)")
+            data = self._convert_python_to_json_data(animation_file)
+            if not data:
+                return
+            # Use a temporary JSON path for save operations
+            json_file = str(file_path.with_suffix('.json'))
+        elif file_path.suffix == '.json':
+            # Load JSON file directly
+            try:
+                with open(animation_file, 'r') as f:
+                    data = json.load(f)
+                json_file = animation_file
+            except FileNotFoundError:
+                print(f"✗ File not found: {animation_file}")
+                return
+            except json.JSONDecodeError as e:
+                print(f"✗ Invalid JSON: {e}")
+                return
+        else:
+            print(f"✗ Unsupported file type: {file_path.suffix}")
+            print("  Supported formats: .json, .py")
             return
 
         animation_name = data.get('name', 'unknown')
@@ -1664,9 +1765,8 @@ class AnimationRecorder:
             "keyframe_count": len(self.keyframes)
         }
 
-        # Generate filename with timestamp
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        filename = f"animation_{self.animation_name}_{timestamp}.json"
+        # Generate filename
+        filename = f"animation_{self.animation_name}.json"
         filepath = Path("./json") / filename
 
         # Ensure directory exists
@@ -1884,8 +1984,11 @@ Examples:
   # Record a new animation
   python3 animation_recorder.py
 
-  # Preview an existing animation
+  # Preview an existing JSON animation
   python3 animation_recorder.py --preview ./json/animation_hopping.json
+
+  # Preview a Python animation (auto-converts to JSON format)
+  python3 animation_recorder.py --preview ./python/animation_big_bow.py
 
   # Use a different serial port
   python3 animation_recorder.py --port /dev/ttyUSB0
@@ -1907,8 +2010,8 @@ Examples:
 
     parser.add_argument(
         '--preview',
-        metavar='JSON_FILE',
-        help='Preview/test an animation from a JSON file (auto disables/enables DEMA)'
+        metavar='FILE',
+        help='Preview/test an animation from a JSON or Python file (auto disables/enables DEMA)'
     )
 
     args = parser.parse_args()

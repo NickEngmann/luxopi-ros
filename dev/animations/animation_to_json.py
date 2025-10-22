@@ -221,8 +221,7 @@ def save_json(json_data: Dict[str, Any], output_dir: Path = None) -> Path:
 
     # Generate filename
     name = json_data['name']
-    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    filename = f"animation_{name}_{timestamp}.json"
+    filename = f"animation_{name}.json"
     filepath = output_dir / filename
 
     # Write JSON
