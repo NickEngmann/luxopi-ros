@@ -2,7 +2,7 @@
   "name": "big_bounce",
   "description": "Animation created with recorder on 2025-10-21 17:15",
   "category": "custom",
-  "created": "2025-10-21T17:18:49.149961",
+  "created": "2025-10-21T20:18:36.118795",
   "keyframes": [
     {
       "servos": {
@@ -13,10 +13,10 @@
         "hand": 3.129320807,
         "roll": -1.5,
         "spd": 0,
-        "acc": 19.0
+        "acc": 225.9
       },
       "timing": 1.0,
-      "duration": 0.7
+      "duration": 0.5
     },
     {
       "servos": {
@@ -27,10 +27,10 @@
         "hand": 3.129320807,
         "roll": -1.5,
         "spd": 0,
-        "acc": 20.0
+        "acc": 146.7
       },
       "timing": 1.0,
-      "duration": 1.0
+      "duration": 0.7
     },
     {
       "servos": {
@@ -41,10 +41,10 @@
         "hand": 3.129320807,
         "roll": -1.5,
         "spd": 0,
-        "acc": 19.0
+        "acc": 230.4
       },
       "timing": 1.0,
-      "duration": 1.5
+      "duration": 1.0
     },
     {
       "servos": {
@@ -55,10 +55,10 @@
         "hand": 3.129320807,
         "roll": -1.5,
         "spd": 0,
-        "acc": 20.0
+        "acc": 158.8
       },
       "timing": 1.0,
-      "duration": 1.2
+      "duration": 0.8
     },
     {
       "servos": {
@@ -69,10 +69,10 @@
         "hand": 3.129320807,
         "roll": -1.5,
         "spd": 0,
-        "acc": 19.0
+        "acc": 217.2
       },
       "timing": 1.0,
-      "duration": 1.71
+      "duration": 1.1
     },
     {
       "servos": {
@@ -83,10 +83,10 @@
         "hand": 3.129320807,
         "roll": -1.5,
         "spd": 0,
-        "acc": 19.0
+        "acc": 209.0
       },
       "timing": 1.0,
-      "duration": 1.6
+      "duration": 1.0
     },
     {
       "servos": {
@@ -97,10 +97,10 @@
         "hand": 3.129320807,
         "roll": -1.5,
         "spd": 0,
-        "acc": 19.0
+        "acc": 220.5
       },
       "timing": 1.0,
-      "duration": 1.6
+      "duration": 0.9
     },
     {
       "servos": {
@@ -111,10 +111,10 @@
         "hand": 3.129320807,
         "roll": -1.5,
         "spd": 0,
-        "acc": 19.0
+        "acc": 225.0
       },
       "timing": 1.0,
-      "duration": 0.9
+      "duration": 0.7
     },
     {
       "servos": {
@@ -125,10 +125,10 @@
         "hand": 3.129320807,
         "roll": -1.5,
         "spd": 0,
-        "acc": 20.0
+        "acc": 144.8
       },
       "timing": 1.0,
-      "duration": 1.1
+      "duration": 0.8
     },
     {
       "servos": {
@@ -139,10 +139,10 @@
         "hand": 3.129320807,
         "roll": -1.5,
         "spd": 0,
-        "acc": 20.0
+        "acc": 232.0
       },
       "timing": 1.0,
-      "duration": 1.2
+      "duration": 0.9
     },
     {
       "servos": {
@@ -153,10 +153,10 @@
         "hand": 3.129320807,
         "roll": -1.5,
         "spd": 0,
-        "acc": 19.0
+        "acc": 204.5
       },
       "timing": 1.0,
-      "duration": 1.4
+      "duration": 0.9
     },
     {
       "servos": {
@@ -167,10 +167,10 @@
         "hand": 3.129320807,
         "roll": -1.5,
         "spd": 0,
-        "acc": 20.0
+        "acc": 196.2
       },
       "timing": 1.0,
-      "duration": 1.1
+      "duration": 0.8
     },
     {
       "servos": {
@@ -181,7 +181,7 @@
         "hand": 3.129320807,
         "roll": -1.5,
         "spd": 0,
-        "acc": 19.0
+        "acc": 151.8
       },
       "timing": 1.0,
       "duration": 0.0
@@ -195,10 +195,10 @@
         "hand": 3.129320807,
         "roll": -1.5,
         "spd": 0,
-        "acc": 19.0
+        "acc": 207.1
       },
       "timing": 1.0,
-      "duration": 1.2
+      "duration": 0.8
     },
     {
       "servos": {
@@ -209,10 +209,10 @@
         "hand": 3.129320807,
         "roll": -1.5,
         "spd": 0,
-        "acc": 20.0
+        "acc": 241.6
       },
       "timing": 1.0,
-      "duration": 1.0
+      "duration": 0.8
     },
     {
       "servos": {
@@ -223,10 +223,10 @@
         "hand": 3.129320807,
         "roll": -1.5,
         "spd": 0,
-        "acc": 19.0
+        "acc": 201.5
       },
       "timing": 1.0,
-      "duration": 1.5
+      "duration": 1.0
     },
     {
       "servos": {
@@ -237,10 +237,10 @@
         "hand": 3.129320807,
         "roll": -1.5,
         "spd": 0,
-        "acc": 20.0
+        "acc": 222.2
       },
       "timing": 1.0,
-      "duration": 1.4
+      "duration": 1.0
     },
     {
       "servos": {
@@ -251,10 +251,10 @@
         "hand": 3.129320807,
         "roll": -1.5,
         "spd": 0,
-        "acc": 20.0
+        "acc": 165.8
       },
       "timing": 1.0,
-      "duration": 1.5
+      "duration": 1.0
     },
     {
       "servos": {
@@ -265,10 +265,10 @@
         "hand": 3.129320807,
         "roll": -1.5,
         "spd": 0,
-        "acc": 20.0
+        "acc": 199.6
       },
       "timing": 1.0,
-      "duration": 1.2
+      "duration": 0.8
     },
     {
       "servos": {
@@ -279,10 +279,10 @@
         "hand": 3.129320807,
         "roll": -1.5,
         "spd": 0,
-        "acc": 19.0
+        "acc": 206.6
       },
       "timing": 1.0,
-      "duration": 1.61
+      "duration": 1.0
     },
     {
       "servos": {
@@ -293,10 +293,10 @@
         "hand": 3.129320807,
         "roll": -1.5,
         "spd": 0,
-        "acc": 20.0
+        "acc": 148.9
       },
       "timing": 1.0,
-      "duration": 1.31
+      "duration": 0.9
     },
     {
       "servos": {
@@ -307,10 +307,10 @@
         "hand": 3.129320807,
         "roll": -1.5,
         "spd": 0,
-        "acc": 20.0
+        "acc": 210.7
       },
       "timing": 1.0,
-      "duration": 1.6
+      "duration": 1.0
     },
     {
       "servos": {
@@ -321,10 +321,10 @@
         "hand": 3.129320807,
         "roll": -1.5,
         "spd": 0,
-        "acc": 20.0
+        "acc": 223.8
       },
       "timing": 1.0,
-      "duration": 1.2
+      "duration": 0.8
     },
     {
       "servos": {
@@ -335,10 +335,10 @@
         "hand": 3.129320807,
         "roll": -1.5,
         "spd": 0,
-        "acc": 19.0
+        "acc": 243.8
       },
       "timing": 1.0,
-      "duration": 1.5
+      "duration": 1.0
     },
     {
       "servos": {
@@ -349,10 +349,10 @@
         "hand": 3.129320807,
         "roll": -1.5,
         "spd": 0,
-        "acc": 20.0
+        "acc": 160.7
       },
       "timing": 1.0,
-      "duration": 1.1
+      "duration": 0.9
     },
     {
       "servos": {
@@ -363,10 +363,10 @@
         "hand": 3.129320807,
         "roll": -1.5,
         "spd": 0,
-        "acc": 19.0
+        "acc": 205.1
       },
       "timing": 1.0,
-      "duration": 1.8
+      "duration": 1.1
     },
     {
       "servos": {
@@ -377,10 +377,10 @@
         "hand": 3.129320807,
         "roll": -1.5,
         "spd": 0,
-        "acc": 19.0
+        "acc": 191.8
       },
       "timing": 1.0,
-      "duration": 1.8
+      "duration": 1.1
     },
     {
       "servos": {
@@ -391,10 +391,10 @@
         "hand": 3.129320807,
         "roll": -1.5,
         "spd": 0,
-        "acc": 20.0
+        "acc": 229.9
       },
       "timing": 1.0,
-      "duration": 1.3
+      "duration": 0.9
     },
     {
       "servos": {
@@ -405,10 +405,10 @@
         "hand": 3.129320807,
         "roll": -1.5,
         "spd": 0,
-        "acc": 20.0
+        "acc": 180.8
       },
       "timing": 1.0,
-      "duration": 1.3
+      "duration": 0.9
     }
   ],
   "keyframe_count": 29
