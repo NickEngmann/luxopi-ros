@@ -1,0 +1,81 @@
+{
+  "name": "nod",
+  "description": "Animation created with recorder on 2025-10-21 21:03",
+  "category": "custom",
+  "created": "2025-10-21T21:06:27.687700",
+  "keyframes": [
+    {
+      "servos": {
+        "base": 0.05,
+        "shoulder": -0.54,
+        "elbow": 0.85,
+        "wrist": 1.09,
+        "roll": -1.0,
+        "acc": 89.3,
+        "hand": 1.6
+      },
+      "duration": 0.4
+    },
+    {
+      "servos": {
+        "base": -0.03,
+        "shoulder": -0.54,
+        "elbow": 0.76,
+        "wrist": 0.66,
+        "roll": -2.05,
+        "acc": 50.6,
+        "hand": 1.4
+      },
+      "duration": 0.6
+    },
+    {
+      "servos": {
+        "base": 0.02,
+        "shoulder": -0.54,
+        "elbow": 0.96,
+        "wrist": 1.68,
+        "roll": -0.98,
+        "acc": 115.3,
+        "hand": 1.5
+      },
+      "duration": 0.8
+    },
+    {
+      "servos": {
+        "base": 0.05,
+        "shoulder": -0.54,
+        "elbow": 0.52,
+        "wrist": 0.59,
+        "roll": -2.03,
+        "acc": 139.1,
+        "hand": 1.6
+      },
+      "duration": 0.8
+    },
+    {
+      "servos": {
+        "base": -0.03,
+        "shoulder": -0.52,
+        "elbow": 1.11,
+        "wrist": 1.58,
+        "roll": -1.04,
+        "acc": 43.9,
+        "hand": 1.4
+      },
+      "duration": 0.8
+    },
+    {
+      "servos": {
+        "base": 0.02,
+        "shoulder": -0.47,
+        "elbow": 1.01,
+        "wrist": 0.87,
+        "roll": -1.5,
+        "acc": 36.8,
+        "hand": 1.94
+      },
+      "duration": 0.7
+    }
+  ],
+  "keyframe_count": 6
+}

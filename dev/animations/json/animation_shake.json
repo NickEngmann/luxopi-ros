@@ -1,0 +1,105 @@
+{
+  "name": "shake",
+  "description": "Animation created with recorder on 2025-10-21 21:10",
+  "category": "custom",
+  "created": "2025-10-21T21:14:29.947772",
+  "keyframes": [
+    {
+      "servos": {
+        "base": 0.03,
+        "shoulder": -0.46,
+        "elbow": 0.99,
+        "wrist": 0.94,
+        "roll": -1.01,
+        "acc": 0.0,
+        "hand": 2.04
+      },
+      "duration": 0.2
+    },
+    {
+      "servos": {
+        "base": -1.14,
+        "shoulder": -0.46,
+        "elbow": 1.01,
+        "wrist": 1.14,
+        "roll": -1.87,
+        "acc": 0.0,
+        "hand": 1.84
+      },
+      "duration": 0.8
+    },
+    {
+      "servos": {
+        "base": 0.93,
+        "shoulder": -0.4,
+        "elbow": 1.02,
+        "wrist": 0.88,
+        "roll": -1.12,
+        "acc": 0.0,
+        "hand": 1.92
+      },
+      "duration": 1.1
+    },
+    {
+      "servos": {
+        "base": -1.1,
+        "shoulder": -0.54,
+        "elbow": 1.98,
+        "wrist": 0.34,
+        "roll": -1.83,
+        "acc": 0.0,
+        "hand": 1.5
+      },
+      "duration": 1.0
+    },
+    {
+      "servos": {
+        "base": 1.29,
+        "shoulder": -0.46,
+        "elbow": 1.75,
+        "wrist": 0.53,
+        "roll": -1.01,
+        "acc": 0.0,
+        "hand": 2.04
+      },
+      "duration": 1.1
+    },
+    {
+      "servos": {
+        "base": -0.75,
+        "shoulder": -0.48,
+        "elbow": 1.15,
+        "wrist": 0.89,
+        "roll": -1.91,
+        "acc": 0.0,
+        "hand": 1.84
+      },
+      "duration": 1.1
+    },
+    {
+      "servos": {
+        "base": 0.45,
+        "shoulder": -0.48,
+        "elbow": 1.03,
+        "wrist": 0.87,
+        "roll": -1.07,
+        "acc": 0.0,
+        "hand": 1.94
+      },
+      "duration": 0.9
+    },
+    {
+      "servos": {
+        "base": -0.04,
+        "shoulder": -0.47,
+        "elbow": 1.03,
+        "wrist": 0.88,
+        "roll": -1.5,
+        "acc": 0.0,
+        "hand": 2.04
+      },
+      "duration": 0.6
+    }
+  ],
+  "keyframe_count": 8
+}
