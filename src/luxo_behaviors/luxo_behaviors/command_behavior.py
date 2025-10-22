@@ -203,41 +203,60 @@ class CommandBehavior:
         ]
 
     def _init_robot_hardware_patterns(self):
-        """Initialize fuzzy patterns for robot hardware commands."""
+        """Initialize fuzzy patterns for robot hardware commands.
 
-        # Sleep patterns - VERY FLEXIBLE for natural language
+        IMPORTANT: These patterns include common Whisper transcription errors to improve responsiveness.
+
+        Common transcription errors handled:
+        - "bedtime" → "bad time", "bet time", "bat time"
+        - "sleep" → "see", "seat", "sleet", "sweep", "seek"
+        - "wake" → "way", "weigh"
+
+        Examples from logs:
+        - "It's bad time" → correctly detected as bedtime/go_to_sleep
+        - "go to see" → correctly detected as go_to_sleep
+        - "way up" → correctly detected as wake_up
+        """
+
+        # Sleep patterns - VERY FLEXIBLE for natural language + common transcription errors
         self.sleep_patterns = [
-            # Direct sleep commands
-            r'go.{0,5}(to|the|a|and)?.{0,5}(sleep|slip|asleep|sleeps|sleeping)',
-            r'(go|going).{0,10}(sleep|bed)',
-            r'time.{0,10}(to|for|the)?.{0,10}(bed|sleep)',
+            # Direct sleep commands - WITH PHONETIC VARIANTS
+            # "sleep" variants: sleep, slip, see, seat, sleet, sweep, seek
+            # NOTE: "see" only matches with "go to see" context to avoid false positives
+            r'go.{0,5}(to|the|a|and)?.{0,5}(sleep|slip|see|seat|sleet|sweep|seek|asleep|sleeps|sleeping)',
+            r'(go|going).{0,10}(sleep|see|seat|bed)',
+            r'time.{0,10}(to|for|the)?.{0,10}(bed|sleep|see)',
 
             # "You're about to..." / "You should..." patterns
-            r'(you\'?re|your|you|u).{0,10}(about|going|supposed).{0,10}(to|the)?.{0,10}(sleep|bed)',
-            r'(you\'?re|your|you|u).{0,10}(should|need|have).{0,10}(to|the)?.{0,10}(sleep|bed)',
-            r'(you\'?re|your|you|u).{0,10}(can|may).{0,10}(sleep|rest).{0,10}(now)?',
+            r'(you\'?re|your|you|u).{0,10}(about|going|supposed).{0,10}(to|the)?.{0,10}(sleep|see|bed)',
+            r'(you\'?re|your|you|u).{0,10}(should|need|have).{0,10}(to|the)?.{0,10}(sleep|see|bed)',
+            r'(you\'?re|your|you|u).{0,10}(can|may).{0,10}(sleep|see|rest).{0,10}(now)?',
 
             # Questions about being asleep
             r'(are|r).{0,5}(you|u).{0,5}(asleep|sleeping)',
             r'(you|u).{0,5}(asleep|sleeping)',
 
             # Natural commands and time-based
-            r'(it\'?s|its).{0,10}(time|night).{0,10}(to|for|the)?.{0,10}(sleep|bed)',
-            r'(it\'?s|its).{0,10}bed.?time',
-            r'(it\'?s|its).{0,10}(your.{0,5})?bed.?time',
-            r'time.{0,10}for.{0,10}(you.{0,5}to.{0,5})?(sleep|bed)',
+            r'(it\'?s|its).{0,10}(time|night).{0,10}(to|for|the)?.{0,10}(sleep|see|bed)',
+
+            # Bedtime variants - CRITICAL PHONETIC VARIANTS
+            # "bedtime" → "bad time", "bet time", "bat time", "bed time"
+            r'(it\'?s|its).{0,10}(bed.?time|bad.{0,5}time|bet.{0,5}time|bat.{0,5}time)',
+            r'(it\'?s|its).{0,10}(your.{0,5})?(bed.?time|bad.{0,5}time|bet.{0,5}time)',
+
+            r'time.{0,10}for.{0,10}(you.{0,5}to.{0,5})?(sleep|see|bed)',
             r'sleep\s+(now|time|mode)',
             r'(sleep|sleeping).{0,5}(mode|time)',
 
             # Permission/polite requests
-            r'(can|may).{0,5}(i|we).{0,10}(put.{0,5}you.{0,5}to).{0,10}(sleep|bed)',
-            r'(could|would).{0,5}you.{0,10}(please.{0,5})?(go.{0,5}to).{0,10}(sleep|bed)',
-            r'(would|could).{0,5}you.{0,10}(mind.{0,5})?(sleeping|going.{0,5}to.{0,5}(sleep|bed))',
-            r'(please|pls).{0,10}(go.{0,5}to).{0,10}(sleep|bed)',
+            r'(can|may).{0,5}(i|we).{0,10}(put.{0,5}you.{0,5}to).{0,10}(sleep|see|bed)',
+            r'(could|would).{0,5}you.{0,10}(please.{0,5})?(go.{0,5}to).{0,10}(sleep|see|bed)',
+            r'(would|could).{0,5}you.{0,10}(mind.{0,5})?(sleeping|going.{0,5}to.{0,5}(sleep|see|bed))',
+            r'(please|pls).{0,10}(go.{0,5}to).{0,10}(sleep|see|bed)',
 
             # Flexible/suggestive commands
-            r'(why.{0,5}don\'?t.{0,5}you|how.{0,5}about).{0,10}(go.{0,5}to.{0,5})?(sleep|bed)',
-            r'you.{0,5}(better|ought.{0,5}to).{0,10}(sleep|rest|go.{0,5}to.{0,5}bed)',
+            r'(why.{0,5}don\'?t.{0,5}you|how.{0,5}about).{0,10}(go.{0,5}to.{0,5})?(sleep|see|bed)',
+            r'you.{0,5}(better|ought.{0,5}to).{0,10}(sleep|see|rest|go.{0,5}to.{0,5}bed)',
 
             # Just the word "sleep" - MUST be last to avoid false positives
             r'\b(sleep|asleep)\b',
