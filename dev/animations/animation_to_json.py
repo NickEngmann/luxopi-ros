@@ -137,19 +137,38 @@ def evaluate_base_expression(expr_str: str, base_pos: float = 0.0) -> float:
     return float(expr_str)
 
 
-def animation_to_json(animation_class: Any, category: str = None) -> Dict[str, Any]:
+def animation_to_json(animation_class: Any, node: Any = None, category: str = None) -> Dict[str, Any]:
     """
     Convert an animation class to JSON format.
 
     Args:
-        animation_class: AnimationPlugin class instance
+        animation_class: AnimationPlugin class (not instance)
+        node: Optional ROS node (required for AnimationPlugin classes)
         category: Optional category override
 
     Returns:
         Dictionary in JSON animation format
     """
-    # Create instance
-    instance = animation_class()
+    # Create instance (with node if needed)
+    if node is not None:
+        instance = animation_class(node)
+    else:
+        # Try without node first (for legacy support)
+        try:
+            instance = animation_class()
+        except TypeError:
+            # Need a node, create a mock one
+            class MockLogger:
+                def info(self, msg): pass
+                def error(self, msg): pass
+                def warn(self, msg): pass
+                def debug(self, msg): pass
+
+            class MockNode:
+                def get_logger(self):
+                    return MockLogger()
+
+            instance = animation_class(MockNode())
 
     # Get animation data
     name = instance.name
@@ -250,23 +269,52 @@ def find_commented_animations() -> List[tuple]:
     return animations
 
 
-def convert_commented_animation(file_path: Path, class_name: str, output_dir: Path = None) -> Optional[Path]:
-    """Convert a commented animation to JSON."""
+def load_active_animation_class(file_path: Path, class_name: str) -> Optional[type]:
+    """Load an active (uncommented) animation class from a file."""
+    import importlib.util
+    import inspect
+
+    try:
+        # Load the module
+        spec = importlib.util.spec_from_file_location("temp_module", file_path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+
+        # Find the class
+        if hasattr(module, class_name):
+            animation_class = getattr(module, class_name)
+            # Verify it's an animation class
+            if inspect.isclass(animation_class) and hasattr(animation_class, 'get_keyframes'):
+                return animation_class
+    except Exception as e:
+        # Failed to load as active class
+        pass
+
+    return None
+
+
+def convert_animation(file_path: Path, class_name: str, output_dir: Path = None) -> Optional[Path]:
+    """Convert an animation (commented or active) to JSON."""
     print(f"Converting {class_name} from {file_path.name}...")
 
-    # Extract commented code
-    code = extract_commented_animation_code(file_path, class_name)
-    if not code:
-        print(f"  ✗ Could not extract code for {class_name}")
-        return None
+    animation_class = None
 
-    # Load the class
-    animation_class = load_animation_class_from_code(code, class_name)
+    # Try loading as active class first
+    animation_class = load_active_animation_class(file_path, class_name)
+    if animation_class:
+        print(f"  Found active class {class_name}")
+    else:
+        # Try extracting as commented code
+        code = extract_commented_animation_code(file_path, class_name)
+        if code:
+            print(f"  Found commented class {class_name}")
+            animation_class = load_animation_class_from_code(code, class_name)
+
     if not animation_class:
-        print(f"  ✗ Could not load class {class_name}")
+        print(f"  ✗ Could not find or load class {class_name}")
         return None
 
-    # Convert to JSON
+    # Convert to JSON (animation_to_json will create mock node if needed)
     try:
         json_data = animation_to_json(animation_class)
     except Exception as e:
@@ -286,23 +334,29 @@ def convert_commented_animation(file_path: Path, class_name: str, output_dir: Pa
     return filepath
 
 
+# Alias for backward compatibility
+def convert_commented_animation(file_path: Path, class_name: str, output_dir: Path = None) -> Optional[Path]:
+    """Convert a commented animation to JSON (deprecated - use convert_animation)."""
+    return convert_animation(file_path, class_name, output_dir)
+
+
 def main():
     parser = argparse.ArgumentParser(
-        description='Convert Python animation classes to JSON format',
+        description='Convert Python animation classes (active or commented) to JSON format',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Convert a specific commented animation
-  python3 animation_to_json.py StretchingAnimation
+  # Convert a specific animation (active or commented)
+  python3 animation_to_json.py StartledJumpAnimation
 
   # Convert all commented animations
   python3 animation_to_json.py --all-commented
 
-  # Convert from specific file
-  python3 animation_to_json.py --file action_animations.py DancingAnimation
+  # Convert from specific file (works with both active and commented classes)
+  python3 animation_to_json.py --file emotion_animations.py StartledJumpAnimation
 
   # Specify output directory
-  python3 animation_to_json.py --output /path/to/output StretchingAnimation
+  python3 animation_to_json.py --output /path/to/output StartledJumpAnimation
         """
     )
 
@@ -366,19 +420,26 @@ Examples:
                 print(f"✗ File not found: {file_path}")
                 return 1
 
-            result = convert_commented_animation(file_path, args.class_name, output_dir)
+            result = convert_animation(file_path, args.class_name, output_dir)
         else:
-            # Search all files
+            # Search all files (try both active and commented)
             found = False
+            result = None
             for file_path in find_animation_files():
-                code = extract_commented_animation_code(file_path, args.class_name)
-                if code:
-                    result = convert_commented_animation(file_path, args.class_name, output_dir)
+                # Try loading as active class first
+                if load_active_animation_class(file_path, args.class_name):
+                    result = convert_animation(file_path, args.class_name, output_dir)
+                    found = True
+                    break
+                # Try extracting as commented code
+                elif extract_commented_animation_code(file_path, args.class_name):
+                    result = convert_animation(file_path, args.class_name, output_dir)
                     found = True
                     break
 
             if not found:
                 print(f"✗ Animation class '{args.class_name}' not found in any animation files")
+                print("  (Searched for both active and commented classes)")
                 return 1
 
         return 0 if result else 1
