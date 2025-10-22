@@ -1,0 +1,290 @@
+{
+  "name": "dreamy_drift",
+  "description": "Weightless floating with smooth figure-8 patterns",
+  "category": "idle",
+  "created": "2025-10-21T21:51:49.067302",
+  "keyframes": [
+    {
+      "servos": {
+        "base": 0.0,
+        "shoulder": -0.65,
+        "elbow": 1.2,
+        "wrist": 1.0,
+        "hand": 1.5,
+        "roll": -1.5,
+        "spd": 0,
+        "acc": 3.1
+      },
+      "timing": 1.0,
+      "duration": 0.1,
+      "name": "Home"
+    },
+    {
+      "servos": {
+        "base": 0.08,
+        "shoulder": -0.88,
+        "elbow": 1.27,
+        "wrist": 1.43,
+        "hand": 1.5,
+        "roll": -1.3,
+        "spd": 0,
+        "acc": 1.6
+      },
+      "timing": 1.0,
+      "duration": 5.0,
+      "name": "Drift begins"
+    },
+    {
+      "servos": {
+        "base": 0.15,
+        "shoulder": -1.05,
+        "elbow": 1.05,
+        "wrist": 1.65,
+        "hand": 2.4,
+        "roll": -1.8,
+        "spd": 0,
+        "acc": 3.8
+      },
+      "timing": 1.0,
+      "duration": 1.84,
+      "name": "Float upward"
+    },
+    {
+      "servos": {
+        "base": -0.4,
+        "shoulder": -1.0,
+        "elbow": 1.1,
+        "wrist": 1.6,
+        "hand": 1.4,
+        "roll": -0.85,
+        "spd": 0,
+        "acc": 4.0
+      },
+      "timing": 1.0,
+      "duration": 2.63,
+      "name": "Arc left high"
+    },
+    {
+      "servos": {
+        "base": -0.5,
+        "shoulder": -0.95,
+        "elbow": 1.15,
+        "wrist": 1.55,
+        "hand": 2.6,
+        "roll": -2.1,
+        "spd": 0,
+        "acc": 4.3
+      },
+      "timing": 1.0,
+      "duration": 0.7,
+      "name": "Suspend peak"
+    },
+    {
+      "servos": {
+        "base": 0.3,
+        "shoulder": -0.85,
+        "elbow": 1.25,
+        "wrist": 1.45,
+        "hand": 1.6,
+        "roll": -0.8,
+        "spd": 0,
+        "acc": 1.6
+      },
+      "timing": 1.0,
+      "duration": 5.0,
+      "name": "Gentle fall right"
+    },
+    {
+      "servos": {
+        "base": 0.45,
+        "shoulder": -0.55,
+        "elbow": 1.45,
+        "wrist": 1.15,
+        "hand": 0.7,
+        "roll": -1.9,
+        "spd": 0,
+        "acc": 1.5
+      },
+      "timing": 1.0,
+      "duration": 5.0,
+      "name": "Swoop low"
+    },
+    {
+      "servos": {
+        "base": 0.35,
+        "shoulder": -0.75,
+        "elbow": 1.3,
+        "wrist": 1.35,
+        "hand": 2.4,
+        "roll": -1.0,
+        "spd": 0,
+        "acc": 4.0
+      },
+      "timing": 1.0,
+      "duration": 1.84,
+      "name": "Rise again"
+    },
+    {
+      "servos": {
+        "base": 0.0,
+        "shoulder": -0.9,
+        "elbow": 1.2,
+        "wrist": 1.5,
+        "hand": 1.5,
+        "roll": -1.7,
+        "spd": 0,
+        "acc": 4.6
+      },
+      "timing": 1.0,
+      "duration": 1.74,
+      "name": "Figure-8 cross"
+    },
+    {
+      "servos": {
+        "base": -0.35,
+        "shoulder": -0.8,
+        "elbow": 1.25,
+        "wrist": 1.4,
+        "hand": 1.5,
+        "roll": -0.9,
+        "spd": 0,
+        "acc": 5.0
+      },
+      "timing": 1.0,
+      "duration": 1.47,
+      "name": "Float opposite"
+    },
+    {
+      "servos": {
+        "base": -0.2,
+        "shoulder": -0.65,
+        "elbow": 1.35,
+        "wrist": 1.25,
+        "hand": 0.7,
+        "roll": -1.8,
+        "spd": 0,
+        "acc": 2.5
+      },
+      "timing": 1.0,
+      "duration": 2.3,
+      "name": "Slow spiral"
+    },
+    {
+      "servos": {
+        "base": 0.0,
+        "shoulder": -0.75,
+        "elbow": 1.28,
+        "wrist": 1.35,
+        "hand": 0.7,
+        "roll": -1.1,
+        "spd": 0,
+        "acc": 3.4
+      },
+      "timing": 1.0,
+      "duration": 1.62,
+      "name": "Gravity returns"
+    },
+    {
+      "servos": {
+        "base": 0.0,
+        "shoulder": -0.82,
+        "elbow": 1.29,
+        "wrist": 1.38,
+        "hand": 1.5,
+        "roll": -1.6,
+        "spd": 0,
+        "acc": 1.1
+      },
+      "timing": 1.0,
+      "duration": 2.87,
+      "name": "Soft landing"
+    },
+    {
+      "servos": {
+        "base": 0.0,
+        "shoulder": -0.84,
+        "elbow": 1.2,
+        "wrist": 1.39,
+        "hand": 0.9,
+        "roll": -1.4,
+        "spd": 0,
+        "acc": 3.6
+      },
+      "timing": 1.0,
+      "duration": 1.11,
+      "name": "Final settle"
+    },
+    {
+      "servos": {
+        "base": 0.0,
+        "shoulder": -0.65,
+        "elbow": 1.2,
+        "wrist": 1.0,
+        "hand": 1.5,
+        "roll": -1.5,
+        "spd": 0,
+        "acc": 4.9
+      },
+      "timing": 1.0,
+      "duration": 1.84,
+      "name": "Home"
+    },
+    {
+      "servos": {
+        "base": -0.210155368,
+        "shoulder": -0.635068046,
+        "elbow": 0.714835047,
+        "wrist": 0.782330202,
+        "hand": 1.491029326,
+        "roll": -1.5,
+        "spd": 0,
+        "acc": 3.2
+      },
+      "timing": 1.0,
+      "duration": 1.47
+    },
+    {
+      "servos": {
+        "base": -0.072097097,
+        "shoulder": -0.66114572,
+        "elbow": 0.46786414,
+        "wrist": 0.694893297,
+        "hand": 1.492563307,
+        "roll": -1.5,
+        "spd": 0,
+        "acc": 2.1
+      },
+      "timing": 1.0,
+      "duration": 1.43
+    },
+    {
+      "servos": {
+        "base": 0,
+        "shoulder": -0.66114572,
+        "elbow": 0.285320427,
+        "wrist": 0.023009712,
+        "hand": 1.492563307,
+        "roll": -1.5,
+        "spd": 0,
+        "acc": 2.9
+      },
+      "timing": 1.0,
+      "duration": 1.59
+    },
+    {
+      "servos": {
+        "base": -0.001533981,
+        "shoulder": -0.599786488,
+        "elbow": 1.194971034,
+        "wrist": 1.001689454,
+        "hand": 1.497165249,
+        "roll": -1.5,
+        "spd": 0,
+        "acc": 2.1
+      },
+      "timing": 1.0,
+      "duration": 4.67
+    }
+  ],
+  "keyframe_count": 19
+}

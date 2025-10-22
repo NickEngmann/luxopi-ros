@@ -9,211 +9,223 @@ from typing import List, Tuple, Optional
 from luxo_behaviors.animation_plugin_base import AnimationPlugin
 
 
-# COMMENTED OUT: This animation stretches forward and breaks things
-# class ExcitedHopAnimation(AnimationPlugin):
-#     """An excited bouncy hop animation with Disney-style principles."""
-#
-#     @property
-#     def name(self) -> str:
-#         return "excited"
-#
-#     @property
-#     def description(self) -> str:
-#         return "Energetic bouncing hop expressing excitement"
-#
-#     def get_category(self) -> str:
-#         return "emotion"
-#
-#     def get_keyframe_names(self) -> Optional[List[str]]:
-#         return [
-#             "Initial wiggle", "Opposite wiggle", "Crouch prep", "Compress",
-#             "Spring load", "Launch up", "Air wiggle", "Peak joy",
-#             "Descent begin", "Impact prep", "Land compress", "Bounce back",
-#             "Secondary hop", "Mini bounce", "Victory wiggle", "Settle down",
-#             "Return home 1", "Return home 2"
-#         ]
-#
-#     def get_keyframes(self) -> Tuple[List[List[float]], List[float]]:
-#         base_pos = 0.0
-#
-#         keyframes = [
-#             [base_pos+0.15, -0.1, 0.7, 0.5, -1.3, 17.0, 2.10],   # Initial wiggle - back
-#             [base_pos-0.15, -0.15, 0.65, 0.55, -1.7, 18.0, 2.10], # Opposite wiggle - back
-#             [base_pos, 0.2, 1.2, 0.3, -1.5, 16.0, 1.50],         # Crouch prep - forward OK
-#             [base_pos, 0.3, 1.4, 0.1, -1.2, 15.0, 0.70],         # Compress - forward OK
-#             [base_pos, -0.9, 1.6, 0.5, -1.8, 13.0, 1.50],        # Spring load - far back
-#             [base_pos, -0.6, 0.4, 1.2, -0.9, 22.0, 2.40],        # Launch up - back
-#             [base_pos+0.2, -0.7, 0.3, 1.3, -2.0, 21.0, 2.10],    # Air wiggle - back
-#             [base_pos-0.1, -0.8, 0.2, 1.4, -0.8, 20.0, 2.60],    # Peak joy - back
-#             [base_pos, -0.5, 0.5, 1.1, -1.6, 18.0, 1.50],        # Descent begin - back
-#             [base_pos, -0.2, 0.8, 0.8, -1.2, 17.0, 1.50],        # Impact prep - back
-#             [base_pos, 0.25, 1.5, 0.2, -1.8, 14.0, 0.70],        # Land compress - forward OK
-#             [base_pos, -0.3, 0.9, 0.9, -1.0, 19.0, 2.10],        # Bounce back - back
-#             [base_pos+0.1, -0.5, 0.6, 1.1, -1.7, 20.0, 1.50],    # Secondary hop - back
-#             [base_pos, -0.1, 1.0, 0.6, -1.3, 16.0, 2.10],        # Mini bounce - back
-#             [base_pos-0.2, -0.4, 0.8, 0.8, -1.9, 18.0, 2.10],    # Victory wiggle - back
-#             [base_pos, -0.2, 0.9, 0.7, -1.5, 15.0, 0.90],        # Settle down - back
-#             [base_pos, 0.2, 1.3, 1.5, -1.5, 15.0, 1.50],         # Return home 1
-#             [base_pos, -0.65, 1.2, 1.0, -1.5, 10.0, 1.50]        # Return home 2
-#         ]
-#
-#         # Fast exciting hops
-#         durations = [0.4, 0.45, 0.55, 0.6, 0.85, 0.6, 0.35, 0.35, 0.45, 0.55, 0.75, 0.6, 0.45, 0.55, 0.45, 0.6, 0.6, 0.9]
-#
-#         return keyframes, durations
 
 
-# COMMENTED OUT: This animation stretches forward and breaks things
-# class SadDroopAnimation(AnimationPlugin):
-#     """A sad drooping animation with heavy, slow movements."""
-#
-#     @property
-#     def name(self) -> str:
-#         return "sad"
-#
-#     @property
-#     def description(self) -> str:
-#         return "Slow, heavy drooping motion expressing sadness"
-#
-#     def get_category(self) -> str:
-#         return "emotion"
-#
-#     def get_keyframe_names(self) -> Optional[List[str]]:
-#         return [
-#             "Normal state", "Feel sadness", "Begin droop", "Weight increases",
-#             "Shoulders sag", "Head drops", "Deep sadness", "Hold sadness",
-#             "Small sigh", "Another sigh", "Begin recovery", "Slow lift",
-#             "Almost there", "Return home 1", "Return home 2"
-#         ]
-#
-#     def get_keyframes(self) -> Tuple[List[List[float]], List[float]]:
-#         base_pos = 0.0
-#
-#         keyframes = [
-#             [base_pos, -0.2, 0.6, 0.4, -1.5, 13.0, 1.50],        # Normal state - back
-#             [base_pos, -0.1, 0.7, 0.3, -1.3, 12.0, 0.50],        # Feel sadness - back
-#             [base_pos-0.1, 0.0, 0.9, 0.2, -1.7, 11.0, 0.50],     # Begin droop - neutral
-#             [base_pos-0.1, 0.1, 1.1, 0.1, -1.4, 10.0, 1.50],     # Weight increases - slight forward
-#             [base_pos-0.15, 0.2, 1.3, 0.0, -1.8, 10.0, 1.50],    # Shoulders sag - forward
-#             [base_pos-0.2, 0.3, 1.5, -0.1, -1.5, 9.0, 1.50],     # Head drops - forward OK
-#             [base_pos-0.2, 0.3, 2.0, 0.0, -1.9, 8.0, 0.50],      # Deep sadness (proper slouch)
-#             [base_pos-0.2, 0.3, 2.1, 0.0, -1.6, 8.0, 0.50],      # Hold sadness
-#             [base_pos-0.15, 0.25, 2.0, 0.1, -1.8, 9.0, 1.50],    # Small sigh
-#             [base_pos-0.15, 0.3, 2.0, 0.0, -1.5, 9.0, 1.50],     # Another sigh
-#             [base_pos-0.1, -0.3, 1.8, 0.2, -1.7, 10.0, 1.50],    # Begin recovery - back
-#             [base_pos, -0.5, 1.5, 0.5, -1.5, 11.0, 0.70],        # Slow lift - back
-#             [base_pos, -0.2, 1.2, 0.8, -1.5, 12.0, 1.50],        # Almost there - back
-#             [base_pos, 0.2, 1.3, 1.5, -1.5, 15.0, 1.50],         # Return home 1
-#             [base_pos, -0.65, 1.2, 1.0, -1.5, 10.0, 1.50]        # Return home 2
-#         ]
-#
-#         # Appropriately slow for sadness but not too sluggish
-#         durations = [0.7, 0.8, 0.85, 0.9, 0.95, 1.0, 1.2, 1.8, 1.0, 1.0, 0.9, 0.85, 0.8, 0.6, 0.9]
-#
-#         return keyframes, durations
+class BigBounceAnimation(AnimationPlugin):
+    """A big, energetic bouncing animation with dramatic movements and personality."""
+
+    @property
+    def name(self) -> str:
+        return "big_bounce"
+
+    @property
+    def description(self) -> str:
+        return "Large energetic bounces with explosive movements and varying rhythms"
+
+    def get_category(self) -> str:
+        return "action"
+
+    def get_keyframe_names(self) -> Optional[List[str]]:
+        return [
+            "Start position", "Compress left", "Launch up left", "Compress right",
+            "Launch prep", "Extend high", "Bounce center", "Twist down",
+            "Side bounce", "Up again", "Quick compress", "High bounce left",
+            "Steady position", "Lower compress", "Explosive up", "Quick down",
+            "Side launch", "Recovery left", "Up bounce", "Quick center",
+            "Side swing", "Center bounce", "Twist up", "Quick launch",
+            "Far left swing", "Balance right", "High center", "Settle down", "Return home"
+        ]
+
+    def get_keyframes(self) -> Tuple[List[List[float]], List[float]]:
+        keyframes = [
+            [-0.03, -0.87, 1.22, 0.99, -1.08, 225.9, 1.60],
+            [-0.36, -1.35, 2.15, 0.99, -1.75, 146.7, 1.40],
+            [0.42, -0.80, 0.83, 0.97, -0.96, 230.4, 1.50],
+            [0.42, -1.63, 2.14, 1.02, -1.74, 158.8, 1.46],
+            [0.00, -0.64, 0.32, 0.57, -1.08, 217.2, 1.40],
+            [-0.21, -0.76, 2.19, 0.98, -1.82, 209.0, 1.50],
+            [-0.82, -0.71, 0.94, 0.83, -0.90, 220.5, 1.60],
+            [-0.80, -0.71, 0.68, 0.26, -2.02, 225.0, 1.40],
+            [0.29, -0.89, 0.73, 0.07, -1.01, 144.8, 1.50],
+            [0.29, -1.41, 2.11, 0.98, -2.12, 232.0, 1.60],
+            [0.29, -0.73, 0.79, 0.14, -1.23, 204.5, 1.40],
+            [0.02, -1.52, 1.93, 1.00, -1.96, 196.2, 1.35],
+            [0.02, -1.51, 1.93, 0.98, -1.03, 151.8, 1.45],
+            [0.02, -0.97, 0.92, 0.18, -1.89, 207.1, 1.40],
+            [0.02, -1.52, 2.03, 0.87, -1.22, 241.6, 1.35],
+            [0.02, -0.74, 0.71, 0.06, -1.96, 201.5, 1.60],
+            [0.02, -1.64, 2.38, 0.61, -1.00, 222.2, 1.26],
+            [-0.49, -0.80, 1.07, 0.35, -1.90, 165.8, 1.50],
+            [-0.51, -1.37, 2.41, 0.61, -0.93, 199.6, 1.60],
+            [-0.51, -0.69, 0.84, 0.06, -1.86, 206.6, 1.40],
+            [-0.50, -1.12, 2.45, 0.33, -1.11, 148.9, 1.50],
+            [-0.15, -0.78, 1.03, 0.14, -1.81, 210.7, 1.60],
+            [0.13, -1.28, 2.39, 0.33, -0.99, 223.8, 1.40],
+            [0.19, -0.78, 1.08, 0.15, -1.78, 243.8, 1.50],
+            [0.47, -1.39, 2.41, 0.44, -0.94, 160.7, 1.60],
+            [-1.30, -0.68, 0.91, -0.04, -1.91, 205.1, 1.40],
+            [0.74, -0.65, 0.73, 0.23, -0.82, 191.8, 1.50],
+            [0.12, -1.41, 2.22, 0.74, -1.85, 229.9, 1.60],
+            [0.12, -0.89, 1.16, 1.36, -1.50, 180.8, 1.40],
+        ]
+
+        durations = [0.87, 1.34, 1.10, 1.84, 1.31, 1.03, 0.43, 0.75, 1.40, 1.42, 1.53, 0.30, 1.18, 1.18, 1.46, 1.56, 1.46, 1.10, 1.40, 1.16, 1.15, 1.17, 1.02, 1.25, 2.23, 1.25, 1.68, 1.10, 0.50]
+
+        return keyframes, durations
 
 
-# COMMENTED OUT: This animation stretches forward and breaks things
-# class PlayfulBounceAnimation(AnimationPlugin):
-#     """A playful, energetic bounce animation."""
-#
-#     @property
-#     def name(self) -> str:
-#         return "playful"
-#
-#     @property
-#     def description(self) -> str:
-#         return "Playful bouncing motion with joyful energy"
-#
-#     def get_category(self) -> str:
-#         return "emotion"
-#
-#     def get_keyframe_names(self) -> Optional[List[str]]:
-#         return [
-#             "Ready stance", "Wind up wiggle", "Compress down", "Spring load",
-#             "Explosive jump", "Air dance 1", "Air dance 2", "Peak twist",
-#             "Fall begin", "Impact ready", "Bounce compress", "Spring again",
-#             "Second jump", "Quick land", "Happy shake", "Final bounce",
-#             "Return home 1", "Return home 2"
-#         ]
-#
-#     def get_keyframes(self) -> Tuple[List[List[float]], List[float]]:
-#         base_pos = 0.0
-#
-#         keyframes = [
-#             [base_pos, -0.1, 0.8, 0.6, -1.5, 16.0, 1.50],        # Ready stance - back
-#             [base_pos+0.2, -0.2, 0.75, 0.65, -1.2, 18.0, 2.40],  # Wind up wiggle - back
-#             [base_pos, 0.2, 1.3, 0.2, -1.8, 15.0, 0.70],         # Compress down - forward OK
-#             [base_pos, -0.8, 1.6, 0.6, -1.0, 14.0, 1.50],        # Spring load - far back
-#             [base_pos, -0.6, 0.3, 1.3, -2.0, 22.0, 1.50],        # Explosive jump - back
-#             [base_pos+0.3, -0.7, 0.2, 1.4, -0.8, 21.0, 1.50],    # Air dance 1 - back
-#             [base_pos-0.3, -0.7, 0.2, 1.4, -2.1, 21.0, 1.50],    # Air dance 2 - back
-#             [base_pos, -0.8, 0.1, 1.5, -1.0, 20.0, 2.60],        # Peak twist - far back
-#             [base_pos, -0.4, 0.5, 1.1, -1.7, 18.0, 1.50],        # Fall begin - back
-#             [base_pos, -0.1, 1.0, 0.5, -1.3, 16.0, 1.50],        # Impact ready - back
-#             [base_pos, 0.3, 1.6, 0.1, -1.9, 14.0, 0.70],         # Bounce compress - forward OK
-#             [base_pos, -0.7, 1.0, 0.8, -0.9, 19.0, 1.50],        # Spring again - back
-#             [base_pos+0.1, -0.5, 0.4, 1.2, -1.8, 20.0, 1.50],    # Second jump - back
-#             [base_pos, 0.1, 1.2, 0.4, -1.2, 17.0, 1.50],         # Quick land - slight forward
-#             [base_pos-0.15, -0.3, 0.9, 0.7, -2.0, 18.0, 2.60],   # Happy shake - back
-#             [base_pos, -0.2, 0.8, 0.8, -1.5, 16.0, 2.10],        # Final bounce - back
-#             [base_pos, 0.2, 1.3, 1.5, -1.5, 15.0, 1.50],         # Return home 1
-#             [base_pos, -0.65, 1.2, 1.0, -1.5, 10.0, 1.50]        # Return home 2
-#         ]
-#
-#         # Quick playful bounces
-#         durations = [0.45, 0.4, 0.6, 0.75, 0.65, 0.45, 0.5, 0.35, 0.45, 0.55, 0.75, 0.6, 0.5, 0.55, 0.4, 0.45, 0.6, 0.9]
-#
-#         return keyframes, durations
+class SmallBouncesAnimation(AnimationPlugin):
+    """Rapid, small bounces with ultra-fast movements for playful energy."""
+
+    @property
+    def name(self) -> str:
+        return "small_bounces"
+
+    @property
+    def description(self) -> str:
+        return "Quick, continuous small bounces with maximum speed for playful expression"
+
+    def get_category(self) -> str:
+        return "action"
+
+    def get_keyframe_names(self) -> Optional[List[str]]:
+        return [
+            "Start", "Bounce 1 up", "Bounce 1 down", "Bounce 2 up", "Bounce 2 center",
+            "Bounce 3 up", "Bounce 3 down", "Bounce 4 up", "Bounce 4 left",
+            "Bounce 5 up", "Bounce 5 side", "Bounce 6 up", "Bounce 6 shift",
+            "Bounce 7 up", "Bounce 7 down", "Bounce 8 up", "Bounce 8 center",
+            "Bounce 9 up", "Bounce 9 mid", "Bounce 10 up", "Bounce 10 center",
+            "Bounce 11 up", "Bounce 11 right", "Bounce 12 up", "Bounce 12 final",
+            "Return home"
+        ]
+
+    def get_keyframes(self) -> Tuple[List[List[float]], List[float]]:
+        keyframes = [
+            [0.10, -0.88, 1.08, 1.27, -1.12, 0.0, 1.60],
+            [-0.08, -1.50, 1.69, 1.36, -1.81, 0.0, 1.40],
+            [-0.29, -0.92, 1.01, 1.34, -1.09, 0.0, 1.50],
+            [-0.30, -1.48, 1.78, 1.34, -1.92, 0.0, 1.60],
+            [0.12, -1.00, 1.17, 1.28, -1.26, 0.0, 1.40],
+            [0.11, -1.61, 1.76, 1.35, -2.01, 0.0, 1.36],
+            [-0.24, -1.14, 1.11, 1.34, -1.02, 0.0, 1.60],
+            [-0.25, -1.64, 1.78, 1.34, -2.07, 0.0, 1.26],
+            [-0.67, -0.89, 1.02, 1.34, -1.00, 0.0, 1.50],
+            [-0.67, -1.43, 1.85, 1.33, -1.91, 0.0, 1.60],
+            [-0.56, -1.56, 0.78, 0.56, -1.01, 0.0, 1.26],
+            [-0.49, -1.61, 1.80, 0.95, -1.92, 0.0, 1.36],
+            [-0.49, -1.69, 0.87, 0.38, -1.18, 0.0, 1.47],
+            [0.17, -1.56, 1.95, 1.05, -1.88, 0.0, 1.26],
+            [-0.14, -1.65, 1.11, 0.44, -0.86, 0.0, 1.37],
+            [0.38, -1.56, 2.01, 0.98, -2.04, 0.0, 1.46],
+            [-0.22, -1.55, 1.22, 0.54, -0.87, 0.0, 1.25],
+            [-0.28, -1.64, 1.94, 0.89, -2.13, 0.0, 1.36],
+            [-0.28, -1.24, 1.33, 0.75, -1.18, 0.0, 1.60],
+            [-0.28, -1.42, 2.11, 0.86, -1.91, 0.0, 1.40],
+            [0.10, -1.23, 1.41, 0.60, -1.17, 0.0, 1.50],
+            [0.19, -1.60, 2.15, 0.75, -2.09, 0.0, 1.46],
+            [0.39, -1.28, 1.47, 0.65, -1.11, 0.0, 1.40],
+            [0.36, -1.63, 2.01, 0.87, -2.10, 0.0, 1.36],
+            [0.10, -1.29, 1.31, 0.82, -1.20, 0.0, 1.60],
+            [0.10, -1.07, 1.17, 1.31, -1.50, 0.0, 1.40],
+        ]
+
+        durations = [0.75, 0.74, 0.67, 0.78, 0.63, 0.74, 0.59, 0.97, 0.68, 1.04, 0.77, 0.79, 1.27, 0.93, 1.03, 0.92, 0.61, 0.58, 0.54, 0.77, 0.67, 0.64, 0.57, 0.67, 0.43, 0.50]
+
+        return keyframes, durations
+
+class SadAnimation(AnimationPlugin):
+    """A slow, expressive sad animation with organic, flowing movements."""
+
+    @property
+    def name(self) -> str:
+        return "sad"
+
+    @property
+    def description(self) -> str:
+        return "Melancholy animation with slow, heavy movements and emotional sighs"
+
+    def get_category(self) -> str:
+        return "emotion"
+
+    def get_keyframe_names(self) -> Optional[List[str]]:
+        return [
+            "Start position", "Feel sadness", "Shoulders droop", "Look up slowly",
+            "Peak sadness", "Turn left sadly", "Turn back center", "Look around lost",
+            "Head hangs low", "Small sigh left", "Sigh down", "Another look up",
+            "Small comfort", "Look around hopeful", "Gradual lift", "Almost better",
+            "Return home"
+        ]
+
+    def get_keyframes(self) -> Tuple[List[List[float]], List[float]]:
+        keyframes = [
+            [0.13, -0.83, 1.19, 1.31, -1.21, 11.3, 1.60],
+            [0.13, -0.56, 1.74, 1.31, -1.97, 7.1, 1.40],
+            [0.15, -0.08, 2.18, 0.61, -1.05, 6.0, 1.82],
+            [0.10, 0.21, 2.33, 0.42, -1.82, 11.4, 1.96],
+            [-1.00, 0.21, 2.28, 0.44, -1.15, 9.0, 1.76],
+            [0.22, 0.21, 2.21, 0.51, -1.89, 8.7, 1.86],
+            [1.16, -0.35, 2.22, 0.92, -1.07, 5.7, 2.00],
+            [1.11, -0.76, 1.41, 1.57, -2.13, 9.0, 1.40],
+            [1.15, -0.93, 1.02, 0.38, -0.97, 5.2, 1.50],
+            [0.30, -1.06, 1.09, -0.07, -1.78, 5.2, 1.60],
+            [0.14, -1.11, 0.69, -0.07, -1.13, 9.4, 1.40],
+            [0.19, -1.10, 1.31, 1.58, -1.89, 5.0, 1.50],
+            [0.13, -0.94, 2.21, 0.92, -1.11, 9.3, 1.60],
+            [0.10, 0.25, 2.07, 0.82, -1.89, 11.0, 1.77],
+            [0.10, 0.50, 2.05, 0.66, -1.14, 9.1, 1.95],
+            [0.10, -0.24, 1.61, 1.31, -1.80, 11.8, 1.97],
+            [0.10, -0.73, 1.19, 1.31, -1.50, 10.8, 1.40],
+        ]
+
+        durations = [0.51, 1.03, 0.41, 0.69, 0.73, 1.04, 1.26, 0.94, 0.80, 0.41, 1.22, 0.94, 0.82, 0.30, 0.92, 0.74, 0.50]
+
+        return keyframes, durations
 
 
 class StartledJumpAnimation(AnimationPlugin):
-    """A startled jump reaction with quick, panicked movements."""
-    
+    """Quick startled reaction with panic and recovery"""
+
     @property
     def name(self) -> str:
         return "startled"
-    
+
     @property
     def description(self) -> str:
         return "Quick startled reaction with panic and recovery"
-    
+
     def get_category(self) -> str:
         return "emotion"
-    
+
     def get_keyframe_names(self) -> Optional[List[str]]:
         return [
-            "Calm state", "Tiny tension", "WHAT?!", "Jump back", "Peak startle",
-            "Shake left", "Shake right", "Cautious look", "Is it safe?",
-            "Check left", "Check right", "Still nervous", "Calming down",
-            "Almost okay", "Final check", "All clear", "Return home 1", "Return home 2"
+            "Keyframe 1", "Keyframe 2", "Keyframe 3", "Keyframe 4", "Keyframe 5",
+            "Keyframe 6", "Keyframe 7", "Keyframe 8", "Keyframe 9", "Keyframe 10",
+            "Keyframe 11", "Keyframe 12", "Keyframe 13", "Keyframe 14", "Keyframe 15",
+            "Keyframe 16", "Keyframe 17", "Keyframe 18"
         ]
-    
+
     def get_keyframes(self) -> Tuple[List[List[float]], List[float]]:
-        base_pos = 0.0
-        
         keyframes = [
-            [base_pos, -0.3, 0.8, 0.5, -1.5, 14.0, 1.50],        # Calm state - back
-            [base_pos, -0.25, 0.75, 0.45, -1.3, 15.0, 1.50],     # Tiny tension - back
-            [base_pos, -0.9, 1.4, 0.3, -1.9, 13.0, 0.70],        # WHAT?! - compress - far back
-            [base_pos-0.4, -0.5, 0.2, 1.5, -0.8, 22.5, 1.50],    # Jump back - back
-            [base_pos-0.5, -0.6, 0.1, 1.6, -2.1, 22.0, 1.50],    # Peak startle - back
-            [base_pos-0.6, -0.55, 0.15, 1.55, -0.75, 21.0, 1.40], # Shake left - back
-            [base_pos-0.4, -0.55, 0.15, 1.55, -2.2, 21.0, 1.60],  # Shake right - back
-            [base_pos-0.3, -0.4, 0.6, 1.0, -1.0, 18.0, 1.50],     # Cautious look - back
-            [base_pos-0.2, -0.1, 0.9, 0.7, -1.8, 16.0, 1.50],     # Is it safe? - back
-            [base_pos-0.5, -0.2, 0.85, 0.75, -1.2, 17.0, 1.40],   # Check left - back
-            [base_pos+0.3, -0.2, 0.85, 0.75, -1.9, 17.0, 1.60],   # Check right - back
-            [base_pos-0.1, -0.3, 0.9, 0.6, -1.3, 15.0, 1.50],     # Still nervous - back
-            [base_pos, -0.4, 1.0, 0.5, -1.7, 14.0, 0.70],         # Calming down - back
-            [base_pos, -0.5, 1.1, 0.4, -1.5, 13.0, 1.50],         # Almost okay - back
-            [base_pos+0.1, -0.45, 1.05, 0.45, -1.6, 14.0, 1.50],  # Final check - back
-            [base_pos, -0.4, 1.0, 0.5, -1.5, 13.0, 1.50],         # All clear - back
-            [base_pos, 0.2, 1.3, 1.5, -1.5, 15.0, 1.50],          # Return home 1
-            [base_pos, -0.65, 1.2, 1.0, -1.5, 10.0, 1.50]         # Return home 2
+            [-0.03, -0.37, 0.79, 1.02, -1.50, 14.0, 2.01],
+            [0.00, -0.25, 0.75, 0.45, -1.30, 15.0, 1.77],
+            [0.00, -0.90, 1.40, 0.30, -1.90, 13.0, 1.50],
+            [-0.40, -0.50, 0.20, 1.50, -0.80, 0.0, 1.60],
+            [-0.50, -0.60, 0.10, 1.60, -2.10, 0.0, 1.40],
+            [-0.60, -0.55, 0.15, 1.55, -0.75, 21.0, 1.50],
+            [-0.40, -0.55, 0.15, 1.55, -2.20, 21.0, 1.60],
+            [-0.30, -0.40, 0.60, 1.00, -1.00, 18.0, 1.82],
+            [-0.22, -0.99, 0.91, 1.53, -1.80, 16.0, 1.50],
+            [-0.49, -0.41, 0.98, 1.25, -1.20, 17.0, 2.02],
+            [0.26, -0.40, 0.94, 1.08, -1.90, 17.0, 1.82],
+            [-0.10, -0.30, 0.90, 0.60, -1.30, 15.0, 1.89],
+            [0.00, -0.40, 1.00, 0.50, -1.70, 14.0, 2.02],
+            [0.00, -0.50, 1.10, 0.40, -1.50, 13.0, 1.40],
+            [0.10, -0.45, 1.05, 0.45, -1.60, 14.0, 1.94],
+            [0.00, -0.40, 1.00, 0.50, -1.50, 13.0, 2.02],
+            [0.00, 0.20, 1.30, 1.50, -1.50, 15.0, 1.76],
+            [0.00, -0.65, 1.20, 1.00, -1.50, 10.0, 1.50],
         ]
-        
-        # Quick panic with appropriate recovery
-        durations = [0.55, 0.4, 0.7, 0.65, 0.35, 0.35, 0.45, 0.45, 0.55, 0.7, 0.7, 0.55, 0.6, 0.7, 0.55, 0.6, 0.6, 0.9]
-        
+
+        durations = [0.38, 1.12, 2.00, 0.30, 0.30, 0.30, 0.68, 0.76, 0.64, 0.55, 0.53, 0.60, 0.55, 0.30, 0.30, 0.95, 0.73, 0.50]
+
         return keyframes, durations

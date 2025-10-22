@@ -1,0 +1,264 @@
+{
+  "name": "gentle_sway",
+  "description": "Natural human-like swaying with subtle breathing and micro-adjustments",
+  "category": "idle",
+  "created": "2025-10-21T22:05:33.641675",
+  "keyframes": [
+    {
+      "servos": {
+        "base": 0.0,
+        "shoulder": -0.65,
+        "elbow": 1.2,
+        "wrist": 1.0,
+        "hand": 1.5,
+        "roll": -1.5,
+        "spd": 0,
+        "acc": 1.0
+      },
+      "timing": 1.0,
+      "duration": 5.0,
+      "name": "Start"
+    },
+    {
+      "servos": {
+        "base": 0.0,
+        "shoulder": -0.88,
+        "elbow": 1.32,
+        "wrist": 1.42,
+        "hand": 1.5,
+        "roll": -1.6,
+        "spd": 0,
+        "acc": 1.0
+      },
+      "timing": 1.0,
+      "duration": 5.0,
+      "name": "Inhale begin"
+    },
+    {
+      "servos": {
+        "base": 0.08926193320255571,
+        "shoulder": -0.78,
+        "elbow": 1.25,
+        "wrist": 1.38,
+        "hand": 0.7,
+        "roll": -1.2,
+        "spd": 0,
+        "acc": 1.0
+      },
+      "timing": 1.0,
+      "duration": 5.0,
+      "name": "Shift weight right"
+    },
+    {
+      "servos": {
+        "base": 0.23803182187348193,
+        "shoulder": -0.7,
+        "elbow": 1.18,
+        "wrist": 1.45,
+        "hand": 1.5,
+        "roll": -1.8,
+        "spd": 0,
+        "acc": 1.0
+      },
+      "timing": 1.0,
+      "duration": 5.0,
+      "name": "Lean into sway"
+    },
+    {
+      "servos": {
+        "base": 0.26778579960766713,
+        "shoulder": -0.5625999863183435,
+        "elbow": 1.16,
+        "wrist": 1.47,
+        "hand": 1.5,
+        "roll": -0.9,
+        "spd": 0,
+        "acc": 1.0
+      },
+      "timing": 1.0,
+      "duration": 5.0,
+      "name": "Micro-adjust shoulder"
+    },
+    {
+      "servos": {
+        "base": 0.5058176214811491,
+        "shoulder": -0.6,
+        "elbow": 1.08,
+        "wrist": 1.52,
+        "hand": 1.5,
+        "roll": -2.1,
+        "spd": 0,
+        "acc": 1.0
+      },
+      "timing": 1.0,
+      "duration": 5.0,
+      "name": "Full sway right"
+    },
+    {
+      "servos": {
+        "base": 0.5950795546837048,
+        "shoulder": -0.6974000136816565,
+        "elbow": 1.05,
+        "wrist": 1.54,
+        "hand": 1.5,
+        "roll": -0.8,
+        "spd": 0,
+        "acc": 1.0
+      },
+      "timing": 1.0,
+      "duration": 5.0,
+      "name": "Hold with breath"
+    },
+    {
+      "servos": {
+        "base": 0.4165556882785933,
+        "shoulder": -0.65,
+        "elbow": 1.12,
+        "wrist": 1.45,
+        "hand": 1.5,
+        "roll": -1.9,
+        "spd": 0,
+        "acc": 1.0
+      },
+      "timing": 1.0,
+      "duration": 5.0,
+      "name": "Exhale return"
+    },
+    {
+      "servos": {
+        "base": 0.11901591093674097,
+        "shoulder": -0.72,
+        "elbow": 1.2,
+        "wrist": 1.38,
+        "hand": 1.5,
+        "roll": -1.1,
+        "spd": 0,
+        "acc": 1.0
+      },
+      "timing": 1.0,
+      "duration": 5.0,
+      "name": "Through center"
+    },
+    {
+      "servos": {
+        "base": -0.08926193320255571,
+        "shoulder": -0.76,
+        "elbow": 1.22,
+        "wrist": 1.36,
+        "hand": 1.4,
+        "roll": -2.0,
+        "spd": 0,
+        "acc": 1.0
+      },
+      "timing": 1.0,
+      "duration": 5.0,
+      "name": "Shift weight left"
+    },
+    {
+      "servos": {
+        "base": -0.2975397773418524,
+        "shoulder": -0.73,
+        "elbow": 1.18,
+        "wrist": 1.4,
+        "hand": 1.5,
+        "roll": -0.85,
+        "spd": 0,
+        "acc": 1.0
+      },
+      "timing": 1.0,
+      "duration": 5.0,
+      "name": "Micro head tilt"
+    },
+    {
+      "servos": {
+        "base": -0.5355715992153343,
+        "shoulder": -0.62,
+        "elbow": 1.1,
+        "wrist": 1.48,
+        "hand": 1.4,
+        "roll": -1.7,
+        "spd": 0,
+        "acc": 1.0
+      },
+      "timing": 1.0,
+      "duration": 5.0,
+      "name": "Full sway left"
+    },
+    {
+      "servos": {
+        "base": -0.5950795546837048,
+        "shoulder": -0.5412999931591717,
+        "elbow": 1.08,
+        "wrist": 1.46,
+        "hand": 0.9,
+        "roll": -0.9,
+        "spd": 0,
+        "acc": 1.0
+      },
+      "timing": 1.0,
+      "duration": 5.0,
+      "name": "Hold and settle"
+    },
+    {
+      "servos": {
+        "base": -0.23803182187348193,
+        "shoulder": -0.74,
+        "elbow": 1.2,
+        "wrist": 1.4,
+        "hand": 1.5,
+        "roll": -1.6,
+        "spd": 0,
+        "acc": 1.0
+      },
+      "timing": 1.0,
+      "duration": 5.0,
+      "name": "Gentle return"
+    },
+    {
+      "servos": {
+        "base": -0.05,
+        "shoulder": -0.8,
+        "elbow": 1.26,
+        "wrist": 1.41,
+        "hand": 1.5,
+        "roll": -1.3,
+        "spd": 0,
+        "acc": 1.0
+      },
+      "timing": 1.0,
+      "duration": 5.0,
+      "name": "Balance check"
+    },
+    {
+      "servos": {
+        "base": 0.0,
+        "shoulder": -0.8,
+        "elbow": 1.29,
+        "wrist": 1.4,
+        "hand": 1.5,
+        "roll": -1.5,
+        "spd": 0,
+        "acc": 1.0
+      },
+      "timing": 1.0,
+      "duration": 5.0,
+      "name": "Settle"
+    },
+    {
+      "servos": {
+        "base": 0.0,
+        "shoulder": -0.65,
+        "elbow": 1.2,
+        "wrist": 1.0,
+        "hand": 1.5,
+        "roll": -1.5,
+        "spd": 0,
+        "acc": 1.0
+      },
+      "timing": 1.0,
+      "duration": 5.0,
+      "name": "Home 2"
+    }
+  ],
+  "keyframe_count": 17
+}

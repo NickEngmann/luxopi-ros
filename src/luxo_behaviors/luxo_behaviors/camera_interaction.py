@@ -103,14 +103,14 @@ class CameraInteraction(Node):
 
         # Map emotions to animations
         self.emotion_to_animation = {
-            'happiness': ['excited', 'playful', 'dance'],
-            'sadness': ['sad', 'droop'],
-            'surprise': ['startled'],
-            'anger': ['shake', 'think', 'startled'],
+            'happiness': ['big_bounce', 'small_bounces', 'playful_bob', 'tail_wag', 'stretch', 'big_bow', 'head_bobbing'],
+            'sadness': ['sad', 'contented_sigh', 'dreamy_drift', 'sleep'],
+            'surprise': ['startled', 'small_bounces', 'curious', 'curious_exploration'],
+            'anger': ['shake', 'think', 'startled', 'big_bounce'],
             'fear': ['startled', 'shake', 'settling_adjust', 'neck_stretch'],
             'disgust': ['shake', 'think', 'scanning_watch', 'look_around_casual'],
             'contempt': ['shake', 'shoulder_shimmy', 'pondering', 'attentive_listening'],
-            'neutral': ['idle', 'nod']
+            'neutral': ['curious', 'nod', 'think', 'gentle_sway', 'breathing', 'attentive_listening', 'simple_bow', 'stretch']
         }
 
         # Thread control

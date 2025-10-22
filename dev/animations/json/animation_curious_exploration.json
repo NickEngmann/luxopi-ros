@@ -1,0 +1,249 @@
+{
+  "name": "curious_exploration",
+  "description": "Lively exploration with squints, double-takes, and 'aha' moments",
+  "category": "idle",
+  "created": "2025-10-21T21:55:26.536395",
+  "keyframes": [
+    {
+      "servos": {
+        "base": -0.08777873889475718,
+        "shoulder": -0.65,
+        "elbow": 1.2,
+        "wrist": 1.0,
+        "hand": 1.5,
+        "roll": -1.5,
+        "spd": 0,
+        "acc": 1.0
+      },
+      "timing": 1.0,
+      "duration": 5.0,
+      "name": "Home"
+    },
+    {
+      "servos": {
+        "base": -0.18777873889475719,
+        "shoulder": -0.65,
+        "elbow": 1.15,
+        "wrist": 1.3,
+        "hand": 2.3,
+        "roll": -1.2,
+        "spd": 0,
+        "acc": 1.0
+      },
+      "timing": 1.0,
+      "duration": 5.0,
+      "name": "Something caught eye"
+    },
+    {
+      "servos": {
+        "base": -0.6377787388947572,
+        "shoulder": -0.55,
+        "elbow": 1.05,
+        "wrist": 1.2,
+        "hand": 1.4,
+        "roll": -1.9,
+        "spd": 0,
+        "acc": 1.0
+      },
+      "timing": 1.0,
+      "duration": 5.0,
+      "name": "Quick glance"
+    },
+    {
+      "servos": {
+        "base": -0.5877787388947572,
+        "shoulder": -0.6,
+        "elbow": 1.1,
+        "wrist": 1.25,
+        "hand": 1.5,
+        "roll": -0.85,
+        "spd": 0,
+        "acc": 1.0
+      },
+      "timing": 1.0,
+      "duration": 5.0,
+      "name": "Wait what?"
+    },
+    {
+      "servos": {
+        "base": -0.5377787388947572,
+        "shoulder": -0.45,
+        "elbow": 0.9,
+        "wrist": 1.05,
+        "hand": 1.5,
+        "roll": -2.0,
+        "spd": 0,
+        "acc": 1.0
+      },
+      "timing": 1.0,
+      "duration": 5.0,
+      "name": "Double-take lean"
+    },
+    {
+      "servos": {
+        "base": -0.5077787388947572,
+        "shoulder": -0.4,
+        "elbow": 0.85,
+        "wrist": 1.0,
+        "hand": 1.5,
+        "roll": -0.8,
+        "spd": 0,
+        "acc": 1.0
+      },
+      "timing": 1.0,
+      "duration": 5.0,
+      "name": "Squint examine"
+    },
+    {
+      "servos": {
+        "base": -0.5677787388947572,
+        "shoulder": -0.42,
+        "elbow": 0.87,
+        "wrist": 1.08,
+        "hand": 1.5,
+        "roll": -1.8,
+        "spd": 0,
+        "acc": 1.0
+      },
+      "timing": 1.0,
+      "duration": 5.0,
+      "name": "Head cock confused"
+    },
+    {
+      "servos": {
+        "base": -0.521553468,
+        "shoulder": -0.204019445,
+        "elbow": 0.790000106,
+        "wrist": 0.918854492,
+        "hand": 1.517106999,
+        "roll": -0.9,
+        "spd": 0,
+        "acc": 1.0
+      },
+      "timing": 1.0,
+      "duration": 5.0,
+      "name": "Lean way in"
+    },
+    {
+      "servos": {
+        "base": -0.43777873889475716,
+        "shoulder": -0.3,
+        "elbow": 0.7,
+        "wrist": 0.95,
+        "hand": 1.5,
+        "roll": -2.1,
+        "spd": 0,
+        "acc": 1.0
+      },
+      "timing": 1.0,
+      "duration": 5.0,
+      "name": "Aha moment"
+    },
+    {
+      "servos": {
+        "base": -0.2877787388947572,
+        "shoulder": -0.65,
+        "elbow": 1.15,
+        "wrist": 1.4,
+        "hand": 1.5,
+        "roll": -0.75,
+        "spd": 0,
+        "acc": 1.0
+      },
+      "timing": 1.0,
+      "duration": 5.0,
+      "name": "Pull back process"
+    },
+    {
+      "servos": {
+        "base": -0.08777873889475718,
+        "shoulder": -0.95,
+        "elbow": 0.85,
+        "wrist": 1.65,
+        "hand": 1.8,
+        "roll": -1.7,
+        "spd": 0,
+        "acc": 1.0
+      },
+      "timing": 1.0,
+      "duration": 5.0,
+      "name": "Look up thinking"
+    },
+    {
+      "servos": {
+        "base": 0.5622212611052428,
+        "shoulder": -0.5,
+        "elbow": 1.05,
+        "wrist": 1.35,
+        "hand": 1.6,
+        "roll": -0.85,
+        "spd": 0,
+        "acc": 1.0
+      },
+      "timing": 1.0,
+      "duration": 5.0,
+      "name": "Glance right compare"
+    },
+    {
+      "servos": {
+        "base": 0.11222126110524283,
+        "shoulder": -0.6,
+        "elbow": 1.12,
+        "wrist": 1.3,
+        "hand": 1.5,
+        "roll": -1.9,
+        "spd": 0,
+        "acc": 1.0
+      },
+      "timing": 1.0,
+      "duration": 5.0,
+      "name": "Nod understanding"
+    },
+    {
+      "servos": {
+        "base": -0.08777873889475718,
+        "shoulder": -0.75,
+        "elbow": 1.23,
+        "wrist": 1.37,
+        "hand": 1.5,
+        "roll": -1.1,
+        "spd": 0,
+        "acc": 1.0
+      },
+      "timing": 1.0,
+      "duration": 5.0,
+      "name": "Satisfied exhale"
+    },
+    {
+      "servos": {
+        "base": -0.08777873889475718,
+        "shoulder": -0.82,
+        "elbow": 1.28,
+        "wrist": 1.39,
+        "hand": 0.9,
+        "roll": -1.6,
+        "spd": 0,
+        "acc": 1.0
+      },
+      "timing": 1.0,
+      "duration": 5.0,
+      "name": "Return posture"
+    },
+    {
+      "servos": {
+        "base": -0.08777873889475718,
+        "shoulder": -0.65,
+        "elbow": 1.2,
+        "wrist": 1.0,
+        "hand": 1.5,
+        "roll": -1.5,
+        "spd": 0,
+        "acc": 1.0
+      },
+      "timing": 1.0,
+      "duration": 5.0,
+      "name": "Home"
+    }
+  ],
+  "keyframe_count": 16
+}

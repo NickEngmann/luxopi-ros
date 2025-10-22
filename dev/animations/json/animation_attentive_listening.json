@@ -1,0 +1,249 @@
+{
+  "name": "attentive_listening",
+  "description": "Engaged listening with eyebrow raises, micro-nods, and 'mm-hmm' gestures",
+  "category": "idle",
+  "created": "2025-10-21T22:03:09.389803",
+  "keyframes": [
+    {
+      "servos": {
+        "base": 0.0,
+        "shoulder": -0.65,
+        "elbow": 1.2,
+        "wrist": 1.0,
+        "hand": 1.5,
+        "roll": -1.5,
+        "spd": 0,
+        "acc": 7.0
+      },
+      "timing": 1.0,
+      "duration": 1.96,
+      "name": "Home"
+    },
+    {
+      "servos": {
+        "base": 0.0,
+        "shoulder": -0.7,
+        "elbow": 1.2,
+        "wrist": 1.35,
+        "hand": 2.3,
+        "roll": -1.3,
+        "spd": 0,
+        "acc": 11.5
+      },
+      "timing": 1.0,
+      "duration": 0.73,
+      "name": "Attention shift"
+    },
+    {
+      "servos": {
+        "base": 0.0,
+        "shoulder": -0.65,
+        "elbow": 1.15,
+        "wrist": 1.3,
+        "hand": 0.9,
+        "roll": -1.8,
+        "spd": 0,
+        "acc": 10.6
+      },
+      "timing": 1.0,
+      "duration": 0.44,
+      "name": "Eyebrow raise"
+    },
+    {
+      "servos": {
+        "base": -0.15,
+        "shoulder": -0.5,
+        "elbow": 1.0,
+        "wrist": 1.15,
+        "hand": 2.0,
+        "roll": -0.9,
+        "spd": 0,
+        "acc": 8.7
+      },
+      "timing": 1.0,
+      "duration": 0.9,
+      "name": "Lean in curious"
+    },
+    {
+      "servos": {
+        "base": -0.12,
+        "shoulder": -0.52,
+        "elbow": 1.02,
+        "wrist": 1.12,
+        "hand": 1.5,
+        "roll": -2.0,
+        "spd": 0,
+        "acc": 11.5
+      },
+      "timing": 1.0,
+      "duration": 0.1,
+      "name": "Micro nod 1"
+    },
+    {
+      "servos": {
+        "base": -0.35,
+        "shoulder": -0.55,
+        "elbow": 1.05,
+        "wrist": 1.2,
+        "hand": 2.0,
+        "roll": -0.8,
+        "spd": 0,
+        "acc": 11.7
+      },
+      "timing": 1.0,
+      "duration": 0.62,
+      "name": "Head tilt left"
+    },
+    {
+      "servos": {
+        "base": -0.32,
+        "shoulder": -0.62,
+        "elbow": 1.12,
+        "wrist": 1.28,
+        "hand": 1.5,
+        "roll": -1.9,
+        "spd": 0,
+        "acc": 11.5
+      },
+      "timing": 1.0,
+      "duration": 0.47,
+      "name": "Processing"
+    },
+    {
+      "servos": {
+        "base": -0.3,
+        "shoulder": -0.58,
+        "elbow": 1.08,
+        "wrist": 1.24,
+        "hand": 1.5,
+        "roll": -1.0,
+        "spd": 0,
+        "acc": 6.0
+      },
+      "timing": 1.0,
+      "duration": 0.1,
+      "name": "Micro nod 2"
+    },
+    {
+      "servos": {
+        "base": 0.1,
+        "shoulder": -0.6,
+        "elbow": 1.1,
+        "wrist": 1.3,
+        "hand": 1.5,
+        "roll": -1.7,
+        "spd": 0,
+        "acc": 10.2
+      },
+      "timing": 1.0,
+      "duration": 1.1,
+      "name": "Shift weight"
+    },
+    {
+      "servos": {
+        "base": 0.38,
+        "shoulder": -0.58,
+        "elbow": 1.08,
+        "wrist": 1.32,
+        "hand": 1.5,
+        "roll": -0.85,
+        "spd": 0,
+        "acc": 8.8
+      },
+      "timing": 1.0,
+      "duration": 0.99,
+      "name": "Head tilt right"
+    },
+    {
+      "servos": {
+        "base": 0.15,
+        "shoulder": -0.48,
+        "elbow": 0.98,
+        "wrist": 1.18,
+        "hand": 1.5,
+        "roll": -2.1,
+        "spd": 0,
+        "acc": 9.5
+      },
+      "timing": 1.0,
+      "duration": 0.89,
+      "name": "Deep nod"
+    },
+    {
+      "servos": {
+        "base": 0.0,
+        "shoulder": -0.72,
+        "elbow": 1.22,
+        "wrist": 1.42,
+        "hand": 1.8,
+        "roll": -0.75,
+        "spd": 0,
+        "acc": 8.7
+      },
+      "timing": 1.0,
+      "duration": 0.97,
+      "name": "Pull back think"
+    },
+    {
+      "servos": {
+        "base": 0.0,
+        "shoulder": -0.68,
+        "elbow": 1.18,
+        "wrist": 1.38,
+        "hand": 1.5,
+        "roll": -1.8,
+        "spd": 0,
+        "acc": 10.7
+      },
+      "timing": 1.0,
+      "duration": 0.1,
+      "name": "Understanding dawn"
+    },
+    {
+      "servos": {
+        "base": 0.0,
+        "shoulder": -0.55,
+        "elbow": 1.05,
+        "wrist": 1.25,
+        "hand": 1.5,
+        "roll": -1.2,
+        "spd": 0,
+        "acc": 7.3
+      },
+      "timing": 1.0,
+      "duration": 1.03,
+      "name": "Agreement gesture"
+    },
+    {
+      "servos": {
+        "base": 0.0,
+        "shoulder": -0.78,
+        "elbow": 1.26,
+        "wrist": 1.38,
+        "hand": 0.9,
+        "roll": -1.6,
+        "spd": 0,
+        "acc": 11.0
+      },
+      "timing": 1.0,
+      "duration": 0.73,
+      "name": "Settle satisfied"
+    },
+    {
+      "servos": {
+        "base": 0.0,
+        "shoulder": -0.65,
+        "elbow": 1.2,
+        "wrist": 1.0,
+        "hand": 1.5,
+        "roll": -1.5,
+        "spd": 0,
+        "acc": 9.2
+      },
+      "timing": 1.0,
+      "duration": 1.09,
+      "name": "Home 2"
+    }
+  ],
+  "keyframe_count": 16
+}

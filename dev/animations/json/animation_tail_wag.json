@@ -1,0 +1,204 @@
+{
+  "name": "tail_wag",
+  "description": "Enthusiastic tail wagging with full body involvement",
+  "category": "idle",
+  "created": "2025-10-21T21:46:39.427938",
+  "keyframes": [
+    {
+      "servos": {
+        "base": 0.0,
+        "shoulder": -0.65,
+        "elbow": 1.2,
+        "wrist": 1.0,
+        "hand": 1.5,
+        "roll": -1.5,
+        "spd": 0,
+        "acc": 0.0
+      },
+      "timing": 1.0,
+      "duration": 0.0,
+      "name": "Home"
+    },
+    {
+      "servos": {
+        "base": 0.0,
+        "shoulder": -0.7,
+        "elbow": 1.15,
+        "wrist": 1.05,
+        "hand": 2.4,
+        "roll": -1.3,
+        "spd": 0,
+        "acc": 0.0
+      },
+      "timing": 1.0,
+      "duration": 0.3,
+      "name": "Wind up"
+    },
+    {
+      "servos": {
+        "base": 0.4,
+        "shoulder": -0.6,
+        "elbow": 1.1,
+        "wrist": 0.95,
+        "hand": 1.6,
+        "roll": -2.0,
+        "spd": 0,
+        "acc": 0.0
+      },
+      "timing": 1.0,
+      "duration": 0.5,
+      "name": "Wag right fast"
+    },
+    {
+      "servos": {
+        "base": -0.4,
+        "shoulder": -0.6,
+        "elbow": 1.1,
+        "wrist": 0.95,
+        "hand": 1.4,
+        "roll": -1.0,
+        "spd": 0,
+        "acc": 0.0
+      },
+      "timing": 1.0,
+      "duration": 0.7,
+      "name": "Wag left fast"
+    },
+    {
+      "servos": {
+        "base": 0.5,
+        "shoulder": -0.55,
+        "elbow": 1.05,
+        "wrist": 0.9,
+        "hand": 1.6,
+        "roll": -2.2,
+        "spd": 0,
+        "acc": 0.0
+      },
+      "timing": 1.0,
+      "duration": 0.8,
+      "name": "Big wag right"
+    },
+    {
+      "servos": {
+        "base": -0.5,
+        "shoulder": -0.55,
+        "elbow": 1.05,
+        "wrist": 0.9,
+        "hand": 1.4,
+        "roll": -0.8,
+        "spd": 0,
+        "acc": 0.0
+      },
+      "timing": 1.0,
+      "duration": 0.8,
+      "name": "Big wag left"
+    },
+    {
+      "servos": {
+        "base": 0.3,
+        "shoulder": -0.62,
+        "elbow": 1.12,
+        "wrist": 0.98,
+        "hand": 1.5,
+        "roll": -1.8,
+        "spd": 0,
+        "acc": 0.0
+      },
+      "timing": 1.0,
+      "duration": 0.7,
+      "name": "Double wag 1"
+    },
+    {
+      "servos": {
+        "base": -0.3,
+        "shoulder": -0.62,
+        "elbow": 1.12,
+        "wrist": 0.98,
+        "hand": 1.5,
+        "roll": -1.2,
+        "spd": 0,
+        "acc": 0.0
+      },
+      "timing": 1.0,
+      "duration": 0.6,
+      "name": "Double wag 2"
+    },
+    {
+      "servos": {
+        "base": 0.1,
+        "shoulder": -0.68,
+        "elbow": 1.18,
+        "wrist": 1.08,
+        "hand": 2.6,
+        "roll": -1.9,
+        "spd": 0,
+        "acc": 0.0
+      },
+      "timing": 1.0,
+      "duration": 0.5,
+      "name": "Excited wiggle"
+    },
+    {
+      "servos": {
+        "base": 0.0,
+        "shoulder": -0.5,
+        "elbow": 1.0,
+        "wrist": 0.8,
+        "hand": 2.6,
+        "roll": -1.5,
+        "spd": 0,
+        "acc": 0.0
+      },
+      "timing": 1.0,
+      "duration": 0.4,
+      "name": "Happy bounce"
+    },
+    {
+      "servos": {
+        "base": -0.2,
+        "shoulder": -0.7,
+        "elbow": 1.2,
+        "wrist": 1.1,
+        "hand": 0.7,
+        "roll": -1.6,
+        "spd": 0,
+        "acc": 0.0
+      },
+      "timing": 1.0,
+      "duration": 0.4,
+      "name": "Slow wag"
+    },
+    {
+      "servos": {
+        "base": 0.0,
+        "shoulder": -0.75,
+        "elbow": 1.25,
+        "wrist": 1.15,
+        "hand": 0.9,
+        "roll": -1.5,
+        "spd": 0,
+        "acc": 0.0
+      },
+      "timing": 1.0,
+      "duration": 0.3,
+      "name": "Settle"
+    },
+    {
+      "servos": {
+        "base": 0.0,
+        "shoulder": -0.65,
+        "elbow": 1.2,
+        "wrist": 1.0,
+        "hand": 1.5,
+        "roll": -1.5,
+        "spd": 0,
+        "acc": 0.0
+      },
+      "timing": 1.0,
+      "duration": 0.3,
+      "name": "Home"
+    }
+  ],
+  "keyframe_count": 13
+}

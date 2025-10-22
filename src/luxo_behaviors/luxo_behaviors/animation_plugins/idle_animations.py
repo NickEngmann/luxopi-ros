@@ -11,250 +11,243 @@ from luxo_behaviors.animation_plugin_base import AnimationPlugin
 
 
 class GentleSwayAnimation(AnimationPlugin):
-    """Natural human swaying with micro-movements and breathing integration."""
-    
+    """Natural human-like swaying with subtle breathing and micro-adjustments"""
+
     @property
     def name(self) -> str:
         return "gentle_sway"
-    
+
     @property
     def description(self) -> str:
         return "Natural human-like swaying with subtle breathing and micro-adjustments"
-    
+
     def get_category(self) -> str:
         return "idle"
-    
+
     def get_keyframe_names(self) -> Optional[List[str]]:
-        return ["Start", "Inhale begin", "Shift weight right", "Lean into sway", 
-                "Micro-adjust shoulder", "Full sway right", "Hold with breath", 
-                "Exhale return", "Through center", "Shift weight left", 
-                "Micro head tilt", "Full sway left", "Hold and settle",
-                "Gentle return", "Balance check", "Settle", "Home 2"]
-    
-    def get_keyframes(self) -> Tuple[List[List[float]], List[float]]:
-        base_pos = 0.0
-        sway_amount = random.uniform(0.45, 0.65)
-        breath_lift = random.uniform(0.1, 0.15)
-        
-        keyframes = [
-            [base_pos, -0.65, 1.2, 1.0, -1.5, 12.0, 1.50],                          # Start at home 2
-            [base_pos, -0.88, 1.32, 1.42, -1.6, 10.5, 1.50],                        # Subtle inhale - antenna lifts slightly
-            [base_pos + sway_amount*0.15, -0.78, 1.25, 1.38, -1.2, 11.0, 0.70],     # Begin shift - antenna follows
-            [base_pos + sway_amount*0.4, -0.7, 1.18, 1.45, -1.8, 10.0, 1.50],       # Lean into movement
-            [base_pos + sway_amount*0.45, -0.68 + breath_lift, 1.16, 1.47, -0.9, 13.5, 1.50], # Micro shoulder adjust
-            [base_pos + sway_amount*0.85, -0.6, 1.08, 1.52, -2.1, 11.5, 1.50],      # Near full sway - antenna opposite
-            [base_pos + sway_amount, -0.58 - breath_lift, 1.05, 1.54, -0.8, 10.0, 1.50], # Full sway with breath
-            [base_pos + sway_amount*0.7, -0.65, 1.12, 1.45, -1.9, 11.0, 1.50],      # Begin exhale return
-            [base_pos + sway_amount*0.2, -0.72, 1.2, 1.38, -1.1, 12.0, 1.50],       # Through center
-            [base_pos - sway_amount*0.15, -0.76, 1.22, 1.36, -2.0, 10.5, 1.40],     # Begin left shift
-            [base_pos - sway_amount*0.5, -0.73, 1.18, 1.4, -0.85, 14.0, 1.50],      # Head tilt moment
-            [base_pos - sway_amount*0.9, -0.62, 1.1, 1.48, -1.7, 11.0, 1.40],       # Near full left
-            [base_pos - sway_amount, -0.6 + breath_lift*0.5, 1.08, 1.46, -0.9, 10.0, 0.90], # Full left with settle
-            [base_pos - sway_amount*0.4, -0.74, 1.2, 1.4, -1.6, 11.5, 1.50],        # Gentle return
-            [base_pos - 0.05, -0.8, 1.26, 1.41, -1.3, 12.5, 1.50],                  # Balance check
-            [base_pos, -0.8, 1.29, 1.4, -1.5, 11.0, 1.50],                         # Near home
-            [base_pos, -0.65, 1.2, 1.0, -1.5, 12.0, 1.50]                           # Home 2
+        """Descriptive names for each keyframe."""
+        return [
+            "Keyframe 1", "Keyframe 2", "Keyframe 3", "Keyframe 4", "Keyframe 5",
+            "Keyframe 6", "Keyframe 7", "Keyframe 8", "Keyframe 9", "Keyframe 10",
+            "Keyframe 11", "Keyframe 12", "Keyframe 13", "Keyframe 14", "Keyframe 15",
+            "Keyframe 16", "Keyframe 17"
         ]
-        
-        # Natural timing, slightly faster
-        durations = [0.6, 0.8, 0.7, 0.95, 0.55, 0.7, 0.95, 0.7, 0.6, 0.8, 0.55, 0.7, 0.95, 0.7, 0.6, 0.7, 0.6]
-        
+
+    def get_keyframes(self) -> Tuple[List[List[float]], List[float]]:
+        keyframes = [
+            [0.00, -0.65, 1.20, 1.00, -1.50, 1.0, 1.60],
+            [0.00, -0.88, 1.32, 1.42, -1.60, 1.0, 1.40],
+            [0.09, -0.78, 1.25, 1.38, -1.20, 1.0, 1.50],
+            [0.24, -0.70, 1.18, 1.45, -1.80, 1.0, 1.60],
+            [0.27, -0.56, 1.16, 1.47, -0.90, 1.0, 1.40],
+            [0.51, -0.60, 1.08, 1.52, -2.10, 1.0, 1.50],
+            [0.60, -0.70, 1.05, 1.54, -0.80, 1.0, 1.60],
+            [0.42, -0.65, 1.12, 1.45, -1.90, 1.0, 1.40],
+            [0.12, -0.72, 1.20, 1.38, -1.10, 1.0, 1.50],
+            [-0.09, -0.76, 1.22, 1.36, -2.00, 1.0, 1.60],
+            [-0.30, -0.73, 1.18, 1.40, -0.85, 1.0, 1.40],
+            [-0.54, -0.62, 1.10, 1.48, -1.70, 1.0, 1.50],
+            [-0.60, -0.54, 1.08, 1.46, -0.90, 1.0, 1.60],
+            [-0.24, -0.74, 1.20, 1.40, -1.60, 1.0, 1.40],
+            [-0.05, -0.80, 1.26, 1.41, -1.30, 1.0, 1.50],
+            [0.00, -0.80, 1.29, 1.40, -1.50, 1.0, 1.60],
+            [0.00, -0.65, 1.20, 1.00, -1.50, 1.0, 1.40],
+        ]
+
+        durations = [0.39, 0.55, 0.58, 0.30, 0.30, 0.30, 0.30, 0.30, 0.30, 0.30, 0.30, 0.34, 0.67, 0.30, 0.30, 0.32, 0.50]
+
         return keyframes, durations
 
 
 class CuriousExplorationAnimation(AnimationPlugin):
-    """Animated exploration with human curiosity, double-takes, and focused attention."""
-    
+    """Lively exploration with squints, double-takes, and 'aha' moments"""
+
     @property
     def name(self) -> str:
         return "curious_exploration"
-    
+
     @property
     def description(self) -> str:
         return "Lively exploration with squints, double-takes, and 'aha' moments"
-    
+
     def get_category(self) -> str:
         return "idle"
-    
+
     def get_keyframe_names(self) -> Optional[List[str]]:
-        return ["Home", "Something caught eye", "Quick glance", "Wait what?", 
-                "Double-take lean", "Squint examine", "Head cock confused",
-                "Lean way in", "Aha moment", "Pull back process", "Look up thinking",
-                "Glance right compare", "Nod understanding", "Satisfied exhale", 
-                "Return posture", "Home"]
-    
-    def get_keyframes(self) -> Tuple[List[List[float]], List[float]]:
-        base_pos = random.uniform(-0.25, 0.25)
-        
-        keyframes = [
-            [base_pos, -0.65, 1.2, 1.0, -1.5, 13.0, 1.50],                    # Start at home 2
-            [base_pos - 0.1, -0.65, 1.15, 1.3, -1.2, 16.0, 2.30],             # Something catches attention
-            [base_pos - 0.55, -0.55, 1.05, 1.2, -1.9, 19.0, 1.40],            # Quick glance left
-            [base_pos - 0.5, -0.6, 1.1, 1.25, -0.85, 15.0, 1.50],              # Pause - wait what?
-            [base_pos - 0.45, -0.45, 0.9, 1.05, -2.0, 17.5, 1.50],            # Double-take lean forward
-            [base_pos - 0.42, -0.4, 0.85, 1.0, -0.8, 14.5, 1.50],             # Squint for detail
-            [base_pos - 0.48, -0.42, 0.87, 1.08, -1.8, 16.5, 1.50],           # Head tilt confused
-            [base_pos - 0.4, -0.25, 0.65, 0.85, -0.9, 12.0, 1.50],            # Lean way in to inspect
-            [base_pos - 0.35, -0.3, 0.7, 0.95, -2.1, 20.0, 1.50],             # Aha! I see it
-            [base_pos - 0.2, -0.65, 1.15, 1.4, -0.75, 15.5, 1.50],             # Pull back to process
-            [base_pos, -0.95, 0.85, 1.65, -1.7, 11.5, 1.80],                  # Look up thinking about it
-            [base_pos + 0.65, -0.5, 1.05, 1.35, -0.85, 18.0, 1.60],            # Glance right to compare
-            [base_pos + 0.2, -0.6, 1.12, 1.3, -1.9, 16.0, 1.50],              # Nod - I understand now
-            [base_pos, -0.75, 1.23, 1.37, -1.1, 13.5, 1.50],                  # Satisfied exhale
-            [base_pos, -0.82, 1.28, 1.39, -1.6, 12.0, 0.90],                  # Return to rest
-            [base_pos, -0.65, 1.2, 1.0, -1.5, 13.0, 1.50]                     # Home 2
+        """Descriptive names for each keyframe."""
+        return [
+            "Keyframe 1", "Keyframe 2", "Keyframe 3", "Keyframe 4", "Keyframe 5",
+            "Keyframe 6", "Keyframe 7", "Keyframe 8", "Keyframe 9", "Keyframe 10",
+            "Keyframe 11", "Keyframe 12", "Keyframe 13", "Keyframe 14", "Keyframe 15",
+            "Keyframe 16"
         ]
-        
-        # Quick, curious exploration
-        durations = [0.6, 0.4, 0.6, 0.55, 0.45, 0.55, 0.45, 0.6, 0.35, 0.55, 0.7, 0.7, 0.45, 0.55, 0.6, 0.6]
-        
+
+    def get_keyframes(self) -> Tuple[List[List[float]], List[float]]:
+        keyframes = [
+            [-0.09, -0.65, 1.20, 1.00, -1.50, 1.0, 1.60],
+            [-0.19, -0.65, 1.15, 1.30, -1.20, 1.0, 1.40],
+            [-0.64, -0.55, 1.05, 1.20, -1.90, 1.0, 1.50],
+            [-0.59, -0.60, 1.10, 1.25, -0.85, 1.0, 1.60],
+            [-0.54, -0.45, 0.90, 1.05, -2.00, 1.0, 1.83],
+            [-0.51, -0.40, 0.85, 1.00, -0.80, 1.0, 1.92],
+            [-0.57, -0.42, 0.87, 1.08, -1.80, 1.0, 2.03],
+            [-0.52, -0.20, 0.79, 0.92, -0.90, 1.0, 1.76],
+            [-0.44, -0.30, 0.70, 0.95, -2.10, 1.0, 1.89],
+            [-0.29, -0.65, 1.15, 1.40, -0.75, 1.0, 1.60],
+            [-0.09, -0.95, 0.85, 1.65, -1.70, 1.0, 1.40],
+            [0.56, -0.50, 1.05, 1.35, -0.85, 1.0, 1.50],
+            [0.11, -0.60, 1.12, 1.30, -1.90, 1.0, 1.60],
+            [-0.09, -0.75, 1.23, 1.37, -1.10, 1.0, 1.40],
+            [-0.09, -0.82, 1.28, 1.39, -1.60, 1.0, 1.50],
+            [-0.09, -0.65, 1.20, 1.00, -1.50, 1.0, 1.60],
+        ]
+
+        durations = [0.62, 0.82, 0.30, 0.30, 0.30, 0.30, 0.30, 0.30, 0.70, 0.67, 0.90, 0.39, 0.30, 0.37, 0.62, 0.50]
+
         return keyframes, durations
 
 
 class BreathingAnimation(AnimationPlugin):
-    """Deep meditative breathing with full body expansion and subtle movements."""
-    
+    """Deep yogic breathing with chest expansion and micro-movements"""
+
     @property
     def name(self) -> str:
         return "breathing"
-    
+
     @property
     def description(self) -> str:
         return "Deep yogic breathing with chest expansion and micro-movements"
-    
+
     def get_category(self) -> str:
         return "idle"
-    
+
     def get_keyframe_names(self) -> Optional[List[str]]:
-        return ["Rest", "Prepare mind", "Begin inhale", "Deep expansion", 
-                "Full breath", "Peak hold", "Slight waver", "Control exhale",
-                "Release down", "Deep exhale", "Bottom pause", "Micro inhale",
-                "Final settle", "Peace", "Home"]
-    
+        """Descriptive names for each keyframe."""
+        return [
+            "Keyframe 1", "Keyframe 2", "Keyframe 3", "Keyframe 4", "Keyframe 5",
+            "Keyframe 6", "Keyframe 7", "Keyframe 8", "Keyframe 9", "Keyframe 10",
+            "Keyframe 11", "Keyframe 12", "Keyframe 13", "Keyframe 14", "Keyframe 15"
+        ]
+
     def get_keyframes(self) -> Tuple[List[List[float]], List[float]]:
         base_pos = 0.0
-        sway = random.uniform(-0.05, 0.05)
-        
+
         keyframes = [
-            [base_pos, -0.65, 1.2, 1.0, -1.5, 10.5, 0.90],                    # Rest position
-            [base_pos, -0.88, 1.32, 1.43, -1.3, 10.0, 1.50],                  # Mental preparation
-            [base_pos + sway, -0.95, 1.34, 1.5, -1.8, 10.0, 1.50],            # Begin deep inhale
-            [base_pos, -1.05, 1.38, 1.6, -0.9, 10.5, 1.50],                   # Chest expanding
-            [base_pos - sway, -1.1, 1.42, 1.68, -2.0, 10.0, 1.50],            # Full expansion (at limit)
-            [base_pos, -1.08, 1.41, 1.66, -0.8, 10.0, 2.60],                  # Hold at peak
-            [base_pos + sway*0.5, -1.06, 1.4, 1.64, -1.7, 11.0, 1.50],        # Slight waver in hold
-            [base_pos, -1.0, 1.36, 1.55, -1.1, 10.5, 1.50],                   # Begin controlled exhale
-            [base_pos - sway, -0.85, 1.3, 1.45, -1.9, 10.0, 0.70],            # Releasing downward
-            [base_pos, -0.65, 1.2, 1.25, -0.85, 10.5, 0.70],                   # Deep exhale compression
-            [base_pos, -0.62, 1.18, 1.22, -2.2, 10.0, 1.50],                  # Bottom of breath pause
-            [base_pos, -0.72, 1.24, 1.32, -0.75, 11.5, 1.50],                  # Small recovery inhale
-            [base_pos, -0.8, 1.28, 1.38, -1.6, 11.0, 1.50],                   # Settling
-            [base_pos, -0.84, 1.2, 1.39, -1.3, 10.5, 1.50],                   # Peaceful state
-            [base_pos, -0.65, 1.2, 1.0, -1.5, 10.0, 1.50]                     # Home 2
+            [base_pos +0.05, -0.65, 1.20, 1.00, -1.50, 1.0, 1.60],
+            [base_pos -0.03, -0.88, 1.32, 1.43, -1.30, 1.0, 1.40],
+            [base_pos +0.04, -0.95, 1.34, 1.50, -1.80, 1.0, 1.50],
+            [base_pos +0.05, -1.05, 1.38, 1.60, -0.90, 1.0, 1.60],
+            [base_pos -0.05, -1.10, 1.42, 1.68, -2.00, 1.0, 1.40],
+            [base_pos +0.02, -1.08, 1.41, 1.66, -0.80, 1.0, 1.50],
+            [base_pos +0.06, -1.06, 1.40, 1.64, -1.70, 1.0, 1.60],
+            [base_pos -0.03, -1.00, 1.36, 1.55, -1.10, 1.0, 1.40],
+            [base_pos, -0.85, 1.30, 1.45, -1.90, 1.0, 1.50],
+            [base_pos +0.05, -0.65, 1.20, 1.25, -0.85, 1.0, 1.60],
+            [base_pos -0.03, -0.62, 1.18, 1.22, -2.20, 1.0, 1.40],
+            [base_pos +0.02, -0.72, 1.24, 1.32, -0.75, 1.0, 1.50],
+            [base_pos +0.05, -0.80, 1.28, 1.38, -1.60, 1.0, 1.60],
+            [base_pos -0.03, -0.84, 1.20, 1.39, -1.30, 1.0, 1.40],
+            [base_pos +0.02, -0.65, 1.20, 1.00, -1.50, 1.0, 1.50],
         ]
-        
-        # Deliberate breathing, slightly faster
-        durations = [0.8, 0.95, 0.95, 0.8, 0.95, 1.6, 0.7, 0.8, 0.95, 0.8, 0.95, 0.7, 0.7, 0.8, 0.95]
-        
+
+        durations = [0.69, 0.30, 0.30, 0.30, 0.58, 0.58, 0.30, 0.56, 0.30, 0.44, 0.30, 0.30, 0.30, 0.30, 0.50]
+
         return keyframes, durations
 
 
 class AttentiveListeningAnimation(AnimationPlugin):
-    """Active listening with micro-expressions, subtle nods, and engagement cues."""
-    
+    """Engaged listening with eyebrow raises, micro-nods, and 'mm-hmm' gestures"""
+
     @property
     def name(self) -> str:
         return "attentive_listening"
-    
+
     @property
     def description(self) -> str:
         return "Engaged listening with eyebrow raises, micro-nods, and 'mm-hmm' gestures"
-    
+
     def get_category(self) -> str:
         return "idle"
-    
+
     def get_keyframe_names(self) -> Optional[List[str]]:
-        return ["Home", "Attention shift", "Eyebrow raise", "Lean in curious", 
-                "Micro nod 1", "Head tilt left", "Processing", "Micro nod 2",
-                "Shift weight", "Head tilt right", "Deep nod", "Pull back think",
-                "Understanding dawn", "Agreement gesture", "Settle satisfied", 
-                "Home 2"]
-    
-    def get_keyframes(self) -> Tuple[List[List[float]], List[float]]:
-        base_pos = 0.0
-        
-        keyframes = [
-            [base_pos, -0.65, 1.2, 1.0, -1.5, 12.5, 1.50],                    # Home 2
-            [base_pos, -0.7, 1.2, 1.35, -1.3, 14.0, 2.30],                    # Shift to attention
-            [base_pos, -0.65, 1.15, 1.3, -1.8, 15.5, 0.90],                   # Eyebrow raise interest
-            [base_pos - 0.15, -0.5, 1.0, 1.15, -0.9, 13.0, 2.00],             # Lean in curious
-            [base_pos - 0.12, -0.52, 1.02, 1.12, -2.0, 16.0, 1.50],           # Micro nod understanding
-            [base_pos - 0.35, -0.55, 1.05, 1.2, -0.8, 14.5, 2.00],            # Head tilt questioning
-            [base_pos - 0.32, -0.62, 1.12, 1.28, -1.9, 13.5, 1.50],           # Processing information
-            [base_pos - 0.3, -0.58, 1.08, 1.24, -1.0, 15.0, 1.50],            # Another micro nod
-            [base_pos + 0.1, -0.6, 1.1, 1.3, -1.7, 14.0, 1.50],               # Shift weight/position
-            [base_pos + 0.38, -0.58, 1.08, 1.32, -0.85, 14.5, 1.50],           # Head tilt other way
-            [base_pos + 0.15, -0.48, 0.98, 1.18, -2.1, 17.0, 1.50],           # Deep understanding nod
-            [base_pos, -0.72, 1.22, 1.42, -0.75, 12.0, 1.80],                  # Pull back to think
-            [base_pos, -0.68, 1.18, 1.38, -1.8, 13.5, 1.50],                  # Understanding dawns
-            [base_pos, -0.55, 1.05, 1.25, -1.2, 15.0, 1.50],                  # Agreement gesture forward
-            [base_pos, -0.78, 1.26, 1.38, -1.6, 11.5, 0.90],                  # Settle back satisfied
-            [base_pos, -0.65, 1.2, 1.0, -1.5, 12.5, 1.50]                     # Home 2
+        """Descriptive names for each keyframe."""
+        return [
+            "Keyframe 1", "Keyframe 2", "Keyframe 3", "Keyframe 4", "Keyframe 5",
+            "Keyframe 6", "Keyframe 7", "Keyframe 8", "Keyframe 9", "Keyframe 10",
+            "Keyframe 11", "Keyframe 12", "Keyframe 13", "Keyframe 14", "Keyframe 15",
+            "Keyframe 16"
         ]
-        
-        # Conversational pace
-        durations = [0.6, 0.55, 0.55, 0.6, 0.4, 0.55, 0.55, 0.55, 0.55, 0.55, 0.45, 0.6, 0.55, 0.55, 0.7, 0.6]
-        
+
+    def get_keyframes(self) -> Tuple[List[List[float]], List[float]]:
+        keyframes = [
+            [0.00, -0.65, 1.20, 1.00, -1.50, 7.0, 1.60],
+            [0.00, -0.70, 1.20, 1.35, -1.30, 11.5, 1.40],
+            [0.00, -0.65, 1.15, 1.30, -1.80, 10.6, 1.50],
+            [-0.15, -0.50, 1.00, 1.15, -0.90, 8.7, 1.60],
+            [-0.12, -0.52, 1.02, 1.12, -2.00, 11.5, 1.40],
+            [-0.35, -0.55, 1.05, 1.20, -0.80, 11.7, 1.50],
+            [-0.32, -0.62, 1.12, 1.28, -1.90, 11.5, 1.60],
+            [-0.30, -0.58, 1.08, 1.24, -1.00, 6.0, 1.40],
+            [0.10, -0.60, 1.10, 1.30, -1.70, 10.2, 1.50],
+            [0.38, -0.58, 1.08, 1.32, -0.85, 8.8, 1.60],
+            [0.15, -0.48, 0.98, 1.18, -2.10, 9.5, 1.84],
+            [0.00, -0.72, 1.22, 1.42, -0.75, 8.7, 1.50],
+            [0.00, -0.68, 1.18, 1.38, -1.80, 10.7, 1.60],
+            [0.00, -0.55, 1.05, 1.25, -1.20, 7.3, 1.40],
+            [0.00, -0.78, 1.26, 1.38, -1.60, 11.0, 1.50],
+            [0.00, -0.65, 1.20, 1.00, -1.50, 9.2, 1.60],
+        ]
+
+        durations = [0.60, 0.77, 0.85, 0.30, 0.43, 0.38, 0.30, 0.30, 0.30, 0.30, 0.58, 0.30, 0.30, 0.58, 0.58, 0.50]
+
         return keyframes, durations
 
 
 class PlayfulBobAnimation(AnimationPlugin):
-    """Energetic, bouncy movements with personality and dance-like rhythm."""
-    
+    """Bouncy dance-like movements with hip sways and shoulder rolls"""
+
     @property
     def name(self) -> str:
         return "playful_bob"
-    
+
     @property
     def description(self) -> str:
         return "Bouncy dance-like movements with hip sways and shoulder rolls"
-    
+
     def get_category(self) -> str:
         return "idle"
-    
+
     def get_keyframe_names(self) -> Optional[List[str]]:
-        return ["Home", "Anticipation dip", "Spring loaded", "Burst up", 
-                "Air time", "Land soft", "Hip sway left", "Shoulder shimmy",
-                "Hip sway right", "Double bounce prep", "Quick pop 1", "Quick pop 2",
-                "Wiggle celebration", "Cool down bounce", "Happy settle", 
-                "Home 2"]
-    
-    def get_keyframes(self) -> Tuple[List[List[float]], List[float]]:
-        base_pos = 0.0
-        energy = random.uniform(0.8, 1.0)  # Reduced max stretch
-        
-        keyframes = [
-            [base_pos, -0.65, 1.2, 1.0, -1.5, 14.0, 1.50],                          # Home 2
-            [base_pos, -0.6, 1.55, 0.95, -1.2, 18.0, 1.50],                         # Deep anticipation - back
-            [base_pos + 0.05, -0.55, 1.6, 0.9, -1.9, 20.0, 1.50],                   # Coiled spring - back
-            [base_pos - 0.1, -1.0 * energy, 0.85, 1.75, -0.8, 22.5, 1.50],          # Explosive jump (at limit)
-            [base_pos + 0.15, -0.95 * energy, 0.8, 1.8, -2.2, 22.0, 2.60],          # Peak of jump
-            [base_pos, -0.45, 1.45, 0.85, -0.85, 16.0, 1.50],                        # Soft landing - back
-            [base_pos - 0.45, -0.85, 1.15, 1.55, -1.8, 17.5, 1.40],                 # Hip sway left - back
-            [base_pos - 0.4, -0.9, 1.1, 1.5, -0.9, 18.5, 1.50],                     # Shoulder shimmy - back
-            [base_pos + 0.45, -0.85, 1.15, 1.55, -2.0, 17.0, 1.60],                 # Hip sway right - back
-            [base_pos, -0.65, 1.35, 1.1, -0.75, 19.0, 2.10],                         # Prep double bounce - back
-            [base_pos + 0.1, -1.0, 1.0, 1.6, -1.7, 21.0, 2.40],                     # Quick pop up - far back
-            [base_pos - 0.1, -0.7, 1.3, 1.2, -1.0, 20.5, 1.50],                     # Quick drop - back
-            [base_pos + 0.25, -0.82, 1.18, 1.42, -1.9, 18.0, 1.60],                 # Wiggle right - back
-            [base_pos - 0.25, -0.85, 1.2, 1.45, -0.85, 17.5, 1.40],                  # And left - back
-            [base_pos, -0.9, 1.25, 1.38, -1.6, 13.0, 2.60],                         # Happy settling - back
-            [base_pos, -0.65, 1.2, 1.0, -1.5, 14.0, 1.50]                           # Home 2
+        """Descriptive names for each keyframe."""
+        return [
+            "Keyframe 1", "Keyframe 2", "Keyframe 3", "Keyframe 4", "Keyframe 5",
+            "Keyframe 6", "Keyframe 7", "Keyframe 8", "Keyframe 9", "Keyframe 10",
+            "Keyframe 11", "Keyframe 12", "Keyframe 13", "Keyframe 14", "Keyframe 15",
+            "Keyframe 16"
         ]
-        
-        # Fast, bouncy rhythm
-        durations = [0.55, 0.45, 0.4, 0.55, 0.35, 0.6, 0.6, 0.4, 0.7, 0.4, 0.45, 0.45, 0.45, 0.45, 0.6, 0.55]
-        
+
+    def get_keyframes(self) -> Tuple[List[List[float]], List[float]]:
+        keyframes = [
+            [0.00, -0.65, 1.20, 1.00, -1.50, 14.0, 1.60],
+            [0.00, -0.60, 1.55, 0.95, -1.20, 18.0, 1.40],
+            [0.05, -0.55, 1.60, 0.90, -1.90, 20.0, 1.50],
+            [-0.07, -0.75, 0.93, 1.58, -0.80, 22.5, 1.60],
+            [0.12, -0.75, 0.88, 1.58, -2.20, 22.0, 1.40],
+            [0.00, -0.45, 1.45, 0.85, -0.85, 16.0, 1.94],
+            [-0.45, -0.85, 1.15, 1.55, -1.80, 17.5, 1.60],
+            [-0.40, -0.90, 1.10, 1.50, -0.90, 18.5, 1.40],
+            [0.45, -0.85, 1.15, 1.55, -2.00, 17.0, 1.50],
+            [0.00, -0.65, 1.35, 1.10, -0.75, 19.0, 1.60],
+            [0.10, -1.00, 1.00, 1.60, -1.70, 21.0, 1.40],
+            [-0.10, -0.70, 1.30, 1.20, -1.00, 20.5, 1.50],
+            [0.25, -0.82, 1.18, 1.42, -1.90, 18.0, 1.60],
+            [-0.25, -0.85, 1.20, 1.45, -0.85, 17.5, 1.40],
+            [0.00, -0.90, 1.25, 1.38, -1.60, 13.0, 1.50],
+            [0.00, -0.65, 1.20, 1.00, -1.50, 14.0, 1.60],
+        ]
+
+        durations = [0.30, 0.30, 0.84, 0.67, 1.40, 0.98, 0.30, 0.55, 0.90, 0.80, 1.05, 0.46, 0.39, 0.81, 0.89, 0.50]
+
         return keyframes, durations
 
 
@@ -356,49 +349,53 @@ class SettlingAdjustAnimation(AnimationPlugin):
 
 
 class DreamyDriftAnimation(AnimationPlugin):
-    """Ethereal floating movements with smooth, continuous flow."""
-    
+    """Weightless floating with smooth figure-8 patterns"""
+
     @property
     def name(self) -> str:
         return "dreamy_drift"
-    
+
     @property
     def description(self) -> str:
         return "Weightless floating with smooth figure-8 patterns"
-    
+
     def get_category(self) -> str:
         return "idle"
-    
+
     def get_keyframe_names(self) -> Optional[List[str]]:
-        return ["Home", "Drift begins", "Float upward", "Arc left high",
-                "Suspend peak", "Gentle fall right", "Swoop low", "Rise again",
-                "Figure-8 cross", "Float opposite", "Slow spiral", "Gravity returns",
-                "Soft landing", "Final settle", "Home"]
-    
-    def get_keyframes(self) -> Tuple[List[List[float]], List[float]]:
-        drift_radius = 0.5
-        
-        keyframes = [
-            [0.0, -0.65, 1.2, 1.0, -1.5, 10.0, 1.50],                           # Home 2
-            [0.08, -0.88, 1.27, 1.43, -1.3, 10.5, 1.50],                        # Subtle drift start
-            [0.15, -1.05, 1.05, 1.65, -1.8, 10.0, 2.40],                        # Float gently up
-            [-drift_radius*0.8, -1.0, 1.1, 1.6, -0.85, 10.5, 1.40],              # Arc to left high
-            [-drift_radius, -0.95, 1.15, 1.55, -2.1, 10.0, 2.60],                # Suspend at peak
-            [drift_radius*0.6, -0.85, 1.25, 1.45, -0.8, 10.5, 1.60],             # Fall gently right
-            [drift_radius*0.9, -0.55, 1.45, 1.15, -1.9, 11.0, 0.70],            # Swoop down low
-            [drift_radius*0.7, -0.75, 1.3, 1.35, -1.0, 10.5, 2.40],             # Begin rise
-            [0.0, -0.9, 1.2, 1.5, -1.7, 10.0, 1.50],                            # Cross center of 8
-            [-drift_radius*0.7, -0.8, 1.25, 1.4, -0.9, 10.5, 1.50],             # Float to opposite
-            [-0.2, -0.65, 1.35, 1.25, -1.8, 11.5, 0.70],                        # Slow downward spiral
-            [0.0, -0.75, 1.28, 1.35, -1.1, 11.0, 0.70],                         # Gravity slowly returns
-            [0.0, -0.82, 1.29, 1.38, -1.6, 10.5, 1.50],                         # Soft landing approach
-            [0.0, -0.84, 1.2, 1.39, -1.4, 10.0, 0.90],                          # Almost settled
-            [0.0, -0.65, 1.2, 1.0, -1.5, 10.0, 1.50]                            # Home 2
+        """Descriptive names for each keyframe."""
+        return [
+            "Keyframe 1", "Keyframe 2", "Keyframe 3", "Keyframe 4", "Keyframe 5",
+            "Keyframe 6", "Keyframe 7", "Keyframe 8", "Keyframe 9", "Keyframe 10",
+            "Keyframe 11", "Keyframe 12", "Keyframe 13", "Keyframe 14", "Keyframe 15",
+            "Keyframe 16", "Keyframe 17", "Keyframe 18", "Keyframe 19"
         ]
-        
-        # Dreamy but not too slow
-        durations = [0.95, 0.8, 0.95, 1.2, 1.6, 1.1, 0.85, 0.95, 0.95, 1.1, 0.8, 0.8, 0.8, 0.95, 0.95]
-        
+
+    def get_keyframes(self) -> Tuple[List[List[float]], List[float]]:
+        keyframes = [
+            [0.00, -0.65, 1.20, 1.00, -1.50, 3.1, 1.60],
+            [0.08, -0.88, 1.27, 1.43, -1.30, 1.6, 1.40],
+            [0.15, -1.05, 1.05, 1.65, -1.80, 3.8, 1.50],
+            [-0.40, -1.00, 1.10, 1.60, -0.85, 4.0, 1.60],
+            [-0.50, -0.95, 1.15, 1.55, -2.10, 4.3, 1.40],
+            [0.30, -0.85, 1.25, 1.45, -0.80, 1.6, 1.50],
+            [0.45, -0.55, 1.45, 1.15, -1.90, 1.5, 1.60],
+            [0.35, -0.75, 1.30, 1.35, -1.00, 4.0, 1.40],
+            [0.00, -0.90, 1.20, 1.50, -1.70, 4.6, 1.50],
+            [-0.35, -0.80, 1.25, 1.40, -0.90, 5.0, 1.60],
+            [-0.20, -0.65, 1.35, 1.25, -1.80, 2.5, 1.40],
+            [0.00, -0.75, 1.28, 1.35, -1.10, 3.4, 1.50],
+            [0.00, -0.82, 1.29, 1.38, -1.60, 1.1, 1.60],
+            [0.00, -0.84, 1.20, 1.39, -1.40, 3.6, 1.40],
+            [0.00, -0.65, 1.20, 1.00, -1.50, 4.9, 1.50],
+            [-0.21, -0.64, 0.71, 0.78, -1.50, 3.2, 1.60],
+            [-0.07, -0.66, 0.47, 0.69, -1.50, 2.1, 1.40],
+            [0.00, -0.66, 0.29, 0.02, -1.50, 2.9, 1.50],
+            [-0.00, -0.60, 1.19, 1.00, -1.50, 2.1, 1.60],
+        ]
+
+        durations = [0.41, 0.79, 0.85, 0.73, 1.05, 0.93, 1.18, 0.82, 0.30, 0.68, 0.30, 0.45, 0.36, 0.59, 0.47, 0.30, 0.46, 0.98, 0.50]
+
         return keyframes, durations
 
 
@@ -628,131 +625,139 @@ class LookAroundCasual(AnimationPlugin):
 # New animations added below
 
 class ContentedSighAnimation(AnimationPlugin):
-    """Deep contented sigh with full body relaxation."""
-    
+    """Deep satisfying sigh with shoulders dropping and body relaxing"""
+
     @property
     def name(self) -> str:
         return "contented_sigh"
-    
+
     @property
     def description(self) -> str:
         return "Deep satisfying sigh with shoulders dropping and body relaxing"
-    
+
     def get_category(self) -> str:
         return "idle"
-    
+
     def get_keyframe_names(self) -> Optional[List[str]]:
-        return ["Home", "Prepare inhale", "Deep breath in", "Peak hold",
-                "Begin sigh", "Deep exhale", "Shoulders drop", "Full relax",
-                "Settle deeper", "Content state", "Home"]
-    
+        """Descriptive names for each keyframe."""
+        return [
+            "Keyframe 1", "Keyframe 2", "Keyframe 3", "Keyframe 4", "Keyframe 5",
+            "Keyframe 6", "Keyframe 7", "Keyframe 8", "Keyframe 9", "Keyframe 10",
+            "Keyframe 11", "Keyframe 12", "Keyframe 13", "Keyframe 14", "Keyframe 15"
+        ]
+
     def get_keyframes(self) -> Tuple[List[List[float]], List[float]]:
         base_pos = 0.0
-        
+
         keyframes = [
-            [base_pos, -0.65, 1.2, 1.0, -1.5, 12.0, 1.50],                    # Home 2
-            [base_pos, -0.8, 1.25, 1.35, -1.3, 11.0, 1.50],                   # Prepare for deep breath
-            [base_pos, -1.0, 1.1, 1.6, -1.8, 10.0, 1.50],                     # Deep inhale
-            [base_pos, -1.05, 1.08, 1.62, -1.0, 10.0, 2.60],                  # Hold at peak
-            [base_pos, -0.9, 1.2, 1.5, -1.9, 11.0, 1.50],                     # Begin exhale
-            [base_pos, -0.6, 1.4, 1.2, -1.2, 12.0, 1.50],                     # Deep sigh out - back
-            [base_pos, -0.4, 1.5, 1.0, -1.7, 11.0, 1.50],                     # Shoulders drop - back
-            [base_pos, -0.3, 1.6, 0.8, -1.5, 10.0, 0.90],                     # Full relaxation - back
-            [base_pos, -0.5, 1.5, 0.9, -1.6, 10.0, 0.90],                     # Settle into comfort - back
-            [base_pos, -0.75, 1.3, 1.1, -1.5, 11.0, 1.50],                    # Content final state
-            [base_pos, -0.65, 1.2, 1.0, -1.5, 12.0, 1.50]                     # Home 2
+            [base_pos +0.05, -0.65, 1.20, 1.00, -1.50, 4.4, 1.60],
+            [base_pos -0.03, -0.80, 1.25, 1.35, -1.30, 2.4, 1.40],
+            [base_pos +0.02, -1.00, 1.10, 1.60, -1.80, 3.1, 1.50],
+            [base_pos +0.05, -1.05, 1.08, 1.62, -1.00, 3.5, 1.60],
+            [base_pos -0.03, -0.90, 1.20, 1.50, -1.90, 4.8, 1.40],
+            [base_pos +0.02, -0.60, 1.40, 1.20, -1.20, 1.2, 1.50],
+            [base_pos +0.05, -0.40, 1.50, 1.00, -1.70, 4.4, 2.02],
+            [base_pos -0.03, -0.30, 1.60, 0.80, -1.50, 5.0, 1.79],
+            [base_pos +0.02, -0.50, 1.50, 0.90, -1.60, 2.7, 1.50],
+            [base_pos +0.05, -0.75, 1.30, 1.10, -1.50, 1.5, 1.60],
+            [base_pos -0.03, -0.65, 1.20, 1.00, -1.50, 2.6, 1.40],
+            [base_pos, -0.63, 2.05, 1.05, -1.50, 4.6, 1.50],
+            [base_pos +0.04, -0.01, 1.57, 1.00, -1.50, 4.3, 1.90],
+            [base_pos -0.04, 0.23, 1.58, 0.98, -1.50, 10.0, 1.77],
+            [base_pos +0.01, 0.51, 1.54, 0.79, -1.50, 10.0, 1.95],
         ]
-        
-        # Relaxed sigh timing
-        durations = [0.6, 0.7, 0.95, 1.2, 0.8, 0.8, 0.85, 0.95, 0.95, 0.7, 0.6]
-        
+
+        durations = [0.30, 0.30, 0.60, 0.75, 0.40, 0.30, 0.50, 0.30, 0.62, 0.30, 0.48, 0.59, 0.30, 1.30, 2.50]
+
         return keyframes, durations
 
 
 class HeadBobbingAnimation(AnimationPlugin):
-    """Rhythmic head bobbing like listening to music."""
-    
+    """Rhythmic head bobbing to an internal beat"""
+
     @property
     def name(self) -> str:
         return "head_bobbing"
-    
+
     @property
     def description(self) -> str:
         return "Rhythmic head bobbing to an internal beat"
-    
+
     def get_category(self) -> str:
         return "idle"
-    
+
     def get_keyframe_names(self) -> Optional[List[str]]:
-        return ["Home", "First beat down", "Beat up", "Double time 1", "Double time 2",
-                "Beat down strong", "Beat up", "Side groove left", "Side groove right",
-                "Final beat", "Cool down", "Home"]
-    
+        """Descriptive names for each keyframe."""
+        return [
+            "Keyframe 1", "Keyframe 2", "Keyframe 3", "Keyframe 4", "Keyframe 5",
+            "Keyframe 6", "Keyframe 7", "Keyframe 8", "Keyframe 9", "Keyframe 10",
+            "Keyframe 11", "Keyframe 12"
+        ]
+
     def get_keyframes(self) -> Tuple[List[List[float]], List[float]]:
         base_pos = 0.0
-        
+
         keyframes = [
-            [base_pos, -0.65, 1.2, 1.0, -1.5, 16.0, 1.50],                    # Home 2
-            [base_pos, -0.65, 1.25, 0.85, -1.3, 18.0, 0.70],                  # Beat down - back
-            [base_pos, -0.8, 1.15, 1.15, -1.7, 18.0, 2.40],                   # Beat up - back
-            [base_pos, -0.68, 1.22, 0.9, -1.4, 20.0, 1.50],                   # Quick beat 1 - back
-            [base_pos, -0.78, 1.18, 1.1, -1.6, 20.0, 1.50],                   # Quick beat 2 - back
-            [base_pos, -0.6, 1.3, 0.8, -1.2, 19.0, 0.70],                     # Strong beat down - back
-            [base_pos, -0.85, 1.1, 1.2, -1.8, 18.0, 2.40],                    # Beat up - back
-            [base_pos - 0.2, -0.7, 1.2, 0.95, -1.0, 17.0, 1.40],              # Groove left - back
-            [base_pos + 0.2, -0.7, 1.2, 0.95, -2.0, 17.0, 1.60],              # Groove right - back
-            [base_pos, -0.65, 1.25, 0.85, -1.5, 16.0, 1.50],                  # Final beat - back
-            [base_pos, -0.8, 1.2, 1.05, -1.5, 15.0, 0.70],                    # Cool down - back
-            [base_pos, -0.65, 1.2, 1.0, -1.5, 14.0, 1.50]                     # Home 2
+            [base_pos, -0.65, 1.20, 1.00, -1.50, 4.9, 1.60],
+            [base_pos, -0.65, 1.25, 0.85, -1.30, 4.5, 1.40],
+            [base_pos, -0.80, 1.15, 1.15, -1.70, 4.0, 1.50],
+            [base_pos, -0.68, 1.22, 0.90, -1.40, 2.5, 1.60],
+            [base_pos, -0.78, 1.18, 1.10, -1.60, 3.3, 1.40],
+            [base_pos, -0.60, 1.30, 0.80, -1.20, 3.9, 1.50],
+            [base_pos, -0.85, 1.10, 1.20, -1.80, 4.2, 1.60],
+            [base_pos -0.20, -0.70, 1.20, 0.95, -1.00, 1.3, 1.40],
+            [base_pos +0.20, -0.70, 1.20, 0.95, -2.00, 1.7, 1.50],
+            [base_pos, -0.65, 1.25, 0.85, -1.50, 3.6, 1.60],
+            [base_pos, -0.80, 1.20, 1.05, -1.50, 2.8, 1.40],
+            [base_pos, -0.65, 1.20, 1.00, -1.50, 1.1, 1.50],
         ]
-        
-        # Musical timing
-        durations = [0.45, 0.4, 0.4, 0.35, 0.35, 0.4, 0.4, 0.45, 0.45, 0.45, 0.55, 0.55]
-        
+
+        durations = [0.50, 1.12, 0.67, 0.30, 0.70, 1.27, 0.85, 0.30, 0.30, 0.60, 0.50, 0.50]
+
         return keyframes, durations
 
 
 class TailWagAnimation(AnimationPlugin):
-    """Happy tail wagging motion with base swaying."""
-    
+    """Enthusiastic tail wagging with full body involvement"""
+
     @property
     def name(self) -> str:
         return "tail_wag"
-    
+
     @property
     def description(self) -> str:
         return "Enthusiastic tail wagging with full body involvement"
-    
+
     def get_category(self) -> str:
         return "idle"
-    
+
     def get_keyframe_names(self) -> Optional[List[str]]:
-        return ["Home", "Wind up", "Wag right fast", "Wag left fast", "Big wag right",
-                "Big wag left", "Double wag 1", "Double wag 2", "Excited wiggle",
-                "Happy bounce", "Slow wag", "Settle", "Home"]
-    
-    def get_keyframes(self) -> Tuple[List[List[float]], List[float]]:
-        base_pos = 0.0
-        
-        keyframes = [
-            [base_pos, -0.65, 1.2, 1.0, -1.5, 15.0, 1.50],                    # Home 2
-            [base_pos, -0.7, 1.15, 1.05, -1.3, 17.0, 2.40],                   # Wind up
-            [base_pos + 0.4, -0.6, 1.1, 0.95, -2.0, 20.0, 1.60],              # Fast wag right
-            [base_pos - 0.4, -0.6, 1.1, 0.95, -1.0, 20.0, 1.40],              # Fast wag left
-            [base_pos + 0.5, -0.55, 1.05, 0.9, -2.2, 19.0, 1.60],             # Big wag right
-            [base_pos - 0.5, -0.55, 1.05, 0.9, -0.8, 19.0, 1.40],             # Big wag left
-            [base_pos + 0.3, -0.62, 1.12, 0.98, -1.8, 21.0, 1.50],            # Quick double 1
-            [base_pos - 0.3, -0.62, 1.12, 0.98, -1.2, 21.0, 1.50],            # Quick double 2
-            [base_pos + 0.1, -0.68, 1.18, 1.08, -1.9, 18.0, 2.60],            # Excited wiggle
-            [base_pos, -0.5, 1.0, 0.8, -1.5, 17.0, 2.60],                     # Happy bounce
-            [base_pos - 0.2, -0.7, 1.2, 1.1, -1.6, 15.0, 0.70],               # Slow wag
-            [base_pos, -0.75, 1.25, 1.15, -1.5, 14.0, 0.90],                  # Settle
-            [base_pos, -0.65, 1.2, 1.0, -1.5, 13.0, 1.50]                     # Home 2
+        """Descriptive names for each keyframe."""
+        return [
+            "Keyframe 1", "Keyframe 2", "Keyframe 3", "Keyframe 4", "Keyframe 5",
+            "Keyframe 6", "Keyframe 7", "Keyframe 8", "Keyframe 9", "Keyframe 10",
+            "Keyframe 11", "Keyframe 12", "Keyframe 13"
         ]
-        
-        # Fast wagging
-        durations = [0.55, 0.45, 0.55, 0.6, 0.6, 0.7, 0.45, 0.45, 0.4, 0.45, 0.45, 0.55, 0.6]
-        
+
+    def get_keyframes(self) -> Tuple[List[List[float]], List[float]]:
+        keyframes = [
+            [0.00, -0.65, 1.20, 1.00, -1.50, 0.0, 1.60],
+            [0.00, -0.70, 1.15, 1.05, -1.30, 0.0, 1.40],
+            [0.40, -0.60, 1.10, 0.95, -2.00, 0.0, 1.50],
+            [-0.40, -0.60, 1.10, 0.95, -1.00, 0.0, 1.60],
+            [0.50, -0.55, 1.05, 0.90, -2.20, 0.0, 1.40],
+            [-0.50, -0.55, 1.05, 0.90, -0.80, 0.0, 1.50],
+            [0.30, -0.62, 1.12, 0.98, -1.80, 0.0, 1.60],
+            [-0.30, -0.62, 1.12, 0.98, -1.20, 0.0, 1.40],
+            [0.10, -0.68, 1.18, 1.08, -1.90, 0.0, 1.50],
+            [0.00, -0.50, 1.00, 0.80, -1.50, 0.0, 1.60],
+            [-0.20, -0.70, 1.20, 1.10, -1.60, 0.0, 1.40],
+            [0.00, -0.75, 1.25, 1.15, -1.50, 0.0, 1.50],
+            [0.00, -0.65, 1.20, 1.00, -1.50, 0.0, 1.60],
+        ]
+
+        durations = [0.52, 0.72, 0.50, 0.62, 0.60, 0.56, 0.30, 0.86, 0.37, 1.40, 0.30, 0.45, 0.50]
+
         return keyframes, durations
 
 
