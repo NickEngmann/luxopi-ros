@@ -1,0 +1,279 @@
+{
+  "name": "startled",
+  "description": "Quick startled reaction with panic and recovery",
+  "category": "emotion",
+  "created": "2025-10-21T21:32:21.627563",
+  "keyframes": [
+    {
+      "servos": {
+        "base": -0.027611654,
+        "shoulder": -0.365087428,
+        "elbow": 0.788466125,
+        "wrist": 1.017029262,
+        "hand": 1.484893403,
+        "roll": -1.5,
+        "spd": 0,
+        "acc": 14.0
+      },
+      "timing": 1.0,
+      "duration": 0.9,
+      "name": "Calm state"
+    },
+    {
+      "servos": {
+        "base": 0.0,
+        "shoulder": -0.25,
+        "elbow": 0.75,
+        "wrist": 0.45,
+        "hand": 1.5,
+        "roll": -1.3,
+        "spd": 0,
+        "acc": 15.0
+      },
+      "timing": 1.0,
+      "duration": 0.9,
+      "name": "Tiny tension"
+    },
+    {
+      "servos": {
+        "base": 0.0,
+        "shoulder": -0.9,
+        "elbow": 1.4,
+        "wrist": 0.3,
+        "hand": 0.7,
+        "roll": -1.9,
+        "spd": 0,
+        "acc": 13.0
+      },
+      "timing": 1.0,
+      "duration": 1.1,
+      "name": "WHAT?!"
+    },
+    {
+      "servos": {
+        "base": -0.4,
+        "shoulder": -0.5,
+        "elbow": 0.2,
+        "wrist": 1.5,
+        "hand": 1.5,
+        "roll": -0.8,
+        "spd": 0,
+        "acc": 0.0
+      },
+      "timing": 1.0,
+      "duration": 0.9,
+      "name": "Jump back"
+    },
+    {
+      "servos": {
+        "base": -0.5,
+        "shoulder": -0.6,
+        "elbow": 0.1,
+        "wrist": 1.6,
+        "hand": 1.5,
+        "roll": -2.1,
+        "spd": 0,
+        "acc": 0.0
+      },
+      "timing": 1.0,
+      "duration": 0.3,
+      "name": "Peak startle"
+    },
+    {
+      "servos": {
+        "base": -0.6,
+        "shoulder": -0.55,
+        "elbow": 0.15,
+        "wrist": 1.55,
+        "hand": 1.4,
+        "roll": -0.75,
+        "spd": 0,
+        "acc": 21.0
+      },
+      "timing": 1.0,
+      "duration": 0.1,
+      "name": "Shake left"
+    },
+    {
+      "servos": {
+        "base": -0.4,
+        "shoulder": -0.55,
+        "elbow": 0.15,
+        "wrist": 1.55,
+        "hand": 1.6,
+        "roll": -2.2,
+        "spd": 0,
+        "acc": 21.0
+      },
+      "timing": 1.0,
+      "duration": 0.0,
+      "name": "Shake right"
+    },
+    {
+      "servos": {
+        "base": -0.3,
+        "shoulder": -0.4,
+        "elbow": 0.6,
+        "wrist": 1.0,
+        "hand": 1.5,
+        "roll": -1.0,
+        "spd": 0,
+        "acc": 18.0
+      },
+      "timing": 1.0,
+      "duration": 0.9,
+      "name": "Cautious look"
+    },
+    {
+      "servos": {
+        "base": -0.220893233,
+        "shoulder": -0.986349647,
+        "elbow": 0.912718569,
+        "wrist": 1.526310884,
+        "hand": 1.517106999,
+        "roll": -1.8,
+        "spd": 0,
+        "acc": 16.0
+      },
+      "timing": 1.0,
+      "duration": 0.9,
+      "name": "Is it safe?"
+    },
+    {
+      "servos": {
+        "base": -0.489339871,
+        "shoulder": -0.406504909,
+        "elbow": 0.977145762,
+        "wrist": 1.247126381,
+        "hand": 1.432738056,
+        "roll": -1.2,
+        "spd": 0,
+        "acc": 17.0
+      },
+      "timing": 1.0,
+      "duration": 0.8,
+      "name": "Check left"
+    },
+    {
+      "servos": {
+        "base": 0.262310715,
+        "shoulder": -0.400368986,
+        "elbow": 0.941864204,
+        "wrist": 1.081456455,
+        "hand": 1.583068173,
+        "roll": -1.9,
+        "spd": 0,
+        "acc": 17.0
+      },
+      "timing": 1.0,
+      "duration": 1.0,
+      "name": "Check right"
+    },
+    {
+      "servos": {
+        "base": -0.1,
+        "shoulder": -0.3,
+        "elbow": 0.9,
+        "wrist": 0.6,
+        "hand": 1.5,
+        "roll": -1.3,
+        "spd": 0,
+        "acc": 15.0
+      },
+      "timing": 1.0,
+      "duration": 0.8,
+      "name": "Still nervous"
+    },
+    {
+      "servos": {
+        "base": 0.0,
+        "shoulder": -0.4,
+        "elbow": 1.0,
+        "wrist": 0.5,
+        "hand": 0.7,
+        "roll": -1.7,
+        "spd": 0,
+        "acc": 14.0
+      },
+      "timing": 1.0,
+      "duration": 0.5,
+      "name": "Calming down"
+    },
+    {
+      "servos": {
+        "base": 0.0,
+        "shoulder": -0.5,
+        "elbow": 1.1,
+        "wrist": 0.4,
+        "hand": 1.5,
+        "roll": -1.5,
+        "spd": 0,
+        "acc": 13.0
+      },
+      "timing": 1.0,
+      "duration": 0.5,
+      "name": "Almost okay"
+    },
+    {
+      "servos": {
+        "base": 0.1,
+        "shoulder": -0.45,
+        "elbow": 1.05,
+        "wrist": 0.45,
+        "hand": 1.5,
+        "roll": -1.6,
+        "spd": 0,
+        "acc": 14.0
+      },
+      "timing": 1.0,
+      "duration": 0.0,
+      "name": "Final check"
+    },
+    {
+      "servos": {
+        "base": 0.0,
+        "shoulder": -0.4,
+        "elbow": 1.0,
+        "wrist": 0.5,
+        "hand": 1.5,
+        "roll": -1.5,
+        "spd": 0,
+        "acc": 13.0
+      },
+      "timing": 1.0,
+      "duration": 0.0,
+      "name": "All clear"
+    },
+    {
+      "servos": {
+        "base": 0.0,
+        "shoulder": 0.2,
+        "elbow": 1.3,
+        "wrist": 1.5,
+        "hand": 1.5,
+        "roll": -1.5,
+        "spd": 0,
+        "acc": 15.0
+      },
+      "timing": 1.0,
+      "duration": 1.3,
+      "name": "Return home 1"
+    },
+    {
+      "servos": {
+        "base": 0.0,
+        "shoulder": -0.65,
+        "elbow": 1.2,
+        "wrist": 1.0,
+        "hand": 1.5,
+        "roll": -1.5,
+        "spd": 0,
+        "acc": 10.0
+      },
+      "timing": 1.0,
+      "duration": 1.4,
+      "name": "Return home 2"
+    }
+  ],
+  "keyframe_count": 18
+}
