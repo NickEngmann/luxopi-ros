@@ -13,7 +13,8 @@ from adafruit_ads7830.analog_in import AnalogIn
 i2c = board.I2C()
 
 # Initialize ADS7830
-adc = ADC.ADS7830(i2c, 0x38)
+# Address: 0x48 on I2C bus 1
+adc = ADC.ADS7830(i2c, 0x48)
 
 # Create analog input objects for all 8 channels
 channels = []

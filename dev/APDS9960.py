@@ -10,7 +10,7 @@ import queue
 i2c = board.I2C()  # uses board.SCL and board.SDA
 # i2c = board.STEMMA_I2C()  # For using the built-in STEMMA QT connector on a microcontroller
 
-apds = APDS9960(i2c)  # Address is 0x49
+apds = APDS9960(i2c)  # Address is 0x39 on I2C bus 1
 apds.enable_proximity = True
 apds.proximity_gain = 1
 apds.enable_gesture = True

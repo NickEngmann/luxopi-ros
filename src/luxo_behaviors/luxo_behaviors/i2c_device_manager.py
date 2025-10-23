@@ -15,6 +15,7 @@ import time
 import queue
 from collections import defaultdict
 from enum import Enum, auto
+from luxo_behaviors.i2c_bus_wrapper import I2CBusWrapper
 
 class SensorType(Enum):
     """Enum for supported sensor types"""
@@ -50,7 +51,7 @@ class I2CSensor:
 class APDS9960Sensor(I2CSensor):
     """APDS9960 proximity and gesture sensor"""
     def __init__(self, name: str = "apds9960"):
-        super().__init__(name, 0x39, SensorType.APDS9960)
+        super().__init__(name, 0x39, SensorType.APDS9960)  # Address: 0x39 on I2C bus 1
         self.enable_gestures = False
         self.gesture_queue = queue.Queue()
         
@@ -103,8 +104,9 @@ class APDS9960Sensor(I2CSensor):
 
 class VL53L4CDSensor(I2CSensor):
     """VL53L4CD time-of-flight distance sensor"""
-    def __init__(self, name: str, address: int):
+    def __init__(self, name: str, address: int, bus_num: int = 1):
         super().__init__(name, address, SensorType.VL53L4CD)
+        self.bus_num = bus_num  # I2C bus number (1 or 3)
         # Add filtering
         self.reading_history = []
         self.history_size = 5
@@ -176,8 +178,8 @@ class VL53L4CDSensor(I2CSensor):
 
 class ADS7830Sensor(I2CSensor):
     """ADS7830 8-channel ADC for FSR pressure sensors"""
-    def __init__(self, name: str = "ads7830", address: int = 0x38):
-        super().__init__(name, address, SensorType.ADS7830)
+    def __init__(self, name: str = "ads7830", address: int = 0x48):
+        super().__init__(name, address, SensorType.ADS7830)  # Address: 0x48 on I2C bus 1
         self.channels = []
         self.channel_mapping = {
             0: "head_top",
@@ -278,10 +280,20 @@ class I2CDeviceManager(Node):
     
     def __init__(self):
         super().__init__('i2c_device_manager')
-        
-        # Initialize I2C bus
-        self.i2c_bus = board.I2C()
+
+        # Initialize I2C buses
+        self.i2c_bus_1 = board.I2C()  # Primary I2C bus (bus 1)
+        self.i2c_bus_3 = None  # Secondary I2C bus (bus 3) - initialized on demand
         self.i2c_lock = threading.Lock()
+
+        # Try to initialize I2C bus 3 if available
+        # Bus 3 uses GPIO 6 (SCL) and GPIO 5 (SDA) via dtoverlay=i2c-gpio,bus=3
+        # Accessed via /dev/i2c-3
+        try:
+            self.i2c_bus_3 = I2CBusWrapper(3)  # Software I2C bus 3
+            self.get_logger().info("I2C bus 3 initialized successfully (/dev/i2c-3, GPIO 6/SCL, GPIO 5/SDA)")
+        except Exception as e:
+            self.get_logger().warn(f"I2C bus 3 not available: {e}")
         
         # Bus health monitoring
         self.consecutive_bus_errors = 0
@@ -308,7 +320,7 @@ class I2CDeviceManager(Node):
         self.declare_parameter('enable_vl53_left', True)
         self.declare_parameter('enable_vl53_right', True)
         self.declare_parameter('enable_ads7830', True)
-        self.declare_parameter('ads7830_address', 0x38)
+        self.declare_parameter('ads7830_address', 0x48)  # Default address changed to 0x48
         self.declare_parameter('publish_rate', 10.0)  # Hz - increased for faster collision response
         self.declare_parameter('recovery_interval', 3.0)  # seconds
         self.declare_parameter('max_init_attempts', 10)
@@ -385,19 +397,21 @@ class I2CDeviceManager(Node):
             apds = APDS9960Sensor()
             apds.enable_gestures = self.enable_gestures
             self.pending_sensors['apds9960'] = apds
-            
+
         if self.enable_vl53_left:
-            vl53_left = VL53L4CDSensor('vl53_left', 0x29)
+            # Left sensor on I2C bus 3 at address 0x29
+            vl53_left = VL53L4CDSensor('vl53_left', 0x29, bus_num=3)
             self.pending_sensors['vl53_left'] = vl53_left
-            
+
         if self.enable_vl53_right:
-            vl53_right = VL53L4CDSensor('vl53_right', 0x59)
+            # Right sensor on I2C bus 1 at address 0x29 (changed from 0x59)
+            vl53_right = VL53L4CDSensor('vl53_right', 0x29, bus_num=1)
             self.pending_sensors['vl53_right'] = vl53_right
-            
+
         if self.enable_ads7830:
             ads7830 = ADS7830Sensor('ads7830', self.ads7830_address)
             self.pending_sensors['ads7830'] = ads7830
-        
+
         # Try to initialize all pending sensors
         self._initialize_pending_sensors()
             
@@ -437,10 +451,18 @@ class I2CDeviceManager(Node):
         current_time = self.get_clock().now()
         sensor.initialization_attempts += 1
         sensor.last_initialization_attempt = current_time
-        
+
         with self.i2c_lock:
             try:
-                sensor.initialize(self.i2c_bus)
+                # Select the correct I2C bus based on sensor configuration
+                if hasattr(sensor, 'bus_num') and sensor.bus_num == 3:
+                    if self.i2c_bus_3 is None:
+                        raise Exception("I2C bus 3 not available")
+                    i2c_bus = self.i2c_bus_3
+                else:
+                    i2c_bus = self.i2c_bus_1
+
+                sensor.initialize(i2c_bus)
                 sensor.last_success_time = current_time
                 sensor.error_count = 0
                 sensor.total_errors = 0
@@ -448,18 +470,18 @@ class I2CDeviceManager(Node):
                 return True
             except Exception as e:
                 sensor.last_error_time = current_time
-                
+
                 # Throttle error logging
                 should_log = True
                 if sensor.name in self.last_error_log:
                     time_since_last_log = (current_time - self.last_error_log[sensor.name]).nanoseconds / 1e9
                     if time_since_last_log < self.error_log_throttle:
                         should_log = False
-                
+
                 if should_log:
                     self.get_logger().error(f"Failed to initialize {sensor.name} (attempt {sensor.initialization_attempts}): {e}")
                     self.last_error_log[sensor.name] = current_time
-                
+
                 sensor.active = False
                 return False
                 
@@ -669,46 +691,61 @@ class I2CDeviceManager(Node):
     def reset_bus_callback(self, request, response):
         """Handle I2C bus reset requests"""
         self.get_logger().warn("I2C bus reset requested")
-        
+
         try:
             # Mark all sensors as inactive (do this before taking the lock)
             for sensor in self.sensors.values():
                 sensor.active = False
                 sensor.error_count = 0
-            
-            # Deinitialize the bus
+
+            # Deinitialize both buses
             with self.i2c_lock:
                 try:
-                    if hasattr(self.i2c_bus, 'deinit'):
-                        self.i2c_bus.deinit()
+                    if hasattr(self.i2c_bus_1, 'deinit'):
+                        self.i2c_bus_1.deinit()
                 except Exception as e:
-                    self.get_logger().debug(f"Bus deinit error (expected): {e}")
-            
+                    self.get_logger().debug(f"Bus 1 deinit error (expected): {e}")
+
+                try:
+                    if self.i2c_bus_3 is not None and hasattr(self.i2c_bus_3, 'deinit'):
+                        self.i2c_bus_3.deinit()
+                except Exception as e:
+                    self.get_logger().debug(f"Bus 3 deinit error (expected): {e}")
+
             # Wait outside the lock
             time.sleep(1.5)
-            
-            # Reinitialize the bus
+
+            # Reinitialize both buses
             with self.i2c_lock:
-                self.i2c_bus = board.I2C()
-                
+                self.i2c_bus_1 = board.I2C()
+
+                # Try to reinitialize bus 3
+                # Bus 3 uses GPIO 6 (SCL) and GPIO 5 (SDA) via dtoverlay=i2c-gpio,bus=3
+                try:
+                    self.i2c_bus_3 = I2CBusWrapper(3)  # Software I2C bus 3
+                    self.get_logger().info("I2C bus 3 reinitialized (/dev/i2c-3, GPIO 6/SCL, GPIO 5/SDA)")
+                except Exception as e:
+                    self.get_logger().warn(f"I2C bus 3 not available after reset: {e}")
+                    self.i2c_bus_3 = None
+
             # Move all sensors to pending for reinitialization
             for sensor_name, sensor in list(self.sensors.items()):
                 sensor.initialization_attempts = 0
                 self.pending_sensors[sensor_name] = sensor
             self.sensors.clear()
-            
+
             # Try to reinitialize
             self._initialize_pending_sensors()
-            
+
             response.success = True
             response.message = "I2C bus reset completed"
             self.get_logger().info("I2C bus reset completed")
-            
+
         except Exception as e:
             response.success = False
             response.message = f"Bus reset failed: {str(e)}"
             self.get_logger().error(f"I2C bus reset failed: {e}")
-            
+
         return response
     
     def configure_sensor_callback(self, request, response):
