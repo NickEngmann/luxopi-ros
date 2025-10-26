@@ -50,8 +50,9 @@ class RoArmHardwareInterface(Node):
         self.declare_parameter('use_hardware_joint_names', False)
         
         # Base joint limit parameters (in degrees, converted to radians internally)
-        self.declare_parameter('base_min_limit_deg', -260.0)  # Minimum base rotation in degrees
-        self.declare_parameter('base_max_limit_deg', 160.0)   # Maximum base rotation in degrees
+        # Increased by 30° each direction for better voice following range
+        self.declare_parameter('base_min_limit_deg', -290.0)  # Minimum base rotation in degrees (was -260.0)
+        self.declare_parameter('base_max_limit_deg', 190.0)   # Maximum base rotation in degrees (was 160.0)
         self.declare_parameter('base_limit_buffer_deg', 10.0) # Buffer zone before hard limit in degrees
         self.declare_parameter('enable_base_wraparound', True) # Enable wraparound for collision avoidance
         

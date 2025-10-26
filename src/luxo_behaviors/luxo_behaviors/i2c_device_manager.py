@@ -118,9 +118,9 @@ class VL53L4CDSensor(I2CSensor):
             # Add delay before initialization to let bus settle
             time.sleep(0.1)
             self.device = adafruit_vl53l4cd.VL53L4CD(i2c_bus, self.address)
-            # Increase timing for more stable readings
-            self.device.inter_measurement = 100  # Increased from 75ms
-            self.device.timing_budget = 100  # Increased from 75ms
+            # Increase timing for more stable readings and better long-range performance
+            self.device.inter_measurement = 125  # Increased from 100ms (was 75ms)
+            self.device.timing_budget = 125      # Increased from 100ms (was 75ms) - max range/accuracy
             # Add delay after configuration
             time.sleep(0.05)
             self.device.start_ranging()

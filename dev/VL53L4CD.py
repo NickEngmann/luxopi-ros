@@ -55,9 +55,10 @@ if args.sensor in ['right', 'both']:
     sensors['right'] = adafruit_vl53l4cd.VL53L4CD(i2c_bus_1, 0x29)
 
 # Set the same configuration for all active sensors
+# Using 200ms timing budget for maximum range and accuracy
 for sensor in sensors.values():
-    sensor.inter_measurement = 50
-    sensor.timing_budget = 50
+    sensor.inter_measurement = 150  # 150ms between measurements (was 50ms)
+    sensor.timing_budget = 150    # 150ms timing budget for best long-range performance (was 50ms)
 
 print(f"VL53L4CD Sensor Test - Running: {args.sensor}")
 print("-------------------------")

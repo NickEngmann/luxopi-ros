@@ -17,7 +17,7 @@ class CollisionNode(Node):
         self.proximity_threshold = self.get_parameter('proximity_threshold').value
         
         # Set the distance threshold for side collision detection (in cm)
-        self.declare_parameter('side_distance_threshold', 8.0)
+        self.declare_parameter('side_distance_threshold', 7.0)  # Default 7.0 cm (was 8.0)
         self.side_distance_threshold = self.get_parameter('side_distance_threshold').value
         
         # Define severity thresholds (in cm)
@@ -295,8 +295,8 @@ class CollisionNode(Node):
         
         # Left collision detection
         if self.current_left_distance < float('inf'):
-            # Ignore invalid readings below 1cm
-            if self.current_left_distance >= 1.0:
+            # Ignore invalid readings: 0.0 (sensor error) or < 1.0 cm (out of range)
+            if self.current_left_distance > 0.0 and self.current_left_distance >= 1.0:
                 severity = self.determine_severity(self.current_left_distance)
                 
                 # Publish severity
@@ -326,8 +326,8 @@ class CollisionNode(Node):
         
         # Right collision detection
         if self.current_right_distance < float('inf'):
-            # Ignore invalid readings below 1cm
-            if self.current_right_distance >= 1.0:
+            # Ignore invalid readings: 0.0 (sensor error) or < 1.0 cm (out of range)
+            if self.current_right_distance > 0.0 and self.current_right_distance >= 1.0:
                 severity = self.determine_severity(self.current_right_distance)
                 
                 # Publish severity

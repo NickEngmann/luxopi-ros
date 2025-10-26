@@ -510,17 +510,43 @@ class CollisionBehavior:
         # Skip when returning home
         if self._is_in_state(LuxoState.RETURNING_HOME):
             return
-        
+
         # Update activity time
         current_time = self.node.get_clock().now()
         self.last_activity_time = current_time
         self.node.get_logger().debug(f"Activity timestamp updated due to collision path adjustment")
-        
+
+        # Check if we're in voice following mode - be less aggressive with collision overrides
+        is_voice_following = self._is_in_state(LuxoState.VOICE_FOLLOWING)
+
         # Calculate adjustment factors
         front_factor = self.calculate_adjustment_factor(front_status)
         left_factor = self.calculate_adjustment_factor(left_status)
         right_factor = self.calculate_adjustment_factor(right_status)
-        
+
+        # During voice following, require higher thresholds and consecutive detections
+        if is_voice_following:
+            # Only override for true danger (not warnings) during voice following
+            min_consecutive_for_override = 3  # Require 3 consecutive detections
+
+            # Check consecutive counts
+            front_consecutive_ok = front_status['consecutive_count'] >= min_consecutive_for_override
+            left_consecutive_ok = left_status['consecutive_count'] >= min_consecutive_for_override
+            right_consecutive_ok = right_status['consecutive_count'] >= min_consecutive_for_override
+
+            # Only allow override if: (danger level AND consecutive) OR (very close to hard limit)
+            if front_factor < 1.0 and not front_consecutive_ok:
+                front_factor = 0.0
+                self.node.get_logger().debug(f"🎤 Voice following: Suppressing front collision (consecutive: {front_status['consecutive_count']}/{min_consecutive_for_override})")
+
+            if left_factor < 1.0 and not left_consecutive_ok:
+                left_factor = 0.0
+                self.node.get_logger().debug(f"🎤 Voice following: Suppressing left collision (consecutive: {left_status['consecutive_count']}/{min_consecutive_for_override})")
+
+            if right_factor < 1.0 and not right_consecutive_ok:
+                right_factor = 0.0
+                self.node.get_logger().debug(f"🎤 Voice following: Suppressing right collision (consecutive: {right_status['consecutive_count']}/{min_consecutive_for_override})")
+
         # Early return if no adjustments needed
         if front_factor < 0.1 and left_factor < 0.1 and right_factor < 0.1:
             return
@@ -550,8 +576,19 @@ class CollisionBehavior:
             self.adjustment_history['right']['last_time'] = current_time
             self.adjustment_history['right']['last_position'] = self.current_joints.copy()
             self.adjustment_history['right']['adjustment_made'] = True
-            
-            if right_status['distance'] <= self.hard_limit_distance:
+
+            # During voice following, skip immediate collision responses unless truly critical
+            # This prevents constant wraparound spam that blocks voice tracking
+            should_send_immediate = right_status['distance'] <= self.hard_limit_distance
+            if is_voice_following and should_send_immediate:
+                # During voice following, only send immediate response for very close collisions
+                if right_status['distance'] <= (self.hard_limit_distance * 0.7):  # 70% of hard limit
+                    temp_position = self.current_joints.copy()
+                    temp_position[0] += right_adjustment
+                    self.send_safe_joint_command(temp_position, "Immediate right collision response")
+                else:
+                    self.node.get_logger().debug(f"🎤 Voice following: Skipping immediate right response (distance: {right_status['distance']:.1f}cm)")
+            elif should_send_immediate and not is_voice_following:
                 temp_position = self.current_joints.copy()
                 temp_position[0] += right_adjustment
                 self.send_safe_joint_command(temp_position, "Immediate right collision response")
@@ -585,8 +622,19 @@ class CollisionBehavior:
             self.adjustment_history['left']['last_time'] = current_time
             self.adjustment_history['left']['last_position'] = self.current_joints.copy()
             self.adjustment_history['left']['adjustment_made'] = True
-            
-            if left_status['distance'] <= self.hard_limit_distance:
+
+            # During voice following, skip immediate collision responses unless truly critical
+            # This prevents constant wraparound spam that blocks voice tracking
+            should_send_immediate = left_status['distance'] <= self.hard_limit_distance
+            if is_voice_following and should_send_immediate:
+                # During voice following, only send immediate response for very close collisions
+                if left_status['distance'] <= (self.hard_limit_distance * 0.7):  # 70% of hard limit
+                    temp_position = self.current_joints.copy()
+                    temp_position[0] += left_adjustment
+                    self.send_safe_joint_command(temp_position, "Immediate left collision response")
+                else:
+                    self.node.get_logger().debug(f"🎤 Voice following: Skipping immediate left response (distance: {left_status['distance']:.1f}cm)")
+            elif should_send_immediate and not is_voice_following:
                 temp_position = self.current_joints.copy()
                 temp_position[0] += left_adjustment
                 self.send_safe_joint_command(temp_position, "Immediate left collision response")

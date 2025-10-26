@@ -1,0 +1,107 @@
+{
+  "name": "curious",
+  "description": "Animation created with recorder on 2025-10-23 20:22",
+  "category": "custom",
+  "created": "2025-10-23T20:22:45.700207",
+  "keyframes": [
+    {
+      "servos": {
+        "base": 0.065961174,
+        "shoulder": -1.526310884,
+        "elbow": 2.23961195,
+        "wrist": 0.898912742,
+        "hand": 1.859184715,
+        "roll": -1.5,
+        "spd": 0,
+        "acc": 10.0
+      },
+      "timing": 1.0,
+      "duration": 0.5
+    },
+    {
+      "servos": {
+        "base": 0.016873789,
+        "shoulder": -1.581534192,
+        "elbow": 1.828505099,
+        "wrist": 0.702563201,
+        "hand": 1.854582773,
+        "roll": -1.5,
+        "spd": 0,
+        "acc": 10.0
+      },
+      "timing": 1.0,
+      "duration": 0.36
+    },
+    {
+      "servos": {
+        "base": 0.065961174,
+        "shoulder": -1.532446807,
+        "elbow": 2.2196702,
+        "wrist": 0.91425255,
+        "hand": 1.859184715,
+        "roll": -1.5,
+        "spd": 0,
+        "acc": 10.0
+      },
+      "timing": 1.0,
+      "duration": 0.35
+    },
+    {
+      "servos": {
+        "base": 0.016873789,
+        "shoulder": -1.589204096,
+        "elbow": 1.843844907,
+        "wrist": 0.753184567,
+        "hand": 1.854582773,
+        "roll": -1.5,
+        "spd": 0,
+        "acc": 10.0
+      },
+      "timing": 1.0,
+      "duration": 0.31
+    },
+    {
+      "servos": {
+        "base": 0.016873789,
+        "shoulder": -0.190213618,
+        "elbow": 1.224116669,
+        "wrist": 0.415708794,
+        "hand": 1.857650734,
+        "roll": -1.5,
+        "spd": 0,
+        "acc": 10.0
+      },
+      "timing": 1.0,
+      "duration": 1.18
+    },
+    {
+      "servos": {
+        "base": 0.016873789,
+        "shoulder": -0.559902988,
+        "elbow": 0.529223372,
+        "wrist": 0.148796136,
+        "hand": 1.854582773,
+        "roll": -1.5,
+        "spd": 0,
+        "acc": 10.0
+      },
+      "timing": 1.0,
+      "duration": 0.67
+    },
+    {
+      "servos": {
+        "base": 0.062893212,
+        "shoulder": -1.61528177,
+        "elbow": 1.300815708,
+        "wrist": 1.464951652,
+        "hand": 1.854582773,
+        "roll": -1.5,
+        "spd": 0,
+        "acc": 10.0
+      },
+      "timing": 1.0,
+      "duration": 1.59
+    }
+  ],
+  "keyframe_count": 7
+}

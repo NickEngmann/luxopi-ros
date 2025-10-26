@@ -474,9 +474,9 @@ def generate_launch_description():
         output='screen',
         parameters=[
             {'proximity_threshold': 3},  # Changed to be more sensitive (3+ = detection, 10 = very close)
-            {'side_distance_threshold': 8.0},
-            {'danger_threshold': 5.0},
-            {'warning_threshold': 15.0},
+            {'side_distance_threshold': 7.0},  # VL53L4CD collision trigger (was 8.0 cm)
+            {'danger_threshold': 4.0},
+            {'warning_threshold': 9.0},
             {'enable_gestures': enable_gestures}
         ],
         condition=IfCondition(PythonExpression(["'", use_hardware, "' == 'true' and '", sense_collision, "' == 'true'"]))
