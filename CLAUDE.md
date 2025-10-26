@@ -52,6 +52,68 @@ ros2 launch luxo_behaviors luxo_system.launch.py use_hardware:=true
 ./stop_luxopi.sh
 ```
 
+## ⚠️ CRITICAL: Testing and Process Management for Claude Code
+
+**IMPORTANT**: When testing changes, Claude Code should NEVER run `./start_luxopi.sh` or launch the robot system directly. The launch script has auto-restart enabled, making it extremely difficult to stop cleanly.
+
+### Testing Protocol for Claude Code:
+
+1. **DO NOT run the robot during testing** - Let the user start and stop the system themselves
+2. **If analysis is required**:
+   - Ask the user to start the system: `./start_luxopi.sh`
+   - Monitor topics using: `ros2 topic echo <topic_name>`
+   - Check logs at: `~/luxopi-ros/logs/luxopi.log`
+   - Ask the user to stop: `./stop_luxopi.sh`
+
+3. **Emergency Stop (if Claude accidentally starts the system)**:
+   ```bash
+   # Kill all ROS2 processes immediately
+   pkill -9 -f "luxo_system.launch.py"
+   killall -9 ros2 python3 2>/dev/null
+   ps aux | grep -E "luxo|ros2" | grep -v grep | awk '{print $2}' | xargs -r kill -9 2>/dev/null
+   ```
+
+4. **Why this matters**:
+   - The launch system auto-restarts crashed nodes
+   - Background processes (`./start_luxopi.sh &`) keep respawning even after killing child processes
+   - Can require device restart to fully clean up
+
+### Acceptable Testing Methods:
+
+✅ **Code review and static analysis**
+✅ **Reading log files** (`tail -f ~/luxopi-ros/logs/luxopi.log`)
+✅ **Monitoring topics** (when user has started system)
+✅ **Unit tests** (when implemented)
+✅ **Dry runs** (building without running)
+
+❌ **Running `./start_luxopi.sh` in background**
+❌ **Running `ros2 launch` directly**
+❌ **Starting system for "quick tests"**
+
+### If Process Management is Required:
+
+When the user explicitly asks Claude to run the system for diagnostic purposes:
+- **ALWAYS use a 5-minute maximum timeout**: `timeout 300 ./start_luxopi.sh` or `timeout 300 ros2 launch ...`
+- Use `ros2 launch` **without background mode**
+- Save the PID immediately: `$!`
+- Clean up with SIGTERM first, then SIGKILL
+- Never use `./start_luxopi.sh &` without explicit tracking
+- The timeout ensures the process automatically terminates after 5 minutes, preventing runaway processes
+
+**Example:**
+```bash
+# Correct way to run for diagnostics (with timeout)
+timeout 300 ./start_luxopi.sh
+
+# Or with ros2 launch directly
+timeout 300 ros2 launch luxo_behaviors luxo_system.launch.py use_hardware:=true
+
+# NEVER do this (no timeout, runs indefinitely)
+./start_luxopi.sh &
+```
+
+```
+
 ## Launch Configuration Options
 
 The main launch file `luxo_system.launch.py` supports these parameters:
