@@ -25,9 +25,9 @@ class CollisionBehavior:
         if not self.node.has_parameter('enable_collision_avoidance'):
             self.node.declare_parameter('enable_collision_avoidance', True)
         if not self.node.has_parameter('soft_limit_distance'):
-            self.node.declare_parameter('soft_limit_distance', 15.0)
+            self.node.declare_parameter('soft_limit_distance', 9.0)  # Match warning threshold (was 15.0)
         if not self.node.has_parameter('hard_limit_distance'):
-            self.node.declare_parameter('hard_limit_distance', 10.0)
+            self.node.declare_parameter('hard_limit_distance', 4.0)  # Match danger threshold (was 10.0)
         if not self.node.has_parameter('max_deceleration'):
             self.node.declare_parameter('max_deceleration', 5.0)
         if not self.node.has_parameter('collision_recovery_timeout'):

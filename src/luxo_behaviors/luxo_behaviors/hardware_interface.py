@@ -26,9 +26,10 @@ class RoArmHardwareInterface(Node):
         self.declare_parameter('read_throttle', 0.1)
         
         # Collision avoidance parameters
+        # Updated to match collision_ros_node thresholds (warning=9.0, danger=4.0)
         self.declare_parameter('enable_collision_avoidance', True)
-        self.declare_parameter('soft_limit_distance', 12.0)  # cm
-        self.declare_parameter('hard_limit_distance', 8.0)   # cm
+        self.declare_parameter('soft_limit_distance', 9.0)  # cm (was 12.0, matches warning threshold)
+        self.declare_parameter('hard_limit_distance', 4.0)   # cm (was 8.0, matches danger threshold)
         self.declare_parameter('max_deceleration', 2.0)  # rad/s²
         self.declare_parameter('collision_recovery_timeout', 3.0)  # seconds
         self.declare_parameter('idle_timeout_min', 5.0)  # Minimum idle timeout
