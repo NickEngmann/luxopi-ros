@@ -8,8 +8,7 @@ from std_srvs.srv import Trigger
 import board
 from adafruit_apds9960.apds9960 import APDS9960
 import adafruit_vl53l4cd
-import adafruit_ads7830.ads7830 as ADC
-from adafruit_ads7830.analog_in import AnalogIn
+import adafruit_mpr121
 import threading
 import time
 import queue
@@ -21,7 +20,7 @@ class SensorType(Enum):
     """Enum for supported sensor types"""
     APDS9960 = auto()
     VL53L4CD = auto()
-    ADS7830 = auto()
+    MPR121 = auto()
     # Add more sensor types here as needed
 
 class I2CSensor:
@@ -118,11 +117,8 @@ class VL53L4CDSensor(I2CSensor):
             # Add delay before initialization to let bus settle
             time.sleep(0.1)
             self.device = adafruit_vl53l4cd.VL53L4CD(i2c_bus, self.address)
-            # Increase timing for more stable readings and better long-range performance
-            self.device.inter_measurement = 125  # Increased from 100ms (was 75ms)
-            self.device.timing_budget = 125      # Increased from 100ms (was 75ms) - max range/accuracy
             # Add delay after configuration
-            time.sleep(0.05)
+            time.sleep(0.15)
             self.device.start_ranging()
             self.active = True
             self.reading_history = []  # Clear history on init
@@ -176,104 +172,128 @@ class VL53L4CDSensor(I2CSensor):
         except Exception as e:
             raise Exception(f"Failed to read VL53L4CD: {e}")
 
-class ADS7830Sensor(I2CSensor):
-    """ADS7830 8-channel ADC for FSR pressure sensors"""
-    def __init__(self, name: str = "ads7830", address: int = 0x48):
-        super().__init__(name, address, SensorType.ADS7830)  # Address: 0x48 on I2C bus 1
-        self.channels = []
-        self.channel_mapping = {
-            0: "head_top",
-            1: "head_left",
-            2: "head_bottom",
-            3: "head_right"
+class MPR121Sensor(I2CSensor):
+    """MPR121 Capacitive Touch Sensor for petting and collision detection"""
+    def __init__(self, name: str = "mpr121", address: int = 0x5A):
+        super().__init__(name, address, SensorType.MPR121)  # Address: 0x5A on I2C bus 1
+
+        # Channel mapping
+        self.channel_names = {
+            0: "bottom",      # Bottom sensor (collision)
+            1: "front_right", # Front-right sensor (collision)
+            2: "front_left",  # Front-left sensor (collision)
+            3: "top_front",   # Top-front sensor (petting)
+            4: "antenna"      # Antenna sensor (petting)
         }
-        self.active_channels = list(self.channel_mapping.keys())  # Only use mapped channels
 
-        # ADC configuration for pressure detection
-        self.ADC_MIN = 48000  # ADC value at maximum pressure (fully pressed)
-        self.ADC_MAX = 65000  # ADC value at no pressure (not pressed)
+        # Calibrated per-channel thresholds from MPR121.py
+        # Format: (touch_threshold, release_threshold)
+        self.channel_thresholds = {
+            0: (7, 7),   # Bottom - weak signal
+            1: (7, 7),   # Front-Right - good signal
+            2: (7, 7),   # Front-Left - good signal
+            3: (7, 7),   # Top-Front - good signal
+            4: (7, 7),   # Antenna - strong signal (excellent)
+        }
 
-        # Pressure level percentages (0% = not pressed, 100% = maximum pressure)
-        self.PRESSURE_LEVELS = [
-            (5,   "Light Touch", "1"),   # 5% pressure
-            (15,  "Light Press", "2"),   # 15% pressure
-            (30,  "Medium Press", "3"),  # 30% pressure
-            (50,  "Hard Press", "4"),    # 50% pressure
-            (70,  "Very Hard", "5"),     # 70% pressure
-            (100, "Maximum", "!"),       # 100% pressure
-        ]
+        # Active channels (0-4)
+        self.active_channels = list(self.channel_names.keys())
 
-        # Calculate thresholds once at initialization
-        self.thresholds = self._calculate_thresholds()
+        # Release event detection
+        self.release_event_threshold = 20  # Trigger on delta < -20
+        self.release_cooldown = 2.0  # seconds
+        self.last_release_time = {ch: 0 for ch in self.active_channels}
 
-    def _calculate_thresholds(self):
-        """
-        Calculate ADC thresholds based on min/max values and pressure percentages
-        Returns a list of (threshold, name, symbol) tuples
-        """
-        range_size = self.ADC_MAX - self.ADC_MIN
-        thresholds = []
-
-        for percent, name, symbol in self.PRESSURE_LEVELS:
-            # Calculate threshold: higher ADC values = less pressure
-            # So we subtract the percentage from MAX
-            threshold = self.ADC_MAX - (range_size * percent / 100)
-            thresholds.append((int(threshold), name, symbol))
-
-        return thresholds
+        # Consecutive touch tracking (need 3 in a row to confirm)
+        self.consecutive_touches = {ch: 0 for ch in self.active_channels}
+        self.touch_confirmation_required = 3  # Need 2 consecutive touches
 
     def initialize(self, i2c_bus):
-        """Initialize ADS7830"""
+        """Initialize MPR121"""
         try:
-            self.device = ADC.ADS7830(i2c_bus, self.address)
-            
-            # Create analog input objects only for active channels
-            self.channels = {}
+            self.device = adafruit_mpr121.MPR121(i2c_bus, address=self.address)
+
+            # Configure thresholds for each channel
             for channel_num in self.active_channels:
-                self.channels[channel_num] = AnalogIn(self.device, channel_num)
-                
+                touch_threshold, release_threshold = self.channel_thresholds[channel_num]
+                self.device[channel_num].threshold = touch_threshold
+                self.device[channel_num].release_threshold = release_threshold
+
             self.active = True
             return True
         except Exception as e:
-            raise Exception(f"Failed to initialize ADS7830 at {hex(self.address)}: {e}")
-            
+            raise Exception(f"Failed to initialize MPR121 at {hex(self.address)}: {e}")
+
     def read(self):
-        """Read all FSR sensor values"""
-        if not self.active or not self.device or not self.channels:
+        """
+        Read all MPR121 capacitive touch values with release detection and consecutive touch filtering.
+
+        Touch Logic:
+        - Requires 2 consecutive positive detections to confirm touch (reduces false positives)
+        - Immediately reports touch=False when no longer detected
+
+        Release Event Logic:
+        - Triggers when delta < -release_event_threshold (detects hand removal)
+        - Only fires once per cooldown period to avoid spam during baseline recovery
+        - Fires immediately (no consecutive requirement)
+
+        Returns dict with channel_name -> {'touched': bool, 'released': bool, 'delta': int}
+        """
+        if not self.active or not self.device:
             return None
-            
+
         try:
+            current_time = time.time()
             sensor_data = {}
+
             for channel_num in self.active_channels:
                 try:
-                    value = self.channels[channel_num].value
-                    channel_name = self.channel_mapping[channel_num]
-                    sensor_data[channel_name] = value
+                    # Get touch state from MPR121 (hardware detection)
+                    is_touched_raw = self.device[channel_num].value
+
+                    # Get raw values for release detection
+                    baseline = self.device.baseline_data(channel_num)
+                    filtered = self.device[channel_num].raw_value
+                    delta = baseline - filtered
+
+                    channel_name = self.channel_names[channel_num]
+
+                    # === CONSECUTIVE TOUCH LOGIC ===
+                    # Increment/reset consecutive touch counter
+                    if is_touched_raw:
+                        self.consecutive_touches[channel_num] += 1
+                    else:
+                        self.consecutive_touches[channel_num] = 0
+
+                    # Confirm touch only after N consecutive detections
+                    confirmed_touch = self.consecutive_touches[channel_num] >= self.touch_confirmation_required
+
+                    # === RELEASE EVENT DETECTION ===
+                    # Check for large negative delta (hand removal)
+                    is_release_event = False
+                    if delta < -self.release_event_threshold:
+                        # Check cooldown
+                        time_since_last_release = current_time - self.last_release_time[channel_num]
+                        if time_since_last_release > self.release_cooldown:
+                            is_release_event = True
+                            self.last_release_time[channel_num] = current_time
+
+                    sensor_data[channel_name] = {
+                        'touched': confirmed_touch,
+                        'released': is_release_event,
+                        'delta': delta,
+                        'baseline': baseline,
+                        'filtered': filtered,
+                        'consecutive': self.consecutive_touches[channel_num]
+                    }
                 except Exception as channel_error:
                     # Channel-specific error - continue with other channels
                     continue
-                
+
             # Return data even if some channels failed, as long as we got something
             return sensor_data if sensor_data else None
         except Exception as e:
-            raise Exception(f"Failed to read ADS7830: {e}")
-            
-    def get_pressure_state(self, value):
-        """
-        Map ADC value to pressure state using calculated thresholds
-        Returns: (state_number, state_name, state_symbol)
-        """
-        # Check if not pressed (near maximum ADC value with 2% tolerance)
-        if value >= (self.ADC_MAX - (self.ADC_MAX - self.ADC_MIN) * 0.02):
-            return (0, "Not Pressed", "-")
-
-        # Check pressure levels from lightest to hardest
-        for i, (threshold, name, symbol) in enumerate(self.thresholds):
-            if value >= threshold:
-                return (i + 1, name, symbol)
-
-        # If below all thresholds, it's maximum pressure
-        return (len(self.thresholds), self.thresholds[-1][1], self.thresholds[-1][2])
+            raise Exception(f"Failed to read MPR121: {e}")
 
 class I2CDeviceManager(Node):
     """Centralized I2C device manager to prevent bus contention"""
@@ -319,19 +339,19 @@ class I2CDeviceManager(Node):
         self.declare_parameter('enable_apds9960', True)
         self.declare_parameter('enable_vl53_left', True)
         self.declare_parameter('enable_vl53_right', True)
-        self.declare_parameter('enable_ads7830', True)
-        self.declare_parameter('ads7830_address', 0x48)  # Default address changed to 0x48
+        self.declare_parameter('enable_mpr121', True)
+        self.declare_parameter('mpr121_address', 0x5A)  # Default MPR121 address
         self.declare_parameter('publish_rate', 10.0)  # Hz - increased for faster collision response
         self.declare_parameter('recovery_interval', 3.0)  # seconds
         self.declare_parameter('max_init_attempts', 10)
-        
+
         # Get parameters
         self.enable_gestures = self.get_parameter('enable_gestures').value
         self.enable_apds9960 = self.get_parameter('enable_apds9960').value
         self.enable_vl53_left = self.get_parameter('enable_vl53_left').value
         self.enable_vl53_right = self.get_parameter('enable_vl53_right').value
-        self.enable_ads7830 = self.get_parameter('enable_ads7830').value
-        self.ads7830_address = self.get_parameter('ads7830_address').value
+        self.enable_mpr121 = self.get_parameter('enable_mpr121').value
+        self.mpr121_address = self.get_parameter('mpr121_address').value
         publish_rate = self.get_parameter('publish_rate').value
         self.recovery_interval = self.get_parameter('recovery_interval').value
         self.max_init_attempts = self.get_parameter('max_init_attempts').value
@@ -341,13 +361,23 @@ class I2CDeviceManager(Node):
         self.gesture_pub = self.create_publisher(String, '/i2c/apds9960/gesture', 10)
         self.left_distance_pub = self.create_publisher(Float32, '/i2c/vl53_left/distance', 10)
         self.right_distance_pub = self.create_publisher(Float32, '/i2c/vl53_right/distance', 10)
-        
-        # Touch sensor publishers - Changed to UInt8 for pressure states (0-6)
-        self.touch_head_top_pub = self.create_publisher(UInt8, '/touch_sensors/head_top', 10)
-        self.touch_head_left_pub = self.create_publisher(UInt8, '/touch_sensors/head_left', 10)
-        self.touch_head_bottom_pub = self.create_publisher(UInt8, '/touch_sensors/head_bottom', 10)
-        self.touch_head_right_pub = self.create_publisher(UInt8, '/touch_sensors/head_right', 10)
-        
+
+        # MPR121 Capacitive Touch publishers - Boolean touch state
+        # Channels 0-2: Collision detection
+        self.mpr121_ch0_pub = self.create_publisher(Bool, '/touch_sensors/bottom', 10)
+        self.mpr121_ch1_pub = self.create_publisher(Bool, '/touch_sensors/front_right', 10)
+        self.mpr121_ch2_pub = self.create_publisher(Bool, '/touch_sensors/front_left', 10)
+        # Channels 3-4: Petting detection
+        self.mpr121_ch3_pub = self.create_publisher(Bool, '/touch_sensors/top_front', 10)
+        self.mpr121_ch4_pub = self.create_publisher(Bool, '/touch_sensors/antenna', 10)
+
+        # MPR121 Release Event publishers - Boolean release events (hand removed)
+        self.mpr121_ch0_release_pub = self.create_publisher(Bool, '/touch_sensors/bottom/released', 10)
+        self.mpr121_ch1_release_pub = self.create_publisher(Bool, '/touch_sensors/front_right/released', 10)
+        self.mpr121_ch2_release_pub = self.create_publisher(Bool, '/touch_sensors/front_left/released', 10)
+        self.mpr121_ch3_release_pub = self.create_publisher(Bool, '/touch_sensors/top_front/released', 10)
+        self.mpr121_ch4_release_pub = self.create_publisher(Bool, '/touch_sensors/antenna/released', 10)
+
         # Status publishers
         self.status_pub = self.create_publisher(String, '/i2c/status', 10)
         self.sensor_health_pub = self.create_publisher(String, '/i2c/sensor_health', 10)
@@ -408,9 +438,9 @@ class I2CDeviceManager(Node):
             vl53_right = VL53L4CDSensor('vl53_right', 0x29, bus_num=1)
             self.pending_sensors['vl53_right'] = vl53_right
 
-        if self.enable_ads7830:
-            ads7830 = ADS7830Sensor('ads7830', self.ads7830_address)
-            self.pending_sensors['ads7830'] = ads7830
+        if self.enable_mpr121:
+            mpr121 = MPR121Sensor('mpr121', self.mpr121_address)
+            self.pending_sensors['mpr121'] = mpr121
 
         # Try to initialize all pending sensors
         self._initialize_pending_sensors()
@@ -522,33 +552,76 @@ class I2CDeviceManager(Node):
                         msg = Float32()
                         msg.data = data['distance']
                         self.right_distance_pub.publish(msg)
-                        
-                    elif sensor_name == 'ads7830':
-                        # Publish touch sensor data as pressure states (0-6)
-                        if 'head_top' in data:
-                            state_num, _, _ = sensor.get_pressure_state(data['head_top'])
-                            msg = UInt8()
-                            msg.data = state_num
-                            self.touch_head_top_pub.publish(msg)
-                            
-                            
-                        if 'head_left' in data:
-                            state_num, _, _ = sensor.get_pressure_state(data['head_left'])
-                            msg = UInt8()
-                            msg.data = state_num
-                            self.touch_head_left_pub.publish(msg)
-                            
-                        if 'head_bottom' in data:
-                            state_num, _, _ = sensor.get_pressure_state(data['head_bottom'])
-                            msg = UInt8()
-                            msg.data = state_num
-                            self.touch_head_bottom_pub.publish(msg)
-                            
-                        if 'head_right' in data:
-                            state_num, _, _ = sensor.get_pressure_state(data['head_right'])
-                            msg = UInt8()
-                            msg.data = state_num
-                            self.touch_head_right_pub.publish(msg)
+
+                    elif sensor_name == 'mpr121':
+                        # Publish MPR121 capacitive touch sensor data
+                        # Touch state (requires 2 consecutive detections)
+                        # Release events (immediate, detects hand removal)
+
+                        # Channels 0-2: Collision detection
+                        if 'bottom' in data:
+                            # Touch state
+                            touch_msg = Bool()
+                            touch_msg.data = data['bottom']['touched']
+                            self.mpr121_ch0_pub.publish(touch_msg)
+                            # Log confirmed touch
+                            if data['bottom']['touched'] and data['bottom']['consecutive'] == 2:
+                                self.get_logger().info(f"🐾 MPR121 CH0 (bottom) TOUCH confirmed (consecutive: {data['bottom']['consecutive']})")
+                            # Release event
+                            if data['bottom']['released']:
+                                release_msg = Bool()
+                                release_msg.data = True
+                                self.mpr121_ch0_release_pub.publish(release_msg)
+                                self.get_logger().info("👋 MPR121 CH0 (bottom) RELEASE detected")
+
+                        if 'front_right' in data:
+                            touch_msg = Bool()
+                            touch_msg.data = data['front_right']['touched']
+                            self.mpr121_ch1_pub.publish(touch_msg)
+                            if data['front_right']['touched'] and data['front_right']['consecutive'] == 2:
+                                self.get_logger().info(f"🐾 MPR121 CH1 (front_right) TOUCH confirmed (consecutive: {data['front_right']['consecutive']})")
+                            if data['front_right']['released']:
+                                release_msg = Bool()
+                                release_msg.data = True
+                                self.mpr121_ch1_release_pub.publish(release_msg)
+                                self.get_logger().info("👋 MPR121 CH1 (front_right) RELEASE detected")
+
+                        if 'front_left' in data:
+                            touch_msg = Bool()
+                            touch_msg.data = data['front_left']['touched']
+                            self.mpr121_ch2_pub.publish(touch_msg)
+                            if data['front_left']['touched'] and data['front_left']['consecutive'] == 2:
+                                self.get_logger().info(f"🐾 MPR121 CH2 (front_left) TOUCH confirmed (consecutive: {data['front_left']['consecutive']})")
+                            if data['front_left']['released']:
+                                release_msg = Bool()
+                                release_msg.data = True
+                                self.mpr121_ch2_release_pub.publish(release_msg)
+                                self.get_logger().info("👋 MPR121 CH2 (front_left) RELEASE detected")
+
+                        # Channels 3-4: Petting detection
+                        if 'top_front' in data:
+                            touch_msg = Bool()
+                            touch_msg.data = data['top_front']['touched']
+                            self.mpr121_ch3_pub.publish(touch_msg)
+                            if data['top_front']['touched'] and data['top_front']['consecutive'] == 2:
+                                self.get_logger().info(f"🐾 MPR121 CH3 (top_front) TOUCH confirmed (consecutive: {data['top_front']['consecutive']})")
+                            if data['top_front']['released']:
+                                release_msg = Bool()
+                                release_msg.data = True
+                                self.mpr121_ch3_release_pub.publish(release_msg)
+                                self.get_logger().info("👋 MPR121 CH3 (top_front) RELEASE detected")
+
+                        if 'antenna' in data:
+                            touch_msg = Bool()
+                            touch_msg.data = data['antenna']['touched']
+                            self.mpr121_ch4_pub.publish(touch_msg)
+                            if data['antenna']['touched'] and data['antenna']['consecutive'] == 2:
+                                self.get_logger().info(f"🐾 MPR121 CH4 (antenna) TOUCH confirmed (consecutive: {data['antenna']['consecutive']})")
+                            if data['antenna']['released']:
+                                release_msg = Bool()
+                                release_msg.data = True
+                                self.mpr121_ch4_release_pub.publish(release_msg)
+                                self.get_logger().info("👋 MPR121 CH4 (antenna) RELEASE detected")
                         
             except Exception as e:
                 sensor.error_count += 1

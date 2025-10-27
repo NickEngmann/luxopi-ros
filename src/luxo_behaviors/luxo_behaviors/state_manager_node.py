@@ -95,7 +95,11 @@ class StateManagerNode(Node):
         # NeoPixel update rate limiting
         self._neopixel_last_update_check = 0
         self._neopixel_update_interval = 0.25  # Check at 4Hz instead of 10Hz
-        
+
+        # Log rate limiting - prevent spam for repeated errors
+        self._log_rate_limit = {}  # Dict[str, float] - maps log message to last log time
+        self._log_rate_limit_interval = 1.0  # seconds - max once per second for same message
+
         self._initialize_neopixel()
         
         # State color mappings - Updated to use different white modes strategically
@@ -314,7 +318,7 @@ class StateManagerNode(Node):
                 self.get_logger().info(f"State transition granted: {request.requested_state} (requested by {request.requesting_node})")
             else:
                 response.message = f"Transition to {request.requested_state} denied - insufficient priority or invalid transition"
-                self.get_logger().info(f"State transition denied: {request.requested_state} (requested by {request.requesting_node})")
+                self._rate_limited_log('info', f"State transition denied: {request.requested_state} (requested by {request.requesting_node})")
                 
         except Exception as e:
             self.get_logger().error(f"Error handling transition request: {e}")
@@ -1057,7 +1061,8 @@ class StateManagerNode(Node):
         self.add_transition(LuxoState.COLLISION_AVOIDING, LuxoState.ESCAPE_MODE)
         self.add_transition(LuxoState.COLLISION_AVOIDING, LuxoState.RETURNING_HOME)
         self.add_transition(LuxoState.COLLISION_AVOIDING, LuxoState.PETTING)
-        
+        self.add_transition(LuxoState.COLLISION_AVOIDING, LuxoState.ANIMATING)  # Allow resuming animations after collision cleared
+
         # From ESCAPE_MODE
         self.add_transition(LuxoState.ESCAPE_MODE, LuxoState.IDLE)
         self.add_transition(LuxoState.ESCAPE_MODE, LuxoState.RETURNING_HOME)
@@ -1209,11 +1214,30 @@ class StateManagerNode(Node):
                 self._enter_state(new_state)
                 return True
             else:
-                self.get_logger().warn(
+                self._rate_limited_log(
+                    'warn',
                     f"Invalid state transition: {self._current_state.name} -> {new_state.name}"
                 )
                 return False
-    
+
+    def _rate_limited_log(self, level: str, message: str):
+        """Log a message with rate limiting to prevent spam (max once per second per unique message)."""
+        current_time = time.time()
+        last_log_time = self._log_rate_limit.get(message, 0)
+
+        if current_time - last_log_time >= self._log_rate_limit_interval:
+            # Log the message
+            logger = self.get_logger()
+            if level == 'info':
+                logger.info(message)
+            elif level == 'warn':
+                logger.warn(message)
+            elif level == 'error':
+                logger.error(message)
+
+            # Update last log time
+            self._log_rate_limit[message] = current_time
+
     def _exit_state(self, state: LuxoState):
         """Handle exiting a state."""
         for callback in self._on_exit_callbacks[state]:

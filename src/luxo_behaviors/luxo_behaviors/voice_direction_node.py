@@ -191,7 +191,18 @@ class VoiceDirectionNode(Node):
             self.pixel_ring_control_callback,
             10
         )
-        
+
+        # Muted status subscription (for red pixel ring)
+        self.muted_status_sub = self.create_subscription(
+            Bool,
+            '/voice/muted_status',
+            self.muted_status_callback,
+            10
+        )
+
+        # Muted state tracking
+        self.is_muted = False
+
         # Thread control
         self.running = False
         self.audio_thread = None
@@ -262,6 +273,27 @@ class VoiceDirectionNode(Node):
                 self.pa.terminate()
                 self.pa = None
             self.loopback_enabled = False
+
+    def muted_status_callback(self, msg):
+        """Track muted status for red pixel ring indication"""
+        try:
+            self.is_muted = msg.data
+            mode_str = "MUTED" if msg.data else "UNMUTED"
+            self.get_logger().info(f"🔇 Voice muted status: {mode_str}")
+
+            # If muted, show solid red pixel ring
+            if msg.data and pixel_ring:
+                pixel_ring.set_color(r=255, g=0, b=0)  # Solid red
+                self.leds_on = True
+                self.get_logger().info("🔴 Pixel ring → RED (muted)")
+            elif not msg.data and pixel_ring and not self.sleep_mode_active:
+                # Unmuted - turn off (will be controlled by voice direction again)
+                pixel_ring.off()
+                self.leds_on = False
+                self.get_logger().info("💡 Pixel ring → OFF (unmuted, waiting for voice)")
+
+        except Exception as e:
+            self.get_logger().error(f"Error in muted status callback: {e}")
 
     def pixel_ring_control_callback(self, msg):
         """Control pixel ring sleep state"""
@@ -551,9 +583,9 @@ class VoiceDirectionNode(Node):
 
                         # Turn off LEDs if no speech for configured timeout - exactly from vad_doa.py
                         if current_time - self.last_speech_time > self.config['vad']['timeout'] and self.leds_on:
-                            # Only turn off if not in sleep mode (sleep mode manages its own state)
+                            # Only turn off if not in sleep mode OR muted (both manage their own state)
                             with self.sleep_state_lock:
-                                if not self.sleep_mode_active:
+                                if not self.sleep_mode_active and not self.is_muted:
                                     pixel_ring.off()
                                     self.leds_on = False
                                     self.get_logger().info(f'🔴 Pixel ring OFF (no speech for {self.config["vad"]["timeout"]}s)')
@@ -589,11 +621,15 @@ class VoiceDirectionNode(Node):
                                     if direction is not None:
                                         # ALWAYS update pixel ring for real-time visual feedback
                                         # Even if direction is unstable, users should see where sound is coming from
+                                        # UNLESS muted (keep red indication)
                                         with self.sleep_state_lock:
-                                            if not self.sleep_mode_active:
+                                            if not self.sleep_mode_active and not self.is_muted:
                                                 pixel_ring.set_direction(int(direction))
                                                 self.leds_on = True
                                                 self.get_logger().info(f'💡 Pixel ring → {int(direction)}°')
+                                            elif self.is_muted:
+                                                # Keep pixel ring red when muted
+                                                pass
                                             else:
                                                 self.get_logger().debug(f'💤 Skipping pixel ring update (sleep mode)')
 

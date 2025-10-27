@@ -352,12 +352,24 @@ class VoiceAssistantNode(Node, CommandBehavior, StateVocalizationBehavior):
             callback_group=self.callback_group
         )
 
+        # MPR121 Antenna touch sensor subscriber (for mute toggle)
+        self.antenna_touch_sub = self.create_subscription(
+            Bool,
+            '/touch_sensors/antenna',
+            self.antenna_touch_callback,
+            10,
+            callback_group=self.callback_group
+        )
+
         # Sleep mode state
         self.is_sleep_mode = False
         self.saved_amplitude = None
 
         # Stay mode state
         self.is_stay_mode = False
+
+        # Antenna mute toggle state
+        self.last_antenna_touch_time = 0.0
 
         self.get_logger().info("✅ ROS publishers and subscribers created")
         self.get_logger().info(f"🔧 Hailo mode: {use_hailo}")
@@ -583,6 +595,46 @@ class VoiceAssistantNode(Node, CommandBehavior, StateVocalizationBehavior):
             self.get_logger().info(f"🧊 Stay mode {mode_str} - TTS {'blocked' if msg.data else 'unblocked'}")
         except Exception as e:
             self.get_logger().error(f"Error in stay mode callback: {e}")
+
+    def antenna_touch_callback(self, msg):
+        """
+        Handle antenna (CH4) touch sensor for mute/unmute toggle.
+
+        Logic:
+        - Touch detected (requires 2 consecutive from i2c_device_manager)
+        - Toggle mute state
+        - Provide red pixel ring feedback when muted
+        - Debounce touches with 1 second cooldown
+        """
+        try:
+            import time
+            current_time = time.time()
+
+            # Only process touch=True events (touch ending is handled by releasing state)
+            if not msg.data:
+                return
+
+            # Debounce - ignore touches within 1 second of last touch
+            if current_time - self.last_antenna_touch_time < 1.0:
+                self.get_logger().debug("Antenna touch debounced (< 1s since last touch)")
+                return
+
+            self.last_antenna_touch_time = current_time
+
+            # Toggle mute state
+            if self.command_behavior.is_muted:
+                # UNMUTE
+                self.get_logger().info("🔊 Antenna touched - UNMUTING")
+                self.command_behavior.execute_voice_assistant_command('unmute')
+                self.speak("I can talk now!")
+            else:
+                # MUTE
+                self.get_logger().info("🔇 Antenna touched - MUTING")
+                self.speak("Okay, I'll be quiet.")
+                self.command_behavior.execute_voice_assistant_command('mute')
+
+        except Exception as e:
+            self.get_logger().error(f"Error in antenna touch callback: {e}")
 
     def calculate_adjusted_speed(self, text, base_speed):
         """Calculate adjusted espeak-ng speed based on word count.

@@ -109,6 +109,24 @@ def generate_launch_description():
         description='Enable voice direction detection and following'
     )
 
+    declare_enable_mpr121 = DeclareLaunchArgument(
+        'enable_mpr121',
+        default_value='true',
+        description='Enable MPR121 capacitive touch sensor for collision and petting detection (default: true)'
+    )
+
+    declare_enable_vl53_left = DeclareLaunchArgument(
+        'enable_vl53_left',
+        default_value='true',
+        description='Enable VL53L4CD left distance sensor for collision detection (default: true)'
+    )
+
+    declare_enable_vl53_right = DeclareLaunchArgument(
+        'enable_vl53_right',
+        default_value='true',
+        description='Enable VL53L4CD right distance sensor for collision detection (default: true)'
+    )
+
     # Add a launch argument for camera rotation
     declare_camera_rotation = DeclareLaunchArgument(
         'camera_rotation',
@@ -409,9 +427,10 @@ def generate_launch_description():
         parameters=[
             {'enable_gestures': enable_gestures},
             {'enable_apds9960': True},
-            {'enable_vl53_left': True},
-            {'enable_vl53_right': True},
-            {'publish_rate': 10.0}  
+            {'enable_vl53_left': LaunchConfiguration('enable_vl53_left')},
+            {'enable_vl53_right': LaunchConfiguration('enable_vl53_right')},
+            {'enable_mpr121': LaunchConfiguration('enable_mpr121')},
+            {'publish_rate': 10.0}
         ],
         condition=IfCondition(PythonExpression(["'", use_hardware, "' == 'true' and '", sense_collision, "' == 'true'"]))
     )
@@ -592,6 +611,7 @@ def generate_launch_description():
         use_joint_state_publisher_arg,
         declare_test_mode,
         declare_enable_voice,
+        declare_enable_mpr121,
         declare_enable_depth_collision,
         declare_safety_distance,
         declare_sense_collision,
@@ -611,6 +631,8 @@ def generate_launch_description():
         declare_llm_assistant_verbose,
         declare_llm_assistant_voice_preset,
         declare_llm_assistant_whisper_step_ms,
+        declare_enable_vl53_left,
+        declare_enable_vl53_right,
 
         # Launch info and banners
         startup_banner,

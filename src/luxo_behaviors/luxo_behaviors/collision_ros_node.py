@@ -4,6 +4,7 @@ import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String, Bool, Int16, Float32, UInt8
 from luxo_interfaces.srv import ConfigureI2CSensor
+from collections import deque
 
 class CollisionNode(Node):
     def __init__(self):
@@ -34,6 +35,12 @@ class CollisionNode(Node):
         self.prev_left_distance = float('inf')
         self.prev_right_distance = float('inf')
         self.prev_proximity = 0
+
+        # VL53L4CD stability tracking - require 5 stable readings
+        self.left_distance_history = deque(maxlen=5)
+        self.right_distance_history = deque(maxlen=5)
+        self.vl53_stability_threshold = 0.4  # cm - readings must be within 0.4cm of each other
+        self.vl53_min_valid_distance = 1.6   # cm - minimum distance to consider valid
         
         # Add petting state tracking to prevent spam
         self.petting_currently_active = False
@@ -51,30 +58,32 @@ class CollisionNode(Node):
         self.current_left_distance = float('inf')
         self.current_right_distance = float('inf')
         
-        # FSR touch sensor state tracking
+        # MPR121 capacitive touch sensor state tracking
         self.touch_sensors = {
-            'head_top': 0,
-            'head_left': 0,
-            'head_bottom': 0,
-            'head_right': 0
+            'bottom': False,       # Channel 0 - collision
+            'front_right': False,  # Channel 1 - collision
+            'front_left': False,   # Channel 2 - collision
+            'top_front': False,    # Channel 3 - petting
+            # Note: antenna (Channel 4) removed - now used for mute toggle
         }
         self.last_touch_sensor_time = {
-            'head_top': self.get_clock().now(),
-            'head_left': self.get_clock().now(),
-            'head_bottom': self.get_clock().now(),
-            'head_right': self.get_clock().now()
+            'bottom': self.get_clock().now(),
+            'front_right': self.get_clock().now(),
+            'front_left': self.get_clock().now(),
+            'top_front': self.get_clock().now(),
+            # Note: antenna removed - now used for mute toggle
         }
-        
-        # FSR collision state tracking
-        self.fsr_collision_active = {
-            'front': False,
-            'left': False,
-            'right': False
+
+        # MPR121 collision state tracking (channels 0-2)
+        self.mpr121_collision_active = {
+            'bottom': False,
+            'front_right': False,
+            'front_left': False
         }
-        self.fsr_collision_start_time = {
-            'front': None,
-            'left': None,
-            'right': None
+        self.mpr121_collision_start_time = {
+            'bottom': None,
+            'front_right': None,
+            'front_left': None
         }
         
         # Subscribers to I2C device manager topics
@@ -99,35 +108,48 @@ class CollisionNode(Node):
             10
         )
         
-        # FSR touch sensor subscribers
-        self.touch_head_top_sub = self.create_subscription(
-            UInt8,
-            '/touch_sensors/head_top',
-            self.touch_head_top_callback,
-            10
-        )
-        
-        self.touch_head_left_sub = self.create_subscription(
-            UInt8,
-            '/touch_sensors/head_left',
-            self.touch_head_top_callback,
+        # MPR121 Capacitive touch sensor subscribers
+        # Channels 0-2: Collision detection
+        self.mpr121_ch0_sub = self.create_subscription(
+            Bool,
+            '/touch_sensors/bottom',
+            self.mpr121_bottom_callback,
             10
         )
 
-        self.touch_head_bottom_sub = self.create_subscription(
-            UInt8,
-            '/touch_sensors/head_bottom',
-            self.touch_head_top_callback,
+        self.mpr121_ch1_sub = self.create_subscription(
+            Bool,
+            '/touch_sensors/front_right',
+            self.mpr121_front_right_callback,
             10
         )
 
-        self.touch_head_right_sub = self.create_subscription(
-            UInt8,
-            '/touch_sensors/head_right',
-            self.touch_head_top_callback,
+        self.mpr121_ch2_sub = self.create_subscription(
+            Bool,
+            '/touch_sensors/front_left',
+            self.mpr121_front_left_callback,
             10
         )
-        
+
+        # Channels 3-4: Petting detection
+        self.mpr121_ch3_sub = self.create_subscription(
+            Bool,
+            '/touch_sensors/top_front',
+            self.mpr121_top_front_callback,
+            10
+        )
+
+        # Note: Channel 4 (antenna) removed from petting - now used for mute toggle in voice_assistant_node
+
+        # MPR121 Release event subscribers (for petting detection)
+        # Release events fire immediately (no consecutive requirement)
+        self.mpr121_ch3_release_sub = self.create_subscription(
+            Bool,
+            '/touch_sensors/top_front/released',
+            self.mpr121_top_front_release_callback,
+            10
+        )
+
         # Optional gesture subscriber
         if self.enable_gestures:
             self.gesture_sub = self.create_subscription(
@@ -171,20 +193,20 @@ class CollisionNode(Node):
         
         # Timer to check for data timeouts and publish safe states
         self.timeout_timer = self.create_timer(1.0, self.check_data_timeout)
-        
+
         # Timer for periodic collision evaluation
         self.collision_timer = self.create_timer(0.1, self.evaluate_collisions)
-        
-        # Timer to check FSR collision durations
-        self.fsr_timer = self.create_timer(0.1, self.check_fsr_collisions)
-        
+
+        # Timer to check MPR121 collision durations
+        self.mpr121_timer = self.create_timer(0.1, self.check_mpr121_collisions)
+
         self.get_logger().info('Collision node initialized (using I2C Device Manager)')
         self.get_logger().info(f'Proximity threshold: {self.proximity_threshold}')
         self.get_logger().info(f'Side distance threshold: {self.side_distance_threshold} cm')
         self.get_logger().info(f'Danger threshold: {self.danger_threshold} cm')
         self.get_logger().info(f'Warning threshold: {self.warning_threshold} cm')
-        
-        self.get_logger().info('FSR touch sensor collision detection enabled')
+
+        self.get_logger().info('MPR121 capacitive touch sensor collision/petting detection enabled')
         
         # Add startup delay timer to prevent initial false positives
         self.startup_delay = 5.0  # seconds
@@ -255,7 +277,37 @@ class CollisionNode(Node):
             return "warning"
         else:
             return "safe"
-    
+
+    def is_stable_reading(self, history):
+        """
+        Check if VL53L4CD readings are stable.
+        Requires:
+        - 5 consecutive readings
+        - All within 0.5cm of each other (even if decreasing)
+        - Minimum value >= 1.6cm
+
+        Returns: (is_stable, min_value)
+        """
+        # Need exactly 5 readings
+        if len(history) < 5:
+            return False, None
+
+        readings = list(history)
+
+        # Check minimum value threshold
+        min_value = min(readings)
+        if min_value < self.vl53_min_valid_distance:
+            return False, None
+
+        # Check stability - all readings within 0.5cm of each other
+        max_value = max(readings)
+        range_spread = max_value - min_value
+
+        if range_spread <= self.vl53_stability_threshold:
+            return True, min_value
+
+        return False, None
+
     def evaluate_collisions(self):
         """Evaluate collision states based on current sensor data"""
         # Front/head collision detection
@@ -293,281 +345,281 @@ class CollisionNode(Node):
         
         self.prev_proximity = self.current_proximity
         
-        # Left collision detection
+        # Left collision detection with stability check
         if self.current_left_distance < float('inf'):
-            # Ignore invalid readings: 0.0 (sensor error) or < 1.0 cm (out of range)
-            if self.current_left_distance > 0.0 and self.current_left_distance >= 1.0:
-                severity = self.determine_severity(self.current_left_distance)
-                
-                # Publish severity
-                severity_msg = String()
-                severity_msg.data = severity
-                self.left_severity_pub.publish(severity_msg)
-                
-                # Check for collision (two consecutive readings below threshold)
-                if (self.current_left_distance < self.side_distance_threshold and 
-                    self.prev_left_distance < self.side_distance_threshold):
-                    
-                    collision_msg = Bool()
-                    collision_msg.data = True
-                    self.left_collision_pub.publish(collision_msg)
-                    self.get_logger().debug(f"Left collision warning! Distance: {self.current_left_distance:.1f} cm, Severity: {severity}")
-                    
-                    # Publish detailed collision information
-                    details_msg = String()
-                    details_msg.data = f"left:{self.current_left_distance:.1f}:{severity}"
-                    self.collision_details_pub.publish(details_msg)
+            # Add reading to history (only if >= minimum valid distance)
+            if self.current_left_distance >= self.vl53_min_valid_distance:
+                self.left_distance_history.append(self.current_left_distance)
+
+                # Check for stable readings
+                is_stable, stable_distance = self.is_stable_reading(self.left_distance_history)
+
+                if is_stable:
+                    severity = self.determine_severity(stable_distance)
+
+                    # Publish severity
+                    severity_msg = String()
+                    severity_msg.data = severity
+                    self.left_severity_pub.publish(severity_msg)
+
+                    # Check for collision if stable readings are below threshold
+                    if stable_distance < self.side_distance_threshold:
+                        collision_msg = Bool()
+                        collision_msg.data = True
+                        self.left_collision_pub.publish(collision_msg)
+                        self.get_logger().debug(f"Left collision warning! Stable distance: {stable_distance:.1f} cm (5 readings), Severity: {severity}")
+
+                        # Publish detailed collision information
+                        details_msg = String()
+                        details_msg.data = f"left:{stable_distance:.1f}:{severity}"
+                        self.collision_details_pub.publish(details_msg)
+                    else:
+                        collision_msg = Bool()
+                        collision_msg.data = False
+                        self.left_collision_pub.publish(collision_msg)
                 else:
+                    # Not stable or too close - publish safe
                     collision_msg = Bool()
                     collision_msg.data = False
                     self.left_collision_pub.publish(collision_msg)
-                
+
+                    severity_msg = String()
+                    severity_msg.data = "safe"
+                    self.left_severity_pub.publish(severity_msg)
+
                 self.prev_left_distance = self.current_left_distance
         
-        # Right collision detection
+        # Right collision detection with stability check
         if self.current_right_distance < float('inf'):
-            # Ignore invalid readings: 0.0 (sensor error) or < 1.0 cm (out of range)
-            if self.current_right_distance > 0.0 and self.current_right_distance >= 1.0:
-                severity = self.determine_severity(self.current_right_distance)
-                
-                # Publish severity
-                severity_msg = String()
-                severity_msg.data = severity
-                self.right_severity_pub.publish(severity_msg)
-                
-                # Check for collision (two consecutive readings below threshold)
-                if (self.current_right_distance < self.side_distance_threshold and 
-                    self.prev_right_distance < self.side_distance_threshold):
-                    
-                    collision_msg = Bool()
-                    collision_msg.data = True
-                    self.right_collision_pub.publish(collision_msg)
-                    self.get_logger().debug(f"Right collision warning! Distance: {self.current_right_distance:.1f} cm, Severity: {severity}")
-                    
-                    # Publish detailed collision information
-                    details_msg = String()
-                    details_msg.data = f"right:{self.current_right_distance:.1f}:{severity}"
-                    self.collision_details_pub.publish(details_msg)
+            # Add reading to history (only if >= minimum valid distance)
+            if self.current_right_distance >= self.vl53_min_valid_distance:
+                self.right_distance_history.append(self.current_right_distance)
+
+                # Check for stable readings
+                is_stable, stable_distance = self.is_stable_reading(self.right_distance_history)
+
+                if is_stable:
+                    severity = self.determine_severity(stable_distance)
+
+                    # Publish severity
+                    severity_msg = String()
+                    severity_msg.data = severity
+                    self.right_severity_pub.publish(severity_msg)
+
+                    # Check for collision if stable readings are below threshold
+                    if stable_distance < self.side_distance_threshold:
+                        collision_msg = Bool()
+                        collision_msg.data = True
+                        self.right_collision_pub.publish(collision_msg)
+                        self.get_logger().debug(f"Right collision warning! Stable distance: {stable_distance:.1f} cm (5 readings), Severity: {severity}")
+
+                        # Publish detailed collision information
+                        details_msg = String()
+                        details_msg.data = f"right:{stable_distance:.1f}:{severity}"
+                        self.collision_details_pub.publish(details_msg)
+                    else:
+                        collision_msg = Bool()
+                        collision_msg.data = False
+                        self.right_collision_pub.publish(collision_msg)
                 else:
+                    # Not stable or too close - publish safe
                     collision_msg = Bool()
                     collision_msg.data = False
                     self.right_collision_pub.publish(collision_msg)
-                
+
+                    severity_msg = String()
+                    severity_msg.data = "safe"
+                    self.right_severity_pub.publish(severity_msg)
+
                 self.prev_right_distance = self.current_right_distance
     
-    def touch_head_top_callback(self, msg):
-        """Handle head top touch sensor data - triggers petting behavior"""
-        self.touch_sensors['head_top'] = msg.data
-        self.last_touch_sensor_time['head_top'] = self.get_clock().now()
-        
+    # MPR121 Collision callbacks (Channels 0-2)
+    def mpr121_bottom_callback(self, msg):
+        """Handle MPR121 channel 0 (bottom) - collision detection"""
+        self.touch_sensors['bottom'] = msg.data
+        self.last_touch_sensor_time['bottom'] = self.get_clock().now()
+        self._process_mpr121_collision('bottom', msg.data)
+
+    def mpr121_front_right_callback(self, msg):
+        """Handle MPR121 channel 1 (front_right) - collision detection"""
+        self.touch_sensors['front_right'] = msg.data
+        self.last_touch_sensor_time['front_right'] = self.get_clock().now()
+        self._process_mpr121_collision('front_right', msg.data)
+
+    def mpr121_front_left_callback(self, msg):
+        """Handle MPR121 channel 2 (front_left) - collision detection"""
+        self.touch_sensors['front_left'] = msg.data
+        self.last_touch_sensor_time['front_left'] = self.get_clock().now()
+        self._process_mpr121_collision('front_left', msg.data)
+
+    # MPR121 Petting callbacks (Channels 3-4)
+    def mpr121_top_front_callback(self, msg):
+        """Handle MPR121 channel 3 (top_front) - petting detection"""
+        self.touch_sensors['top_front'] = msg.data
+        self.last_touch_sensor_time['top_front'] = self.get_clock().now()
+        self._process_mpr121_petting('top_front', msg.data)
+
+    # Note: mpr121_antenna_callback removed - antenna now used for mute toggle in voice_assistant_node
+
+    # MPR121 Release event callbacks (immediate petting triggers)
+    def mpr121_top_front_release_callback(self, msg):
+        """Handle MPR121 channel 3 (top_front) release event - immediate petting trigger"""
+        if msg.data:  # Release event occurred
+            self.get_logger().info("👋 Petting RELEASE event on top_front - triggering immediate petting")
+            self._trigger_immediate_petting('top_front')
+
+    # Note: mpr121_antenna_release_callback removed - antenna now used for mute toggle
+
+    def _trigger_immediate_petting(self, touch_location):
+        """
+        Trigger petting event immediately from a release event.
+        Release events bypass the 2-consecutive-touch requirement.
+        """
+        current_time = self.get_clock().now()
+
+        # Always trigger on release events (no rate limiting for releases)
+        self.petting_currently_active = True
+        self.last_petting_publish_time = current_time
+
+        # Publish petting trigger
+        petting_msg = String()
+        petting_msg.data = f"petting_started:1"
+        self.petting_event_pub.publish(petting_msg)
+        self.get_logger().info(f"Petting event triggered by RELEASE on {touch_location}")
+
+    def _process_mpr121_collision(self, touch_location, is_touched):
+        """Process MPR121 touch sensor data for collision detection (channels 0-2)"""
+        current_time = self.get_clock().now()
+
+        # MPR121 collision active flag is already using the channel names
+        if is_touched:
+            # New collision detected
+            if not self.mpr121_collision_active[touch_location]:
+                self.mpr121_collision_active[touch_location] = True
+                self.mpr121_collision_start_time[touch_location] = current_time
+
+                self.get_logger().info(f"MPR121 touch collision detected: {touch_location}")
+
+                # Treat all MPR121 touches as collisions with danger severity
+                severity = 'danger'
+
+                # Update collision status
+                collision_msg = Bool()
+                collision_msg.data = True
+
+                # Publish collision warnings (map to old API for compatibility)
+                if touch_location == 'front_left' or touch_location == 'front_right':
+                    # Front collisions go to head collision
+                    self.collision_pub.publish(collision_msg)
+                elif touch_location == 'bottom':
+                    # Bottom also treated as front collision for now
+                    self.collision_pub.publish(collision_msg)
+
+                # Publish severity
+                severity_msg = String()
+                severity_msg.data = severity
+
+                if touch_location == 'front_left' or touch_location == 'front_right' or touch_location == 'bottom':
+                    self.front_severity_pub.publish(severity_msg)
+
+                # Publish detailed collision information
+                simulated_distance = 1.0  # cm - represents direct contact
+                details_msg = String()
+                details_msg.data = f"front:{simulated_distance}:{severity}"
+                self.collision_details_pub.publish(details_msg)
+
+        else:
+            # Touch released - clear collision
+            if self.mpr121_collision_active[touch_location]:
+                duration = (current_time - self.mpr121_collision_start_time[touch_location]).nanoseconds / 1e9
+                self.get_logger().info(f"MPR121 collision cleared for {touch_location} after {duration:.2f}s")
+
+                self.mpr121_collision_active[touch_location] = False
+                self.mpr121_collision_start_time[touch_location] = None
+
+                # Clear collision status
+                collision_msg = Bool()
+                collision_msg.data = False
+                self.collision_pub.publish(collision_msg)
+
+                # Clear severity
+                severity_msg = String()
+                severity_msg.data = "safe"
+                self.front_severity_pub.publish(severity_msg)
+
+    def _process_mpr121_petting(self, touch_location, is_touched):
+        """Process MPR121 touch sensor data for petting detection (channel 3 only - antenna moved to mute toggle)"""
         # Don't process petting during startup period
         if not self.startup_complete:
-            self.get_logger().debug(f"Ignoring head touch during startup: {msg.data}")
+            self.get_logger().debug(f"Ignoring {touch_location} touch during startup")
             return
-        
+
         current_time = self.get_clock().now()
-        
-        # Check for petting trigger (any pressure > 1)
-        if msg.data > 1:
+
+        if is_touched:
             # Only publish if we weren't already petting OR enough time has passed for rate limiting
             time_since_last_publish = (current_time - self.last_petting_publish_time).nanoseconds / 1e9
-            
+
             if not self.petting_currently_active:
                 # New petting session started
-                self.get_logger().info(f"Petting started on head top (pressure: {msg.data})")
+                self.get_logger().info(f"Petting started on {touch_location}")
                 self.petting_currently_active = True
                 self.last_petting_publish_time = current_time
-                
+
                 # Publish petting trigger
                 petting_msg = String()
-                petting_msg.data = f"petting_started:{msg.data}"
+                petting_msg.data = f"petting_started:1"
                 self.petting_event_pub.publish(petting_msg)
-                
+
             elif time_since_last_publish > self.petting_publish_rate:
                 # Continue petting session, but rate limited
-                self.get_logger().debug(f"Petting continues (pressure: {msg.data})")
+                self.get_logger().debug(f"Petting continues on {touch_location}")
                 self.last_petting_publish_time = current_time
-                
-                # Publish continued petting (for intensity updates)
+
+                # Publish continued petting
                 petting_msg = String()
-                petting_msg.data = f"petting_started:{msg.data}"
+                petting_msg.data = f"petting_started:1"
                 self.petting_event_pub.publish(petting_msg)
         else:
             # Petting stopped
             if self.petting_currently_active:
-                self.get_logger().info("Petting stopped")
-                self.petting_currently_active = False
-                
-                petting_msg = String()
-                petting_msg.data = "petting_stopped:0"
-                self.petting_event_pub.publish(petting_msg)
+                # Check if ANY petting sensor is still active (only top_front now)
+                still_petting = self.touch_sensors['top_front']
+
+                if not still_petting:
+                    self.get_logger().info("Petting stopped")
+                    self.petting_currently_active = False
+
+                    petting_msg = String()
+                    petting_msg.data = "petting_stopped:0"
+                    self.petting_event_pub.publish(petting_msg)
     
-    def touch_head_left_callback(self, msg):
-        """Handle head left touch sensor data"""
-        self.touch_sensors['head_left'] = msg.data
-        self.last_touch_sensor_time['head_left'] = self.get_clock().now()
-        self._process_touch_collision('head_left', msg.data)
-    
-    def touch_head_bottom_callback(self, msg):
-        """Handle head bottom touch sensor data"""
-        self.touch_sensors['head_bottom'] = msg.data
-        self.last_touch_sensor_time['head_bottom'] = self.get_clock().now()
-        self._process_touch_collision('head_bottom', msg.data)
-    
-    def touch_head_right_callback(self, msg):
-        """Handle head right touch sensor data"""
-        self.touch_sensors['head_right'] = msg.data
-        self.last_touch_sensor_time['head_right'] = self.get_clock().now()
-        self._process_touch_collision('head_right', msg.data)
-    
-    def _process_touch_collision(self, touch_location, pressure_state):
-        """Process touch sensor data and trigger appropriate collision responses"""
-        # Check for simultaneous left and right touches (likely false positive)
-        if touch_location in ['head_left', 'head_right']:
-            if self.touch_sensors['head_left'] > 1 and self.touch_sensors['head_right'] > 1:
-                self.get_logger().info(
-                    f"Simultaneous left ({self.touch_sensors['head_left']}) and "
-                    f"right ({self.touch_sensors['head_right']}) touch detected - "
-                    f"ignoring as potential false positive"
-                )
-                return
-        
-        # Determine if this is a collision (any pressure state > 1)
-        is_collision = pressure_state > 1
-        
-        # Map touch locations to collision directions
-        collision_direction = None
-        if touch_location == 'head_left':
-            collision_direction = 'left'
-        elif touch_location == 'head_right':
-            collision_direction = 'right'
-        elif touch_location == 'head_bottom':
-            collision_direction = 'front'
-        else:
-            return  # Unknown touch location
-        
+    def check_mpr121_collisions(self):
+        """Check MPR121 collision durations and handle timeouts"""
         current_time = self.get_clock().now()
-        
-        if is_collision:
-            # New collision detected
-            if not self.fsr_collision_active[collision_direction]:
-                self.fsr_collision_active[collision_direction] = True
-                self.fsr_collision_start_time[collision_direction] = current_time
-                
-                self.get_logger().info(f"FSR touch collision detected: {touch_location} (pressure: {pressure_state}) -> {collision_direction} collision")
-                
-                # Treat all FSR touches as severe collisions
-                severity = 'danger'
-                
-                # Update collision status
-                collision_msg = Bool()
-                collision_msg.data = True
-                
-                # Publish collision warnings
-                if collision_direction == 'left':
-                    self.left_collision_pub.publish(collision_msg)
-                elif collision_direction == 'right':
-                    self.right_collision_pub.publish(collision_msg)
-                elif collision_direction == 'front':
-                    self.collision_pub.publish(collision_msg)
-                
-                # Publish severity
-                severity_msg = String()
-                severity_msg.data = severity
-                
-                if collision_direction == 'left':
-                    self.left_severity_pub.publish(severity_msg)
-                elif collision_direction == 'right':
-                    self.right_severity_pub.publish(severity_msg)
-                elif collision_direction == 'front':
-                    self.front_severity_pub.publish(severity_msg)
-                
-                # Publish detailed collision information with simulated distance
-                # Use a very small distance (1cm) to indicate immediate contact
-                simulated_distance = 1.0  # cm - represents direct contact
-                details_msg = String()
-                details_msg.data = f"{collision_direction}:{simulated_distance}:{severity}"
-                self.collision_details_pub.publish(details_msg)
-                
-                # Also publish distance for hardware interface consumption
-                distance_msg = Float32()
-                distance_msg.data = simulated_distance
-                
-                if collision_direction == 'left':
-                    self.left_distance_pub.publish(distance_msg)
-                elif collision_direction == 'right':
-                    self.right_distance_pub.publish(distance_msg)
-                # For front collisions, we use proximity sensor, not distance
-                
-        else:
-            # Touch released - clear collision if it was from this sensor
-            if self.fsr_collision_active[collision_direction]:
-                duration = (current_time - self.fsr_collision_start_time[collision_direction]).nanoseconds / 1e9
-                self.get_logger().info(f"FSR collision cleared for {collision_direction} after {duration:.2f}s")
-                
-                self.fsr_collision_active[collision_direction] = False
-                self.fsr_collision_start_time[collision_direction] = None
-                
-                # Clear collision status
-                collision_msg = Bool()
-                collision_msg.data = False
-                
-                if collision_direction == 'left':
-                    self.left_collision_pub.publish(collision_msg)
-                elif collision_direction == 'right':
-                    self.right_collision_pub.publish(collision_msg)
-                elif collision_direction == 'front':
-                    self.collision_pub.publish(collision_msg)
-                
-                # Clear severity
-                severity_msg = String()
-                severity_msg.data = "safe"
-                
-                if collision_direction == 'left':
-                    self.left_severity_pub.publish(severity_msg)
-                elif collision_direction == 'right':
-                    self.right_severity_pub.publish(severity_msg)
-                elif collision_direction == 'front':
-                    self.front_severity_pub.publish(severity_msg)
-    
-    def check_fsr_collisions(self):
-        """Check FSR collision durations and handle timeouts"""
-        current_time = self.get_clock().now()
-        
-        for direction in ['front', 'left', 'right']:
-            if self.fsr_collision_active[direction]:
+
+        for touch_location in ['bottom', 'front_right', 'front_left']:
+            if self.mpr121_collision_active[touch_location]:
                 # Check if collision has been active too long
-                if self.fsr_collision_start_time[direction]:
-                    duration = (current_time - self.fsr_collision_start_time[direction]).nanoseconds / 1e9
-                    
-                    # Auto-clear FSR collisions after 2 seconds to prevent sticking
-                    if duration > 0.5:
-                        self.get_logger().warn(f"FSR collision for {direction} auto-cleared after {duration:.2f}s (timeout)")
-                        
-                        self.fsr_collision_active[direction] = False
-                        self.fsr_collision_start_time[direction] = None
-                        
+                if self.mpr121_collision_start_time[touch_location]:
+                    duration = (current_time - self.mpr121_collision_start_time[touch_location]).nanoseconds / 1e9
+
+                    # Auto-clear MPR121 collisions after 2 seconds to prevent sticking
+                    if duration > 2.0:
+                        self.get_logger().warn(f"MPR121 collision for {touch_location} auto-cleared after {duration:.2f}s (timeout)")
+
+                        self.mpr121_collision_active[touch_location] = False
+                        self.mpr121_collision_start_time[touch_location] = None
+
                         # Clear collision status
                         collision_msg = Bool()
                         collision_msg.data = False
-                        
-                        if direction == 'left':
-                            self.left_collision_pub.publish(collision_msg)
-                        elif direction == 'right':
-                            self.right_collision_pub.publish(collision_msg)
-                        elif direction == 'front':
-                            self.collision_pub.publish(collision_msg)
-                        
+                        self.collision_pub.publish(collision_msg)
+
                         # Clear severity
                         severity_msg = String()
                         severity_msg.data = "safe"
-                        
-                        if direction == 'left':
-                            self.left_severity_pub.publish(severity_msg)
-                        elif direction == 'right':
-                            self.right_severity_pub.publish(severity_msg)
-                        elif direction == 'front':
-                            self.front_severity_pub.publish(severity_msg)
+                        self.front_severity_pub.publish(severity_msg)
     
     def check_data_timeout(self):
         """Check if sensor data has timed out and publish safe states"""

@@ -10,11 +10,11 @@ This script helps you:
 4. Identify optimal settings for your electrode setup
 
 CALIBRATED DEFAULTS (per-channel):
-  Channel 0 (Bottom):      Touch=4, Release=3 (weak signal)
-  Channel 1 (Front-Right): Touch=7, Release=5 (good signal)
-  Channel 2 (Front-Left):  Touch=7, Release=5 (good signal)
-  Channel 3 (Top-Front):   Touch=4, Release=3 (weak signal)
-  Channel 4 (Antenna):     Touch=5, Release=4 (strong signal)
+  Channel 0 (Bottom):      Touch=7, Release=7 (weak signal)
+  Channel 1 (Front-Right): Touch=8, Release=8 (good signal)
+  Channel 2 (Front-Left):  Touch=8, Release=8 (good signal)
+  Channel 3 (Top-Front):   Touch=8, Release=8 (weak signal)
+  Channel 4 (Antenna):     Touch=8, Release=8 (strong signal)
 
 Usage examples:
   # Basic usage with calibrated defaults
@@ -31,6 +31,15 @@ Usage examples:
 
   # Faster refresh rate
   python3 MPR121.py --refresh-rate 0.2
+
+  # Adjust release event detection (enabled by default)
+  python3 MPR121.py --release-event-threshold 20 --release-cooldown 2.0
+
+  # Disable release event detection if you only want touches
+  python3 MPR121.py --no-detect-releases
+
+  # Recommended for robot petting: detect both touches and releases
+  python3 MPR121.py --channels 4 1 2 3 --touch-threshold 10
 
   # Custom channel names
   python3 MPR121.py --channel-names "Top" "Bottom" "Left" "Right" "Center"
@@ -114,6 +123,32 @@ Examples:
         default=None,
         metavar='CH:TOUCH:RELEASE',
         help='Per-channel thresholds in format "channel:touch:release" (e.g., "0:12:8 1:10:6")'
+    )
+    threshold_group.add_argument(
+        '--detect-releases',
+        action='store_true',
+        default=True,
+        help='Detect release events (large negative deltas) in addition to touches (default: enabled)'
+    )
+    threshold_group.add_argument(
+        '--no-detect-releases',
+        dest='detect_releases',
+        action='store_false',
+        help='Disable release event detection'
+    )
+    threshold_group.add_argument(
+        '--release-event-threshold',
+        type=int,
+        default=20,
+        metavar='N',
+        help='Negative delta threshold for release detection (positive number). Default: 20'
+    )
+    threshold_group.add_argument(
+        '--release-cooldown',
+        type=float,
+        default=2.0,
+        metavar='SEC',
+        help='Cooldown time after release event before next release can trigger. Default: 2.0'
     )
 
     # Display configuration
@@ -205,11 +240,11 @@ RELEASE_THRESHOLD = args.release_threshold
 # Per-channel default thresholds (calibrated values)
 # These are used unless overridden by command-line arguments
 DEFAULT_CHANNEL_THRESHOLDS = {
-    0: (4, 3),   # Bottom - weak signal
-    1: (7, 5),   # Front-Right - good signal
-    2: (7, 5),   # Front-Left - good signal
-    3: (4, 3),   # Top-Front - weak signal
-    4: (5, 4),   # Antenna - strong signal
+    0: (7, 7),   # Bottom - weak signal
+    1: (8, 8),   # Front-Right - good signal
+    2: (8, 8),   # Front-Left - good signal
+    3: (8, 8),   # Top-Front - weak signal
+    4: (8, 8),   # Antenna - strong signal
 }
 
 # Check if user explicitly provided global thresholds (non-default values)
@@ -252,6 +287,11 @@ QUIET_MODE = args.quiet
 SHOW_RAW = args.show_raw
 CSV_MODE = args.csv
 BASELINE_ONLY = args.baseline_only
+
+# Release detection settings
+DETECT_RELEASES = args.detect_releases
+RELEASE_EVENT_THRESHOLD = args.release_event_threshold
+RELEASE_COOLDOWN = args.release_cooldown
 
 # Validate refresh rate
 if REFRESH_RATE < 0.01:
@@ -298,6 +338,11 @@ if not QUIET_MODE and not CSV_MODE:
         print(f"  Global Touch Threshold: {TOUCH_THRESHOLD}")
         print(f"  Global Release Threshold: {RELEASE_THRESHOLD}")
         print("  (Applied to all channels)")
+
+    if DETECT_RELEASES:
+        print(f"\n  Release Event Detection: ENABLED")
+        print(f"    Negative Delta Threshold: -{RELEASE_EVENT_THRESHOLD}")
+        print(f"    Cooldown Period: {RELEASE_COOLDOWN}s")
     print()
 
 # Apply thresholds to all channels
@@ -383,6 +428,9 @@ else:
         header_parts.append(f"ch{i}_touched")
     print(",".join(header_parts))
 
+# Track last release event time for cooldown (per-channel)
+last_release_time = {ch: 0 for ch in MONITOR_CHANNELS}
+
 try:
     iteration = 0
     start_time = time.time()
@@ -419,6 +467,8 @@ try:
             # Read monitored channels
             touched_any = False
             touched_channels = []
+            released_any = False
+            released_channels = []
 
             for i in MONITOR_CHANNELS:
                 baseline = mpr121.baseline_data(i)
@@ -432,17 +482,32 @@ try:
                 else:
                     threshold = TOUCH_THRESHOLD
 
+                # Check for release events (large negative deltas)
+                is_release_event = False
+                if DETECT_RELEASES and delta < -RELEASE_EVENT_THRESHOLD:
+                    # Check cooldown
+                    time_since_last_release = current_time - last_release_time[i]
+                    if time_since_last_release > RELEASE_COOLDOWN:
+                        is_release_event = True
+                        last_release_time[i] = current_time
+                        released_any = True
+                        released_channels.append(i)
+
                 # Format status
                 if is_touched:
                     status = "🐾 TOUCHED!"
                     touched_any = True
                     touched_channels.append(i)
+                elif is_release_event:
+                    status = "👋 RELEASED!"
                 else:
                     status = ""
 
-                # Highlight high deltas
+                # Highlight high deltas (positive for touch approach, negative for release)
                 delta_str = f"{delta:4d}"
-                if delta > threshold * 0.7:  # Approaching threshold
+                if delta > threshold * 0.7:  # Approaching touch threshold
+                    delta_str = f"*{delta:3d}*"
+                elif DETECT_RELEASES and delta < -RELEASE_EVENT_THRESHOLD * 0.7:  # Approaching release
                     delta_str = f"*{delta:3d}*"
 
                 # Print row
@@ -453,10 +518,14 @@ try:
                 else:
                     print(f"{channel_name:<25} {delta_str:<8} {threshold:<10} {status:<10}")
 
-            # Summary line
+            # Summary lines
             if touched_any and not QUIET_MODE:
                 channels_str = ", ".join([CHANNEL_NAMES[ch] for ch in touched_channels])
                 print(f"\n⚡ TOUCH DETECTED on: {channels_str} ⚡")
+
+            if released_any and not QUIET_MODE:
+                channels_str = ", ".join([CHANNEL_NAMES[ch] for ch in released_channels])
+                print(f"\n👋 RELEASE DETECTED on: {channels_str} 👋")
 
         time.sleep(REFRESH_RATE)
         iteration += 1
@@ -530,7 +599,13 @@ Based on your observations:
 5. Ideal Delta range when touching: 15-30
    → Gives good detection with noise margin
 
-6. For data logging and analysis:
+6. For release event detection (detects hand removal):
+   → Enable with: --detect-releases
+   → Adjust sensitivity: --release-event-threshold 20
+   → Adjust cooldown: --release-cooldown 2.0
+   → Useful for detecting "petting end" events
+
+7. For data logging and analysis:
    → Use CSV mode: --csv > calibration_log.csv
    → Monitor only problem channels: --channels 2 3
    → Use baseline-only for quick check: --baseline-only
@@ -575,6 +650,13 @@ Based on your observations:
 
         if REFRESH_RATE != 0.1:
             print(f"  --refresh-rate {REFRESH_RATE} \\")
+
+        if DETECT_RELEASES:
+            print(f"  --detect-releases \\")
+            if RELEASE_EVENT_THRESHOLD != 20:
+                print(f"  --release-event-threshold {RELEASE_EVENT_THRESHOLD} \\")
+            if RELEASE_COOLDOWN != 2.0:
+                print(f"  --release-cooldown {RELEASE_COOLDOWN} \\")
 
         if args.i2c_address != 0x5A:
             print(f"  --i2c-address 0x{args.i2c_address:02X}")

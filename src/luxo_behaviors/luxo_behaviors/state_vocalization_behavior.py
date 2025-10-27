@@ -33,6 +33,10 @@ class StateVocalizationBehavior:
         self.current_emotion = None
         self.collision_detected = False
 
+        # Cooldown logging flags - track if we've already logged about cooldown to reduce spam
+        self.cooldown_logged_for_emotion = False
+        self.cooldown_logged_for_state = False
+
         # Priority flag - STT->LLM->TTS pipeline is always prioritized
         self.stt_pipeline_active = False
 
@@ -403,12 +407,21 @@ class StateVocalizationBehavior:
         current_time = time.time()
         time_since_last = current_time - self.last_state_phrase_time
 
-        # Check cooldown (but still log - just don't speak yet)
+        # Check cooldown (but only log once to reduce spam)
         if time_since_last < self.state_phrase_cooldown:
-            self.node.get_logger().info(f"[StateVocalization] → Would vocalize '{state}' ({transition_desc}) but cooldown active ({time_since_last:.1f}s < {self.state_phrase_cooldown}s)")
+            # Only log once per cooldown period
+            if not self.cooldown_logged_for_state:
+                self.node.get_logger().info(f"[StateVocalization] → Would vocalize '{state}' ({transition_desc}) but cooldown active ({time_since_last:.1f}s < {self.state_phrase_cooldown}s)")
+                self.cooldown_logged_for_state = True
             return
 
+        # Reset cooldown logging flag when cooldown expires
+        self.cooldown_logged_for_state = False
+
         self.node.get_logger().info(f"[StateVocalization] ✅ Triggering phrase for state: {state} ({transition_desc})")
+
+        # Reset cooldown logging flag since we're speaking now
+        self.cooldown_logged_for_state = False
 
         # Speak a phrase for this state (in a separate thread to avoid blocking)
         threading.Thread(
@@ -463,10 +476,16 @@ class StateVocalizationBehavior:
         current_time = time.time()
         time_since_last = current_time - self.last_state_phrase_time
 
-        # Check cooldown (but still log - just don't speak yet)
+        # Check cooldown (but only log once to reduce spam)
         if time_since_last < self.state_phrase_cooldown:
-            self.node.get_logger().info(f"[StateVocalization] → Would vocalize emotion '{self.current_emotion}' but cooldown active ({time_since_last:.1f}s < {self.state_phrase_cooldown}s)")
+            # Only log once per cooldown period
+            if not self.cooldown_logged_for_emotion:
+                self.node.get_logger().info(f"[StateVocalization] → Would vocalize emotion '{self.current_emotion}' but cooldown active ({time_since_last:.1f}s < {self.state_phrase_cooldown}s)")
+                self.cooldown_logged_for_emotion = True
             return
+
+        # Reset cooldown logging flag when cooldown expires
+        self.cooldown_logged_for_emotion = False
 
         # Probabilistic response: 75% for most emotions, 5% for neutral
         response_probability = 0.05 if self.current_emotion == 'neutral' else 0.75
@@ -477,6 +496,9 @@ class StateVocalizationBehavior:
             return
 
         self.node.get_logger().info(f"[StateVocalization] ✅ Triggering phrase for emotion: {self.current_emotion}")
+
+        # Reset cooldown logging flag since we're speaking now
+        self.cooldown_logged_for_emotion = False
 
         # Speak an emotion phrase (in a separate thread)
         threading.Thread(

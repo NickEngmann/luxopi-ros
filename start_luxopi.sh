@@ -12,7 +12,9 @@ export LUXOPI_USE_HARDWARE="${LUXOPI_USE_HARDWARE:-true}"
 export LUXOPI_USE_CAMERA="${LUXOPI_USE_CAMERA:-true}"
 export LUXOPI_ENABLE_EMOTION_DETECTION="${LUXOPI_ENABLE_EMOTION_DETECTION:-true}"
 export LUXOPI_ENABLE_VOICE="${LUXOPI_ENABLE_VOICE:-true}"
-export LUXOPI_ENABLE_ADS7830="${LUXOPI_ENABLE_ADS7830:-true}"
+export LUXOPI_ENABLE_MPR121="${LUXOPI_ENABLE_MPR121:-true}"
+export LUXOPI_ENABLE_VL53_LEFT="${LUXOPI_ENABLE_VL53_LEFT:-true}"
+export LUXOPI_ENABLE_VL53_RIGHT="${LUXOPI_ENABLE_VL53_RIGHT:-true}"
 export LUXOPI_VERBOSE="${LUXOPI_VERBOSE:-true}"
 export LUXOPI_ENABLE_IDLE_ANIMATIONS="${LUXOPI_ENABLE_IDLE_ANIMATIONS:-true}"
 export LUXOPI_ENABLE_DYNAMIC_ADAPTATION="${LUXOPI_ENABLE_DYNAMIC_ADAPTATION:-false}"
@@ -98,7 +100,9 @@ get_launch_args() {
          "use_camera:=$LUXOPI_USE_CAMERA" \
          "enable_emotion_detection:=$LUXOPI_ENABLE_EMOTION_DETECTION" \
          "enable_voice:=$LUXOPI_ENABLE_VOICE" \
-         "enable_ads7830:=$LUXOPI_ENABLE_ADS7830" \
+         "enable_mpr121:=$LUXOPI_ENABLE_MPR121" \
+         "enable_vl53_left:=$LUXOPI_ENABLE_VL53_LEFT" \
+         "enable_vl53_right:=$LUXOPI_ENABLE_VL53_RIGHT" \
          "verbose:=$LUXOPI_VERBOSE" \
          "enable_idle_animations:=$LUXOPI_ENABLE_IDLE_ANIMATIONS" \
          "enable_dynamic_adaptation:=$LUXOPI_ENABLE_DYNAMIC_ADAPTATION" \
@@ -121,7 +125,9 @@ print_configuration() {
     log "Camera: $LUXOPI_USE_CAMERA"
     log "Emotion Detection: $LUXOPI_ENABLE_EMOTION_DETECTION"
     log "Voice: $LUXOPI_ENABLE_VOICE"
-    log "ADS7830: $LUXOPI_ENABLE_ADS7830"
+    log "MPR121 Touch Sensor: $LUXOPI_ENABLE_MPR121"
+    log "VL53L4CD Left Distance Sensor: $LUXOPI_ENABLE_VL53_LEFT"
+    log "VL53L4CD Right Distance Sensor: $LUXOPI_ENABLE_VL53_RIGHT"
     log "Verbose: $LUXOPI_VERBOSE"
     log "Idle Animations: $LUXOPI_ENABLE_IDLE_ANIMATIONS"
     log "Dynamic Adaptation: $LUXOPI_ENABLE_DYNAMIC_ADAPTATION"
