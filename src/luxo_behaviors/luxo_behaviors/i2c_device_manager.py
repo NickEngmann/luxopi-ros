@@ -188,21 +188,23 @@ class MPR121Sensor(I2CSensor):
             4: "antenna"      # Antenna sensor (petting)
         }
 
-        # Calibrated per-channel thresholds from MPR121.py
+        # Calibrated per-channel thresholds from MPR121.py calibration
         # Format: (touch_threshold, release_threshold)
         self.channel_thresholds = {
-            0: (7, 7),   # Bottom - weak signal
-            1: (7, 7),   # Front-Right - good signal
-            2: (7, 7),   # Front-Left - good signal
-            3: (7, 7),   # Top-Front - good signal
-            4: (20, 20),   # Antenna - strong signal (excellent)
+            0: (25, 25),   # Bottom - weak signal
+            1: (25, 25),   # Front-Right - good signal
+            2: (25, 25),   # Front-Left - good signal
+            3: (22, 22),   # Top-Front - good signal
+            4: (37, 45),   # Antenna - strong signal (excellent)
         }
 
         # Active channels (0-4)
         self.active_channels = list(self.channel_names.keys())
 
         # Release event detection
-        self.release_event_threshold = 20  # Trigger on delta < -20
+        # NOTE: Release thresholds are now per-channel (defined in channel_thresholds above)
+        # This global value is kept for backward compatibility but not used
+        self.release_event_threshold = 40  # DEPRECATED: Use per-channel release thresholds
         self.release_cooldown = 2.0  # seconds
         self.last_release_time = {ch: 0 for ch in self.active_channels}
 
@@ -211,7 +213,7 @@ class MPR121Sensor(I2CSensor):
         self.touch_confirmation_required = 4  # Need 4 consecutive touches
 
         # Noise recovery tracking - ignore readings after spike until baseline returns
-        self.noise_spike_threshold = 50  # Delta values > this are considered noise spikes
+        self.noise_spike_threshold = 65  # Delta values > this are considered noise spikes
         self.noise_recovery_threshold = 5  # Must return below this to clear recovery state
         self.in_noise_recovery = {ch: False for ch in self.active_channels}
 
@@ -298,8 +300,10 @@ class MPR121Sensor(I2CSensor):
 
                     # === RELEASE EVENT DETECTION ===
                     # Check for large negative delta (hand removal)
+                    # Use per-channel release threshold for better accuracy
                     is_release_event = False
-                    if delta < -self.release_event_threshold:
+                    _, release_threshold = self.channel_thresholds[channel_num]
+                    if delta < -release_threshold:
                         # Check cooldown
                         time_since_last_release = current_time - self.last_release_time[channel_num]
                         if time_since_last_release > self.release_cooldown:

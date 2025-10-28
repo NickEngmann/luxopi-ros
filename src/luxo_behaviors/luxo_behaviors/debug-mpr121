@@ -1,0 +1,1 @@
+ros2 topic echo /i2c/mpr121/raw_data --once | grep -oP '"delta":\s*-?\d+' | awk '{print NR": "$2}'

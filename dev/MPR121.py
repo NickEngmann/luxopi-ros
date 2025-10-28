@@ -240,11 +240,11 @@ RELEASE_THRESHOLD = args.release_threshold
 # Per-channel default thresholds (calibrated values)
 # These are used unless overridden by command-line arguments
 DEFAULT_CHANNEL_THRESHOLDS = {
-    0: (6, 6),   # Bottom - weak signal
-    1: (6, 6),   # Front-Right - good signal
-    2: (6, 6),   # Front-Left - good signal
-    3: (5, 5),   # Top-Front - weak signal
-    4: (7, 7),   # Antenna - strong signal
+    0: (25, 25),   # Bottom - weak signal
+    1: (25, 25),   # Front-Right - good signal
+    2: (25, 25),   # Front-Left - good signal
+    3: (22, 22),   # Top-Front - good signal
+    4: (35, 45),   # Antenna - strong signal (excellent)
 }
 
 # Check if user explicitly provided global thresholds (non-default values)
@@ -432,9 +432,9 @@ elif CSV_MODE:
 last_release_time = {ch: 0 for ch in MONITOR_CHANNELS}
 
 # Track noise spike recovery state (per-channel)
-# When a spike >60 is detected, enter recovery mode until delta returns to <5
-NOISE_SPIKE_THRESHOLD = 60  # Deltas above this are considered noise
-NOISE_RECOVERY_THRESHOLD = 5  # Must drop below this to exit recovery
+# Matches robot implementation in i2c_device_manager.py lines 213-216
+NOISE_SPIKE_THRESHOLD = 65  # Delta values > this are considered noise spikes
+NOISE_RECOVERY_THRESHOLD = 5  # Must return below this to clear recovery state
 in_noise_recovery = {ch: False for ch in MONITOR_CHANNELS}
 
 try:
@@ -465,7 +465,7 @@ try:
             # Normal display mode
             if iteration % 20 == 0 and not QUIET_MODE:
                 print("\n" + "-" * 80)
-                print("Delta symbols: [xxx]=Spike(>60) | *xxx*=Recovery/High | xxx=Normal")
+                print("Delta symbols: [xxx]=Spike(>65) | *xxx*=Recovery/High | xxx=Normal")
                 print("-" * 80)
                 if SHOW_RAW:
                     print(f"{'Channel':<25} {'Baseline':<10} {'Filtered':<10} {'Delta':<8} {'Threshold':<10} {'Status':<10}")
@@ -485,37 +485,43 @@ try:
                 delta_raw = baseline - filtered  # Raw delta for display
 
                 # === NOISE SPIKE RECOVERY LOGIC ===
-                # Detect spikes and enter recovery mode
+                # Matches robot implementation in i2c_device_manager.py lines 263-279
+                # Track noise spikes and ignore all readings until baseline returns
                 if abs(delta_raw) > NOISE_SPIKE_THRESHOLD:
+                    # Detected noise spike - enter recovery mode
                     if not in_noise_recovery[i]:
                         in_noise_recovery[i] = True
                 elif abs(delta_raw) < NOISE_RECOVERY_THRESHOLD:
+                    # Baseline has recovered - exit recovery mode
                     in_noise_recovery[i] = False
 
-                # If in recovery, ignore the reading for touch detection
+                # If in recovery mode, ignore this reading for touch detection
                 if in_noise_recovery[i]:
-                    delta = 0  # Treat as no touch
+                    delta = 0  # Treat as no touch while recovering
                 else:
-                    delta = delta_raw
+                    delta = delta_raw  # Use actual reading
 
-                # Get threshold for this channel
+                # Get thresholds for this channel
                 if i in CHANNEL_THRESHOLDS:
                     threshold = CHANNEL_THRESHOLDS[i][0]
+                    release_threshold = CHANNEL_THRESHOLDS[i][1]
                 else:
                     threshold = TOUCH_THRESHOLD
+                    release_threshold = RELEASE_EVENT_THRESHOLD
 
                 is_touched = abs(delta) >= threshold
 
                 # Check for release events (large negative deltas)
                 is_release_event = False
-                if DETECT_RELEASES and delta < -RELEASE_EVENT_THRESHOLD:
-                    # Check cooldown
-                    time_since_last_release = current_time - last_release_time[i]
-                    if time_since_last_release > RELEASE_COOLDOWN:
-                        is_release_event = True
-                        last_release_time[i] = current_time
-                        released_any = True
-                        released_channels.append(i)
+                if DETECT_RELEASES:
+                    if delta < -release_threshold:
+                        # Check cooldown
+                        time_since_last_release = current_time - last_release_time[i]
+                        if time_since_last_release > RELEASE_COOLDOWN:
+                            is_release_event = True
+                            last_release_time[i] = current_time
+                            released_any = True
+                            released_channels.append(i)
 
                 # Format status with recovery indicator
                 if in_noise_recovery[i]:
@@ -537,7 +543,7 @@ try:
                     delta_str = f"*{delta_raw:3d}*"  # Asterisks for recovery
                 elif delta > threshold * 0.7:  # Approaching touch threshold
                     delta_str = f"*{delta_raw:3d}*"
-                elif DETECT_RELEASES and delta_raw < -RELEASE_EVENT_THRESHOLD * 0.7:  # Approaching release
+                elif DETECT_RELEASES and delta_raw < -release_threshold * 0.7:  # Approaching release
                     delta_str = f"*{delta_raw:3d}*"
 
                 # Print row (in quiet mode, only print if there's a touch/release)
