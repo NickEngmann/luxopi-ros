@@ -87,10 +87,10 @@ class PixelRing:
         """
         # Convert angle to LED position (assuming 12 LEDs around circle)
         # Apply dynamic offset based on channel configuration
-        
+
         adjusted_angle = angle % 360
         led_position = int((adjusted_angle + 15) / 30) % 12  # 30° per LED with rounding
-        
+
         # Create data for 12 LEDs
         data = []
         for i in range(12):
@@ -103,7 +103,41 @@ class PixelRing:
             else:
                 # Off for other LEDs
                 data.extend([0, 0, 0, 0])
-        
+
+        self.show(data)
+
+    def set_direction_muted(self, angle=None, channels=4):
+        """
+        Show direction with red background (for muted mode)
+        If angle is None, shows solid red
+        If angle is provided, shows white direction indicator with red background
+
+        angle: 0-359 degrees (or None for solid red)
+        channels: Number of audio channels (affects calibration offset)
+        """
+        # Create data for 12 LEDs
+        data = []
+
+        if angle is None:
+            # No direction - solid red
+            for i in range(12):
+                data.extend([255, 0, 0, 0])  # Bright red
+        else:
+            # Convert angle to LED position (same logic as set_direction)
+            adjusted_angle = angle % 360
+            led_position = int((adjusted_angle + 15) / 30) % 12  # 30° per LED with rounding
+
+            for i in range(12):
+                if i == led_position:
+                    # Bright white for direction indicator
+                    data.extend([255, 255, 255, 0])  # R, G, B, W
+                elif abs(i - led_position) <= 1 or abs(i - led_position) >= 11:
+                    # Brighter red for adjacent LEDs (wrap around)
+                    data.extend([255, 50, 50, 0])  # Slightly pink-red
+                else:
+                    # Dim red background for other LEDs
+                    data.extend([100, 0, 0, 0])  # Dimmer red
+
         self.show(data)
 
     def change_pattern(self, pattern=None):

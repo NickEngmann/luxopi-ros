@@ -36,10 +36,10 @@ class CollisionNode(Node):
         self.prev_right_distance = float('inf')
         self.prev_proximity = 0
 
-        # VL53L4CD stability tracking - require 5 stable readings
-        self.left_distance_history = deque(maxlen=5)
-        self.right_distance_history = deque(maxlen=5)
-        self.vl53_stability_threshold = 0.4  # cm - readings must be within 0.4cm of each other
+        # VL53L4CD stability tracking - require 3 stable readings (reduced from 5 for faster response)
+        self.left_distance_history = deque(maxlen=3)
+        self.right_distance_history = deque(maxlen=3)
+        self.vl53_stability_threshold = 1.0  # cm - readings must be within 0.7cm of each other (increased from 0.5 for easier triggering)
         self.vl53_min_valid_distance = 1.6   # cm - minimum distance to consider valid
         
         # Add petting state tracking to prevent spam
@@ -282,8 +282,8 @@ class CollisionNode(Node):
         """
         Check if VL53L4CD readings are stable.
         Requires:
-        - 5 consecutive readings
-        - All within 0.5cm of each other (even if decreasing)
+        - 3 consecutive readings (reduced from 5 for faster response)
+        - All within 1.0cm of each other (even if decreasing)
         - Minimum value >= 1.6cm
 
         Returns: (is_stable, min_value)
@@ -367,7 +367,7 @@ class CollisionNode(Node):
                         collision_msg = Bool()
                         collision_msg.data = True
                         self.left_collision_pub.publish(collision_msg)
-                        self.get_logger().debug(f"Left collision warning! Stable distance: {stable_distance:.1f} cm (5 readings), Severity: {severity}")
+                        self.get_logger().debug(f"Left collision warning! Stable distance: {stable_distance:.1f} cm (3 readings), Severity: {severity}")
 
                         # Publish detailed collision information
                         details_msg = String()
@@ -411,7 +411,7 @@ class CollisionNode(Node):
                         collision_msg = Bool()
                         collision_msg.data = True
                         self.right_collision_pub.publish(collision_msg)
-                        self.get_logger().debug(f"Right collision warning! Stable distance: {stable_distance:.1f} cm (5 readings), Severity: {severity}")
+                        self.get_logger().debug(f"Right collision warning! Stable distance: {stable_distance:.1f} cm (3 readings), Severity: {severity}")
 
                         # Publish detailed collision information
                         details_msg = String()

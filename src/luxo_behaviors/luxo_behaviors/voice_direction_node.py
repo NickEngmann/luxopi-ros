@@ -281,9 +281,9 @@ class VoiceDirectionNode(Node):
             mode_str = "MUTED" if msg.data else "UNMUTED"
             self.get_logger().info(f"🔇 Voice muted status: {mode_str}")
 
-            # If muted, show solid red pixel ring
+            # If muted, show red pixel ring (solid red initially, direction-aware when voice detected)
             if msg.data and pixel_ring:
-                pixel_ring.set_color(r=255, g=0, b=0)  # Solid red
+                pixel_ring.set_direction_muted()  # Solid red (no direction yet)
                 self.leds_on = True
                 self.get_logger().info("🔴 Pixel ring → RED (muted)")
             elif not msg.data and pixel_ring and not self.sleep_mode_active:
@@ -621,15 +621,17 @@ class VoiceDirectionNode(Node):
                                     if direction is not None:
                                         # ALWAYS update pixel ring for real-time visual feedback
                                         # Even if direction is unstable, users should see where sound is coming from
-                                        # UNLESS muted (keep red indication)
+                                        # UNLESS muted (show red background with white direction indicator)
                                         with self.sleep_state_lock:
                                             if not self.sleep_mode_active and not self.is_muted:
                                                 pixel_ring.set_direction(int(direction))
                                                 self.leds_on = True
                                                 self.get_logger().info(f'💡 Pixel ring → {int(direction)}°')
                                             elif self.is_muted:
-                                                # Keep pixel ring red when muted
-                                                pass
+                                                # Show direction with red background when muted
+                                                pixel_ring.set_direction_muted(int(direction))
+                                                self.leds_on = True
+                                                self.get_logger().debug(f'🔴 Pixel ring → RED with direction {int(direction)}° (muted)')
                                             else:
                                                 self.get_logger().debug(f'💤 Skipping pixel ring update (sleep mode)')
 

@@ -622,16 +622,17 @@ class VoiceAssistantNode(Node, CommandBehavior, StateVocalizationBehavior):
             self.last_antenna_touch_time = current_time
 
             # Toggle mute state
-            if self.command_behavior.is_muted:
-                # UNMUTE
+            if self.is_muted:
+                # UNMUTE - unmute first so we can hear the response
                 self.get_logger().info("🔊 Antenna touched - UNMUTING")
-                self.command_behavior.execute_voice_assistant_command('unmute')
+                self.execute_voice_assistant_command('unmute')
                 self.speak("I can talk now!")
             else:
-                # MUTE
+                # MUTE - mute first, don't speak (user wants quiet!)
                 self.get_logger().info("🔇 Antenna touched - MUTING")
                 self.speak("Okay, I'll be quiet.")
-                self.command_behavior.execute_voice_assistant_command('mute')
+                self.execute_voice_assistant_command('mute')
+                # Don't speak - user wants the robot to be quiet!
 
         except Exception as e:
             self.get_logger().error(f"Error in antenna touch callback: {e}")
@@ -1362,7 +1363,7 @@ class VoiceAssistantNode(Node, CommandBehavior, StateVocalizationBehavior):
 
                                         if action in ['mute', 'unmute']:
                                             # For UNMUTE: unmute FIRST so we can hear the response
-                                            # For MUTE: speak FIRST so we hear the goodbye
+                                            # For MUTE: mute FIRST, don't speak (user wants quiet!)
                                             if action == 'unmute':
                                                 # Unmute before speaking so we can hear the response
                                                 self.execute_voice_assistant_command(action)
@@ -1371,6 +1372,7 @@ class VoiceAssistantNode(Node, CommandBehavior, StateVocalizationBehavior):
                                                 # Speak before muting so we hear the goodbye
                                                 self.speak(response)
                                                 self.execute_voice_assistant_command(action)
+                                                # Don't speak - user said "be quiet" or "shut up"
                                         elif action in ['volume_up', 'volume_down']:
                                             self.get_logger().info(f"🔊 Volume: {self.amplitude}/200")
                                             # Speak confirmation if not muted

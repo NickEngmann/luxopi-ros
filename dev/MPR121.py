@@ -240,11 +240,11 @@ RELEASE_THRESHOLD = args.release_threshold
 # Per-channel default thresholds (calibrated values)
 # These are used unless overridden by command-line arguments
 DEFAULT_CHANNEL_THRESHOLDS = {
-    0: (7, 7),   # Bottom - weak signal
-    1: (8, 8),   # Front-Right - good signal
-    2: (8, 8),   # Front-Left - good signal
-    3: (8, 8),   # Top-Front - weak signal
-    4: (8, 8),   # Antenna - strong signal
+    0: (6, 6),   # Bottom - weak signal
+    1: (6, 6),   # Front-Right - good signal
+    2: (6, 6),   # Front-Left - good signal
+    3: (5, 5),   # Top-Front - weak signal
+    4: (7, 7),   # Antenna - strong signal
 }
 
 # Check if user explicitly provided global thresholds (non-default values)
@@ -380,7 +380,7 @@ for i in MONITOR_CHANNELS:
     delta = baseline - filtered
     baseline_values[i] = baseline
 
-    if not CSV_MODE:
+    if not CSV_MODE and not QUIET_MODE:
         print(f"Channel {i} ({CHANNEL_NAMES[i]}):")
         print(f"  Baseline:  {baseline:4d}")
         print(f"  Filtered:  {filtered:4d}")
@@ -413,12 +413,12 @@ if not CSV_MODE:
 # REAL-TIME MONITORING
 # ============================================================================
 
-if not CSV_MODE:
+if not CSV_MODE and not QUIET_MODE:
     print("=" * 80)
     print("REAL-TIME MONITORING")
     print("=" * 80)
     print("\nPress Ctrl+C to exit\n")
-else:
+elif CSV_MODE:
     # CSV header
     header_parts = ["timestamp"]
     for i in MONITOR_CHANNELS:
@@ -430,6 +430,12 @@ else:
 
 # Track last release event time for cooldown (per-channel)
 last_release_time = {ch: 0 for ch in MONITOR_CHANNELS}
+
+# Track noise spike recovery state (per-channel)
+# When a spike >60 is detected, enter recovery mode until delta returns to <5
+NOISE_SPIKE_THRESHOLD = 60  # Deltas above this are considered noise
+NOISE_RECOVERY_THRESHOLD = 5  # Must drop below this to exit recovery
+in_noise_recovery = {ch: False for ch in MONITOR_CHANNELS}
 
 try:
     iteration = 0
@@ -445,7 +451,8 @@ try:
                 baseline = mpr121.baseline_data(i)
                 filtered = mpr121[i].raw_value
                 delta = baseline - filtered
-                is_touched = 1 if mpr121[i].value else 0
+                threshold = CHANNEL_THRESHOLDS[i][0] if i in CHANNEL_THRESHOLDS else TOUCH_THRESHOLD
+                is_touched = 1 if abs(delta) >= threshold else 0
 
                 row_parts.append(str(baseline))
                 row_parts.append(str(filtered))
@@ -458,6 +465,8 @@ try:
             # Normal display mode
             if iteration % 20 == 0 and not QUIET_MODE:
                 print("\n" + "-" * 80)
+                print("Delta symbols: [xxx]=Spike(>60) | *xxx*=Recovery/High | xxx=Normal")
+                print("-" * 80)
                 if SHOW_RAW:
                     print(f"{'Channel':<25} {'Baseline':<10} {'Filtered':<10} {'Delta':<8} {'Threshold':<10} {'Status':<10}")
                 else:
@@ -473,14 +482,29 @@ try:
             for i in MONITOR_CHANNELS:
                 baseline = mpr121.baseline_data(i)
                 filtered = mpr121[i].raw_value
-                delta = baseline - filtered
-                is_touched = mpr121[i].value
+                delta_raw = baseline - filtered  # Raw delta for display
+
+                # === NOISE SPIKE RECOVERY LOGIC ===
+                # Detect spikes and enter recovery mode
+                if abs(delta_raw) > NOISE_SPIKE_THRESHOLD:
+                    if not in_noise_recovery[i]:
+                        in_noise_recovery[i] = True
+                elif abs(delta_raw) < NOISE_RECOVERY_THRESHOLD:
+                    in_noise_recovery[i] = False
+
+                # If in recovery, ignore the reading for touch detection
+                if in_noise_recovery[i]:
+                    delta = 0  # Treat as no touch
+                else:
+                    delta = delta_raw
 
                 # Get threshold for this channel
                 if i in CHANNEL_THRESHOLDS:
                     threshold = CHANNEL_THRESHOLDS[i][0]
                 else:
                     threshold = TOUCH_THRESHOLD
+
+                is_touched = abs(delta) >= threshold
 
                 # Check for release events (large negative deltas)
                 is_release_event = False
@@ -493,8 +517,10 @@ try:
                         released_any = True
                         released_channels.append(i)
 
-                # Format status
-                if is_touched:
+                # Format status with recovery indicator
+                if in_noise_recovery[i]:
+                    status = "🔴 RECOVERY (ignoring)"
+                elif is_touched:
                     status = "🐾 TOUCHED!"
                     touched_any = True
                     touched_channels.append(i)
@@ -503,20 +529,25 @@ try:
                 else:
                     status = ""
 
-                # Highlight high deltas (positive for touch approach, negative for release)
-                delta_str = f"{delta:4d}"
-                if delta > threshold * 0.7:  # Approaching touch threshold
-                    delta_str = f"*{delta:3d}*"
-                elif DETECT_RELEASES and delta < -RELEASE_EVENT_THRESHOLD * 0.7:  # Approaching release
-                    delta_str = f"*{delta:3d}*"
+                # Highlight high deltas - use raw delta for display
+                delta_str = f"{delta_raw:4d}"
+                if abs(delta_raw) > NOISE_SPIKE_THRESHOLD:  # Noise spike
+                    delta_str = f"[{delta_raw:3d}]"  # Brackets for spike
+                elif in_noise_recovery[i]:  # In recovery
+                    delta_str = f"*{delta_raw:3d}*"  # Asterisks for recovery
+                elif delta > threshold * 0.7:  # Approaching touch threshold
+                    delta_str = f"*{delta_raw:3d}*"
+                elif DETECT_RELEASES and delta_raw < -RELEASE_EVENT_THRESHOLD * 0.7:  # Approaching release
+                    delta_str = f"*{delta_raw:3d}*"
 
-                # Print row
-                channel_name = f"Ch{i} ({CHANNEL_NAMES[i]})"
+                # Print row (in quiet mode, only print if there's a touch/release)
+                if not QUIET_MODE or status:
+                    channel_name = f"Ch{i} ({CHANNEL_NAMES[i]})"
 
-                if SHOW_RAW:
-                    print(f"{channel_name:<25} {baseline:<10} {filtered:<10} {delta_str:<8} {threshold:<10} {status:<10}")
-                else:
-                    print(f"{channel_name:<25} {delta_str:<8} {threshold:<10} {status:<10}")
+                    if SHOW_RAW:
+                        print(f"{channel_name:<25} {baseline:<10} {filtered:<10} {delta_str:<8} {threshold:<10} {status:<10}")
+                    else:
+                        print(f"{channel_name:<25} {delta_str:<8} {threshold:<10} {status:<10}")
 
             # Summary lines
             if touched_any and not QUIET_MODE:
@@ -531,8 +562,8 @@ try:
         iteration += 1
 
 except KeyboardInterrupt:
-    if CSV_MODE:
-        # Just exit cleanly in CSV mode
+    if CSV_MODE or QUIET_MODE:
+        # Just exit cleanly in CSV or quiet mode
         sys.exit(0)
 
     print("\n\n" + "=" * 80)

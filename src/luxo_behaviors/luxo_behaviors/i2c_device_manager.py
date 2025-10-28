@@ -117,6 +117,8 @@ class VL53L4CDSensor(I2CSensor):
             # Add delay before initialization to let bus settle
             time.sleep(0.1)
             self.device = adafruit_vl53l4cd.VL53L4CD(i2c_bus, self.address)
+            self.device.inter_measurement = 75  # 75ms between measurements
+            self.device.timing_budget = 75    # 75ms timing budget for best long-range performance
             # Add delay after configuration
             time.sleep(0.15)
             self.device.start_ranging()
@@ -193,7 +195,7 @@ class MPR121Sensor(I2CSensor):
             1: (7, 7),   # Front-Right - good signal
             2: (7, 7),   # Front-Left - good signal
             3: (7, 7),   # Top-Front - good signal
-            4: (7, 7),   # Antenna - strong signal (excellent)
+            4: (20, 20),   # Antenna - strong signal (excellent)
         }
 
         # Active channels (0-4)
@@ -206,7 +208,12 @@ class MPR121Sensor(I2CSensor):
 
         # Consecutive touch tracking (need 3 in a row to confirm)
         self.consecutive_touches = {ch: 0 for ch in self.active_channels}
-        self.touch_confirmation_required = 3  # Need 2 consecutive touches
+        self.touch_confirmation_required = 4  # Need 4 consecutive touches
+
+        # Noise recovery tracking - ignore readings after spike until baseline returns
+        self.noise_spike_threshold = 50  # Delta values > this are considered noise spikes
+        self.noise_recovery_threshold = 5  # Must return below this to clear recovery state
+        self.in_noise_recovery = {ch: False for ch in self.active_channels}
 
     def initialize(self, i2c_bus):
         """Initialize MPR121"""
@@ -248,13 +255,34 @@ class MPR121Sensor(I2CSensor):
 
             for channel_num in self.active_channels:
                 try:
-                    # Get touch state from MPR121 (hardware detection)
-                    is_touched_raw = self.device[channel_num].value
-
-                    # Get raw values for release detection
+                    # Get raw values for touch and release detection
                     baseline = self.device.baseline_data(channel_num)
                     filtered = self.device[channel_num].raw_value
-                    delta = baseline - filtered
+                    delta_raw = baseline - filtered  # Store original delta for debugging
+
+                    # === NOISE SPIKE RECOVERY LOGIC ===
+                    # Track noise spikes and ignore all readings until baseline returns
+                    if abs(delta_raw) > self.noise_spike_threshold:
+                        # Detected noise spike - enter recovery mode
+                        if not self.in_noise_recovery[channel_num]:
+                            self.in_noise_recovery[channel_num] = True
+                            # Optional: log the spike (only once when entering recovery)
+                            # self.get_logger().debug(f"Ch{channel_num} noise spike detected: {delta_raw}")
+                    elif abs(delta_raw) < self.noise_recovery_threshold:
+                        # Baseline has recovered - exit recovery mode
+                        self.in_noise_recovery[channel_num] = False
+
+                    # If in recovery mode, ignore this reading for touch detection
+                    if self.in_noise_recovery[channel_num]:
+                        delta = 0  # Treat as no touch while recovering
+                    else:
+                        delta = delta_raw  # Use actual reading
+
+                    # Get threshold for this channel
+                    threshold, _ = self.channel_thresholds[channel_num]
+
+                    # Use absolute value for touch detection (handles both positive and negative deltas)
+                    is_touched_raw = abs(delta) >= threshold
 
                     channel_name = self.channel_names[channel_num]
 
@@ -281,10 +309,11 @@ class MPR121Sensor(I2CSensor):
                     sensor_data[channel_name] = {
                         'touched': confirmed_touch,
                         'released': is_release_event,
-                        'delta': delta,
+                        'delta': delta_raw,  # Publish raw delta for debugging (shows actual spikes)
                         'baseline': baseline,
                         'filtered': filtered,
-                        'consecutive': self.consecutive_touches[channel_num]
+                        'consecutive': self.consecutive_touches[channel_num],
+                        'in_recovery': self.in_noise_recovery[channel_num]  # Show recovery state
                     }
                 except Exception as channel_error:
                     # Channel-specific error - continue with other channels
@@ -378,6 +407,12 @@ class I2CDeviceManager(Node):
         self.mpr121_ch3_release_pub = self.create_publisher(Bool, '/touch_sensors/top_front/released', 10)
         self.mpr121_ch4_release_pub = self.create_publisher(Bool, '/touch_sensors/antenna/released', 10)
 
+        # MPR121 Raw Data publisher - for debugging (delta, baseline, filtered values)
+        self.mpr121_raw_data_pub = self.create_publisher(String, '/i2c/mpr121/raw_data', 10)
+
+        # Track latest MPR121 sensor data for 1 Hz publishing
+        self.latest_mpr121_data = None
+
         # Status publishers
         self.status_pub = self.create_publisher(String, '/i2c/status', 10)
         self.sensor_health_pub = self.create_publisher(String, '/i2c/sensor_health', 10)
@@ -407,7 +442,10 @@ class I2CDeviceManager(Node):
         
         # Create health status timer
         self.health_timer = self.create_timer(10.0, self.publish_health_summary)
-        
+
+        # Create MPR121 raw data debug timer (1 Hz)
+        self.mpr121_debug_timer = self.create_timer(1.0, self.publish_mpr121_raw_data)
+
         # Gesture thread for APDS9960 - DISABLED to prevent I2C bus hangs
         self.gesture_thread_running = False
         # DISABLED: Gesture detection causes I2C bus freezes
@@ -622,7 +660,10 @@ class I2CDeviceManager(Node):
                                 release_msg.data = True
                                 self.mpr121_ch4_release_pub.publish(release_msg)
                                 self.get_logger().info("👋 MPR121 CH4 (antenna) RELEASE detected")
-                        
+
+                        # Store latest MPR121 data for 1 Hz debug publishing
+                        self.latest_mpr121_data = data
+
             except Exception as e:
                 sensor.error_count += 1
                 sensor.total_errors += 1
@@ -734,6 +775,34 @@ class I2CDeviceManager(Node):
                     self.failed_sensors[sensor_name] = sensor
                     del self.sensors[sensor_name]
                     self.get_logger().error(f"{sensor_name} moved to failed sensors after {sensor.initialization_attempts} attempts")
+
+    def publish_mpr121_raw_data(self):
+        """Publish raw MPR121 sensor data at 1 Hz for debugging"""
+        if self.latest_mpr121_data is None:
+            return
+
+        try:
+            import json
+
+            # Format data for all 5 channels
+            debug_data = {}
+            for channel_name, channel_data in self.latest_mpr121_data.items():
+                debug_data[channel_name] = {
+                    'delta': channel_data['delta'],
+                    'baseline': channel_data['baseline'],
+                    'filtered': channel_data['filtered'],
+                    'touched': channel_data['touched'],
+                    'released': channel_data['released'],
+                    'consecutive': channel_data['consecutive']
+                }
+
+            # Publish as JSON string
+            msg = String()
+            msg.data = json.dumps(debug_data, indent=2)
+            self.mpr121_raw_data_pub.publish(msg)
+
+        except Exception as e:
+            self.get_logger().error(f"Error publishing MPR121 raw data: {e}")
 
     def publish_health_summary(self):
         """Publish a summary of all sensor health"""
