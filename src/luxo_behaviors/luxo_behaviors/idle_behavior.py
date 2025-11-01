@@ -9,6 +9,7 @@ import random
 import time
 from typing import Optional, List
 from rclpy.action import ActionClient
+from std_msgs.msg import Bool
 from luxo_interfaces.action import PlayAnimation
 from luxo_behaviors.state_machine import LuxoState
 from luxo_behaviors.shared_utils import IdleAnimationConfig
@@ -53,9 +54,62 @@ class IdleBehavior:
             PlayAnimation,
             'play_animation'
         )
-        
+
+        # Store original idle timing values for demo mode restoration
+        self.original_min_idle_time = self.min_idle_time_before_animation
+        self.original_idle_interval_min = self.idle_config.idle_animation_interval_min
+        self.original_idle_interval_max = self.idle_config.idle_animation_interval_max
+
+        # Subscribe to rainbow mode to reduce idle time during demo mode
+        self.rainbow_mode_active = False
+        self.rainbow_mode_sub = self.node.create_subscription(
+            Bool,
+            '/luxo/rainbow_mode',
+            self.rainbow_mode_callback,
+            10
+        )
+
         self.node.get_logger().info("Idle behavior initialized")
-    
+
+    def rainbow_mode_callback(self, msg):
+        """Handle rainbow mode changes - reduce idle time during demo mode."""
+        self.rainbow_mode_active = msg.data
+
+        if self.rainbow_mode_active:
+            # Demo mode: Reduce idle times for more frequent interactions
+            self.min_idle_time_before_animation = 2.0  # Reduced from 5.0
+            self.idle_config.idle_animation_interval_min = 3.0  # Reduced from 10.0
+            self.idle_config.idle_animation_interval_max = 15.0  # Reduced from 60.0
+
+            # Update current interval if needed (set to new random value in demo range)
+            self.idle_animation_interval = random.uniform(
+                self.idle_config.idle_animation_interval_min,
+                self.idle_config.idle_animation_interval_max
+            )
+
+            self.node.get_logger().info(
+                f"🌈 Demo mode: Idle times reduced - "
+                f"min: {self.min_idle_time_before_animation}s, "
+                f"interval: {self.idle_config.idle_animation_interval_min}-{self.idle_config.idle_animation_interval_max}s"
+            )
+        else:
+            # Normal mode: Restore original idle times
+            self.min_idle_time_before_animation = self.original_min_idle_time
+            self.idle_config.idle_animation_interval_min = self.original_idle_interval_min
+            self.idle_config.idle_animation_interval_max = self.original_idle_interval_max
+
+            # Update current interval to normal range
+            self.idle_animation_interval = random.uniform(
+                self.idle_config.idle_animation_interval_min,
+                self.idle_config.idle_animation_interval_max
+            )
+
+            self.node.get_logger().info(
+                f"Normal mode: Idle times restored - "
+                f"min: {self.min_idle_time_before_animation}s, "
+                f"interval: {self.idle_config.idle_animation_interval_min}-{self.idle_config.idle_animation_interval_max}s"
+            )
+
     def check_idle_animations(self, current_time) -> bool:
         """
         Check if we should trigger an idle animation.

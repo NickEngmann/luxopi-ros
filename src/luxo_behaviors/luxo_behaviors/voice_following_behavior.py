@@ -120,6 +120,15 @@ class VoiceFollowingBehavior:
             10
         )
 
+        # Subscribe to rainbow mode to disable voice following during demo mode
+        self.rainbow_mode_active = False
+        self.rainbow_mode_sub = self.node.create_subscription(
+            Bool,
+            '/luxo/rainbow_mode',
+            self.rainbow_mode_callback,
+            10
+        )
+
         self.node.get_logger().info(f"Voice following enabled: {self.voice_follow_enabled}")
     
     def tts_active_callback(self, msg):
@@ -130,10 +139,23 @@ class VoiceFollowingBehavior:
         else:
             self.node.get_logger().debug("TTS finished - voice following re-enabled")
 
+    def rainbow_mode_callback(self, msg):
+        """Handle rainbow mode changes - disable voice following during demo mode."""
+        self.rainbow_mode_active = msg.data
+        if self.rainbow_mode_active:
+            self.node.get_logger().info("🌈 Rainbow demo mode: Voice following disabled")
+        else:
+            self.node.get_logger().info("Normal mode: Voice following re-enabled")
+
     def voice_direction_callback(self, msg):
         """Handle voice direction messages with cooldown and filtering."""
         if not self.voice_follow_enabled:
             self.node.get_logger().warn(f"🚫 Voice following DISABLED - ignoring direction {msg.data:.1f}°")
+            return
+
+        # Disable voice following during rainbow demo mode
+        if self.rainbow_mode_active:
+            self.node.get_logger().debug(f"🌈 Ignoring voice direction {msg.data:.1f}° - rainbow demo mode active")
             return
 
         # Ignore voice directions when TTS is active to prevent following own voice

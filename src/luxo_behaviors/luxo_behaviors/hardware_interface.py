@@ -124,7 +124,13 @@ class RoArmHardwareInterface(Node):
         # Calculate soft limit zones
         self.base_soft_min = self.base_min_limit + self.base_limit_buffer
         self.base_soft_max = self.base_max_limit - self.base_limit_buffer
-        
+
+        # Store original limits for demo mode restoration
+        self.original_base_min_limit = self.base_min_limit
+        self.original_base_max_limit = self.base_max_limit
+        self.original_base_soft_min = self.base_soft_min
+        self.original_base_soft_max = self.base_soft_max
+
         self.get_logger().info(f"Base joint limits: {np.rad2deg(self.base_min_limit):.1f}° to {np.rad2deg(self.base_max_limit):.1f}°")
         self.get_logger().info(f"Base soft limits: {np.rad2deg(self.base_soft_min):.1f}° to {np.rad2deg(self.base_soft_max):.1f}°")
         self.get_logger().info(f"Base wraparound enabled: {self.enable_base_wraparound}")
@@ -170,7 +176,17 @@ class RoArmHardwareInterface(Node):
             self.state_update_callback,
             10
         )
-        
+
+        # Subscribe to rainbow mode for demo mode adjustments
+        self.rainbow_mode_active = False
+        self.rainbow_mode_sub = self.create_subscription(
+            Bool,
+            '/luxo/rainbow_mode',
+            self.rainbow_mode_callback,
+            10
+        )
+
+
         # Publisher for node heartbeat
         self.heartbeat_publisher = self.create_publisher(
             String,
@@ -446,6 +462,31 @@ class RoArmHardwareInterface(Node):
             self.get_logger().warn(f"Unknown state received: {msg.data}")
         except Exception as e:
             self.get_logger().error(f"Error in state update callback: {e}")
+
+    def rainbow_mode_callback(self, msg):
+        """Handle rainbow mode changes - apply demo movement limits."""
+        self.rainbow_mode_active = msg.data
+
+        if self.rainbow_mode_active:
+            # Demo mode: Apply restricted limits
+            self.base_min_limit = -0.6918  # -39.64°
+            self.base_max_limit = 0.8130   # 46.58°
+            self.base_soft_min = self.base_min_limit + self.base_limit_buffer
+            self.base_soft_max = self.base_max_limit - self.base_limit_buffer
+            self.get_logger().info(
+                f"🌈 Demo mode: Base limits restricted to "
+                f"{np.rad2deg(self.base_min_limit):.1f}° to {np.rad2deg(self.base_max_limit):.1f}°"
+            )
+        else:
+            # Normal mode: Restore original limits
+            self.base_min_limit = self.original_base_min_limit
+            self.base_max_limit = self.original_base_max_limit
+            self.base_soft_min = self.original_base_soft_min
+            self.base_soft_max = self.original_base_soft_max
+            self.get_logger().info(
+                f"Normal mode: Base limits restored to "
+                f"{np.rad2deg(self.base_min_limit):.1f}° to {np.rad2deg(self.base_max_limit):.1f}°"
+            )
 
     def _handle_state_change(self, old_state: LuxoState, new_state: LuxoState):
         """Handle state transitions locally"""

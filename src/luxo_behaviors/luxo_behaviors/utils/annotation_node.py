@@ -26,6 +26,9 @@ class AnnotationNode(dai.node.HostNode):
         # Store detection data for camera_interaction.py to use for image saving
         self.latest_detections = []
 
+        # Emotion detection threshold (can be adjusted for demo mode)
+        self.emotion_threshold = 0.33  # Default threshold
+
     def build(
         self,
         gather_data_msg: dai.Node.Output,
@@ -36,6 +39,10 @@ class AnnotationNode(dai.node.HostNode):
         self.emotion_callback = emotion_callback
         self.skip_output = skip_output
         return self
+
+    def set_emotion_threshold(self, threshold: float):
+        """Set the emotion detection threshold (0.0-1.0)"""
+        self.emotion_threshold = threshold
 
     def process(self, gather_data_msg: dai.Buffer) -> None:
         dets_msg: ImgDetectionsExtended = gather_data_msg.reference_data
@@ -74,7 +81,7 @@ class AnnotationNode(dai.node.HostNode):
                 self.latest_confidence = rec_msg.top_score.item()
 
                 # Call the emotion callback if provided
-                if self.emotion_callback and self.latest_confidence > 0.33:
+                if self.emotion_callback and self.latest_confidence > self.emotion_threshold:
                     self.emotion_callback(self.latest_emotion, self.latest_confidence)
 
             # Store detection data for camera_interaction.py to use for image saving

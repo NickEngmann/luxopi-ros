@@ -37,6 +37,15 @@ class StateVocalizationBehavior:
         self.cooldown_logged_for_emotion = False
         self.cooldown_logged_for_state = False
 
+        # Throttle "would vocalize" logs to once per 2 seconds max
+        self.last_would_vocalize_log_time = {
+            'muted': 0,
+            'stt_tts_active': 0,
+            'sleeping': 0,
+            'frozen': 0
+        }
+        self.would_vocalize_log_interval = 2.0  # seconds
+
         # Priority flag - STT->LLM->TTS pipeline is always prioritized
         self.stt_pipeline_active = False
 
@@ -324,6 +333,23 @@ class StateVocalizationBehavior:
 
         self.node.get_logger().info("State vocalization behavior initialized")
 
+    def _should_log_would_vocalize(self, condition_type: str) -> bool:
+        """Check if enough time has passed to log a 'would vocalize' message.
+
+        Args:
+            condition_type: One of 'muted', 'stt_tts_active', 'sleeping', 'frozen'
+
+        Returns:
+            True if we should log, False if we should skip (throttled)
+        """
+        current_time = time.time()
+        time_since_last = current_time - self.last_would_vocalize_log_time.get(condition_type, 0)
+
+        if time_since_last >= self.would_vocalize_log_interval:
+            self.last_would_vocalize_log_time[condition_type] = current_time
+            return True
+        return False
+
     def state_change_callback(self, msg):
         """Handle state changes and speak appropriate phrases.
 
@@ -383,24 +409,28 @@ class StateVocalizationBehavior:
                 self.last_state_phrase_time = time.time()
                 return
 
-        # Check if muted (but still log)
+        # Check if muted (throttle log to once per 2 seconds)
         if self.is_muted:
-            self.node.get_logger().info(f"[StateVocalization] → Would vocalize '{state}' ({transition_desc}) but assistant is muted 🔇")
+            if self._should_log_would_vocalize('muted'):
+                self.node.get_logger().info(f"[StateVocalization] → Would vocalize '{state}' ({transition_desc}) but assistant is muted 🔇")
             return
 
-        # Check if STT pipeline is active (but still log)
+        # Check if STT pipeline is active (throttle log to once per 2 seconds)
         if self.stt_pipeline_active or self.is_speaking:
-            self.node.get_logger().info(f"[StateVocalization] → Would vocalize '{state}' ({transition_desc}) but STT/TTS active")
+            if self._should_log_would_vocalize('stt_tts_active'):
+                self.node.get_logger().info(f"[StateVocalization] → Would vocalize '{state}' ({transition_desc}) but STT/TTS active")
             return
 
-        # Check sleep mode (but still log)
+        # Check sleep mode (throttle log to once per 2 seconds)
         if self.is_sleep_mode:
-            self.node.get_logger().info(f"[StateVocalization] → Would vocalize '{state}' ({transition_desc}) but robot is sleeping 💤")
+            if self._should_log_would_vocalize('sleeping'):
+                self.node.get_logger().info(f"[StateVocalization] → Would vocalize '{state}' ({transition_desc}) but robot is sleeping 💤")
             return
 
-        # Check stay mode (but still log)
+        # Check stay mode (throttle log to once per 2 seconds)
         if self.is_stay_mode:
-            self.node.get_logger().info(f"[StateVocalization] → Would vocalize '{state}' ({transition_desc}) but robot is frozen 🧊")
+            if self._should_log_would_vocalize('frozen'):
+                self.node.get_logger().info(f"[StateVocalization] → Would vocalize '{state}' ({transition_desc}) but robot is frozen 🧊")
             return
 
         # Calculate time since last phrase
@@ -452,24 +482,28 @@ class StateVocalizationBehavior:
             self.node.get_logger().info(f"[StateVocalization] → Already vocalized emotion {self.current_emotion}")
             return
 
-        # Check if muted (but still log)
+        # Check if muted (throttle log to once per 2 seconds)
         if self.is_muted:
-            self.node.get_logger().info(f"[StateVocalization] → Would vocalize emotion '{self.current_emotion}' but assistant is muted 🔇")
+            if self._should_log_would_vocalize('muted'):
+                self.node.get_logger().info(f"[StateVocalization] → Would vocalize emotion '{self.current_emotion}' but assistant is muted 🔇")
             return
 
-        # Check if STT pipeline is active (but still log)
+        # Check if STT pipeline is active (throttle log to once per 2 seconds)
         if self.stt_pipeline_active or self.is_speaking:
-            self.node.get_logger().info(f"[StateVocalization] → Would vocalize emotion '{self.current_emotion}' but STT/TTS active (stt:{self.stt_pipeline_active}, speaking:{self.is_speaking})")
+            if self._should_log_would_vocalize('stt_tts_active'):
+                self.node.get_logger().info(f"[StateVocalization] → Would vocalize emotion '{self.current_emotion}' but STT/TTS active (stt:{self.stt_pipeline_active}, speaking:{self.is_speaking})")
             return
 
-        # Check sleep mode (but still log)
+        # Check sleep mode (throttle log to once per 2 seconds)
         if self.is_sleep_mode:
-            self.node.get_logger().info(f"[StateVocalization] → Would vocalize emotion '{self.current_emotion}' but robot is sleeping 💤")
+            if self._should_log_would_vocalize('sleeping'):
+                self.node.get_logger().info(f"[StateVocalization] → Would vocalize emotion '{self.current_emotion}' but robot is sleeping 💤")
             return
 
-        # Check stay mode (but still log)
+        # Check stay mode (throttle log to once per 2 seconds)
         if self.is_stay_mode:
-            self.node.get_logger().info(f"[StateVocalization] → Would vocalize emotion '{self.current_emotion}' but robot is frozen 🧊")
+            if self._should_log_would_vocalize('frozen'):
+                self.node.get_logger().info(f"[StateVocalization] → Would vocalize emotion '{self.current_emotion}' but robot is frozen 🧊")
             return
 
         # Calculate time since last phrase

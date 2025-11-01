@@ -96,6 +96,15 @@ class CameraInteraction(Node):
             10
         )
 
+        # Subscribe to rainbow mode for demo mode adjustments
+        self.rainbow_mode_active = False
+        self.rainbow_mode_sub = self.create_subscription(
+            Bool,
+            '/luxo/rainbow_mode',
+            self.rainbow_mode_callback,
+            10
+        )
+
         # Track last emotion and animation time
         self.last_emotion = "neutral"
         self.last_animation_time = self.get_clock().now()
@@ -503,6 +512,25 @@ class CameraInteraction(Node):
     def state_status_callback(self, msg):
         """Update current state machine state."""
         self.current_state = msg.data
+
+    def rainbow_mode_callback(self, msg):
+        """Handle rainbow mode changes for demo mode adjustments."""
+        try:
+            self.rainbow_mode_active = msg.data
+
+            # Adjust emotion detection threshold based on rainbow mode
+            if self.rainbow_mode_active:
+                # Demo mode: lower threshold to 0.25 for more sensitivity
+                if hasattr(self, 'annotation_node') and self.annotation_node:
+                    self.annotation_node.set_emotion_threshold(0.25)
+                    self.get_logger().info("🌈 Demo mode: Emotion threshold lowered to 0.25 (more sensitive)")
+            else:
+                # Normal mode: restore default threshold of 0.33
+                if hasattr(self, 'annotation_node') and self.annotation_node:
+                    self.annotation_node.set_emotion_threshold(0.33)
+                    self.get_logger().info("Normal mode: Emotion threshold restored to 0.33")
+        except Exception as e:
+            self.get_logger().error(f"Error in rainbow mode callback: {e}")
 
     def joint_states_callback(self, msg):
         """Update joint states"""
