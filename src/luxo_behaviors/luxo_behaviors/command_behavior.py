@@ -137,21 +137,23 @@ class CommandBehavior:
             r'quiet.{0,5}down',
         ]
 
-        # Unmute command patterns - BALANCED (optional "you", but require command structure)
+        # Unmute command patterns - TIGHTENED to reduce false positives
+        # CRITICAL: Only match when clear unmute intent, NOT casual mentions of "talking"
         self.unmute_patterns = [
-            # "you can talk/speak" OR just "can talk/speak" (avoid plain "talk/speak")
-            r'(you.{0,5})?can.{0,5}(talk|speak).{0,5}(again|now)?',
-            r'(you.{0,5})?can.{0,5}(talk|speak)',
+            # Explicit permission to talk/speak - MUST have "can" or permission word
+            r'(you.{0,5})?can.{0,5}(talk|speak).{0,5}(again|now)',  # "you can talk again"
+            r'(you.{0,5})?can.{0,5}(talk|speak)(\s|$)',  # "you can talk" (word boundary)
 
-            # "start talking/speaking" with optional qualifiers
-            r'(you.{0,5})?(can.{0,5})?(start.{0,5})?(talking|speaking).{0,5}(again|now)?',
+            # Start talking - MUST have "start" or "begin"
+            r'(you.{0,5})?start.{0,5}(talking|speaking).{0,5}(again|now)?',
+            r'(you.{0,5})?begin.{0,5}(talking|speaking)',
 
             # Explicit unmute commands
             r'(unmute|un.{0,5}mute|unmuting).{0,5}(yourself)?',
 
-            # Permission phrases
+            # Permission phrases - MUST have explicit permission structure
             r'go.{0,5}ahead.{0,5}(and.{0,5})?(talk|speak)',
-            r'(it\'?s.{0,5})?okay.{0,5}(to.{0,5})?(talk|speak).{0,5}(now)?',
+            r'(it\'?s.{0,5})?okay.{0,5}to.{0,5}(talk|speak).{0,5}(now)?',
             r'(you\'?re.{0,5})?allowed.{0,5}to.{0,5}(talk|speak)',
 
             # Resume commands
@@ -413,6 +415,16 @@ class CommandBehavior:
         command_type: 'voice_assistant', 'robot_hardware', 'quick_response', or None
         command_data: dict with command details
         canned_response: str to speak (skip LLM)
+
+        PRIORITY ORDER (CRITICAL - higher priority commands checked first):
+        1. Robot hardware commands (sleep, wake, stay, move, lights) - HIGHEST PRIORITY
+        2. Voice assistant commands (mute, volume, speed, pitch) - MEDIUM PRIORITY
+        3. Quick responses (hello, goodbye, etc.) - LOWEST PRIORITY
+
+        This ensures:
+        - Sleep/wake commands are not confused with mute/unmute
+        - "Hi, sleep" → sleep (not "Hey!")
+        - "Hello" alone → "Hello!" (when no commands match)
         """
         text_lower = text.lower().strip()
 
@@ -423,13 +435,16 @@ class CommandBehavior:
             if time_since_last < self.command_cooldown:
                 return None, None, None
 
-        # Priority 1: Quick responses (highest priority - instant responses)
-        quick_response = self._check_quick_response(text_lower)
-        if quick_response:
-            return 'quick_response', {'response': quick_response}, quick_response
+        # Priority 1: Robot hardware commands (sleep, wake, stay, lights, etc.)
+        # HIGHEST PRIORITY - checked first to avoid confusion with greetings/mute
+        hw_command = self._detect_hardware_command(text_lower)
+        if hw_command:
+            response = self._get_hardware_confirmation(hw_command)
+            return 'robot_hardware', {'command': hw_command}, response
 
         # Priority 2: Voice assistant commands (mute, volume, etc.)
-        # Mute/unmute
+        # Only check these if no hardware command detected
+        # Mute/unmute (with context awareness and conflict checking)
         if self._check_mute_command(text_lower):
             response = self._get_mute_confirmation()
             return 'voice_assistant', {'action': 'mute'}, response
@@ -461,11 +476,11 @@ class CommandBehavior:
             response = self._get_status_message()
             return 'voice_assistant', {'action': 'status'}, response
 
-        # Priority 3: Robot hardware commands (sleep, lights, etc.)
-        hw_command = self._detect_hardware_command(text_lower)
-        if hw_command:
-            response = self._get_hardware_confirmation(hw_command)
-            return 'robot_hardware', {'command': hw_command}, response
+        # Priority 3: Quick responses (lowest priority - only if no commands detected)
+        # This ensures "Hi, sleep" → sleep command, not "Hey!"
+        quick_response = self._check_quick_response(text_lower)
+        if quick_response:
+            return 'quick_response', {'response': quick_response}, quick_response
 
         # No command detected
         return None, None, None
@@ -900,8 +915,52 @@ class CommandBehavior:
 
         return None
 
+    def _has_sleep_wake_keywords(self, text):
+        """
+        Check if text contains sleep/wake keywords that might conflict with mute/unmute.
+
+        This prevents false positives like:
+        - "I'm talking about sleep" → should NOT trigger unmute
+        - "Stop talking, it's bedtime" → should trigger sleep, NOT mute
+
+        Returns True if sleep/wake keywords are present.
+        """
+        sleep_keywords = [
+            'sleep', 'asleep', 'sleeping', 'bedtime', 'bed time', 'bad time', 'bet time',
+            'good night', 'goodnight', 'nighty night', 'sweet dreams'
+        ]
+        wake_keywords = [
+            'wake', 'waking', 'awake', 'good morning', 'morning', 'rise and shine'
+        ]
+
+        text_lower = text.lower()
+
+        # Check for sleep keywords
+        for keyword in sleep_keywords:
+            if keyword in text_lower:
+                return True
+
+        # Check for wake keywords
+        for keyword in wake_keywords:
+            if keyword in text_lower:
+                return True
+
+        return False
+
     def _check_mute_command(self, text):
-        """Check for mute command (detection only, doesn't change state)."""
+        """
+        Check for mute command (detection only, doesn't change state).
+
+        Context-aware:
+        - Only triggers if not already muted
+        - Skips detection if sleep/wake keywords present (avoids conflicts)
+        """
+        # Skip if sleep/wake keywords present (they have priority)
+        if self._has_sleep_wake_keywords(text):
+            if self.verbose:
+                self.node.get_logger().info(f"Mute skipped - sleep/wake keywords detected: '{text}'")
+            return False
+
         for pattern in self.mute_patterns:
             if re.search(pattern, text):
                 if not self.is_muted:
@@ -910,22 +969,37 @@ class CommandBehavior:
                     return True
                 else:
                     if self.verbose:
-                        self.node.get_logger().info("Already muted")
+                        self.node.get_logger().info("Already muted, ignoring mute command")
                     return False
         return False
 
     def _check_unmute_command(self, text):
-        """Check for unmute command (detection only, doesn't change state)."""
+        """
+        Check for unmute command (detection only, doesn't change state).
+
+        Context-aware:
+        - Only triggers if currently muted
+        - Skips detection if sleep/wake keywords present (avoids conflicts)
+        - Skips if just mentioning "talking" without clear unmute intent
+        """
+        # Skip if sleep/wake keywords present (they have priority)
+        if self._has_sleep_wake_keywords(text):
+            if self.verbose:
+                self.node.get_logger().info(f"Unmute skipped - sleep/wake keywords detected: '{text}'")
+            return False
+
+        # Skip if not muted (no need to unmute)
+        if not self.is_muted:
+            if self.verbose:
+                self.node.get_logger().debug("Not muted, skipping unmute patterns")
+            return False
+
         for pattern in self.unmute_patterns:
             if re.search(pattern, text):
-                if self.is_muted:
-                    if self.verbose:
-                        self.node.get_logger().info(f"Unmute command detected: '{text}'")
-                    return True
-                else:
-                    if self.verbose:
-                        self.node.get_logger().info("Already unmuted")
-                    return False
+                if self.verbose:
+                    self.node.get_logger().info(f"Unmute command detected: '{text}'")
+                return True
+
         return False
 
     def _check_volume_command(self, text):
