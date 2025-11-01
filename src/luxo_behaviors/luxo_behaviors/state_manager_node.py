@@ -118,6 +118,18 @@ class StateManagerNode(Node):
             LuxoState.ERROR: (255, 0, 0, 0),                   # Red (error)
             LuxoState.SHUTDOWN: (50, 50, 50, 0)                # Dim gray
         }
+
+        # Emotion-based indicator colors for ANIMATING state (RGBW format)
+        self._emotion_colors = {
+            'anger': (255, 0, 0, 0),           # Red
+            'contempt': (180, 90, 0, 0),       # Brown/dark orange
+            'disgust': (0, 100, 0, 0),         # Dark green
+            'fear': (0, 0, 150, 0),            # Dark blue
+            'happiness': (0, 255, 0, 0),       # Bright green
+            'neutral': (100, 100, 100, 0),     # Gray
+            'sadness': (0, 50, 150, 0),        # Deep blue
+            'surprise': (255, 200, 0, 0)       # Yellow-orange
+        }
         
         # ROS2 Publishers
         self.state_publisher = self.create_publisher(
@@ -212,10 +224,21 @@ class StateManagerNode(Node):
             10
         )
 
+        # Add subscription for emotion detection (for animation indicators)
+        self.emotion_sub = self.create_subscription(
+            String,
+            '/camera/emotion',
+            self.emotion_callback,
+            10
+        )
+
         # Talking overlay state
         self._is_talking = False
         self._talking_overlay_active = False
         self._is_muted = False  # Track muted state for red feedback
+
+        # Emotion tracking for animation indicators
+        self._current_emotion = 'neutral'  # Default emotion
 
         # Timers
         self.update_timer = self.create_timer(0.1, self.update)  # 10Hz update
@@ -694,7 +717,7 @@ class StateManagerNode(Node):
                 if self._is_muted:
                     self.get_logger().info("🔴 TTS started while muted - activating RED overlay")
                 else:
-                    self.get_logger().info("🗣️ TTS started while unmuted - activating normal overlay")
+                    self.get_logger().debug("🗣️ TTS started while unmuted - activating normal overlay")
                 self._activate_talking_overlay()
             elif not self._is_talking and previous_state:
                 # TTS stopped - deactivate talking overlay
@@ -714,6 +737,25 @@ class StateManagerNode(Node):
                 self.get_logger().info(f"🔊 Muted status callback: _is_muted = False (was {previous_muted})")
         except Exception as e:
             self.get_logger().error(f"Error in muted status callback: {e}")
+
+    def emotion_callback(self, msg):
+        """Handle emotion detection for animation indicators."""
+        try:
+            # Update current emotion (lowercase for consistency)
+            emotion = msg.data.lower().strip()
+
+            # Only update if it's a recognized emotion
+            if emotion in self._emotion_colors:
+                previous_emotion = self._current_emotion
+                self._current_emotion = emotion
+
+                # Log emotion changes during animations
+                if self._current_state == LuxoState.ANIMATING and previous_emotion != emotion:
+                    self.get_logger().debug(f"😊 Emotion changed during animation: {previous_emotion} → {emotion}")
+            else:
+                self.get_logger().debug(f"Unrecognized emotion: {emotion}, keeping {self._current_emotion}")
+        except Exception as e:
+            self.get_logger().error(f"Error in emotion callback: {e}")
 
     def _activate_talking_overlay(self):
         """Activate the talking indicator overlay on NeoPixels with state-aware colors."""
@@ -746,15 +788,17 @@ class StateManagerNode(Node):
                     'purple': (128, 0, 255, 0)
                 }
                 base_color = color_map.get(self._color_mode, (0, 255, 100, 0))
+                indicator_color = (0, 0, 0, 255)  # White spinner for all color modes
             else:
                 # Use state-based colors from the state color mapping
                 # Get the color for the current state
                 state_color = self._state_colors.get(self._current_state, (0, 255, 100, 0))
 
-                # If it's a white-ish color (high white component), use our temperature-adjusted white
+                # If it's a white-ish color (high white component), use cyan for talking overlay
+                # (white background + white spinner = invisible, so use cyan background instead)
                 # Otherwise use the state color directly
                 if state_color[3] > 50:  # Has significant white component
-                    base_color = self._default_white_color
+                    base_color = (0, 255, 255, 0)  # Cyan background for talking
                 else:
                     base_color = state_color
 
@@ -939,9 +983,25 @@ class StateManagerNode(Node):
                 self._neopixel_controller.spinning_dot_status(color, delay=0.05, blocking=False)
                 needs_animation_timer = True
             elif state == LuxoState.ANIMATING:
-                self.get_logger().debug("NeoPixel: Stable white on status pixels for ANIMATING state")
-                self._neopixel_controller.fill_status_pixels(color[0], color[1], color[2], color[3])
-                needs_animation_timer = False
+                # Use RGB white background with emotion-based spinning indicator
+                base_color = (50, 50, 50, 200)  # RGB white background
+
+                # Get indicator color based on current emotion
+                indicator_color = self._emotion_colors.get(self._current_emotion, (100, 100, 100, 0))
+
+                self.get_logger().debug(
+                    f"NeoPixel: Emotion-based spinning indicator for ANIMATING state "
+                    f"(emotion: {self._current_emotion}, color: {indicator_color})"
+                )
+
+                # Create spinning indicator with emotion color
+                self._neopixel_controller.spinning_talking_indicator(
+                    base_color=base_color,
+                    indicator_color=indicator_color,
+                    speed=0.08,  # 80ms between frames for smooth spinning
+                    blocking=False
+                )
+                needs_animation_timer = True  # Keep animation running
             elif state == LuxoState.PETTING:
                 self.get_logger().debug("NeoPixel: Pink status pixels for PETTING state")
                 self._neopixel_controller.fill_status_pixels(color[0], color[1], color[2], color[3])
