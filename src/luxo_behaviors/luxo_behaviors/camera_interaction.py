@@ -141,11 +141,11 @@ class CameraInteraction(Node):
         self.health_publisher = self.create_publisher(Bool, '/camera/health', 10)
         self.diagnostic_publisher = self.create_publisher(DiagnosticArray, '/diagnostics', 10)
 
-        # Optimized resolution for faster processing on RVC2
+        # Standard resolution for RVC2
         self.REQ_WIDTH, self.REQ_HEIGHT = (
             640,
             480,
-        )  # Reduced resolution for better performance on RVC2
+        )  # Standard resolution for RVC2
 
         # Create health check timer
         self.health_check_timer = self.create_timer(
@@ -381,6 +381,12 @@ class CameraInteraction(Node):
             self.det_nn = det_nn
             self.gather_data_node = gather_data_node
             self.rec_nn = rec_nn
+            self.input_node = input_node  # Store camera/replay node for frame access
+
+            # Create output queue for frames from camera (for saving emotional response images)
+            # Using v3 API - get frames from original camera output (320x240), not detection passthrough
+            self.frame_queue = input_node.createOutputQueue(maxSize=4, blocking=False)
+            self.latest_frame = None  # Store latest frame for image saving
 
             # visualization - only add if visualizer is available
             if self.visualizer:
@@ -418,6 +424,15 @@ class CameraInteraction(Node):
             # This loop MUST stay within the context manager
             while pipeline.isRunning() and not self.shutdown_event.is_set() and self.pipeline_running:
                 current_time = time.time()
+
+                # Fetch latest frame from passthrough (for saving emotional response images)
+                if hasattr(self, 'frame_queue'):
+                    try:
+                        frame_msg = self.frame_queue.tryGet()
+                        if frame_msg is not None:
+                            self.latest_frame = frame_msg.getCvFrame()
+                    except:
+                        pass
 
                 if self.visualizer:
                     key = self.visualizer.waitKey(1)
@@ -466,8 +481,11 @@ class CameraInteraction(Node):
                 self.react_to_emotions and
                 emotion in self.emotion_to_animation):
 
+
                 self.trigger_animation(emotion)
                 self.last_emotion = emotion
+                # Save image of emotional response
+                self.save_emotional_response_image(emotion, confidence)
 
         except Exception as e:
             self.get_logger().error(f"Error in emotion callback: {e}")
@@ -494,6 +512,73 @@ class CameraInteraction(Node):
                 # Convert radians to degrees
                 angle_deg = math.degrees(msg.position[i])
                 self.joint_states[name] = angle_deg
+
+    def save_emotional_response_image(self, emotion, confidence):
+        """Save annotated image when emotional response is triggered"""
+        try:
+            import cv2
+            import os
+            from pathlib import Path
+
+            # Check if we have a frame
+            if not hasattr(self, 'latest_frame') or self.latest_frame is None:
+                self.get_logger().warn("No frame available for saving emotional response")
+                return
+
+            # Create logs/emotional_response directory
+            log_dir = Path.home() / "luxopi-ros" / "logs" / "emotional_response"
+            log_dir.mkdir(parents=True, exist_ok=True)
+
+            # Copy frame for annotation
+            img = self.latest_frame.copy()
+
+            # Get detection data from annotation node if available
+            if hasattr(self, 'annotation_node') and hasattr(self.annotation_node, 'latest_detections'):
+                detections = self.annotation_node.latest_detections
+
+                # Draw all detections with bounding boxes and labels
+                h, w = img.shape[:2]
+                for det in detections:
+                    xmin, ymin, xmax, ymax = det['bbox']
+                    det_emotion = det['emotion']
+                    det_confidence = det['confidence']
+
+                    # Convert normalized coordinates to pixel coordinates
+                    x1 = int(xmin * w)
+                    y1 = int(ymin * h)
+                    x2 = int(xmax * w)
+                    y2 = int(ymax * h)
+
+                    # Draw bounding box (green for triggered emotion, yellow for others)
+                    color = (0, 255, 0) if det_emotion == emotion else (0, 255, 255)
+                    cv2.rectangle(img, (x1, y1), (x2, y2), color, 2)
+
+                    # Draw emotion label with background
+                    label = f"{det_emotion}: {det_confidence:.2f}"
+                    (label_w, label_h), baseline = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)
+                    cv2.rectangle(img, (x1, y1 - label_h - 10), (x1 + label_w, y1), color, -1)
+                    cv2.putText(img, label, (x1, y1 - 5),
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 2)
+
+            # Add compact title with timestamp at BOTTOM of image
+            timestamp_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            title = f"Emotion: {emotion.upper()} ({confidence:.2f})"
+            cv2.rectangle(img, (0, h - 35), (w, h), (40, 40, 40), -1)
+            cv2.putText(img, title, (5, h - 21),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1)
+            cv2.putText(img, timestamp_str, (5, h - 7),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.3, (200, 200, 200), 1)
+
+            # Generate filename with timestamp
+            filename = datetime.now().strftime("%Y%m%d_%H%M%S") + f"_{emotion}_{confidence:.2f}.jpg"
+            filepath = log_dir / filename
+
+            # Save image
+            cv2.imwrite(str(filepath), img)
+            self.get_logger().info(f"💾 Saved emotional response image: {filepath}")
+
+        except Exception as e:
+            self.get_logger().error(f"Error saving emotional response image: {e}")
 
     def trigger_animation(self, emotion, distance=None):
         """Trigger an animation based on detected emotion using the action system"""

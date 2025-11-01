@@ -23,6 +23,9 @@ class AnnotationNode(dai.node.HostNode):
         self.emotion_callback = None
         self.skip_output = False  # Flag to skip output when no visualizer
 
+        # Store detection data for camera_interaction.py to use for image saving
+        self.latest_detections = []
+
     def build(
         self,
         gather_data_msg: dai.Node.Output,
@@ -51,6 +54,9 @@ class AnnotationNode(dai.node.HostNode):
         # Collect face data for single-line logging
         face_data = []
 
+        # Clear and rebuild detection data for this frame (for camera_interaction.py to use)
+        self.latest_detections = []
+
         for idx, (det_msg, rec_msg) in enumerate(zip(dets_msg.detections, rec_msg_list)):
             xmin, ymin, xmax, ymax = det_msg.rotated_rect.getOuterRect()
 
@@ -70,6 +76,13 @@ class AnnotationNode(dai.node.HostNode):
                 # Call the emotion callback if provided
                 if self.emotion_callback and self.latest_confidence > 0.3:
                     self.emotion_callback(self.latest_emotion, self.latest_confidence)
+
+            # Store detection data for camera_interaction.py to use for image saving
+            self.latest_detections.append({
+                'bbox': (xmin, ymin, xmax, ymax),
+                'emotion': rec_msg.top_class.lower(),
+                'confidence': rec_msg.top_score.item()
+            })
 
             # Collect face info for logging
             face_data.append(f"Face{idx + 1}:{rec_msg.top_class}({rec_msg.top_score.item():.2f})")
