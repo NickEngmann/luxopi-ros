@@ -372,6 +372,7 @@ class VoiceAssistantNode(Node, CommandBehavior, StateVocalizationBehavior):
 
         # Antenna mute toggle state
         self.last_antenna_touch_time = 0.0
+        self.last_mute_toggle_time = 0.0  # Track last mute/unmute to enforce cooldown
 
         self.get_logger().info("✅ ROS publishers and subscribers created")
         self.get_logger().info(f"🔧 Hailo mode: {use_hailo}")
@@ -609,6 +610,7 @@ class VoiceAssistantNode(Node, CommandBehavior, StateVocalizationBehavior):
         - Toggle mute state
         - Provide red pixel ring feedback when muted
         - Debounce touches with 1 second cooldown
+        - Enforce 2.5-second cooldown between mute/unmute toggles to prevent accidental double-taps
         """
         try:
             import time
@@ -624,6 +626,16 @@ class VoiceAssistantNode(Node, CommandBehavior, StateVocalizationBehavior):
                 return
 
             self.last_antenna_touch_time = current_time
+
+            # Mute/Unmute cooldown - enforce 2.5 second wait between toggles
+            time_since_last_toggle = current_time - self.last_mute_toggle_time
+            if time_since_last_toggle < 2.5:
+                remaining = 2.5 - time_since_last_toggle
+                self.get_logger().info(f"⏸️  Mute/unmute cooldown active - wait {remaining:.1f}s more")
+                return
+
+            # Update toggle time BEFORE starting toggle (prevents double triggers during async operations)
+            self.last_mute_toggle_time = current_time
 
             # Toggle mute state
             if self.is_muted:
