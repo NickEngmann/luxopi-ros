@@ -68,7 +68,7 @@ class AnnotationNode(dai.node.HostNode):
                 self.latest_confidence = rec_msg.top_score.item()
 
                 # Call the emotion callback if provided
-                if self.emotion_callback and self.latest_confidence > 0.4:
+                if self.emotion_callback and self.latest_confidence > 0.3:
                     self.emotion_callback(self.latest_emotion, self.latest_confidence)
 
             # Collect face info for logging
