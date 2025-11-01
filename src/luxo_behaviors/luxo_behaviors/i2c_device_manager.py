@@ -213,7 +213,7 @@ class MPR121Sensor(I2CSensor):
         self.touch_confirmation_required = 4  # Need 4 consecutive touches
 
         # Noise recovery tracking - ignore readings after spike until baseline returns
-        self.noise_spike_threshold = 90  # Delta values > this are considered noise spikes
+        self.noise_spike_threshold = 99  # Delta values > this are considered noise spikes
         self.noise_recovery_threshold = 5  # Must return below this to clear recovery state
         self.in_noise_recovery = {ch: False for ch in self.active_channels}
 
@@ -414,8 +414,30 @@ class I2CDeviceManager(Node):
         # MPR121 Raw Data publisher - for debugging (delta, baseline, filtered values)
         self.mpr121_raw_data_pub = self.create_publisher(String, '/i2c/mpr121/raw_data', 10)
 
+        # Rainbow mode publisher - triggered by both front sensors
+        self.rainbow_mode_pub = self.create_publisher(Bool, '/luxo/rainbow_mode', 10)
+
+        # Sleep mode subscriber - prevent rainbow activation during sleep
+        self.sleep_mode_sub = self.create_subscription(
+            Bool,
+            '/luxo/sleep_mode',
+            self.sleep_mode_callback,
+            10
+        )
+
         # Track latest MPR121 sensor data for 1 Hz publishing
         self.latest_mpr121_data = None
+
+        # Rainbow mode toggle state (both front sensors touched)
+        self.rainbow_mode_active = False
+        self.last_rainbow_toggle_time = 0.0
+        self.front_right_touched = False
+        self.front_left_touched = False
+        self.both_front_sensors_touched = False
+        self.both_sensors_touch_start_time = 0.0
+
+        # Sleep mode state (prevent rainbow mode during sleep)
+        self.sleep_mode_active = False
 
         # Status publishers
         self.status_pub = self.create_publisher(String, '/i2c/status', 10)
@@ -619,26 +641,47 @@ class I2CDeviceManager(Node):
                         if 'front_right' in data:
                             touch_msg = Bool()
                             touch_msg.data = data['front_right']['touched']
-                            self.mpr121_ch1_pub.publish(touch_msg)
+
+                            # Update front_right touch state for rainbow mode detection
+                            self.front_right_touched = data['front_right']['touched']
+
+                            # Don't publish collision events if rainbow mode is active
+                            if not self.rainbow_mode_active:
+                                self.mpr121_ch1_pub.publish(touch_msg)
+
                             if data['front_right']['touched'] and data['front_right']['consecutive'] == 2:
-                                self.get_logger().info(f"🐾 MPR121 CH1 (front_right) TOUCH confirmed (consecutive: {data['front_right']['consecutive']})")
+                                if not self.rainbow_mode_active:
+                                    self.get_logger().info(f"🐾 MPR121 CH1 (front_right) TOUCH confirmed (consecutive: {data['front_right']['consecutive']})")
                             if data['front_right']['released']:
-                                release_msg = Bool()
-                                release_msg.data = True
-                                self.mpr121_ch1_release_pub.publish(release_msg)
-                                self.get_logger().info("👋 MPR121 CH1 (front_right) RELEASE detected")
+                                if not self.rainbow_mode_active:
+                                    release_msg = Bool()
+                                    release_msg.data = True
+                                    self.mpr121_ch1_release_pub.publish(release_msg)
+                                    self.get_logger().info("👋 MPR121 CH1 (front_right) RELEASE detected")
 
                         if 'front_left' in data:
                             touch_msg = Bool()
                             touch_msg.data = data['front_left']['touched']
-                            self.mpr121_ch2_pub.publish(touch_msg)
+
+                            # Update front_left touch state for rainbow mode detection
+                            self.front_left_touched = data['front_left']['touched']
+
+                            # Don't publish collision events if rainbow mode is active
+                            if not self.rainbow_mode_active:
+                                self.mpr121_ch2_pub.publish(touch_msg)
+
                             if data['front_left']['touched'] and data['front_left']['consecutive'] == 2:
-                                self.get_logger().info(f"🐾 MPR121 CH2 (front_left) TOUCH confirmed (consecutive: {data['front_left']['consecutive']})")
+                                if not self.rainbow_mode_active:
+                                    self.get_logger().info(f"🐾 MPR121 CH2 (front_left) TOUCH confirmed (consecutive: {data['front_left']['consecutive']})")
                             if data['front_left']['released']:
-                                release_msg = Bool()
-                                release_msg.data = True
-                                self.mpr121_ch2_release_pub.publish(release_msg)
-                                self.get_logger().info("👋 MPR121 CH2 (front_left) RELEASE detected")
+                                if not self.rainbow_mode_active:
+                                    release_msg = Bool()
+                                    release_msg.data = True
+                                    self.mpr121_ch2_release_pub.publish(release_msg)
+                                    self.get_logger().info("👋 MPR121 CH2 (front_left) RELEASE detected")
+
+                        # Check for rainbow mode toggle (both front sensors touched)
+                        self._check_rainbow_mode_toggle()
 
                         # Channels 3-4: Petting detection
                         if 'top_front' in data:
@@ -697,15 +740,83 @@ class I2CDeviceManager(Node):
     def _perform_bus_recovery(self):
         """Perform emergency I2C bus recovery"""
         self.get_logger().warn("Performing emergency I2C bus recovery")
-        
+
         # Reset error counter to prevent immediate re-trigger
         self.consecutive_bus_errors = 0
-        
+
         # Use the existing reset_bus_callback logic
         from std_srvs.srv import Trigger
         request = Trigger.Request()
         response = Trigger.Response()
         self.reset_bus_callback(request, response)
+
+    def sleep_mode_callback(self, msg):
+        """Handle sleep mode status - prevent rainbow activation during sleep."""
+        try:
+            self.sleep_mode_active = msg.data
+            if self.sleep_mode_active:
+                self.get_logger().info("😴 Sleep mode activated - rainbow mode disabled")
+                # If rainbow is currently active, deactivate it
+                if self.rainbow_mode_active:
+                    self.rainbow_mode_active = False
+                    deactivate_msg = Bool()
+                    deactivate_msg.data = False
+                    self.rainbow_mode_pub.publish(deactivate_msg)
+                    self.get_logger().info("🌈 Rainbow mode deactivated due to sleep")
+            else:
+                self.get_logger().info("👁️ Sleep mode deactivated - rainbow mode enabled")
+        except Exception as e:
+            self.get_logger().error(f"Error in sleep mode callback: {e}")
+
+    def _check_rainbow_mode_toggle(self):
+        """
+        Check if both front sensors (CH1 and CH2) are touched simultaneously.
+        If so, toggle rainbow mode with cooldown period.
+
+        This is similar to antenna mute toggle but requires BOTH sensors.
+        """
+        current_time = time.time()
+
+        # Check if both front sensors are currently touched
+        both_touched = self.front_right_touched and self.front_left_touched
+
+        # Detect rising edge (both sensors just became touched)
+        if both_touched and not self.both_front_sensors_touched:
+            # Both sensors just became touched
+            self.both_front_sensors_touched = True
+            self.both_sensors_touch_start_time = current_time
+
+            # PREVENT rainbow mode activation during sleep
+            if self.sleep_mode_active:
+                self.get_logger().info("🌈 Rainbow mode blocked - robot is sleeping")
+                return
+
+            # Check cooldown - enforce 2.5 second wait between toggles
+            time_since_last_toggle = current_time - self.last_rainbow_toggle_time
+            if time_since_last_toggle < 2.5:
+                remaining = 2.5 - time_since_last_toggle
+                self.get_logger().info(f"🌈 Rainbow mode cooldown active - wait {remaining:.1f}s more")
+                return
+
+            # Update toggle time BEFORE toggling (prevents double triggers)
+            self.last_rainbow_toggle_time = current_time
+
+            # Toggle rainbow mode
+            self.rainbow_mode_active = not self.rainbow_mode_active
+
+            # Publish rainbow mode status
+            msg = Bool()
+            msg.data = self.rainbow_mode_active
+            self.rainbow_mode_pub.publish(msg)
+
+            if self.rainbow_mode_active:
+                self.get_logger().info("🌈✨ Rainbow mode ACTIVATED - both front sensors touched!")
+            else:
+                self.get_logger().info("🌈 Rainbow mode DEACTIVATED - both front sensors touched!")
+
+        elif not both_touched and self.both_front_sensors_touched:
+            # Both sensors released
+            self.both_front_sensors_touched = False
                     
     def gesture_thread_worker(self):
         """Dedicated thread for gesture detection"""

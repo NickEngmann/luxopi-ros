@@ -156,7 +156,7 @@ Examples:
     threshold_group.add_argument(
         '--noise-threshold',
         type=int,
-        default=65,
+        default=99,
         metavar='N',
         help='Noise spike threshold - deltas above this are treated as noise (0-255). Default: 65'
     )
@@ -253,7 +253,7 @@ DEFAULT_CHANNEL_THRESHOLDS = {
     0: (25, 25),   # Bottom - weak signal
     1: (25, 25),   # Front-Right - good signal
     2: (25, 25),   # Front-Left - good signal
-    3: (22, 22),   # Top-Front - good signal
+    3: (30, 22),   # Top-Front - good signal
     4: (30, 45),   # Antenna - strong signal (excellent)
 }
 

@@ -74,7 +74,7 @@ class AnnotationNode(dai.node.HostNode):
                 self.latest_confidence = rec_msg.top_score.item()
 
                 # Call the emotion callback if provided
-                if self.emotion_callback and self.latest_confidence > 0.3:
+                if self.emotion_callback and self.latest_confidence > 0.33:
                     self.emotion_callback(self.latest_emotion, self.latest_confidence)
 
             # Store detection data for camera_interaction.py to use for image saving

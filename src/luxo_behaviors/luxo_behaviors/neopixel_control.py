@@ -52,6 +52,14 @@ class NeoPixelController:
         
         # Thread safety
         self._lock = threading.RLock()
+
+        # Separate stop events and threads for lighting and status pixels
+        self._lighting_stop_event = threading.Event()
+        self._status_stop_event = threading.Event()
+        self._lighting_effect_thread = None
+        self._status_effect_thread = None
+
+        # Legacy stop event (for compatibility with effects that don't specify)
         self._stop_event = threading.Event()
         self._effect_thread = None
         
@@ -489,25 +497,67 @@ class NeoPixelController:
             "current_fps": self.max_fps
         }
     
-    def stop_effect(self):
-        """Stop any running effect"""
-        self._stop_event.set()
-        if self._effect_thread and self._effect_thread.is_alive():
-            self._effect_thread.join(timeout=1.0)
-        self._stop_event.clear()
+    def stop_effect(self, section='all'):
+        """
+        Stop running effects
+
+        Args:
+            section: 'all', 'lighting', or 'status' - which section to stop
+        """
+
+        if section in ('all', 'lighting'):
+            self._lighting_stop_event.set()
+            if self._lighting_effect_thread and self._lighting_effect_thread.is_alive():
+                self._lighting_effect_thread.join(timeout=1.0)
+            self._lighting_stop_event.clear()
+
+        if section in ('all', 'status'):
+            self._status_stop_event.set()
+            if self._status_effect_thread and self._status_effect_thread.is_alive():
+                self._status_effect_thread.join(timeout=1.0)
+            self._status_stop_event.clear()
+
+        # Legacy support - stop old-style effects
+        if section == 'all':
+            self._stop_event.set()
+            if self._effect_thread and self._effect_thread.is_alive():
+                self._log(f"🛑 Stopping legacy effect thread", "info")
+                self._effect_thread.join(timeout=1.0)
+            self._stop_event.clear()
     
-    def _run_effect(self, effect_func: Callable, *args, **kwargs):
-        """Run an effect in a separate thread"""
-        self.stop_effect()
-        
+    def _run_effect(self, effect_func: Callable, section='legacy', *args, **kwargs):
+        """
+        Run an effect in a separate thread
+
+        Args:
+            effect_func: The effect function to run
+            section: 'lighting', 'status', or 'legacy' - which thread to use
+            *args, **kwargs: Arguments to pass to effect_func
+        """
+        # Only stop the specific section this effect will use
+        if section == 'lighting':
+            self.stop_effect(section='lighting')
+        elif section == 'status':
+            self.stop_effect(section='status')
+        else:
+            self.stop_effect(section='all')  # Legacy: stop everything
+
         def effect_wrapper():
             try:
                 effect_func(*args, **kwargs)
             except Exception as e:
                 self._log(f"Effect error: {e}", "error")
-        
-        self._effect_thread = threading.Thread(target=effect_wrapper, daemon=True)
-        self._effect_thread.start()
+
+        # Assign to the appropriate thread based on section
+        if section == 'lighting':
+            self._lighting_effect_thread = threading.Thread(target=effect_wrapper, daemon=True)
+            self._lighting_effect_thread.start()
+        elif section == 'status':
+            self._status_effect_thread = threading.Thread(target=effect_wrapper, daemon=True)
+            self._status_effect_thread.start()
+        else:
+            self._effect_thread = threading.Thread(target=effect_wrapper, daemon=True)
+            self._effect_thread.start()
     
     # ==========================================================================
     # Effect Methods
@@ -750,12 +800,12 @@ class NeoPixelController:
             self._run_effect(_spinning_group)
         return True
     
-    def rainbow_cycle(self, cycles: int = 2, delay: float = 0.01, 
+    def rainbow_cycle(self, cycles: int = 2, delay: float = 0.01,
                       blocking: bool = False):
         """Generate rainbow colors across all LEDs"""
         if not self._is_initialized:
             return False
-        
+
         def _wheel(pos):
             """Generate rainbow colors across 0-255 positions"""
             if pos < 85:
@@ -766,7 +816,7 @@ class NeoPixelController:
             else:
                 pos -= 170
                 return (0, pos * 3, 255 - pos * 3)
-        
+
         def _rainbow_cycle():
             self._log("Rainbow cycle")
             for cycle in range(cycles):
@@ -782,11 +832,72 @@ class NeoPixelController:
                     self.show()
                     time.sleep(delay)
             self._current_mode = NeoPixelMode.RAINBOW_CYCLE
-        
+
         if blocking:
             _rainbow_cycle()
         else:
             self._run_effect(_rainbow_cycle)
+        return True
+
+    def moving_rainbow(self, delay: float = 0.03, blocking: bool = False):
+        """
+        Create a moving rainbow effect that flows around the LIGHTING pixels only (0-59).
+        The rainbow pattern moves continuously until stopped.
+        Status pixels (60-75) are left untouched for state machine control.
+        """
+        if not self._is_initialized:
+            return False
+
+        def _wheel(pos):
+            """Generate rainbow colors across 0-255 positions"""
+            if pos < 85:
+                return (pos * 3, 255 - pos * 3, 0)
+            elif pos < 170:
+                pos -= 85
+                return (255 - pos * 3, 0, pos * 3)
+            else:
+                pos -= 170
+                return (0, pos * 3, 255 - pos * 3)
+
+        def _moving_rainbow():
+            self._log("🌈 Moving rainbow effect started on lighting pixels (0-59) - continuous", "info")
+
+            # Offset for the rainbow pattern movement
+            offset = 0
+
+            # Continuous rainbow movement until stopped (use lighting-specific stop event)
+            while not self._lighting_stop_event.is_set():
+
+                # Only update the first 60 LEDs (lighting pixels)
+                for i in range(self.lighting_pixels):  # 0-59
+                    # Calculate color position with offset for movement
+                    # This creates a smooth rainbow that wraps around the lighting ring
+                    pixel_index = ((i * 256 // self.lighting_pixels) + offset) & 255
+                    r, g, b = _wheel(pixel_index)
+                    self.set_pixel_color(i, r, g, b, 0)  # W=0 for pure rainbow colors
+
+                # Update display with rate limiting
+                show_result = self.show_rate_limited()
+
+                # Increment offset to move the rainbow
+                offset = (offset + 4) % 256  # Adjust speed by changing increment (higher = faster)
+
+                # Wait before next frame
+                time.sleep(delay)
+
+
+            # Clear only lighting LEDs when stopped (leave status pixels alone)
+            for i in range(self.lighting_pixels):
+                self.set_pixel_color(i, 0, 0, 0, 0)
+            self.show()
+            self._current_mode = NeoPixelMode.OFF
+            self._log("🌈 Rainbow cleared and mode set to OFF", "info")
+
+        if blocking:
+            _moving_rainbow()
+        else:
+            # Run on the lighting-specific thread
+            self._run_effect(_moving_rainbow, section='lighting')
         return True
     
     def theater_chase(self, color: Union[Tuple[int, int, int], Tuple[int, int, int, int]], 
@@ -967,7 +1078,8 @@ class NeoPixelController:
         def _spinning_talking():
             position = 0
 
-            while not self._stop_event.is_set():
+            # Use status-specific stop event (allows lighting effects to run simultaneously)
+            while not self._status_stop_event.is_set():
                 # First, set all status pixels to the base color
                 for i in range(self.status_pixels_start, self.pixel_count):
                     self.set_pixel_color(i, *base_color)
@@ -992,7 +1104,8 @@ class NeoPixelController:
         if blocking:
             _spinning_talking()
         else:
-            self._run_effect(_spinning_talking)
+            # Run on the status-specific thread (won't interfere with lighting effects)
+            self._run_effect(_spinning_talking, section='status')
         return True
     
     def get_current_mode(self) -> NeoPixelMode:

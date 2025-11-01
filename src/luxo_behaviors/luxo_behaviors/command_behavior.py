@@ -399,6 +399,7 @@ class CommandBehavior:
         self.pixel_ring_control_publisher = self.node.create_publisher(Bool, '/voice/pixel_ring_control', 10)
         self.sleep_mode_publisher = self.node.create_publisher(Bool, '/luxo/sleep_mode', 10)
         self.stay_mode_publisher = self.node.create_publisher(Bool, '/luxo/stay_mode', 10)
+        self.rainbow_mode_publisher = self.node.create_publisher(Bool, '/luxo/rainbow_mode', 10)
 
         if self.verbose:
             self.node.get_logger().info("ROS publishers created for command behavior")
@@ -761,6 +762,13 @@ class CommandBehavior:
             self.sleep_state = sleep
             # ALWAYS log this - it's critical for debugging
             self.node.get_logger().info(f"📢 PUBLISHED sleep mode: {sleep} to /luxo/sleep_mode")
+
+            # Deactivate rainbow mode when going to sleep
+            if sleep:
+                rainbow_msg = Bool()
+                rainbow_msg.data = False
+                self.rainbow_mode_publisher.publish(rainbow_msg)
+                self.node.get_logger().info("🌈 Deactivated rainbow mode due to sleep")
         except Exception as e:
             self.node.get_logger().error(f"Error publishing sleep mode: {e}")
 
@@ -817,6 +825,13 @@ class CommandBehavior:
             self.light_state = state
             if self.verbose:
                 self.node.get_logger().info(f"Published light state: {state}")
+
+            # Deactivate rainbow mode when turning lights off
+            if not state:
+                rainbow_msg = Bool()
+                rainbow_msg.data = False
+                self.rainbow_mode_publisher.publish(rainbow_msg)
+                self.node.get_logger().info("🌈 Deactivated rainbow mode due to lights off")
         except Exception as e:
             self.node.get_logger().error(f"Error publishing light state: {e}")
 
@@ -895,6 +910,12 @@ class CommandBehavior:
             msg = String()
             msg.data = f"color:{color}"
             self.color_control_publisher.publish(msg)
+
+            # Deactivate rainbow mode when changing color
+            rainbow_msg = Bool()
+            rainbow_msg.data = False
+            self.rainbow_mode_publisher.publish(rainbow_msg)
+            self.node.get_logger().info(f"🌈 Deactivated rainbow mode due to color change: {color}")
         except Exception as e:
             self.node.get_logger().error(f"Error publishing color: {e}")
 

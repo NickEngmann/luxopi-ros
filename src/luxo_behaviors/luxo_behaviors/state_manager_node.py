@@ -232,10 +232,21 @@ class StateManagerNode(Node):
             10
         )
 
+        # Add subscription for rainbow mode (dual front sensor touch)
+        self.rainbow_mode_sub = self.create_subscription(
+            Bool,
+            '/luxo/rainbow_mode',
+            self.rainbow_mode_callback,
+            10
+        )
+
         # Talking overlay state
         self._is_talking = False
         self._talking_overlay_active = False
         self._is_muted = False  # Track muted state for red feedback
+
+        # Rainbow mode state (dual front sensor touch)
+        self._rainbow_mode_active = False
 
         # Emotion tracking for animation indicators
         self._current_emotion = 'neutral'  # Default emotion
@@ -567,6 +578,12 @@ class StateManagerNode(Node):
                 if self._neopixel_controller:
                     self.get_logger().info("Lights OFF - turning off lighting pixels only")
 
+                    # Deactivate rainbow mode if active
+                    if self._rainbow_mode_active:
+                        self.get_logger().info("🌈 Deactivating rainbow mode due to lights off command")
+                        self._rainbow_mode_active = False
+                        self._deactivate_rainbow_effect()
+
                     # Turn off lighting pixels only, keep status pixels
                     try:
                         self._neopixel_controller.turn_off_lighting()
@@ -677,7 +694,13 @@ class StateManagerNode(Node):
                     # Set specific color mode
                     self._color_mode = color_name
                     color = color_map.get(color_name, (255, 255, 255, 0))
-                
+
+                # Deactivate rainbow mode if active (color command overrides rainbow)
+                if self._rainbow_mode_active:
+                    self.get_logger().info(f"🌈 Deactivating rainbow mode due to color command: {color_name}")
+                    self._rainbow_mode_active = False
+                    self._deactivate_rainbow_effect()
+
                 # Apply the color to lighting pixels only if lights are on
                 if self._lights_enabled and self._neopixel_controller and color:
                     success = self._neopixel_controller.set_lighting_color(*color)
@@ -695,6 +718,13 @@ class StateManagerNode(Node):
             if msg.data:
                 # Sleep mode - trigger sleep animation
                 self.get_logger().info("Sleep mode activated - triggering sleep animation")
+
+                # Deactivate rainbow mode if active
+                if self._rainbow_mode_active:
+                    self.get_logger().info("🌈 Deactivating rainbow mode due to sleep mode")
+                    self._rainbow_mode_active = False
+                    self._deactivate_rainbow_effect()
+
                 self._trigger_animation('sleep')
             else:
                 # Wake mode - return to idle or trigger wake animation
@@ -757,6 +787,23 @@ class StateManagerNode(Node):
         except Exception as e:
             self.get_logger().error(f"Error in emotion callback: {e}")
 
+    def rainbow_mode_callback(self, msg):
+        """Handle rainbow mode activation/deactivation from dual front sensor touch."""
+        try:
+            previous_state = self._rainbow_mode_active
+            self._rainbow_mode_active = msg.data
+
+            if self._rainbow_mode_active and not previous_state:
+                # Rainbow mode activated - start moving rainbow effect
+                self.get_logger().info("🌈✨ Rainbow mode activated - starting moving rainbow effect")
+                self._activate_rainbow_effect()
+            elif not self._rainbow_mode_active and previous_state:
+                # Rainbow mode deactivated - stop rainbow effect and restore previous state
+                self.get_logger().info("🌈 Rainbow mode deactivated - stopping rainbow effect")
+                self._deactivate_rainbow_effect()
+        except Exception as e:
+            self.get_logger().error(f"Error in rainbow mode callback: {e}")
+
     def _activate_talking_overlay(self):
         """Activate the talking indicator overlay on NeoPixels with state-aware colors."""
         if not self._neopixel_controller:
@@ -765,9 +812,6 @@ class StateManagerNode(Node):
         try:
             # Set overlay flag to prevent state updates from interfering
             self._talking_overlay_active = True
-
-            # Stop any current effects
-            self._neopixel_controller.stop_effect()
 
             # MUTED OVERRIDE: Use RED when muted (highest priority)
             if self._is_muted:
@@ -805,13 +849,18 @@ class StateManagerNode(Node):
                 # White spinning indicator works for all states
                 indicator_color = (0, 0, 0, 255)
 
+            # Always use spinning indicator - it now runs on a separate thread
+            # and won't interfere with rainbow mode (which runs on lighting thread)
             self._neopixel_controller.spinning_talking_indicator(
                 base_color=base_color,
                 indicator_color=indicator_color,
                 speed=0.08,  # 80ms between frames for smooth spinning
                 blocking=False
             )
-            self.get_logger().debug(f"Talking overlay activated - spinning indicator with {self._current_state.name} colors: {base_color}")
+            if self._rainbow_mode_active:
+                self.get_logger().info(f"🌈 Talking overlay activated WITH rainbow running (separate threads)")
+            else:
+                self.get_logger().debug(f"Talking overlay activated - spinning indicator with {self._current_state.name} colors: {base_color}")
 
         except Exception as e:
             self.get_logger().error(f"Error activating talking overlay: {e}")
@@ -823,8 +872,8 @@ class StateManagerNode(Node):
             return
 
         try:
-            # Stop the talking indicator effect
-            self._neopixel_controller.stop_effect()
+            # Stop only the status pixel effect (won't interfere with lighting/rainbow)
+            self._neopixel_controller.stop_effect(section='status')
 
             # Clear overlay flag
             self._talking_overlay_active = False
@@ -836,11 +885,69 @@ class StateManagerNode(Node):
             # Restore the current state's NeoPixel visualization
             self._update_neopixel_for_state(self._current_state)
 
-            self.get_logger().debug(f"Talking overlay deactivated - restored {self._current_state.name} visualization")
+            if self._rainbow_mode_active:
+                self.get_logger().info("🌈 Talking overlay deactivated WITH rainbow still running")
+            else:
+                self.get_logger().debug(f"Talking overlay deactivated - restored {self._current_state.name} visualization")
 
         except Exception as e:
             self.get_logger().error(f"Error deactivating talking overlay: {e}")
-            self._talking_overlay_active = False
+
+    def _activate_rainbow_effect(self):
+        """Activate the moving rainbow effect on all NeoPixels."""
+        if not self._neopixel_controller:
+            self.get_logger().error("🌈 Cannot activate rainbow - no neopixel controller")
+            return
+
+        try:
+            self.get_logger().info("🌈 STARTING rainbow effect activation...")
+
+            # Stop only lighting effects (leave status effects running)
+            self._neopixel_controller.stop_effect(section='lighting')
+            self.get_logger().info("🌈 Stopped previous lighting effects (status effects continue)")
+
+            # Small delay to ensure previous effect is stopped
+            import time
+            time.sleep(0.05)
+
+            # Start the moving rainbow effect
+            # This will run continuously until stopped
+            self.get_logger().info("🌈 Calling moving_rainbow() on first 60 LEDs...")
+            result = self._neopixel_controller.moving_rainbow(
+                delay=0.03,  # 30ms between frames for smooth movement
+                blocking=False  # Run in background thread
+            )
+
+            if result:
+                self.get_logger().info("🌈✨ Moving rainbow effect SUCCESSFULLY activated on lighting pixels (0-59)")
+            else:
+                self.get_logger().error("🌈 moving_rainbow() returned False - activation failed!")
+
+        except Exception as e:
+            self.get_logger().error(f"🌈 Error activating rainbow effect: {e}")
+            import traceback
+            self.get_logger().error(f"🌈 Traceback: {traceback.format_exc()}")
+
+    def _deactivate_rainbow_effect(self):
+        """Deactivate the rainbow effect and restore normal state visualization."""
+        if not self._neopixel_controller:
+            return
+
+        try:
+            # Stop the rainbow effect
+            self._neopixel_controller.stop_effect()
+
+            # Small delay to ensure effect is fully stopped
+            import time
+            time.sleep(0.1)
+
+            # Restore the current state's NeoPixel visualization
+            self._update_neopixel_for_state(self._current_state)
+
+            self.get_logger().info(f"🌈 Rainbow effect deactivated - restored {self._current_state.name} visualization")
+
+        except Exception as e:
+            self.get_logger().error(f"Error deactivating rainbow effect: {e}")
 
     def _trigger_animation(self, animation_name):
         """Helper method to trigger an animation via ROS2 action."""
@@ -928,18 +1035,25 @@ class StateManagerNode(Node):
             self.get_logger().debug(f"NeoPixel animation still running, queuing state {state.name}")
             return
         
-        if self._neopixel_last_visual_state == state:
+        if self._neopixel_last_visual_state == state and not self._rainbow_mode_active:
             self.get_logger().debug(f"NeoPixel already showing {state.name}, skipping update")
             return
-        
+
         try:
             # if self._neopixel_last_visual_state is not None:
             #     pass
                 # self._neopixel_controller.clear_all()
                 # time.sleep(0.1)
                 # self.get_logger().debug(f"Cleared pixels for state switch: {self._neopixel_last_visual_state.name} -> {state.name}")
-            
-            self._neopixel_controller.stop_effect()
+
+            # Only stop the relevant section based on rainbow mode
+            if self._rainbow_mode_active:
+                # Rainbow is running on lighting thread - only stop status effects
+                self._neopixel_controller.stop_effect(section='status')
+                self.get_logger().info(f"🌈 Rainbow mode active - stopping only status effects for state {state.name}")
+            else:
+                # No rainbow - stop all effects
+                self._neopixel_controller.stop_effect(section='all')
             
             # Get RGBW color for state
             # Check if we're in a specific color mode
@@ -1033,7 +1147,8 @@ class StateManagerNode(Node):
                 self._neopixel_controller.clear_status_pixels()
 
                 # If lights are enabled, turn on lighting pixels with default white
-                if self._lights_enabled:
+                # Skip lighting control if rainbow mode is active (only affects first 60 LEDs)
+                if self._lights_enabled and not self._rainbow_mode_active:
                     self.get_logger().debug(f"NeoPixel: Setting lighting to default white for IDLE")
                     self._neopixel_controller.set_lighting_color(
                         self._default_white_color[0],
@@ -1041,6 +1156,8 @@ class StateManagerNode(Node):
                         self._default_white_color[2],
                         self._default_white_color[3]
                     )
+                elif self._rainbow_mode_active:
+                    self.get_logger().debug(f"NeoPixel: Rainbow mode active - skipping lighting control for IDLE")
                 needs_animation_timer = False
             else:
                 # For other states, show color on status pixels only
@@ -1049,7 +1166,8 @@ class StateManagerNode(Node):
                 self._neopixel_controller.fill_status_pixels(r, g, b, w)
 
                 # Ensure lighting stays on if enabled
-                if self._lights_enabled and state != LuxoState.SHUTDOWN:
+                # Skip lighting control if rainbow mode is active
+                if self._lights_enabled and state != LuxoState.SHUTDOWN and not self._rainbow_mode_active:
                     # Don't override lighting unless it's the first time or lighting was off
                     if not hasattr(self, '_lighting_initialized') or not self._lighting_initialized:
                         self._neopixel_controller.set_lighting_color(
