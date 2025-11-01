@@ -195,7 +195,7 @@ class MPR121Sensor(I2CSensor):
             1: (25, 25),   # Front-Right - good signal
             2: (25, 25),   # Front-Left - good signal
             3: (22, 22),   # Top-Front - good signal
-            4: (37, 45),   # Antenna - strong signal (excellent)
+            4: (30, 45),   # Antenna - strong signal (excellent)
         }
 
         # Active channels (0-4)
@@ -213,7 +213,7 @@ class MPR121Sensor(I2CSensor):
         self.touch_confirmation_required = 4  # Need 4 consecutive touches
 
         # Noise recovery tracking - ignore readings after spike until baseline returns
-        self.noise_spike_threshold = 65  # Delta values > this are considered noise spikes
+        self.noise_spike_threshold = 90  # Delta values > this are considered noise spikes
         self.noise_recovery_threshold = 5  # Must return below this to clear recovery state
         self.in_noise_recovery = {ch: False for ch in self.active_channels}
 

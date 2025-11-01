@@ -44,6 +44,9 @@ Usage examples:
   # Custom channel names
   python3 MPR121.py --channel-names "Top" "Bottom" "Left" "Right" "Center"
 
+  # Adjust noise threshold (test different values)
+  python3 MPR121.py --noise-threshold 50
+
   # Different I2C address
   python3 MPR121.py --i2c-address 0x5B
 """
@@ -150,6 +153,13 @@ Examples:
         metavar='SEC',
         help='Cooldown time after release event before next release can trigger. Default: 2.0'
     )
+    threshold_group.add_argument(
+        '--noise-threshold',
+        type=int,
+        default=65,
+        metavar='N',
+        help='Noise spike threshold - deltas above this are treated as noise (0-255). Default: 65'
+    )
 
     # Display configuration
     display_group = parser.add_argument_group('Display Configuration')
@@ -244,7 +254,7 @@ DEFAULT_CHANNEL_THRESHOLDS = {
     1: (25, 25),   # Front-Right - good signal
     2: (25, 25),   # Front-Left - good signal
     3: (22, 22),   # Top-Front - good signal
-    4: (35, 45),   # Antenna - strong signal (excellent)
+    4: (30, 45),   # Antenna - strong signal (excellent)
 }
 
 # Check if user explicitly provided global thresholds (non-default values)
@@ -292,6 +302,10 @@ BASELINE_ONLY = args.baseline_only
 DETECT_RELEASES = args.detect_releases
 RELEASE_EVENT_THRESHOLD = args.release_event_threshold
 RELEASE_COOLDOWN = args.release_cooldown
+
+# Noise spike detection settings
+NOISE_SPIKE_THRESHOLD = args.noise_threshold
+NOISE_RECOVERY_THRESHOLD = 5  # Must return below this to clear recovery state
 
 # Validate refresh rate
 if REFRESH_RATE < 0.01:
@@ -343,6 +357,10 @@ if not QUIET_MODE and not CSV_MODE:
         print(f"\n  Release Event Detection: ENABLED")
         print(f"    Negative Delta Threshold: -{RELEASE_EVENT_THRESHOLD}")
         print(f"    Cooldown Period: {RELEASE_COOLDOWN}s")
+
+    print(f"\n  Noise Spike Detection:")
+    print(f"    Noise Spike Threshold: {NOISE_SPIKE_THRESHOLD}")
+    print(f"    Recovery Threshold: {NOISE_RECOVERY_THRESHOLD}")
     print()
 
 # Apply thresholds to all channels
@@ -433,8 +451,7 @@ last_release_time = {ch: 0 for ch in MONITOR_CHANNELS}
 
 # Track noise spike recovery state (per-channel)
 # Matches robot implementation in i2c_device_manager.py lines 213-216
-NOISE_SPIKE_THRESHOLD = 65  # Delta values > this are considered noise spikes
-NOISE_RECOVERY_THRESHOLD = 5  # Must return below this to clear recovery state
+# NOISE_SPIKE_THRESHOLD and NOISE_RECOVERY_THRESHOLD are set earlier (lines 307-308)
 in_noise_recovery = {ch: False for ch in MONITOR_CHANNELS}
 
 try:
@@ -465,7 +482,7 @@ try:
             # Normal display mode
             if iteration % 20 == 0 and not QUIET_MODE:
                 print("\n" + "-" * 80)
-                print("Delta symbols: [xxx]=Spike(>65) | *xxx*=Recovery/High | xxx=Normal")
+                print(f"Delta symbols: [xxx]=Spike(>{NOISE_SPIKE_THRESHOLD}) | *xxx*=Recovery/High | xxx=Normal")
                 print("-" * 80)
                 if SHOW_RAW:
                     print(f"{'Channel':<25} {'Baseline':<10} {'Filtered':<10} {'Delta':<8} {'Threshold':<10} {'Status':<10}")
