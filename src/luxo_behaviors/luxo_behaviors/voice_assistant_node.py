@@ -214,12 +214,14 @@ class VoiceAssistantNode(Node, CommandBehavior, StateVocalizationBehavior):
         self.declare_parameter('verbose', False)
         self.declare_parameter('voice_preset', '/home/pi/luxopi-ai/audio_experiments_web/preset_alpha-high-pitch.json')
         self.declare_parameter('whisper_step_ms', 1000)
+        self.declare_parameter('quiet_mode', False)  # Quiet mode for public testing
 
         # Get parameters
         use_hailo = self.get_parameter('use_hailo').value
         verbose = self.get_parameter('verbose').value
         voice_preset = self.get_parameter('voice_preset').value
         whisper_step_ms = self.get_parameter('whisper_step_ms').value
+        quiet_mode = self.get_parameter('quiet_mode').value
 
         # Paths - using system-wide commands now
         self.use_hailo = use_hailo
@@ -245,7 +247,7 @@ class VoiceAssistantNode(Node, CommandBehavior, StateVocalizationBehavior):
         self.callback_group = ReentrantCallbackGroup()
 
         # Initialize unified command behavior mixin (handles ALL commands - voice assistant AND robot hardware)
-        self.setup_command_behavior(verbose=verbose)
+        self.setup_command_behavior(verbose=verbose, quiet_mode=quiet_mode)
 
         # Initialize state vocalization behavior (state-specific phrases for expressiveness)
         # Pass callback group for concurrent processing
@@ -375,6 +377,8 @@ class VoiceAssistantNode(Node, CommandBehavior, StateVocalizationBehavior):
         self.get_logger().info(f"🔧 Hailo mode: {use_hailo}")
         self.get_logger().info(f"🔧 Voice preset: {voice_preset if voice_preset else 'None'}")
         self.get_logger().info(f"🔧 Whisper step: {whisper_step_ms}ms")
+        if quiet_mode:
+            self.get_logger().info(f"🔇 Quiet mode ENABLED: amplitude set to 20 (public testing mode)")
 
         # Setup file logging for voice analysis
         self._setup_voice_logging()
@@ -756,6 +760,12 @@ class VoiceAssistantNode(Node, CommandBehavior, StateVocalizationBehavior):
                 word_gap = "10"
                 capitals = "100"
 
+            # CRITICAL: Override amplitude if quiet mode is enabled (regardless of preset)
+            if self.quiet_mode:
+                amplitude = "20"
+                if self.verbose:
+                    self.get_logger().info(f"🔇 Quiet mode: overriding amplitude to 20")
+
             # Apply dynamic speed adjustment based on word count
             speed = str(self.calculate_adjusted_speed(text, base_speed))
 
@@ -923,6 +933,12 @@ class VoiceAssistantNode(Node, CommandBehavior, StateVocalizationBehavior):
                 amplitude = str(self.amplitude)
                 word_gap = "10"
                 capitals = "100"
+
+            # CRITICAL: Override amplitude if quiet mode is enabled (regardless of preset)
+            if self.quiet_mode:
+                amplitude = "20"
+                if self.verbose:
+                    self.get_logger().info(f"🔇 Quiet mode: overriding amplitude to 20")
 
             # Apply dynamic speed adjustment based on word count
             speed = str(self.calculate_adjusted_speed(text, base_speed))

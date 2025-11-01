@@ -214,6 +214,12 @@ def generate_launch_description():
         default_value='1000',
         description='Whisper processing step in milliseconds'
     )
+
+    declare_quiet_mode = DeclareLaunchArgument(
+        'quiet_mode',
+        default_value='false',
+        description='Enable quiet mode for public testing (sets amplitude to 20)'
+    )
     # ==========================================================================
     # LOGGING ACTIONS
     # ==========================================================================
@@ -480,7 +486,8 @@ def generate_launch_description():
             {'use_hailo': LaunchConfiguration('llm_assistant_hailo')},
             {'verbose': LaunchConfiguration('llm_assistant_verbose')},
             {'voice_preset': LaunchConfiguration('llm_assistant_voice_preset')},
-            {'whisper_step_ms': LaunchConfiguration('llm_assistant_whisper_step_ms')}
+            {'whisper_step_ms': LaunchConfiguration('llm_assistant_whisper_step_ms')},
+            {'quiet_mode': LaunchConfiguration('quiet_mode')}
         ],
         condition=IfCondition(PythonExpression(["'", LaunchConfiguration('enable_llm_assistant'), "' == 'true' and '", LaunchConfiguration('enable_voice'), "' == 'true'"]))
     )
@@ -631,6 +638,7 @@ def generate_launch_description():
         declare_llm_assistant_verbose,
         declare_llm_assistant_voice_preset,
         declare_llm_assistant_whisper_step_ms,
+        declare_quiet_mode,
         declare_enable_vl53_left,
         declare_enable_vl53_right,
 

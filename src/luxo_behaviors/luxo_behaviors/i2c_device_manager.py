@@ -194,7 +194,7 @@ class MPR121Sensor(I2CSensor):
             0: (25, 25),   # Bottom - weak signal
             1: (25, 25),   # Front-Right - good signal
             2: (25, 25),   # Front-Left - good signal
-            3: (22, 22),   # Top-Front - good signal
+            3: (30, 30),   # Top-Front - good signal
             4: (30, 45),   # Antenna - strong signal (excellent)
         }
 

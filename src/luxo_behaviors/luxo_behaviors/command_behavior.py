@@ -30,7 +30,7 @@ class CommandBehavior:
     2. LuxopiAssistantNode (luxopi_assistant_node.py) - For command detection from speech
     """
 
-    def setup_command_behavior(self, verbose=False, amplitude=120, speed=100, pitch=30, setup_publishers=True):
+    def setup_command_behavior(self, verbose=False, amplitude=120, speed=100, pitch=30, setup_publishers=True, quiet_mode=False):
         """
         Initialize command behavior (mixin setup method).
 
@@ -41,12 +41,16 @@ class CommandBehavior:
             pitch: Voice pitch (0-99)
             setup_publishers: If True, create ROS publishers for hardware control.
                              Set to False if only using coordination methods (e.g., behavior_coordinator)
+            quiet_mode: If True, sets amplitude to 20 for quiet operation (useful in public places)
         """
         self.verbose = verbose
 
+        # Quiet mode for public testing
+        self.quiet_mode = quiet_mode
+
         # Voice assistant settings (espeak parameters)
         self.is_muted = False
-        self.amplitude = amplitude  # Volume: 0-200, default 120
+        self.amplitude = 20 if quiet_mode else amplitude  # Volume: 0-200, default 120 (or 20 in quiet mode)
         self.speed = speed          # Speed: 80-450 wpm, default 300
         self.pitch = pitch          # Pitch: 0-99, default 90
 
@@ -81,6 +85,8 @@ class CommandBehavior:
             self._setup_ros_integration()
             if self.node:
                 self.node.get_logger().info("CommandBehavior mixin initialized (with publishers)")
+                if quiet_mode:
+                    self.node.get_logger().info(f"🔇 Quiet mode: amplitude={self.amplitude}")
         else:
             # Still need command state tracking for coordination
             self.command_in_progress = False
@@ -96,6 +102,8 @@ class CommandBehavior:
 
             if self.node:
                 self.node.get_logger().info("CommandBehavior mixin initialized (coordination only, no publishers)")
+                if quiet_mode:
+                    self.node.get_logger().info(f"🔇 Quiet mode: amplitude={self.amplitude}")
 
     def _init_voice_assistant_patterns(self):
         """Initialize fuzzy patterns for voice assistant commands.
