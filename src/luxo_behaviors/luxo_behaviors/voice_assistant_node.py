@@ -269,7 +269,7 @@ class VoiceAssistantNode(Node, CommandBehavior, StateVocalizationBehavior):
         self.last_word_count = 0  # Track word count for stabilization detection
         self.word_count_stable_iterations = 0  # Count how many times word count stayed the same
         self.silence_threshold = 0.5  # Optimized: Detect silence after 0.5s (was 0.8s)
-        self.max_speech_duration = 10.0  # Max speech length in seconds for context
+        self.max_speech_duration = 3.5  # Max speech length in seconds for context
         self.last_stt_time = 0.8  # Track actual STT time from hailo-whisper debug output (default fallback)
         self.stt_start_time = None  # Track when STT processing started (from marker)
         self.similarity_threshold = 0.75  # If last 2 transcriptions are 75%+ similar, consider it final
@@ -627,16 +627,30 @@ class VoiceAssistantNode(Node, CommandBehavior, StateVocalizationBehavior):
 
             # Toggle mute state
             if self.is_muted:
-                # UNMUTE - unmute first so we can hear the response
+                # UNMUTE - unmute first, then speak after delay to ensure proper visual feedback
                 self.get_logger().info("🔊 Antenna touched - UNMUTING")
-                self.execute_voice_assistant_command('unmute')
-                self.speak("I can talk now!")
+                self.execute_voice_assistant_command('unmute')  # Publishes muted_status=False
+
+                # Delay speak to ensure muted_status callback processes first (fixes race condition)
+                # This ensures NeoPixels show CYAN background (unmuted), not RED
+                def delayed_speak_unmute():
+                    self.speak("I can talk now!")
+                    timer.cancel()
+
+                timer = self.create_timer(0.35, delayed_speak_unmute, callback_group=self.callback_group)
+
             else:
-                # MUTE - mute first, don't speak (user wants quiet!)
+                # MUTE - publish muted_status first, then speak after delay
                 self.get_logger().info("🔇 Antenna touched - MUTING")
-                self.speak("Okay, I'll be quiet.")
-                self.execute_voice_assistant_command('mute')
-                # Don't speak - user wants the robot to be quiet!
+                self.execute_voice_assistant_command('mute')  # Publishes muted_status=True (with internal delay for visual feedback)
+
+                # Delay speak to ensure muted_status callback processes first (fixes race condition)
+                # This ensures NeoPixels show RED background (muted) during "I'll be quiet" message
+                def delayed_speak_mute():
+                    self.speak("Okay, I'll be quiet.")
+                    timer.cancel()
+
+                timer = self.create_timer(0.35, delayed_speak_mute, callback_group=self.callback_group)
 
         except Exception as e:
             self.get_logger().error(f"Error in antenna touch callback: {e}")
