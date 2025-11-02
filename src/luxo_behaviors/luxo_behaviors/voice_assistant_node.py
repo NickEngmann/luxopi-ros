@@ -27,8 +27,10 @@ import logging  # For file logging
 # ROS2 imports
 import rclpy
 from rclpy.node import Node
+from rclpy.action import ActionClient
 from rclpy.callback_groups import ReentrantCallbackGroup
 from std_msgs.msg import String, Bool
+from luxo_interfaces.action import PlayAnimation
 
 # Unified Command Behavior (handles both voice assistant and robot hardware commands)
 from luxo_behaviors.command_behavior import CommandBehavior
@@ -337,6 +339,9 @@ class VoiceAssistantNode(Node, CommandBehavior, StateVocalizationBehavior):
         self.llm_response_pub = self.create_publisher(String, '/voice/llm_response', 10)
         self.tts_active_pub = self.create_publisher(Bool, '/voice/tts_active', 10)
         self.muted_status_pub = self.create_publisher(Bool, '/voice/muted_status', 10)
+
+        # Animation Action Client
+        self._animation_client = ActionClient(self, PlayAnimation, 'play_animation')
 
         # ROS Subscribers (using reentrant callback group for concurrent processing)
         self.sleep_mode_sub = self.create_subscription(
@@ -1471,6 +1476,27 @@ class VoiceAssistantNode(Node, CommandBehavior, StateVocalizationBehavior):
                                     elif command_type == 'robot_hardware':
                                         hw_command = command_data.get('command', 'unknown')
                                         self.get_logger().info(f"🤖 Hardware command: {hw_command}")
+                                        # Speak response if not muted
+                                        if self.should_speak():
+                                            self.speak(response)
+                                    elif command_type == 'animation_trigger':
+                                        # Animation triggers: randomly selected from animation lists in command_behavior.py
+                                        # thank_you → random from ['simple_bow', 'big_bow']
+                                        # happy → random from ['big_bounce', 'small_bounces']
+                                        # bounce → random from ['small_bounces', 'big_bounce']
+                                        trigger = command_data.get('trigger', 'unknown')
+                                        animation = command_data.get('animation', 'nod')  # Random animation already selected by _check_animation_trigger()
+                                        self.get_logger().info(f"🎭 Animation trigger: {trigger} → {animation}")
+
+                                        # Trigger the animation via action client
+                                        if hasattr(self, '_animation_client'):
+                                            goal = PlayAnimation.Goal()
+                                            goal.animation_name = animation
+                                            goal.speed_multiplier = 1.0
+                                            goal.allow_interruption = True
+                                            self._animation_client.send_goal_async(goal)
+                                            self.get_logger().info(f"  ✅ Sent animation goal: {animation}")
+
                                         # Speak response if not muted
                                         if self.should_speak():
                                             self.speak(response)

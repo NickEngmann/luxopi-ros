@@ -79,6 +79,7 @@ class CommandBehavior:
         # Initialize patterns
         self._init_voice_assistant_patterns()
         self._init_robot_hardware_patterns()
+        self._init_animation_triggers()
 
         # ROS integration (optional - only needed if this node publishes commands)
         if setup_publishers:
@@ -111,14 +112,13 @@ class CommandBehavior:
         """
 
         # Quick responses (bypass LLM entirely)
+        # NOTE: "thank you" removed - now triggers bow animation (see animation_triggers)
         self.quick_responses = {
             "hello": "Hello!",
             "hi": "Hey!",
             "hey": "Hello!",
             "goodbye": "Goodbye!",
             "bye": "Bye!",
-            "thank you": "You're welcome!",
-            "thanks": "No problem!",
             "how are you": "I'm doing great!",
             "what's up": "Not much, you?",
         }
@@ -254,6 +254,10 @@ class CommandBehavior:
             r'(it\'?s|its).{0,10}(bed.?time|bad.{0,5}time|bet.{0,5}time|bat.{0,5}time)',
             r'(it\'?s|its).{0,10}(your.{0,5})?(bed.?time|bad.{0,5}time|bet.{0,5}time)',
 
+            # "It's bad" / "It is bad" alone (common Whisper misrecognition of "bedtime")
+            r'(it\'?s|its|it.{0,3}is).{0,5}bad',
+            r'(it\'?s|its|it.{0,3}is).{0,5}(a.{0,3})?bad.{0,5}time',
+
             r'time.{0,10}for.{0,10}(you.{0,5}to.{0,5})?(sleep|see|bed)',
             r'sleep\s+(now|time|mode)',
             r'(sleep|sleeping).{0,5}(mode|time)',
@@ -377,6 +381,98 @@ class CommandBehavior:
             'white': ['white', 'wight']  # Removed 'wright', 'bite', 'right' - too loose
         }
 
+    def _init_animation_triggers(self):
+        """Initialize patterns for voice commands that trigger animations.
+
+        These are special commands that both trigger an animation AND provide a voice response.
+        Priority: Between voice_assistant (priority 2) and quick_response (priority 3).
+        """
+
+        # Thank you patterns → bow or nod animation
+        # EXTREMELY PERMISSIVE - even single partial words (Whisper is only 50-60% accurate)
+        self.thank_you_patterns = [
+            r'thank',   # Just "thank" anywhere - catches thank/thanks/thanx/etc.
+            r'thx',     # Common abbreviation
+            r'thnx',
+            r'tank',    # Common misrecognition
+            r'tanks',
+            r'appreciate',
+            r'grateful',
+            r'gratitude',
+            r'(you\'?re|your).{0,5}(the.{0,5})?(best|great|awesome|amazing)',
+        ]
+
+        # Happy/excited patterns → excited or playful_bob animation
+        # EXTREMELY PERMISSIVE - single words (Whisper is only 50-60% accurate)
+        self.happy_patterns = [
+            r'happy',   # No word boundaries - just "happy" anywhere
+            r'happie',
+            r'hapy',
+            r'yay',
+            r'yeah',    # Could be "happy yeah" misheard as just "yeah"
+            r'woo',
+            r'woohoo',
+            r'yipee',
+            r'yippee',
+            r'hooray',
+            r'excited',
+            r'excite',
+            r'joyful',
+            r'joy',
+            r'feel.{0,5}good',
+            r'(so|very|really).{0,5}(good|great|nice)',
+        ]
+
+        # Bounce/hop patterns → playful_bob animation (bouncy/energetic)
+        # EXTREMELY PERMISSIVE - single words (Whisper is only 50-60% accurate)
+        self.bounce_patterns = [
+            r'bounce',   # No word boundaries
+            r'bouncing',
+            r'bouncy',
+            r'boing',
+            r'hop',
+            r'hopping',
+            r'hops',
+            r'hoping',  # Common misheard "hopping"
+            r'jump',
+            r'jumping',
+            r'jumps',
+            r'big.{0,5}bounce',
+            r'do.{0,5}(a|the).{0,5}(bounce|hop|jump)',
+        ]
+
+        # Animation mapping: pattern_type → (animation_name, voice_responses)
+        self.animation_triggers = {
+            'thank_you': {
+                'animations': ['simple_bow', 'big_bow'],
+                'responses': [
+                    "You're welcome!",
+                    "No problem!",
+                    "Anytime!",
+                    "Happy to help!",
+                    "My pleasure!",
+                ]
+            },
+            'happy': {
+                # Use actual animations: big_bounce, small_bounces, playful_bob, tail_wag, head_bobbing
+                'animations': ['big_bounce', 'small_bounces'],
+                'responses': [
+                    "Yay!",
+                    "I'm happy too!",
+                    "Woohoo!",
+                    "That's great!",
+                ]
+            },
+            'bounce': {
+                'animations': ['small_bounces', 'big_bounce'],
+                'responses': [
+                    "Boing boing!",
+                    "Let's bounce!",
+                    "Bouncing around!",
+                ]
+            }
+        }
+
     def _setup_ros_integration(self):
         """Setup ROS publishers and subscriptions."""
         # Command state tracking
@@ -401,8 +497,15 @@ class CommandBehavior:
         self.stay_mode_publisher = self.node.create_publisher(Bool, '/luxo/stay_mode', 10)
         self.rainbow_mode_publisher = self.node.create_publisher(Bool, '/luxo/rainbow_mode', 10)
 
+        # Create action client for animation triggers
+        self._animation_client = ActionClient(
+            self.node,
+            PlayAnimation,
+            'play_animation'
+        )
+
         if self.verbose:
-            self.node.get_logger().info("ROS publishers created for command behavior")
+            self.node.get_logger().info("ROS publishers and animation client created for command behavior")
 
     # ===================================================================
     # COMMAND DETECTION METHODS (used by luxopi_assistant_node)
@@ -420,10 +523,12 @@ class CommandBehavior:
         PRIORITY ORDER (CRITICAL - higher priority commands checked first):
         1. Robot hardware commands (sleep, wake, stay, move, lights) - HIGHEST PRIORITY
         2. Voice assistant commands (mute, volume, speed, pitch) - MEDIUM PRIORITY
+        2.5. Animation triggers (thank you, happy, bounce) - MEDIUM-LOW PRIORITY
         3. Quick responses (hello, goodbye, etc.) - LOWEST PRIORITY
 
         This ensures:
         - Sleep/wake commands are not confused with mute/unmute
+        - "Thank you" triggers animation + response (not LLM)
         - "Hi, sleep" → sleep (not "Hey!")
         - "Hello" alone → "Hello!" (when no commands match)
         """
@@ -476,6 +581,16 @@ class CommandBehavior:
         if self._check_status_command(text_lower):
             response = self._get_status_message()
             return 'voice_assistant', {'action': 'status'}, response
+
+        # Priority 2.5: Animation triggers (thank you, happy, bounce)
+        # These trigger both an animation AND a voice response
+        trigger_type, animation, animation_response = self._check_animation_trigger(text_lower)
+        if trigger_type:
+            return 'animation_trigger', {
+                'trigger': trigger_type,
+                'animation': animation,
+                'response': animation_response
+            }, animation_response
 
         # Priority 3: Quick responses (lowest priority - only if no commands detected)
         # This ensures "Hi, sleep" → sleep command, not "Hey!"
@@ -935,6 +1050,34 @@ class CommandBehavior:
                 return response
 
         return None
+
+    def _check_animation_trigger(self, text):
+        """Check if text should trigger an animation + voice response.
+
+        Returns tuple: (trigger_type, animation, response) or (None, None, None)
+        """
+        # Check thank you patterns
+        if any(re.search(pattern, text) for pattern in self.thank_you_patterns):
+            config = self.animation_triggers['thank_you']
+            animation = random.choice(config['animations'])
+            response = random.choice(config['responses'])
+            return 'thank_you', animation, response
+
+        # Check happy patterns
+        if any(re.search(pattern, text) for pattern in self.happy_patterns):
+            config = self.animation_triggers['happy']
+            animation = random.choice(config['animations'])
+            response = random.choice(config['responses'])
+            return 'happy', animation, response
+
+        # Check bounce patterns
+        if any(re.search(pattern, text) for pattern in self.bounce_patterns):
+            config = self.animation_triggers['bounce']
+            animation = random.choice(config['animations'])
+            response = random.choice(config['responses'])
+            return 'bounce', animation, response
+
+        return None, None, None
 
     def _has_sleep_wake_keywords(self, text):
         """
