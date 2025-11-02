@@ -201,13 +201,20 @@ class IdleBehavior:
             # Create goal for idle animation
             goal = PlayAnimation.Goal()
             goal.animation_name = selected_animation
-            goal.speed_multiplier = random.uniform(0.8, 1.2)  # Slight speed variation
+
+            # Speed up animations during rainbow demo mode for more energy
+            if self.rainbow_mode_active:
+                goal.speed_multiplier = random.uniform(1.2, 1.4)  # 1.3x average speed in demo mode
+            else:
+                goal.speed_multiplier = random.uniform(0.8, 1.2)  # Slight speed variation (normal)
+
             goal.allow_interruption = True  # Always allow interruption for idle animations
             goal.use_hardware_feedback = False
-            
+
+            mode_indicator = "🌈" if self.rainbow_mode_active else ""
             self.node.get_logger().info(
-                f"Triggering idle animation: {selected_animation} "
-                f"(speed: {goal.speed_multiplier:.1f})"
+                f"{mode_indicator}Triggering idle animation: {selected_animation} "
+                f"(speed: {goal.speed_multiplier:.1f}x)"
             )
             
             # Send goal asynchronously

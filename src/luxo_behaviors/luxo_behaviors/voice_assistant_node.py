@@ -269,6 +269,7 @@ class VoiceAssistantNode(Node, CommandBehavior, StateVocalizationBehavior):
         self.last_word_count = 0  # Track word count for stabilization detection
         self.word_count_stable_iterations = 0  # Count how many times word count stayed the same
         self.silence_threshold = 0.5  # Optimized: Detect silence after 0.5s (was 0.8s)
+        self.original_silence_threshold = self.silence_threshold  # Store for demo mode restoration
         self.max_speech_duration = 3.5  # Max speech length in seconds for context
         self.last_stt_time = 0.8  # Track actual STT time from hailo-whisper debug output (default fallback)
         self.stt_start_time = None  # Track when STT processing started (from marker)
@@ -354,6 +355,14 @@ class VoiceAssistantNode(Node, CommandBehavior, StateVocalizationBehavior):
             callback_group=self.callback_group
         )
 
+        self.rainbow_mode_sub = self.create_subscription(
+            Bool,
+            '/luxo/rainbow_mode',
+            self.rainbow_mode_callback,
+            10,
+            callback_group=self.callback_group
+        )
+
         # MPR121 Antenna touch sensor subscriber (for mute toggle)
         self.antenna_touch_sub = self.create_subscription(
             Bool,
@@ -369,6 +378,9 @@ class VoiceAssistantNode(Node, CommandBehavior, StateVocalizationBehavior):
 
         # Stay mode state
         self.is_stay_mode = False
+
+        # Rainbow demo mode state
+        self.rainbow_mode_active = False
 
         # Antenna mute toggle state
         self.last_antenna_touch_time = 0.0
@@ -600,6 +612,27 @@ class VoiceAssistantNode(Node, CommandBehavior, StateVocalizationBehavior):
             self.get_logger().info(f"🧊 Stay mode {mode_str} - TTS {'blocked' if msg.data else 'unblocked'}")
         except Exception as e:
             self.get_logger().error(f"Error in stay mode callback: {e}")
+
+    def rainbow_mode_callback(self, msg):
+        """Handle rainbow demo mode - reduce voice timeout for faster responses."""
+        try:
+            self.rainbow_mode_active = msg.data
+
+            if self.rainbow_mode_active:
+                # Demo mode: Reduce silence threshold for faster, snappier responses
+                self.silence_threshold = 0.3  # Reduced from 0.5s for ultra-responsive demo
+                self.get_logger().info(
+                    f"🌈 Demo mode: Voice timeout reduced to {self.silence_threshold}s "
+                    f"(from {self.original_silence_threshold}s) for faster responses"
+                )
+            else:
+                # Normal mode: Restore original silence threshold
+                self.silence_threshold = self.original_silence_threshold
+                self.get_logger().info(
+                    f"Normal mode: Voice timeout restored to {self.silence_threshold}s"
+                )
+        except Exception as e:
+            self.get_logger().error(f"Error in rainbow mode callback: {e}")
 
     def antenna_touch_callback(self, msg):
         """
