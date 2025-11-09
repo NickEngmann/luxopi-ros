@@ -139,6 +139,10 @@ class VoiceDirectionNode(Node):
         self.last_direction = None
         self.leds_on = False
         self.recent_peak_amplitude = self.MIN_AMPLITUDE_THRESHOLD
+
+        # Pixel ring direction tracking - ensure visual updates when direction changes
+        self.last_pixel_ring_direction = None
+        self.last_pixel_ring_led_position = None
         self.amplitude_decay_rate = self.config['amplitude']['peak_decay_rate']
         self.direction_history = []
         self.history_size = self.config['stability']['history_size']
@@ -619,6 +623,11 @@ class VoiceDirectionNode(Node):
                                     
                                     # Add to direction history - exactly from vad_doa.py
                                     if direction is not None:
+                                        # Calculate LED position to detect if visual update is needed
+                                        # (Each LED covers 30 degrees)
+                                        adjusted_angle = int(direction) % 360
+                                        led_position = int((adjusted_angle + 15) / 30) % 12
+
                                         # ALWAYS update pixel ring for real-time visual feedback
                                         # Even if direction is unstable, users should see where sound is coming from
                                         # UNLESS muted (show red background with white direction indicator)
@@ -626,14 +635,43 @@ class VoiceDirectionNode(Node):
                                             if not self.sleep_mode_active and not self.is_muted:
                                                 pixel_ring.set_direction(int(direction))
                                                 self.leds_on = True
-                                                self.get_logger().info(f'💡 Pixel ring → {int(direction)}°')
+
+                                                # Enhanced logging: show if LED position changed
+                                                if led_position != self.last_pixel_ring_led_position:
+                                                    self.get_logger().info(
+                                                        f'💡 Pixel ring → {int(direction)}° '
+                                                        f'(LED {led_position}/12, changed from {self.last_pixel_ring_led_position})'
+                                                    )
+                                                    self.last_pixel_ring_led_position = led_position
+                                                else:
+                                                    self.get_logger().info(
+                                                        f'💡 Pixel ring → {int(direction)}° (LED {led_position}/12, same position)'
+                                                    )
+
+                                                self.last_pixel_ring_direction = int(direction)
+
                                             elif self.is_muted:
                                                 # Show direction with red background when muted
                                                 pixel_ring.set_direction_muted(int(direction))
                                                 self.leds_on = True
-                                                self.get_logger().debug(f'🔴 Pixel ring → RED with direction {int(direction)}° (muted)')
+
+                                                # Enhanced logging for muted mode
+                                                if led_position != self.last_pixel_ring_led_position:
+                                                    self.get_logger().info(
+                                                        f'🔴 Pixel ring → RED with direction {int(direction)}° '
+                                                        f'(LED {led_position}/12, changed from {self.last_pixel_ring_led_position})'
+                                                    )
+                                                    self.last_pixel_ring_led_position = led_position
+                                                else:
+                                                    self.get_logger().info(
+                                                        f'🔴 Pixel ring → RED with direction {int(direction)}° '
+                                                        f'(LED {led_position}/12, same position)'
+                                                    )
+
+                                                self.last_pixel_ring_direction = int(direction)
+
                                             else:
-                                                self.get_logger().debug(f'💤 Skipping pixel ring update (sleep mode)')
+                                                self.get_logger().info(f'💤 Skipping pixel ring update (sleep mode)')
 
                                         # Skip stability filtering if disabled for debugging - exactly from vad_doa.py
                                         if self.config['debug'].get('disable_stability_filter', False):
@@ -683,14 +721,14 @@ class VoiceDirectionNode(Node):
                                                 else:
                                                     self.get_logger().info(f'{int(avg_direction)}°')
                                             else:
-                                                self.get_logger().debug(f'[Unstable: std={angular_std:.1f}°]')
+                                                self.get_logger().info(f'[Unstable: std={angular_std:.1f}°]')
                                         else:
                                             # First reading, just store it - from vad_doa.py
-                                            self.get_logger().debug('[Acquiring direction...]')
+                                            self.get_logger().info('[Acquiring direction...]')
                                 else:
                                     # Signal too weak for reliable DOA - exactly from vad_doa.py
-                                    self.get_logger().debug(f'[Weak signal: amplitude={int(avg_amplitude)}, ratio={amplitude_ratio:.2f}]')
-                            
+                                    self.get_logger().info(f'[Weak signal: amplitude={int(avg_amplitude)}, ratio={amplitude_ratio:.2f}]')
+
                             self.speech_count = 0
                             self.chunks = []
 

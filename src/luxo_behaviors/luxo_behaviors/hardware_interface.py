@@ -1519,11 +1519,11 @@ class RoArmHardwareInterface(Node):
 
             if len(safe_positions) > 5:
                 acc_val = safe_positions[5]
-                # Check if acc_value is within safe boundaries (-2.5 to -0.5)
-                if acc_val < 10 or acc_val > 22.5:
+                # Check if acc_value is within safe boundaries (2 to 255)
+                if acc_val < 2 or acc_val > 255:
                     acc_val = 10  # Set to safe default if out of bounds
             else:
-                acc_val = 10  # Default safe position
+                acc_val = 10  # Default safe acceleration
 
             # Determine hand/antenna value if provided (7th element)
             if len(safe_positions) > 6:

@@ -33,6 +33,7 @@ export LUXOPI_LLM_ASSISTANT_HAILO="${LUXOPI_LLM_ASSISTANT_HAILO:-true}"
 export LUXOPI_LLM_ASSISTANT_VERBOSE="${LUXOPI_LLM_ASSISTANT_VERBOSE:-false}"
 export LUXOPI_LLM_ASSISTANT_VOICE_PRESET="${LUXOPI_LLM_ASSISTANT_VOICE_PRESET:-/home/pi/luxopi-ai/audio_experiments_web/preset_alpha-high-pitch.json}"
 export LUXOPI_LLM_ASSISTANT_WHISPER_STEP_MS="${LUXOPI_LLM_ASSISTANT_WHISPER_STEP_MS:-1000}"
+export LUXOPI_QUIET_MODE="${LUXOPI_QUIET_MODE:-false}"
 
 # ROS2 Configuration
 export DISPLAY=:0
@@ -116,7 +117,8 @@ get_launch_args() {
          "llm_assistant_hailo:=$LUXOPI_LLM_ASSISTANT_HAILO" \
          "llm_assistant_verbose:=$LUXOPI_LLM_ASSISTANT_VERBOSE" \
          "llm_assistant_voice_preset:=$LUXOPI_LLM_ASSISTANT_VOICE_PRESET" \
-         "llm_assistant_whisper_step_ms:=$LUXOPI_LLM_ASSISTANT_WHISPER_STEP_MS"
+         "llm_assistant_whisper_step_ms:=$LUXOPI_LLM_ASSISTANT_WHISPER_STEP_MS" \
+         "quiet_mode:=$LUXOPI_QUIET_MODE"
 }
 
 print_configuration() {
@@ -142,6 +144,7 @@ print_configuration() {
     log "  - Verbose: $LUXOPI_LLM_ASSISTANT_VERBOSE"
     log "  - Voice Preset: $LUXOPI_LLM_ASSISTANT_VOICE_PRESET"
     log "  - Whisper Step: $LUXOPI_LLM_ASSISTANT_WHISPER_STEP_MS ms"
+    log "  - Quiet Mode: $LUXOPI_QUIET_MODE"
     log "=========================="
 }
 

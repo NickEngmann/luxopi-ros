@@ -395,7 +395,7 @@ class StateVocalizationBehavior:
 
         # VOICE_FOLLOWING: Only vocalize 25% of the time (to avoid being too chatty)
         if state == 'VOICE_FOLLOWING':
-            if random.random() > 0.25:  # 75% chance to skip
+            if random.random() > 0.10:  # 90% chance to skip
                 self.node.get_logger().debug(f"[StateVocalization] → Skipping VOICE_FOLLOWING vocalization (random skip)")
                 # Update cooldown timer so the skip counts towards cooldown
                 self.last_state_phrase_time = time.time()
