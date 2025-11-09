@@ -229,6 +229,7 @@ class CommandBehavior:
         """
 
         # Sleep patterns - VERY FLEXIBLE for natural language + common transcription errors
+        # MAXIMALLY PERMISSIVE - catches everything including colloquial expressions
         self.sleep_patterns = [
             # Direct sleep commands - WITH PHONETIC VARIANTS
             # "sleep" variants: sleep, slip, see, seat, sleet, sweep, seek
@@ -248,6 +249,9 @@ class CommandBehavior:
 
             # Natural commands and time-based
             r'(it\'?s|its).{0,10}(time|night).{0,10}(to|for|the)?.{0,10}(sleep|see|bed)',
+
+            # "It's that time" - vague bedtime reference
+            r'(it\'?s|its).{0,10}(that|this|the).{0,10}time',
 
             # Bedtime variants - CRITICAL PHONETIC VARIANTS
             # "bedtime" → "bad time", "bet time", "bat time", "bed time"
@@ -272,7 +276,7 @@ class CommandBehavior:
             r'(why.{0,5}don\'?t.{0,5}you|how.{0,5}about).{0,10}(go.{0,5}to.{0,5})?(sleep|see|bed)',
             r'you.{0,5}(better|ought.{0,5}to).{0,10}(sleep|see|rest|go.{0,5}to.{0,5}bed)',
 
-            # Just the word "sleep" - MUST be last to avoid false positives
+            # Just the word "sleep" - VERY PERMISSIVE
             r'\b(sleep|asleep)\b',
 
             # Night time phrases
@@ -287,26 +291,32 @@ class CommandBehavior:
             r'power.{0,5}off',
         ]
 
-        # Wake patterns - CLEAR "wake/morning" theme - MORE SPECIFIC to reduce false positives
+        # Wake patterns - MAXIMALLY PERMISSIVE - catches everything
         # NOTE: "good morning" removed from quick_responses to avoid conflict
         self.wake_patterns = [
             # Direct wake commands (most specific) - INCLUDES PHONETIC ALTERNATIVES
             r'wake.{0,5}(up|it)?',
-            r'way.{0,5}up',  # Common transcription error for "wake up"
-            r'weigh.{0,5}up',  # Another phonetic variant
-            r'(get|git).{0,5}up',
+            r'make.{0,5}(up|it)',  # Common transcription error for "wake up"
+            r'(get|git).{0,5}up',  # VERY PERMISSIVE - catches "get up here", "get up to", etc.
             r'(rise|rice).{0,5}(and.{0,5})?shine',
+
+            # "way up" - VERY PERMISSIVE - catches "all the way up to AC board"
+            r'way.{0,5}up',
+            r'weigh.{0,5}up',  # Another phonetic variant
 
             # Morning greetings (ONLY "good morning", not just "morning")
             r'good\s+morning',
             r'good\s+mornin',  # Common informal variant
 
             # "You should..." / "Time to..." patterns - MORE FLEXIBLE
-            r'(you\'?re|your|you|u).{0,10}(should|need|have).{0,10}(to|the)?.{0,10}(wake|way|weigh|get).{0,10}up',
-            r'time.{0,10}(to|for).{0,10}(wake|way|weigh|get).{0,10}up',
-            r'(let\'?s|lets).{0,5}(wake|way).{0,5}up',  # "Let's wake up"
+            r'(you\'?re|your|you|u).{0,10}(should|need|have).{0,10}(to|the)?.{0,10}(wake|way|weigh|make|get).{0,10}up',
+            r'time.{0,10}(to|for).{0,10}(wake|way|weigh|make|get).{0,10}up',
+            r'(let\'?s|lets).{0,5}(wake|way|make).{0,5}up',  # "Let's wake/make up"
 
-            # Power commands (REMOVED generic "turn on" - too broad)
+            # "You can wake/make up now" patterns
+            r'(you.{0,5})?can.{0,5}(wake|make).{0,5}up.{0,5}(now|again)?',
+
+            # Power commands
             r'power\s+(on|up)',
             r'(start|boot).{0,5}up',
         ]
