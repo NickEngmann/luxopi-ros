@@ -220,6 +220,12 @@ def generate_launch_description():
         default_value='false',
         description='Enable quiet mode for public testing (sets amplitude to 20)'
     )
+
+    declare_spanish_mode = DeclareLaunchArgument(
+        'spanish_mode',
+        default_value='false',
+        description='Enable Spanish mode - robot responds in Spanish and acts as a Spanish teacher'
+    )
     # ==========================================================================
     # LOGGING ACTIONS
     # ==========================================================================
@@ -487,7 +493,8 @@ def generate_launch_description():
             {'verbose': LaunchConfiguration('llm_assistant_verbose')},
             {'voice_preset': LaunchConfiguration('llm_assistant_voice_preset')},
             {'whisper_step_ms': LaunchConfiguration('llm_assistant_whisper_step_ms')},
-            {'quiet_mode': LaunchConfiguration('quiet_mode')}
+            {'quiet_mode': LaunchConfiguration('quiet_mode')},
+            {'spanish_mode': LaunchConfiguration('spanish_mode')}
         ],
         condition=IfCondition(PythonExpression(["'", LaunchConfiguration('enable_llm_assistant'), "' == 'true' and '", LaunchConfiguration('enable_voice'), "' == 'true'"]))
     )
@@ -639,6 +646,7 @@ def generate_launch_description():
         declare_llm_assistant_voice_preset,
         declare_llm_assistant_whisper_step_ms,
         declare_quiet_mode,
+        declare_spanish_mode,
         declare_enable_vl53_left,
         declare_enable_vl53_right,
 

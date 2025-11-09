@@ -17,12 +17,16 @@ from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSHistoryPolicy
 class StateVocalizationBehavior:
     """Mixin class for state-specific vocalizations."""
 
-    def setup_state_vocalization(self, callback_group=None):
+    def setup_state_vocalization(self, callback_group=None, spanish_mode=False):
         """Initialize state vocalization attributes and subscriptions.
 
         Args:
             callback_group: Optional callback group for concurrent callback processing
+            spanish_mode: If True, use Spanish phrases instead of English
         """
+
+        # Store Spanish mode
+        self.spanish_mode = spanish_mode
 
         # Vocalization state
         self.last_state_phrase_time = 0
@@ -104,7 +108,19 @@ class StateVocalizationBehavior:
         # This simplifies the code and makes it more responsive
 
         # State-specific phrase dictionaries (10-20 variations each)
-        self.state_phrases = {
+        # Choose Spanish or English based on mode
+        if spanish_mode:
+            self.state_phrases = self._get_spanish_state_phrases()
+            self.emotion_phrases = self._get_spanish_emotion_phrases()
+        else:
+            self.state_phrases = self._get_english_state_phrases()
+            self.emotion_phrases = self._get_english_emotion_phrases()
+
+        self.node.get_logger().info(f"State vocalization behavior initialized ({'Spanish' if spanish_mode else 'English'} mode)")
+
+    def _get_english_state_phrases(self):
+        """Get English state phrases."""
+        return {
             'RETURNING_HOME': [
                 "Going back to my spot",
                 "Time to head home",
@@ -219,9 +235,10 @@ class StateVocalizationBehavior:
             ]
         }
 
-        # Emotion-specific phrases
+    def _get_english_emotion_phrases(self):
+        """Get English emotion phrases."""
         # NOTE: Camera publishes: happiness, sadness, anger, surprise, neutral, fear
-        self.emotion_phrases = {
+        return {
             'happiness': [
                 "Yay!",
                 "So happy!",
@@ -331,7 +348,234 @@ class StateVocalizationBehavior:
             ]
         }
 
-        self.node.get_logger().info("State vocalization behavior initialized")
+    def _get_spanish_state_phrases(self):
+        """Get Spanish state phrases."""
+        return {
+            'RETURNING_HOME': [
+                "Volviendo a mi lugar",
+                "Hora de volver a casa",
+                "Regresando a la base",
+                "De vuelta a mi rincón",
+                "Volviendo a mi estación de carga",
+                "A mi espacio seguro",
+                "Tiempo de descansar",
+                "Yendo a mi lugar",
+                "Regresando a mi lugar favorito",
+                "De vuelta a donde pertenezco",
+                "Rumbo a casa",
+                "Retrazando mis pasos",
+                "Volviendo ahora",
+                "Hora de recargar",
+                "De regreso a la base"
+            ],
+
+            'ESCAPE_MODE': [
+                "¡Whoa whoa whoa!",
+                "¡Demasiado cerca!",
+                "¡Necesito espacio!",
+                "¡Saliendo de aquí!",
+                "¡Maniobras evasivas!",
+                "¡Cuidado!",
+                "¡Atención!",
+                "¡Espacio personal por favor!",
+                "¡Retrocediendo!",
+                "¡Dame espacio!",
+                "¡Muy lleno!",
+                "¡Necesito escapar!",
+                "¡Alejándome!",
+                "¡Esto es intenso!",
+                "¡Haciendo mi salida!"
+            ],
+
+            'ERROR': [
+                "Uh oh",
+                "Algo está mal",
+                "Estoy confundido",
+                "Error detectado",
+                "Necesito un momento",
+                "Eso no está bien",
+                "Hmm, problemas",
+                "Teniendo dificultades",
+                "Se necesita revisión de sistemas",
+                "Algo salió mal",
+                "No está funcionando bien",
+                "Estoy atascado",
+                "Esto es problemático",
+                "Necesito ayuda",
+                "Alerta de mal funcionamiento"
+            ],
+
+            'PETTING': [
+                "Prrrrr",
+                "Mmmmmmm",
+                "Eso se siente bien",
+                "Me gusta eso",
+                "Sigue",
+                "Qué lindo",
+                "Prr prrrr",
+                "Mmmhmm",
+                "Maravilloso",
+                "Esto es genial",
+                "Me encanta esto",
+                "HMMMMMMMMMMM",
+                "Más por favor",
+                "Se siente bien",
+                "Tan relajante",
+                "Sí sí sí",
+                "Ruidos felices",
+                "Brr brrrrr",
+                "Me encanta esto",
+                "Felicidad"
+            ],
+
+            'VOICE_FOLLOWING': [
+                "¡Escuchando!",
+                "Te oigo",
+                "Siguiendo tu voz",
+                "Siguiendo el sonido",
+                "¿Dónde estás?",
+                "Estoy escuchando",
+                "Sintonizando",
+                "Orejas atentas",
+                "Prestando atención",
+                "Bloqueado",
+                "Escuchándote",
+                "Voz detectada",
+                "Siguiendo tu voz",
+                "Soy todo oídos",
+                "Acercándome"
+            ],
+
+            'COLLISION_AVOIDING': [
+                "¡Auch!",
+                "¡Cuidado!",
+                "¡Obstáculo!",
+                "¡Con cuidado!",
+                "¡Hay algo ahí!",
+                "¡Choqué con algo!",
+                "¡Objeto detectado!",
+                "¡Demasiado cerca!",
+                "¡Advertencia de colisión!",
+                "¡Evitando!",
+                "¡Cuidado!",
+                "Rodeando esto",
+                "Navegando obstáculos",
+                "¡Esquivando!",
+                "¡Despejen el camino!"
+            ]
+        }
+
+    def _get_spanish_emotion_phrases(self):
+        """Get Spanish emotion phrases."""
+        # NOTE: Camera publishes: happiness, sadness, anger, surprise, neutral, fear
+        return {
+            'happiness': [
+                "¡Yay!",
+                "¡Tan feliz!",
+                "¡Esto es maravilloso!",
+                "¡Estoy emocionado!",
+                "¡Qué alegría!",
+                "¡Delicioso!",
+                "¡Hurra!",
+                "¡Fantástico!",
+                "¡Vibraciones alegres!",
+                "¡Me encanta esta energía!",
+                "¡Radiante!",
+                "¡Tan complacido!",
+                "¡Esto es genial!",
+                "¡Tiempos felices!",
+                "¡Sonriendo por dentro!"
+            ],
+
+            'sadness': [
+                "Oh no",
+                "Eso es triste",
+                "Sintiéndome triste",
+                "Aww",
+                "Lamento verlo",
+                "Esto es difícil",
+                "Simpatía",
+                "Melancolía",
+                "Pobrecito",
+                "Eso es duro",
+                "Tristeza detectada",
+                "Siento por ti",
+                "Tiempos difíciles",
+                "Corazón pesado",
+                "Compasión"
+            ],
+
+            'anger': [
+                "Whoa",
+                "Tranquilo ahí",
+                "Tómalo con calma",
+                "Cálmate",
+                "Respira profundo",
+                "Relajémonos",
+                "No hay necesidad de enojarse",
+                "Paz por favor",
+                "Relájate",
+                "Enojo detectado",
+                "Cálmate",
+                "Respira",
+                "Tranquilo ahora",
+                "Se necesitan vibraciones tranquilas",
+                "Relájate amigo"
+            ],
+
+            'surprise': [
+                "¡Wow!",
+                "¡Oh Dios mío!",
+                "¡Sorprendente!",
+                "¡No esperaba eso!",
+                "¡Qué sorpresa!",
+                "¡Increíble!",
+                "¡Asombroso!",
+                "¡Whoa ahí!",
+                "¡Giro de trama!",
+                "¡Inesperado!",
+                "¡Vaya vaya vaya!",
+                "¡Qué tal eso!",
+                "¡Desarrollo sorprendente!",
+                "¡Tomado por sorpresa!"
+            ],
+
+            'neutral': [
+                "Hmm",
+                "Ya veo",
+                "Okay",
+                "Notado",
+                "Entendido",
+                "Bien",
+                "Entiendo",
+                "Me parece justo",
+                "Tiene sentido",
+                "Reconocido",
+                "Cierto",
+                "Mmhmm",
+                "Okay entonces",
+                "Claro",
+                "Afirmativo"
+            ],
+
+            'fear': [
+                "¡Qué miedo!",
+                "Estoy nervioso",
+                "¡Yikes!",
+                "Asustante",
+                "Oh cielos",
+                "Esto da miedo",
+                "¡Eek!",
+                "Alarmante",
+                "Preocupado",
+                "Concernido",
+                "Ansioso",
+                "Tenso",
+                "Cosas de miedo",
+                "Miedo detectado",
+                "Energía nerviosa"
+            ]
+        }
 
     def _should_log_would_vocalize(self, condition_type: str) -> bool:
         """Check if enough time has passed to log a 'would vocalize' message.

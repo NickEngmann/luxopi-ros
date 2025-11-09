@@ -54,9 +54,9 @@ class VoiceTransformer:
         self.preset_data = None
         self.temp_dir = Path(tempfile.gettempdir()) / "luxopi_voice"
         self.temp_dir.mkdir(exist_ok=True)
-
         if preset_path:
             self.load_preset(preset_path)
+        
 
     def load_preset(self, preset_path):
         """Load a preset JSON file"""
@@ -217,6 +217,7 @@ class VoiceAssistantNode(Node, CommandBehavior, StateVocalizationBehavior):
         self.declare_parameter('voice_preset', '/home/pi/luxopi-ai/audio_experiments_web/preset_alpha-high-pitch.json')
         self.declare_parameter('whisper_step_ms', 1000)
         self.declare_parameter('quiet_mode', False)  # Quiet mode for public testing
+        self.declare_parameter('spanish_mode', False)  # Spanish mode for Spanish teacher/responses
 
         # Get parameters
         use_hailo = self.get_parameter('use_hailo').value
@@ -224,17 +225,32 @@ class VoiceAssistantNode(Node, CommandBehavior, StateVocalizationBehavior):
         voice_preset = self.get_parameter('voice_preset').value
         whisper_step_ms = self.get_parameter('whisper_step_ms').value
         quiet_mode = self.get_parameter('quiet_mode').value
+        spanish_mode = self.get_parameter('spanish_mode').value
+
+        # Store spanish_mode for later use
+        self.spanish_mode = spanish_mode
 
         # Paths - using system-wide commands now
         self.use_hailo = use_hailo
-        self.voice_transformer = VoiceTransformer(voice_preset) if voice_preset and os.path.exists(voice_preset) else None
-
+        # Disable voice transformer in Spanish mode for clarity
+        self.voice_transformer = VoiceTransformer(voice_preset) if (voice_preset and os.path.exists(voice_preset) and not spanish_mode) else None
+        if self.spanish_mode:
+            self.get_logger().info("🔧 Spanish mode ENABLED - voice transformer disabled for clarity")
+            self.speed = 300  # Default speed for Spanish mode
+            self.pitch = 99
+            self.amplitude = 110
+            self.word_gap = 10
+            self.capitals = 100
+        else:
+            self.get_logger().info(f"English mode - using voice preset: {voice_preset if voice_preset else 'None'}")
         if use_hailo:
             self.whisper_stream = "/home/pi/luxopi-ai/hailo-speech-recognition/speech_recognition/hailo-whisper-stream"
         else:
             self.whisper_stream = "whisper-stream"  # Available in PATH via symlink
 
         self.whisper_model = "/home/pi/luxopi-ai/whisper.cpp/models/ggml-base.en.bin"
+        if self.spanish_mode:
+            self.whisper_model = "/home/pi/luxopi-ai/whisper.cpp/models/ggml-base.bin"  # Multilingual model for Spanish
         self.llama_server = "llama-server"  # Available in PATH via symlink
         self.llm_model = "/home/pi/luxopi-ai/models/qwen3-0.6b-q4_0.gguf"
 
@@ -249,11 +265,11 @@ class VoiceAssistantNode(Node, CommandBehavior, StateVocalizationBehavior):
         self.callback_group = ReentrantCallbackGroup()
 
         # Initialize unified command behavior mixin (handles ALL commands - voice assistant AND robot hardware)
-        self.setup_command_behavior(verbose=verbose, quiet_mode=quiet_mode)
+        self.setup_command_behavior(verbose=verbose, quiet_mode=quiet_mode, spanish_mode=spanish_mode)
 
         # Initialize state vocalization behavior (state-specific phrases for expressiveness)
         # Pass callback group for concurrent processing
-        self.setup_state_vocalization(callback_group=self.callback_group)
+        self.setup_state_vocalization(callback_group=self.callback_group, spanish_mode=spanish_mode)
 
         # Server settings
         self.server_port = 8081
@@ -283,25 +299,47 @@ class VoiceAssistantNode(Node, CommandBehavior, StateVocalizationBehavior):
         self.enable_filler = True  # Always enabled in ROS mode
         self.filler_active = threading.Event()  # Signal to stop filler
         self.filler_thread = None  # Background thread for filler messages
-        self.filler_messages = [
-            # Generic thinking sounds
-            "Hmm",
-            "Let me think",
-            "One moment",
-            "Thinking",
-            "Let's see",
-            "Hold on",
-            "Give me a sec",
-            "Just a moment",
-            "Processing",
-            "Right",
-            # Lamp puns (because Luxopi is a robot lamp!)
-            "Brightening up",
-            "Illuminating",
-            "Shedding light",
-            "Bulb's warming up",
-            "Charging up"
-        ]
+
+        # Spanish or English filler messages depending on mode
+        if self.spanish_mode:
+            self.filler_messages = [
+                # Generic thinking sounds in Spanish
+                "Hmm",
+                "Déjame pensar",
+                "Un momento",
+                "Pensando",
+                "Veamos",
+                "Espera",
+                "Dame un segundo",
+                "Un momentito",
+                "Procesando",
+                "Vale",
+                # Lamp puns in Spanish
+                "Iluminando",
+                "Alumbrando",
+                "Encendiendo ideas",
+                "Calentando el bombillo"
+            ]
+        else:
+            self.filler_messages = [
+                # Generic thinking sounds
+                "Hmm",
+                "Let me think",
+                "One moment",
+                "Thinking",
+                "Let's see",
+                "Hold on",
+                "Give me a sec",
+                "Just a moment",
+                "Processing",
+                "Right",
+                # Lamp puns (because Luxopi is a robot lamp!)
+                "Brightening up",
+                "Illuminating",
+                "Shedding light",
+                "Bulb's warming up",
+                "Charging up"
+            ]
 
         # Verbose timing mode
         self.verbose = verbose
@@ -805,7 +843,7 @@ class VoiceAssistantNode(Node, CommandBehavior, StateVocalizationBehavior):
             pause_time = time.time() - pause_start
             if self.verbose:
                 self.get_logger().info(f"    ⏸️  Paused Whisper in {pause_time:.3f}s")
-
+            
             # espeak-ng parameters from preset or behavior settings
             if self.voice_transformer and self.voice_transformer.preset_data:
                 preset_params = self.voice_transformer.preset_data.get('params', {})
@@ -815,14 +853,22 @@ class VoiceAssistantNode(Node, CommandBehavior, StateVocalizationBehavior):
                 amplitude = str(preset_params.get('amplitude', self.amplitude))
                 word_gap = str(preset_params.get('word_gap', 10))
                 capitals = str(preset_params.get('capitals', 100))
+            elif self.spanish_mode:
+                # Use behavior settings
+                voice = "es-mx+m3"
+                base_speed = "135"
+                pitch = "55"
+                amplitude = "110"
+                word_gap = "2"
+                capitals = "0"
             else:
                 # Use behavior settings
                 voice = "en+m2"
                 base_speed = self.speed
                 pitch = str(self.pitch)
                 amplitude = str(self.amplitude)
-                word_gap = "10"
-                capitals = "100"
+                word_gap = "0"
+                capitals = "0"
 
             # CRITICAL: Override amplitude if quiet mode is enabled (regardless of preset)
             if self.quiet_mode:
@@ -989,14 +1035,22 @@ class VoiceAssistantNode(Node, CommandBehavior, StateVocalizationBehavior):
                 amplitude = str(preset_params.get('amplitude', self.amplitude))
                 word_gap = str(preset_params.get('word_gap', 10))
                 capitals = str(preset_params.get('capitals', 100))
+            elif self.spanish_mode:
+                # Use behavior settings
+                voice = "es-mx+m3"
+                base_speed = "135"
+                pitch = "55"
+                amplitude = "110"
+                word_gap = "2"
+                capitals = "0"
             else:
                 # Use behavior settings
                 voice = "en+m2"
                 base_speed = self.speed
                 pitch = str(self.pitch)
                 amplitude = str(self.amplitude)
-                word_gap = "10"
-                capitals = "100"
+                word_gap = "0"
+                capitals = "0"
 
             # CRITICAL: Override amplitude if quiet mode is enabled (regardless of preset)
             if self.quiet_mode:
@@ -1005,13 +1059,16 @@ class VoiceAssistantNode(Node, CommandBehavior, StateVocalizationBehavior):
                     self.get_logger().info(f"🔇 Quiet mode: overriding amplitude to 20")
 
             # Apply dynamic speed adjustment based on word count
-            speed = str(self.calculate_adjusted_speed(text, base_speed))
+            if self.spanish_mode:
+                speed = base_speed  # No adjustment in Spanish mode
+            else:
+                speed = str(self.calculate_adjusted_speed(text, base_speed))
 
             # Log final settings
             if self.voice_transformer and self.voice_transformer.preset_data:
-                self.get_logger().info(f"[TTS] Using voice transformer preset (voice={voice}, speed={speed}, pitch={pitch}, amp={amplitude})")
+                self.get_logger().info(f"[TTS] Using voice transformer preset (voice={voice}, speed={speed}, pitch={pitch}, amp={amplitude}, gap={word_gap}, capitals={capitals})")
             else:
-                self.get_logger().info(f"[TTS] Using behavior settings (voice={voice}, speed={speed}, pitch={pitch}, amp={amplitude})")
+                self.get_logger().info(f"[TTS] Using behavior settings (voice={voice}, speed={speed}, pitch={pitch}, amp={amplitude}, gap={word_gap}, capitals={capitals})")
 
             # Generate to temp file if using transformations, otherwise play directly
             if self.voice_transformer:
@@ -1148,17 +1205,23 @@ class VoiceAssistantNode(Node, CommandBehavior, StateVocalizationBehavior):
             # Optimized prompt from benchmark: "Character Constraint" winner
             # Achieves 1.09s avg, 14.6 words, 7.5/10 quality
             # Added /nothink and /no_think flags for faster responses
-            prompt = f"/nothink /no_think You're Luxo, a helpful robot. Respond in ONE sentence. Never use placeholder text like [Your response]. Always give a real, direct response.\nUser: {text}\nLuxo:"
+
+            if self.spanish_mode:
+                # Spanish mode: Act as Spanish teacher/instructor, respond in Spanish (Spanglish OK)
+                prompt = f"/nothink /no_think Eres Luxo, un robot amigable que ayuda a aprender español. Responde en español cuando sea posible, pero Spanglish está bien. Usa una (1) oración. Actúa como un maestro de español paciente y amigable. Nunca uses texto de marcador como [Tu respuesta]. Siempre da una respuesta real y directa.\nUser: {text}\nLuxo:"
+            else:
+                # Normal English mode
+                prompt = f"/nothink /no_think You're Luxo, a helpful robot. Respond in ONE sentence. Never use placeholder text like [Your response]. Always give a real, direct response.\nUser: {text}\nLuxo:"
 
             payload = {
                 "prompt": prompt,
-                "n_predict": 30,  # Reduced for shorter responses (from benchmark)
+                "n_predict": 50,  # Reduced for shorter responses (from benchmark)
                 "temperature": 0.7,  # Balanced creativity/determinism
                 "top_k": 40,  # Optimized from benchmark
                 "top_p": 0.9,  # Optimized from benchmark
                 "stop": ["</think>", "\n\n", "User:", "<|endoftext|>", "Luxo:"],
                 "cache_prompt": True,
-                "thread_count": 3,  # Use 3 threads
+                "thread_count": 4,  # Use 4 threads
                 "repeat_penalty": 1.3,  # Strong repeat penalty from benchmark
                 "stream": False
             }

@@ -30,7 +30,7 @@ class CommandBehavior:
     2. LuxopiAssistantNode (luxopi_assistant_node.py) - For command detection from speech
     """
 
-    def setup_command_behavior(self, verbose=False, amplitude=120, speed=100, pitch=30, setup_publishers=True, quiet_mode=False):
+    def setup_command_behavior(self, verbose=False, amplitude=120, speed=100, pitch=30, setup_publishers=True, quiet_mode=False, spanish_mode=False):
         """
         Initialize command behavior (mixin setup method).
 
@@ -42,11 +42,15 @@ class CommandBehavior:
             setup_publishers: If True, create ROS publishers for hardware control.
                              Set to False if only using coordination methods (e.g., behavior_coordinator)
             quiet_mode: If True, sets amplitude to 20 for quiet operation (useful in public places)
+            spanish_mode: If True, use Spanish for command confirmations
         """
         self.verbose = verbose
 
         # Quiet mode for public testing
         self.quiet_mode = quiet_mode
+
+        # Spanish mode for Spanish responses
+        self.spanish_mode = spanish_mode
 
         # Voice assistant settings (espeak parameters)
         self.is_muted = False
@@ -109,6 +113,7 @@ class CommandBehavior:
     def _init_voice_assistant_patterns(self):
         """Initialize fuzzy patterns for voice assistant commands.
 
+        Includes both English and Spanish patterns for all commands.
         """
 
         # Quick responses (bypass LLM entirely)
@@ -121,6 +126,15 @@ class CommandBehavior:
             "bye": "Bye!",
             "how are you": "I'm doing great!",
             "what's up": "Not much, you?",
+            # Spanish quick responses
+            "hola": "¡Hola!",
+            "adiós": "¡Adiós!",
+            "adios": "¡Adiós!",
+            "hasta luego": "¡Hasta luego!",
+            "cómo estás": "¡Estoy muy bien!",
+            "como estas": "¡Estoy muy bien!",
+            "qué tal": "¡Bien, gracias!",
+            "que tal": "¡Bien, gracias!",
         }
 
         # Mute command patterns (flexible for fuzzy matching)
@@ -135,6 +149,17 @@ class CommandBehavior:
             r'no.{0,5}more.{0,5}talking',
             r'(need|want).{0,5}silence',
             r'quiet.{0,5}down',
+
+            # ===== SPANISH MUTE PATTERNS =====
+            r'(está|estate|estar).{0,5}(silencio|callado|quieto)',
+            r'(calla|callar|callate|cállate)(te)?',
+            r'(silencio|silencioso)',
+            r'(deja|dejar).{0,5}(de.{0,5})?(hablar|hablando)',
+            r'(para|parar).{0,5}(de.{0,5})?(hablar|hablando)',
+            r'no.{0,5}(más|mas).{0,5}(hablar|hablando)',
+            r'(necesito|quiero).{0,5}silencio',
+            r'(baja|bajar).{0,5}(la.{0,5})?voz',
+            r'(mutear|mutea|silenciar)(te)?',
         ]
 
         # Unmute command patterns - TIGHTENED to reduce false positives
@@ -159,6 +184,27 @@ class CommandBehavior:
             # Resume commands
             r'\bresume\b',
             r'back.{0,5}on',
+
+            # ===== SPANISH UNMUTE PATTERNS =====
+            # Explicit permission to talk/speak
+            r'(tu|tú|usted|ud).{0,5}puedes.{0,5}(hablar|hablando).{0,5}(de.{0,5}nuevo|ahora|ya)?',
+            r'(tu|tú|usted|ud).{0,5}puedes.{0,5}(hablar|hablando)(\s|$)',
+
+            # Start talking
+            r'(tu|tú|usted|ud).{0,5}(empieza|empezar|comenzar|comienza).{0,5}(a.{0,5})?(hablar|hablando).{0,5}(de.{0,5}nuevo|ahora)?',
+
+            # Explicit unmute
+            r'(desmutear|desmutea|des.{0,5}silenciar)(te)?',
+            r'(quitar|quita).{0,5}(el.{0,5})?silencio',
+
+            # Permission phrases
+            r'(adelante|sigue).{0,5}(y.{0,5})?(habla|hablando)',
+            r'(está.{0,5}bien|okay|ok).{0,5}(hablar|hablando).{0,5}(ahora)?',
+            r'(tu|tú|usted|ud).{0,5}(puedes|puede).{0,5}(hablar|hablando)',
+
+            # Resume commands
+            r'\breanudar\b',
+            r'(de.{0,5})?vuelta',
         ]
 
         # Volume control patterns
@@ -169,6 +215,12 @@ class CommandBehavior:
             r'\blouder\b',
             r'volume.{0,5}up',
             r'turn.{0,5}up.{0,5}(volume|voice)',
+
+            # ===== SPANISH VOLUME UP PATTERNS =====
+            r'(habla|hablando).{0,5}(más|mas).{0,5}(alto|fuerte)',
+            r'(aumenta|aumentar|sube|subir).{0,5}(el.{0,5})?(volumen|voz)',
+            r'\b(más|mas).{0,5}(alto|fuerte)\b',
+            r'volumen.{0,5}(arriba|subir)',
         ]
 
         self.volume_down_patterns = [
@@ -179,28 +231,52 @@ class CommandBehavior:
             r'\bsofter\b',
             r'volume.{0,5}down',
             r'too.{0,5}(loud|load)',
+
+            # ===== SPANISH VOLUME DOWN PATTERNS =====
+            r'(habla|hablando).{0,5}(más|mas).{0,5}(bajo|suave|despacio)',
+            r'(disminuye|disminuir|baja|bajar).{0,5}(el.{0,5})?(volumen|voz)',
+            r'\b(más|mas).{0,5}(bajo|suave)\b',
+            r'volumen.{0,5}(abajo|bajar)',
+            r'(demasiado|muy).{0,5}(alto|fuerte)',
         ]
 
         # Speed control patterns - REDUCED from 3 to 2 each
         self.speed_up_patterns = [
             r'(speak|talk).{0,5}faster',  # Speak faster
             r'speed.{0,5}up',  # Speed up
+
+            # ===== SPANISH SPEED UP PATTERNS =====
+            r'(habla|hablando).{0,5}(más|mas).{0,5}(rápido|rapido)',
+            r'(aumenta|aumentar).{0,5}(la.{0,5})?velocidad',
         ]
 
         self.speed_down_patterns = [
             r'(speak|talk).{0,5}slower',  # Speak slower
             r'slow.{0,5}down',  # Slow down
+
+            # ===== SPANISH SPEED DOWN PATTERNS =====
+            r'(habla|hablando).{0,5}(más|mas).{0,5}(lento|despacio)',
+            r'(disminuye|disminuir|baja|bajar).{0,5}(la.{0,5})?velocidad',
         ]
 
         # Pitch control patterns - REDUCED from 3 to 2 each
         self.pitch_up_patterns = [
             r'higher.{0,5}pitch',  # Higher pitch
             r'raise.{0,5}(your.{0,5})?pitch',  # Raise pitch
+
+            # ===== SPANISH PITCH UP PATTERNS =====
+            r'(más|mas).{0,5}(alto|agudo).{0,5}(tono|pitch)',
+            r'(sube|subir|aumenta|aumentar).{0,5}(el.{0,5})?(tono|pitch)',
         ]
 
         self.pitch_down_patterns = [
             r'lower.{0,5}pitch',  # Lower pitch
             r'deeper.{0,5}voice',  # Deeper voice
+
+            # ===== SPANISH PITCH DOWN PATTERNS =====
+            r'(más|mas).{0,5}(bajo|grave).{0,5}(tono|pitch)',
+            r'(baja|bajar|disminuye|disminuir).{0,5}(el.{0,5})?(tono|pitch)',
+            r'voz.{0,5}(más|mas).{0,5}(profunda|grave)',
         ]
 
         # Status request patterns - REDUCED from 5 to 3
@@ -210,6 +286,13 @@ class CommandBehavior:
             r'show.{0,5}(me.{0,5})?(your.{0,5})?settings',
             r'check.{0,5}settings',
             r'voice.{0,5}settings',
+
+            # ===== SPANISH STATUS PATTERNS =====
+            r'(cuál|cual).{0,5}es.{0,5}(tu|su).{0,5}(estado|configuración|ajustes)',
+            r'(cómo|como).{0,5}(estás|estas).{0,5}configurado',
+            r'(muestra|mostrar|enseña|enseñar)(me)?.{0,5}(tus|los)?.{0,5}(ajustes|configuración)',
+            r'(verifica|verificar|revisar|revisa).{0,5}(los.{0,5})?ajustes',
+            r'ajustes.{0,5}de.{0,5}voz',
         ]
 
     def _init_robot_hardware_patterns(self):
@@ -226,6 +309,8 @@ class CommandBehavior:
         - "It's bad time" → correctly detected as bedtime/go_to_sleep
         - "go to see" → correctly detected as go_to_sleep
         - "way up" → correctly detected as wake_up
+
+        Spanish patterns also included for all commands with similar permissiveness.
         """
 
         # Sleep patterns - VERY FLEXIBLE for natural language + common transcription errors
@@ -289,6 +374,45 @@ class CommandBehavior:
             r'power.{0,5}down',
             r'shut.{0,5}down',
             r'power.{0,5}off',
+
+            # ===== SPANISH SLEEP PATTERNS =====
+            # Direct sleep commands
+            r'(ve|vete|ir|irse).{0,5}(a|al?)?.{0,5}(dormir|durmiendo)',
+            r'(a|al?).{0,5}dormir',
+            r'(hora|tiempo).{0,5}(de|del?).{0,5}(dormir|la.{0,5}cama)',
+
+            # "You're about to..." patterns
+            r'(tu|tú|usted|ud).{0,10}(debes|deberías|tienes.{0,5}que|vas.{0,5}a).{0,10}dormir',
+            r'(tu|tú|usted|ud).{0,10}(puedes|puede).{0,10}dormir.{0,10}(ahora|ya)?',
+
+            # Questions
+            r'(estás|estas|está).{0,5}(durmiendo|dormido)',
+
+            # Natural time-based
+            r'(es|son).{0,10}(hora|tiempo).{0,10}(de|del?|para).{0,10}(dormir|la.{0,5}cama)',
+            r'(es|son).{0,10}(hora|tiempo).{0,10}de.{0,10}(ir.{0,5}a.{0,5}la.{0,5})?cama',
+            r'(es|son).{0,10}la.{0,10}hora',
+
+            # Bedtime variants
+            r'(hora|tiempo).{0,5}de.{0,5}(acostarse|acostar)',
+
+            # Permission/polite requests
+            r'(puedo|podemos).{0,5}(ponerte|ponerle).{0,5}a.{0,5}dormir',
+            r'(podrías|podría).{0,5}(ir|irse).{0,5}a.{0,5}dormir',
+            r'por.{0,5}favor.{0,10}(ve|vete).{0,5}a.{0,5}dormir',
+
+            # Just the word
+            r'\b(dormir|durmiendo|dormido)\b',
+
+            # Night time phrases
+            r'buenas.{0,5}noches',
+            r'que.{0,5}duermas.{0,5}bien',
+            r'dulces.{0,5}sueños',
+            r'hasta.{0,5}mañana',
+
+            # Power commands
+            r'apagar(se|te)?',
+            r'(modo|estado).{0,5}(de.{0,5})?sueño',
         ]
 
         # Wake patterns - MAXIMALLY PERMISSIVE - catches everything
@@ -319,6 +443,28 @@ class CommandBehavior:
             # Power commands
             r'power\s+(on|up)',
             r'(start|boot).{0,5}up',
+
+            # ===== SPANISH WAKE PATTERNS =====
+            # Direct wake commands
+            r'despierta(te)?',
+            r'(levanta|levántate|parar)(se|te)?',
+            r'arriba',
+
+            # Morning greetings
+            r'buenos\s+(días|dias)',
+            r'buen\s+día',
+
+            # "You should..." patterns
+            r'(tu|tú|usted|ud).{0,10}(debes|deberías|tienes.{0,5}que).{0,10}despertar(te)?',
+            r'(tu|tú|usted|ud).{0,10}(debes|deberías|tienes.{0,5}que).{0,10}levantar(te)?',
+            r'(hora|tiempo).{0,10}(de|para).{0,10}(despertar|levantar)(te|se)?',
+
+            # Permission
+            r'(tu|tú|usted|ud).{0,5}puedes.{0,5}despertar(te)?.{0,5}(ahora|ya)?',
+
+            # Power commands
+            r'encender(se|te)?',
+            r'activar(se|te)?',
         ]
 
         # Stay patterns - CLEAR "freeze/hold" theme - REDUCED from 14 to 6
@@ -342,6 +488,26 @@ class CommandBehavior:
             # "You should stay" patterns
             r'(you\'?re|your|you|u).{0,10}(should|need|have).{0,10}to.{0,10}stay',
             r'(you\'?re|your|you|u).{0,10}(going|supposed).{0,10}to.{0,10}stay',
+
+            # ===== SPANISH STAY PATTERNS =====
+            # Stop commands
+            r'(por.{0,5}favor|puedes).{0,5}(parar|detener)(te)?',
+            r'(parar|detener|pare|deten)(te)?.{0,5}(ahora|ya|por.{0,5}favor)',
+            r'(parar|detener)(te)?.{0,5}(un|por.{0,5}un).{0,5}(segundo|momento|minuto)',
+
+            # Direct stay commands
+            r'\b(queda|quedate|quedarse|quédate)\b',
+            r'(queda|quedate|quédate).{0,5}(ahí|ahi|allí|allí|quieto)',
+            r'no.{0,5}(te.{0,5})?(muevas|mueva)',
+            r'(para|detén|deten).{0,5}(el.{0,5})?(movimiento|mover)',
+            r'(congelar|congela)(te)?',
+            r'(mantén|manten|mantener).{0,5}(la.{0,5})?posición',
+            r'(mantén|manten)(te)?.{0,5}(quieto|en.{0,5}su.{0,5}lugar)',
+            r'\b(pausa|pausar)\b',
+
+            # "You should stay" patterns
+            r'(tu|tú|usted|ud).{0,10}(debes|deberías|tienes.{0,5}que).{0,10}quedar(te)?',
+            r'(tu|tú|usted|ud).{0,10}(vas|va).{0,10}a.{0,10}quedar(te)?',
         ]
 
         # Move patterns - CLEAR "unfreeze/resume motion" theme - MORE SPECIFIC
@@ -354,6 +520,17 @@ class CommandBehavior:
             r'(un|undo).{0,5}stay',
             r'resume.{0,5}(moving|motion)?',
             r'go.{0,5}ahead.{0,5}(and.{0,5})?move',
+
+            # ===== SPANISH MOVE PATTERNS =====
+            # Direct move commands
+            r'(tu|tú|usted|ud).{0,5}puedes.{0,5}mover(te)?.{0,5}(ahora|ya|de.{0,5}nuevo)',
+            r'(está.{0,5}bien|okay|ok).{0,5}mover(te)?.{0,5}(ahora|ya)',
+            r'(empieza|empezar|comenzar|comienza).{0,5}a.{0,5}mover(te)?.{0,5}(de.{0,5}nuevo)?',
+            r'(des|des)?congelar(te)?',
+            r'(des|des)?quedar(te)?',
+            r'(reanudar|reanuda).{0,5}(el.{0,5})?(movimiento|mover)?',
+            r'(adelante|sigue).{0,5}(y.{0,5})?mueve(te)?',
+            r'ya.{0,5}puedes.{0,5}mover(te)?',
         ]
 
         # Shutdown patterns - REQUIRES "shutdown" to appear 3+ times for safety
@@ -361,7 +538,10 @@ class CommandBehavior:
         # Detection handled by _detect_shutdown_command() which counts occurrences
         self.shutdown_variations = [
             'shutdown', 'shut down', 'shutting down', 'shut-down',
-            'power off', 'power down', 'turn off'
+            'power off', 'power down', 'turn off',
+            # Spanish shutdown variations
+            'apagar', 'apaga', 'apagado', 'apagando',
+            'cerrar', 'cierra', 'cerrando'
         ]
 
         # Light ON patterns - REMOVED "like" to avoid false positives
@@ -369,6 +549,10 @@ class CommandBehavior:
             r'(turn|turns|torn).{0,5}(on|in|and).{0,5}(the|a|an)?.{0,5}(light|lights)\b',
             r'(turn|turns|torn).{0,5}(the|a|an)?.{0,5}(light|lights).{0,5}(on|in|and)',
             r'(switch|switches).{0,5}(light|lights).{0,5}on',
+
+            # ===== SPANISH LIGHT ON PATTERNS =====
+            r'(enciende|encender|prende|prender).{0,5}(la|las|el|los)?.{0,5}(luz|luces)\b',
+            r'(activa|activar).{0,5}(la|las)?.{0,5}(luz|luces)',
         ]
 
         # Light OFF patterns - REMOVED "like" to avoid false positives
@@ -376,19 +560,24 @@ class CommandBehavior:
             r'(turn|turns|torn).{0,5}(off|of|out).{0,5}(the|a|an)?.{0,5}(light|lights)\b',
             r'(turn|turns|torn).{0,5}(the|a|an)?.{0,5}(light|lights).{0,5}(off|of|out)',
             r'(switch|switches).{0,5}(light|lights).{0,5}off',
+
+            # ===== SPANISH LIGHT OFF PATTERNS =====
+            r'(apaga|apagar).{0,5}(la|las|el|los)?.{0,5}(luz|luces)\b',
+            r'(desactiva|desactivar).{0,5}(la|las)?.{0,5}(luz|luces)',
         ]
 
         # Color map for fuzzy matching - TIGHTENED to reduce false positives
         # Removed overly broad variations like "right"→white, "like"→light, "sign"→cyan
+        # Includes both English and Spanish color names
         self.color_variations = {
-            'red': ['red', 'read'],
-            'orange': ['orange', 'ornge'],
-            'yellow': ['yellow', 'yello'],
-            'green': ['green', 'grain'],  # Removed 'grin', 'scene' - too loose
-            'cyan': ['cyan', 'turquoise', 'turquois'],  # Removed 'sign', 'sigh' - too loose
-            'blue': ['blue', 'blew'],  # Removed 'glue', 'flew' - too loose
-            'purple': ['purple', 'violet'],  # Removed 'people', 'papal' - too loose
-            'white': ['white', 'wight']  # Removed 'wright', 'bite', 'right' - too loose
+            'red': ['red', 'read', 'rojo', 'roja'],
+            'orange': ['orange', 'ornge', 'naranja'],
+            'yellow': ['yellow', 'yello', 'amarillo', 'amarilla'],
+            'green': ['green', 'grain', 'verde'],
+            'cyan': ['cyan', 'turquoise', 'turquois', 'cian', 'turquesa'],
+            'blue': ['blue', 'blew', 'azul'],
+            'purple': ['purple', 'violet', 'morado', 'morada', 'violeta', 'púrpura', 'purpura'],
+            'white': ['white', 'wight', 'blanco', 'blanca']
         }
 
     def _init_animation_triggers(self):
@@ -410,6 +599,12 @@ class CommandBehavior:
             r'grateful',
             r'gratitude',
             r'(you\'?re|your).{0,5}(the.{0,5})?(best|great|awesome|amazing)',
+
+            # ===== SPANISH THANK YOU PATTERNS =====
+            r'gracia',  # Catches gracias, gracia, etc.
+            r'agradec', # Catches agradezco, agradecido, etc.
+            r'(eres|es).{0,5}(el.{0,5})?(mejor|genial|increíble|asombroso)',
+            r'muchas.{0,5}gracia',
         ]
 
         # Happy/excited patterns → excited or playful_bob animation
@@ -431,6 +626,18 @@ class CommandBehavior:
             r'joy',
             r'feel.{0,5}good',
             r'(so|very|really).{0,5}(good|great|nice)',
+
+            # ===== SPANISH HAPPY PATTERNS =====
+            r'feliz',
+            r'contento',
+            r'contenta',
+            r'alegr',   # Catches alegre, alegría, etc.
+            r'emocionad', # Catches emocionado, emocionada, etc.
+            r'yupi',
+            r'hurra',
+            r'viva',
+            r'(qué|que).{0,5}(bien|bueno|genial)',
+            r'(muy|tan).{0,5}(bien|bueno|feliz)',
         ]
 
         # Bounce/hop patterns → playful_bob animation (bouncy/energetic)
@@ -449,36 +656,67 @@ class CommandBehavior:
             r'jumps',
             r'big.{0,5}bounce',
             r'do.{0,5}(a|the).{0,5}(bounce|hop|jump)',
+
+            # ===== SPANISH BOUNCE PATTERNS =====
+            r'rebota',
+            r'rebotar',
+            r'rebote',
+            r'salta',
+            r'saltar',
+            r'salto',
+            r'brinca',
+            r'brincar',
+            r'brinco',
+            r'(haz|hacer).{0,5}(un|una).{0,5}(rebote|salto|brinco)',
         ]
 
         # Animation mapping: pattern_type → (animation_name, voice_responses)
+        # Includes both English and Spanish responses
         self.animation_triggers = {
             'thank_you': {
                 'animations': ['simple_bow', 'big_bow'],
-                'responses': [
+                'responses_en': [
                     "You're welcome!",
                     "No problem!",
                     "Anytime!",
                     "Happy to help!",
                     "My pleasure!",
+                ],
+                'responses_es': [
+                    "¡De nada!",
+                    "¡No hay problema!",
+                    "¡Cuando quieras!",
+                    "¡Encantado de ayudar!",
+                    "¡Es un placer!",
                 ]
             },
             'happy': {
                 # Use actual animations: big_bounce, small_bounces, playful_bob, tail_wag, head_bobbing
                 'animations': ['big_bounce', 'small_bounces'],
-                'responses': [
+                'responses_en': [
                     "Yay!",
                     "I'm happy too!",
                     "Woohoo!",
                     "That's great!",
+                ],
+                'responses_es': [
+                    "¡Yupi!",
+                    "¡Yo también estoy feliz!",
+                    "¡Hurra!",
+                    "¡Qué genial!",
                 ]
             },
             'bounce': {
                 'animations': ['small_bounces', 'big_bounce'],
-                'responses': [
+                'responses_en': [
                     "Boing boing!",
                     "Let's bounce!",
                     "Bouncing around!",
+                ],
+                'responses_es': [
+                    "¡Boing boing!",
+                    "¡Vamos a rebotar!",
+                    "¡Rebotando por aquí!",
                 ]
             }
         }
@@ -644,46 +882,54 @@ class CommandBehavior:
         if any(re.search(pattern, text) for pattern in self.light_off_patterns):
             return 'turn_off_light'
 
-        # Brightness - check max/min first
-        if 'min' in text or 'minimum' in text or 'dimmest' in text:
-            if 'bright' in text or 'light' in text:
+        # Brightness - check max/min first (English and Spanish)
+        if any(word in text for word in ['min', 'minimum', 'dimmest', 'mínimo', 'minimo', 'más bajo', 'mas bajo']):
+            if any(word in text for word in ['bright', 'light', 'brillo', 'luz']):
                 return 'set_brightness_min'
 
-        if 'max' in text or 'maximum' in text or 'brightest' in text:
-            if 'bright' in text or 'light' in text:
+        if any(word in text for word in ['max', 'maximum', 'brightest', 'máximo', 'maximo', 'más alto', 'mas alto']):
+            if any(word in text for word in ['bright', 'light', 'brillo', 'luz']):
                 return 'set_brightness_max'
 
-        # Then increase/decrease - MORE SPECIFIC
+        # Then increase/decrease - MORE SPECIFIC (English and Spanish)
         # Removed 'writer', 'rider', 'timer' - too loose
-        if any(word in text for word in ['brighten', 'brighter']) or \
-           ('bright' in text and any(word in text for word in ['more', 'increase', 'up'])):
+        if any(word in text for word in ['brighten', 'brighter', 'más brillante', 'mas brillante']) or \
+           (any(word in text for word in ['bright', 'brillo']) and any(word in text for word in ['more', 'increase', 'up', 'más', 'mas', 'aumentar', 'sube', 'subir'])):
             return 'increase_brightness'
 
-        if any(word in text for word in ['dimmer', 'darker']) or \
-           ('dim' in text and any(word in text for word in ['more', 'decrease', 'down'])):
+        if any(word in text for word in ['dimmer', 'darker', 'más tenue', 'mas tenue', 'más oscuro', 'mas oscuro']) or \
+           (any(word in text for word in ['dim', 'tenue']) and any(word in text for word in ['more', 'decrease', 'down', 'más', 'mas', 'disminuir', 'baja', 'bajar'])):
             return 'decrease_brightness'
 
-        # Color temperature - MORE SPECIFIC (require explicit temperature context)
+        # Color temperature - MORE SPECIFIC (require explicit temperature context) (English and Spanish)
         # Removed 'former', 'ruler' - too loose
         # Require "warm" + direction word OR "warmer"
-        if 'warmer' in text or \
-           ('warm' in text and any(word in text for word in ['more', 'increase', 'up', 'make it'])):
+        if any(word in text for word in ['warmer', 'más cálido', 'mas calido', 'más caliente', 'mas caliente']) or \
+           (any(word in text for word in ['warm', 'cálido', 'calido', 'caliente']) and \
+            any(word in text for word in ['more', 'increase', 'up', 'make it', 'más', 'mas', 'aumentar', 'hazlo'])):
             return 'increase_color_temp'
 
         # Require "cool" + direction word OR "cooler", AND check for light context
-        if ('cooler' in text or \
-           ('cool' in text and any(word in text for word in ['more', 'make it', 'down']))) and \
-           any(word in text for word in ['light', 'temperature', 'temp', 'tone']):
+        if (any(word in text for word in ['cooler', 'más frío', 'mas frio', 'más fresco', 'mas fresco']) or \
+           (any(word in text for word in ['cool', 'frío', 'frio', 'fresco']) and \
+            any(word in text for word in ['more', 'make it', 'down', 'más', 'mas', 'hazlo']))) and \
+           any(word in text for word in ['light', 'temperature', 'temp', 'tone', 'luz', 'temperatura', 'tono']):
             return 'decrease_color_temp'
 
-        # Colors - MORE SPECIFIC (require command context or standalone usage)
+        # Colors - MORE SPECIFIC (require command context or standalone usage) (English and Spanish)
         for color, variations in self.color_variations.items():
             for var in variations:
-                # Check for explicit color commands
+                # Check for explicit color commands (English and Spanish)
                 if any(pattern in text for pattern in [
+                    # English patterns
                     f'set {var}', f'make it {var}', f'color {var}',
                     f'turn {var}', f'change to {var}', f'set to {var}',
-                    f'set color {var}', f'color to {var}'
+                    f'set color {var}', f'color to {var}',
+                    # Spanish patterns
+                    f'pon {var}', f'ponlo {var}', f'hazlo {var}', f'color {var}',
+                    f'cambia a {var}', f'cambia al {var}', f'cambia a la {var}',
+                    f'ajusta a {var}', f'ajusta al {var}', f'ajusta a la {var}',
+                    f'configura {var}', f'establece {var}'
                 ]):
                     return f'set_color_{color}'
 
@@ -734,7 +980,103 @@ class CommandBehavior:
 
     def _get_hardware_confirmation(self, command):
         """Get canned response for hardware command."""
-        confirmations = {
+        if self.spanish_mode:
+            confirmations_es = {
+                'shutdown': [
+                    "Apagando ahora. ¡Adiós!",
+                    "Iniciando secuencia de apagado.",
+                    "¡Adiós! Apagando.",
+                    "Apagado confirmado. Adiós.",
+                ],
+                'go_to_sleep': [
+                    "Okay, voy a dormir ahora.",
+                    "¡Buenas noches!",
+                    "Bien, hora de dormir.",
+                    "Modo de sueño activado.",
+                ],
+                'wake_up': [
+                    "¡Buenos días!",
+                    "¡Estoy despierto!",
+                    "¡Listo y despierto!",
+                    "Despertando ahora.",
+                ],
+                'stay': [
+                    "Okay, quedándome quieto.",
+                    "Congelado en su lugar.",
+                    "Manteniendo posición.",
+                    "No me moveré.",
+                ],
+                'move': [
+                    "Okay, puedo moverme de nuevo.",
+                    "Reanudando movimiento.",
+                    "Descongelado.",
+                    "Moviéndome ahora.",
+                ],
+                'turn_on_light': [
+                    "Luces encendidas.",
+                    "Encendiendo las luces.",
+                    "¡Que se haga la luz!",
+                ],
+                'turn_off_light': [
+                    "Luces apagadas.",
+                    "Apagando las luces.",
+                    "Oscureciendo.",
+                ],
+                'increase_brightness': [
+                    "Aumentando brillo.",
+                    "Haciéndolo más brillante.",
+                    "Más brillante.",
+                ],
+                'decrease_brightness': [
+                    "Disminuyendo brillo.",
+                    "Haciéndolo más tenue.",
+                    "Más tenue.",
+                ],
+                'set_brightness_max': [
+                    "Brillo máximo.",
+                    "Totalmente brillante.",
+                    "Ajuste más brillante.",
+                ],
+                'set_brightness_min': [
+                    "Brillo mínimo.",
+                    "Muy tenue.",
+                    "Ajuste más bajo.",
+                ],
+                'increase_color_temp': [
+                    "Haciéndolo más cálido.",
+                    "Tono más cálido.",
+                    "Aumentando calidez.",
+                ],
+                'decrease_color_temp': [
+                    "Haciéndolo más frío.",
+                    "Tono más frío.",
+                    "Disminuyendo calidez.",
+                ],
+            }
+
+            # Color commands in Spanish
+            if command.startswith('set_color_'):
+                color = command.replace('set_color_', '')
+                color_names_es = {
+                    'red': 'rojo',
+                    'orange': 'naranja',
+                    'yellow': 'amarillo',
+                    'green': 'verde',
+                    'cyan': 'cian',
+                    'blue': 'azul',
+                    'purple': 'morado',
+                    'white': 'blanco'
+                }
+                color_es = color_names_es.get(color, color)
+                return f"Cambiando color a {color_es}."
+
+            # Get confirmation or default
+            options = confirmations_es.get(command, ["Okay."])
+            return random.choice(options)
+
+        else:
+            # English confirmations
+            confirmations = {
             'shutdown': [
                 "Shutting down now. Goodbye!",
                 "Initiating shutdown sequence.",
@@ -1066,25 +1408,28 @@ class CommandBehavior:
 
         Returns tuple: (trigger_type, animation, response) or (None, None, None)
         """
+        # Determine which language responses to use
+        response_key = 'responses_es' if self.spanish_mode else 'responses_en'
+
         # Check thank you patterns
         if any(re.search(pattern, text) for pattern in self.thank_you_patterns):
             config = self.animation_triggers['thank_you']
             animation = random.choice(config['animations'])
-            response = random.choice(config['responses'])
+            response = random.choice(config[response_key])
             return 'thank_you', animation, response
 
         # Check happy patterns
         if any(re.search(pattern, text) for pattern in self.happy_patterns):
             config = self.animation_triggers['happy']
             animation = random.choice(config['animations'])
-            response = random.choice(config['responses'])
+            response = random.choice(config[response_key])
             return 'happy', animation, response
 
         # Check bounce patterns
         if any(re.search(pattern, text) for pattern in self.bounce_patterns):
             config = self.animation_triggers['bounce']
             animation = random.choice(config['animations'])
-            response = random.choice(config['responses'])
+            response = random.choice(config[response_key])
             return 'bounce', animation, response
 
         return None, None, None
@@ -1101,10 +1446,16 @@ class CommandBehavior:
         """
         sleep_keywords = [
             'sleep', 'asleep', 'sleeping', 'bedtime', 'bed time', 'bad time', 'bet time',
-            'good night', 'goodnight', 'nighty night', 'sweet dreams'
+            'good night', 'goodnight', 'nighty night', 'sweet dreams',
+            # Spanish sleep keywords
+            'dormir', 'durmiendo', 'dormido', 'buenas noches', 'dulces sueños',
+            'hora de dormir', 'acostarse'
         ]
         wake_keywords = [
-            'wake', 'waking', 'awake', 'good morning', 'morning', 'rise and shine'
+            'wake', 'waking', 'awake', 'good morning', 'morning', 'rise and shine',
+            # Spanish wake keywords
+            'despertar', 'despertando', 'despierto', 'buenos días', 'buen día',
+            'levantarse', 'levántate'
         ]
 
         text_lower = text.lower()
@@ -1253,94 +1604,177 @@ class CommandBehavior:
 
     def _get_status_message(self):
         """Generate status message."""
-        mute_status = "muted" if self.is_muted else "unmuted"
         volume_pct = int((self.amplitude / self.AMPLITUDE_MAX) * 100)
 
-        speed_desc = "normal"
-        if self.speed < 250:
-            speed_desc = "slow"
-        elif self.speed > 350:
-            speed_desc = "fast"
+        if self.spanish_mode:
+            mute_status = "silenciado" if self.is_muted else "activo"
 
-        pitch_desc = "normal"
-        if self.pitch < 40:
-            pitch_desc = "low"
-        elif self.pitch > 60:
-            pitch_desc = "high"
+            speed_desc = "normal"
+            if self.speed < 250:
+                speed_desc = "lento"
+            elif self.speed > 350:
+                speed_desc = "rápido"
 
-        return (f"I'm currently {mute_status}. "
-                f"Volume is at {volume_pct} percent. "
-                f"Speed is {speed_desc}. "
-                f"Pitch is {pitch_desc}.")
+            pitch_desc = "normal"
+            if self.pitch < 40:
+                pitch_desc = "bajo"
+            elif self.pitch > 60:
+                pitch_desc = "alto"
+
+            return (f"Actualmente estoy {mute_status}. "
+                    f"El volumen está al {volume_pct} por ciento. "
+                    f"La velocidad es {speed_desc}. "
+                    f"El tono es {pitch_desc}.")
+        else:
+            mute_status = "muted" if self.is_muted else "unmuted"
+
+            speed_desc = "normal"
+            if self.speed < 250:
+                speed_desc = "slow"
+            elif self.speed > 350:
+                speed_desc = "fast"
+
+            pitch_desc = "normal"
+            if self.pitch < 40:
+                pitch_desc = "low"
+            elif self.pitch > 60:
+                pitch_desc = "high"
+
+            return (f"I'm currently {mute_status}. "
+                    f"Volume is at {volume_pct} percent. "
+                    f"Speed is {speed_desc}. "
+                    f"Pitch is {pitch_desc}.")
 
     def _get_mute_confirmation(self):
         """Get mute confirmation message."""
-        confirmations = [
-            "Okay, I'll be quiet now.",
-            "Sure, muting myself.",
-            "Alright, I'm silent.",
-            "Got it, no more talking.",
-            "Understood, going silent.",
-        ]
+        if self.spanish_mode:
+            confirmations = [
+                "Okay, estaré callado ahora.",
+                "Claro, silenciándome.",
+                "De acuerdo, estoy en silencio.",
+                "Entendido, no más hablar.",
+                "Comprendido, quedándome callado.",
+            ]
+        else:
+            confirmations = [
+                "Okay, I'll be quiet now.",
+                "Sure, muting myself.",
+                "Alright, I'm silent.",
+                "Got it, no more talking.",
+                "Understood, going silent.",
+            ]
         return random.choice(confirmations)
 
     def _get_unmute_confirmation(self):
         """Get unmute confirmation message."""
-        confirmations = [
-            "Okay, I can talk again!",
-            "Great, I'm back!",
-            "Unmuted!",
-            "Alright, ready to chat!",
-            "I'm listening again!",
-        ]
+        if self.spanish_mode:
+            confirmations = [
+                "Okay, ¡puedo hablar de nuevo!",
+                "¡Genial, estoy de vuelta!",
+                "¡Activado de nuevo!",
+                "¡De acuerdo, listo para charlar!",
+                "¡Estoy escuchando de nuevo!",
+            ]
+        else:
+            confirmations = [
+                "Okay, I can talk again!",
+                "Great, I'm back!",
+                "Unmuted!",
+                "Alright, ready to chat!",
+                "I'm listening again!",
+            ]
         return random.choice(confirmations)
 
     def _get_volume_confirmation(self, direction):
         """Get volume confirmation message."""
         if direction == "up":
-            return random.choice([
-                "Volume increased.",
-                "Speaking louder now.",
-                "Turning it up.",
-                "Louder.",
-            ])
+            if self.spanish_mode:
+                return random.choice([
+                    "Volumen aumentado.",
+                    "Hablando más fuerte ahora.",
+                    "Subiéndolo.",
+                    "Más alto.",
+                ])
+            else:
+                return random.choice([
+                    "Volume increased.",
+                    "Speaking louder now.",
+                    "Turning it up.",
+                    "Louder.",
+                ])
         else:
-            return random.choice([
-                "Volume decreased.",
-                "Speaking softer now.",
-                "Turning it down.",
-                "Quieter.",
-            ])
+            if self.spanish_mode:
+                return random.choice([
+                    "Volumen disminuido.",
+                    "Hablando más suave ahora.",
+                    "Bajándolo.",
+                    "Más bajo.",
+                ])
+            else:
+                return random.choice([
+                    "Volume decreased.",
+                    "Speaking softer now.",
+                    "Turning it down.",
+                    "Quieter.",
+                ])
 
     def _get_speed_confirmation(self, direction):
         """Get speed confirmation message."""
         if direction == "up":
-            return random.choice([
-                "Speaking faster now.",
-                "Speeding up.",
-                "Faster.",
-            ])
+            if self.spanish_mode:
+                return random.choice([
+                    "Hablando más rápido ahora.",
+                    "Acelerando.",
+                    "Más rápido.",
+                ])
+            else:
+                return random.choice([
+                    "Speaking faster now.",
+                    "Speeding up.",
+                    "Faster.",
+                ])
         else:
-            return random.choice([
-                "Speaking slower now.",
-                "Slowing down.",
-                "Slower.",
-            ])
+            if self.spanish_mode:
+                return random.choice([
+                    "Hablando más lento ahora.",
+                    "Desacelerando.",
+                    "Más lento.",
+                ])
+            else:
+                return random.choice([
+                    "Speaking slower now.",
+                    "Slowing down.",
+                    "Slower.",
+                ])
 
     def _get_pitch_confirmation(self, direction):
         """Get pitch confirmation message."""
         if direction == "up":
-            return random.choice([
-                "Raising pitch.",
-                "Higher voice.",
-                "Pitch up.",
-            ])
+            if self.spanish_mode:
+                return random.choice([
+                    "Subiendo el tono.",
+                    "Voz más alta.",
+                    "Tono arriba.",
+                ])
+            else:
+                return random.choice([
+                    "Raising pitch.",
+                    "Higher voice.",
+                    "Pitch up.",
+                ])
         else:
-            return random.choice([
-                "Lowering pitch.",
-                "Deeper voice.",
-                "Pitch down.",
-            ])
+            if self.spanish_mode:
+                return random.choice([
+                    "Bajando el tono.",
+                    "Voz más profunda.",
+                    "Tono abajo.",
+                ])
+            else:
+                return random.choice([
+                    "Lowering pitch.",
+                    "Deeper voice.",
+                    "Pitch down.",
+                ])
 
     def should_speak(self):
         """Returns True if assistant should speak (not muted)."""
