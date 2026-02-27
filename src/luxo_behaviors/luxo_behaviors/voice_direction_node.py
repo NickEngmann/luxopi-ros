@@ -498,7 +498,7 @@ class VoiceDirectionNode(Node):
             self.get_logger().info('Audio processing thread stopped')
     
     def start_audio_processing(self):
-        """Start the audio processing thread"""
+        """Start the audio processing thread."""
         if not self.running:
             self.running = True
             self.audio_thread = threading.Thread(target=self.audio_processing_thread, daemon=True)
@@ -506,7 +506,7 @@ class VoiceDirectionNode(Node):
             self.get_logger().info('Audio processing started')
     
     def stop_audio_processing(self):
-        """Stop the audio processing thread"""
+        """Stop the audio processing thread."""
         if self.running:
             self.running = False
             if self.audio_thread:
@@ -514,7 +514,7 @@ class VoiceDirectionNode(Node):
             self.get_logger().info('Audio processing stopped')
     
     def destroy_node(self):
-        """Clean up when node is destroyed"""
+        """Clean up when node is destroyed."""
         self.get_logger().info('Shutting down Voice Direction Node')
         self.stop_audio_processing()
         
