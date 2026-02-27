@@ -1,31 +1,40 @@
-#!/usr/bin/env python3
-#state_machine.py
-import threading
-from enum import Enum, auto
-from typing import Dict, List, Callable, Optional, Any
-import time
+"""State machine definitions for luxo_behaviors."""
+
+from enum import Enum
+
 
 class LuxoState(Enum):
-    """Define all possible states for the Luxo robot."""
-    IDLE = auto()
-    ANIMATING = auto()
-    VOICE_FOLLOWING = auto()  # Voice following as its own state
-    COLLISION_AVOIDING = auto()
-    RETURNING_HOME = auto()
-    ESCAPE_MODE = auto()
-    USER_CONTROL = auto()  # Dynamic adaptation mode
-    EMOTION_REACTING = auto()
-    PETTING = auto()  # High-priority state for petting interactions
-    ERROR = auto()
-    INITIALIZING = auto()
-    SHUTDOWN = auto()
+    """States for the Luxo robot."""
+    IDLE = "idle"
+    ANIMATING = "animating"
+    VOICE_FOLLOWING = "voice_following"
+    COLLISION_AVOIDING = "collision_avoiding"
+    RETURNING_HOME = "returning_home"
+    ESCAPE_MODE = "escape_mode"
+    USER_CONTROL = "user_control"
+    EMOTION_REACTING = "emotion_reacting"
+    PETTING = "petting"
+    ERROR = "error"
+    INITIALIZING = "initializing"
+    SHUTDOWN = "shutdown"
+
 
 class StateTransition:
-    """Represents a state transition with conditions and actions."""
-    def __init__(self, from_state: LuxoState, to_state: LuxoState, 
-                 condition: Optional[Callable] = None,
-                 action: Optional[Callable] = None):
+    """Represents a state transition in the Luxo state machine."""
+    
+    def __init__(self, from_state: LuxoState, to_state: LuxoState, condition=None, action=None):
+        """Initialize a state transition.
+        
+        Args:
+            from_state: The source state
+            to_state: The destination state
+            condition: The condition function that triggers the transition (optional)
+            action: The action function to execute on transition (optional)
+        """
         self.from_state = from_state
         self.to_state = to_state
-        self.condition = condition  # Function that returns True if transition is allowed
-        self.action = action  # Function to execute during transition
+        self.condition = condition
+        self.action = action
+    
+    def __repr__(self):
+        return f"StateTransition({self.from_state.value} -> {self.to_state.value}, condition={self.condition}, action={self.action})"
