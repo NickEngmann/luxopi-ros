@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
 #behavior_coordinator.py
 
-import random
-import time
 import math
 import threading
 import rclpy
