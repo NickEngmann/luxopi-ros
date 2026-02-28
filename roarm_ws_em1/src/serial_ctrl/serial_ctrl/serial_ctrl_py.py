@@ -7,8 +7,34 @@ from std_msgs.msg import Float64
 
 import json
 import serial
+import logging
 
-ser = serial.Serial("/dev/ttyAMA0",115200)
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Serial port configuration with defaults
+SERIAL_PORT_DEFAULT = "/dev/ttyAMA0"
+BAUD_RATE_DEFAULT = 115200
+
+class SerialController(Node):
+    """ROS2 node for serial communication with robotic arm."""
+    
+    def __init__(self, port=SERIAL_PORT_DEFAULT, baudrate=BAUD_RATE_DEFAULT):
+        super().__init__('serial_controller')
+        self.port = port
+        self.baudrate = baudrate
+        self.ser = None
+        self.connect_serial()
+    
+    def connect_serial(self):
+        """Establish serial connection with error handling."""
+        try:
+            self.ser = serial.Serial(self.port, self.baudrate, timeout=1)
+            self.get_logger().info(f'Serial connection established on {self.port}@{self.baudrate}')
+        except serial.SerialException as e:
+            self.get_logger().error(f'Failed to open serial port {self.port}: {e}')
+            raise
 
 #
 class MinimalSubscriber(Node):
