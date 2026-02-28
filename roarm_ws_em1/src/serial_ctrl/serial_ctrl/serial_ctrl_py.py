@@ -1,6 +1,7 @@
 import rclpy
 from rclpy.node import Node
 import array
+import math
 
 from sensor_msgs.msg import JointState
 from std_msgs.msg import Float64
@@ -8,7 +9,13 @@ from std_msgs.msg import Float64
 import json
 import serial
 
-ser = serial.Serial("/dev/ttyAMA0",115200)
+# Constants for better maintainability
+SERIAL_PORT = "/dev/ttyAMA0"
+BAUD_RATE = 115200
+PI = math.pi
+POSITION_CENTER = 2048
+
+ser = serial.Serial(SERIAL_PORT, BAUD_RATE)
 
 #
 class MinimalSubscriber(Node):
@@ -25,14 +32,14 @@ class MinimalSubscriber(Node):
     
     def posGet(self, radInput, direcInput, multiInput):
         if radInput == 0:
-            return 2047
+            return POSITION_CENTER
         else:
-            getPos = int(2047 + (direcInput * radInput / 3.1415926 * 2048 * multiInput) + 0.5)
+            getPos = int(POSITION_CENTER + (direcInput * radInput / PI * POSITION_CENTER * multiInput) + 0.5)
             return getPos
 
     def listener_callback(self, msg):
         a = msg.position
-        data = json.dumps({'T':102,'base':a[0],'shoulder':a[1],'elbow':a[2],'hand':a[3]+3.1415926,'spd':0,'acc':0}) + "\n"
+        data = json.dumps({'T':102,'base':a[0],'shoulder':a[1],'elbow':a[2],'hand':a[3]+PI,'spd':0,'acc':0}) + "\n"
         ser.write(data.encode())
         print(data)
 
