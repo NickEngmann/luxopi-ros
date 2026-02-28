@@ -1,14 +1,13 @@
 import rclpy
 from rclpy.node import Node
 import array
+from typing import Dict, Any, Optional
 
 from sensor_msgs.msg import JointState
 from std_msgs.msg import Float64
 
 import json
 import serial
-
-ser = serial.Serial("/dev/ttyAMA0",115200)
 
 #
 class MinimalSubscriber(Node):
