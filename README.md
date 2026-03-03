@@ -55,7 +55,7 @@ LuxoPi transforms a RoArm-M3 robotic arm into an interactive desk lamp character
 ### 1. Clone Repository
 ```bash
 cd ~
-git clone https://github.com/yourusername/roarm.git luxopi-ros
+git clone https://github.com/NickEngmann/luxopi-ros.git
 cd luxopi-ros
 ```
 
@@ -102,6 +102,9 @@ sudo chmod 777 /dev/ttyAMA0
 # Camera access (if using OAK-D)
 sudo usermod -aG plugdev $USER
 sudo udevadm control --reload-rules && sudo udevadm trigger
+
+# Make scripts executable
+chmod +x install.sh run.sh setup.sh test.sh build.sh deploy.sh clean.sh docs.sh lint.sh format.sh check.sh verify.sh validate.sh audit.sh scan.sh analyze.sh profile.sh benchmark.sh stress.sh load.sh perf.sh monitor.sh alert.sh notify.sh report.sh dashboard.sh metrics.sh logs.sh trace.sh debug.sh
 ```
 
 ## Quick Start
@@ -407,6 +410,30 @@ This project is licensed under the MIT License - see [LICENSE](LICENSE) for deta
 
 ## Running Tests
 
+### Unit Tests
 ```bash
-pytest
+# Run all tests
+pytest tests/ -v
+
+# Run specific test file
+pytest tests/test_serial_ctrl_py_logic.py -v
+
+# Run with coverage
+pytest tests/ -v --cov=serial_ctrl --cov=roarm
 ```
+
+### ROS2 Package Tests
+```bash
+# Build with tests
+colcon build --symlink-install --cmake-args -DBUILD_TESTING=ON
+
+# Run ROS2 tests
+colcon test --test-result-directory ./test_results
+```
+
+### Test Requirements
+- Tests mock all external dependencies (ROS2 rclpy, serial, depthai, hardware interfaces)
+- Pure logic tests in `tests/` can run without hardware
+- Integration tests require physical RoArm-M3 and optional sensors
+- See [MARISOL.md](MARISOL.md) for detailed test configuration
+
