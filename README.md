@@ -1,7 +1,5 @@
 # LuxoPi ROS2 Project
 
-![Tests](https://github.com/NickEngmann/luxopi-ros/actions/workflows/test.yml/badge.svg)
-
 A ROS2-based control system for the RoArm-M3 robotic arm with Luxo Jr-style animated behaviors, featuring emotion detection, collision avoidance, and interactive capabilities.
 
 ![RoArm Luxo System](docs/images/roarm_luxo_overview.jpg)
