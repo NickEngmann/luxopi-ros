@@ -3,3 +3,20 @@
 build/
 log/
 install/
+
+# Auto-added by Marisol pipeline
+.env
+.cache/
+MARISOL.md
+__pycache__/
+.pytest_cache/
+debug_*.py
+dist/
+*.egg-info/
+*.o
+*.so
+node_modules/
+.pio/
+.gradle/
+*.class
+local.properties
