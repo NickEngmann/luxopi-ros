@@ -407,6 +407,47 @@ This project is licensed under the MIT License - see [LICENSE](LICENSE) for deta
 
 ## Running Tests
 
+This project uses a hybrid testing approach with both Python pytest tests and ROS2 ament tests.
+
+### Python Unit Tests
+
+Run the Python test suite:
+
 ```bash
-pytest
+pytest tests/ -v
+```
+
+### ROS2 Package Tests
+
+For ROS2 package testing (requires ROS2 workspace setup):
+
+```bash
+cd roarm_ws_em1
+colcon test --test-result-tests
+```
+
+### Test Coverage
+
+The test suite includes:
+- **Copyright checks**: Verifies proper licensing headers
+- **Code style**: Flake8 and PEP257 compliance
+- **Type checking**: MyPy static analysis
+- **Unit tests**: Core functionality tests with hardware mocks
+- **Integration tests**: ROS2 node communication tests
+
+### Hardware Mocks
+
+The tests use mocks for hardware dependencies:
+- **Serial port**: Mocked with serialio library
+- **DepthAI camera**: Mocked with test data fixtures
+- **ROS2 nodes**: Simulated with launch files
+
+### Running All Tests
+
+```bash
+# Python tests
+pytest tests/ -v
+
+# ROS2 tests (in workspace)
+cd roarm_ws_em1 && colcon test
 ```
