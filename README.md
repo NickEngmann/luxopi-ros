@@ -407,6 +407,113 @@ This project is licensed under the MIT License - see [LICENSE](LICENSE) for deta
 
 ## Running Tests
 
+### Python Unit Tests
+
+Run the pytest test suite for pure logic components:
+
 ```bash
-pytest
+pytest tests/ -v
 ```
+
+### ROS2 Integration Tests
+
+For ROS2 nodes and integration testing:
+
+```bash
+cd roarm_ws_em1 && colcon test --test-result-tests
+```
+
+### Test Infrastructure
+
+- **Pure Logic Tests**: Located in `tests/` directory, test extracted logic functions from ROS2 nodes
+- **Hardware Mocking**: Serial communication mocked with `serialio` library
+- **Vision Testing**: DepthAI camera data mocked with test fixtures in `tests/conftest.py`
+- **Test Dependencies**: Install with `pip install -r requirements.txt`
+
+### Running Individual Tests
+
+```bash
+# Run specific test file
+pytest tests/test_serial_ctrl_py_logic.py -v
+
+# Run tests with coverage
+pytest tests/ -v --cov=src
+
+# Run tests matching pattern
+pytest tests/ -v -k "serial"
+```
+
+## Architecture
+
+### Project Structure
+
+```
+luxopi-ros/
+├── src/                    # ROS2 packages and Python logic
+│   ├── luxo_behaviors/    # Behavior control nodes
+│   ├── luxo_interfaces/    # ROS2 message definitions
+│   └── serial_ctrl_py.py  # Serial communication controller
+├── tests/                  # Python unit tests
+│   ├── conftest.py        # Test fixtures and mocks
+│   └── test_serial_ctrl_py_logic.py
+├── roarm_ws_em1/          # ROS2 workspace for build
+│   └── src/               # ROS2 packages
+├── requirements.txt       # Python dependencies
+└── .github/workflows/     # CI/CD pipelines
+```
+
+### Key Components
+
+1. **Serial Control**: `serial_ctrl_py.py` handles communication with RoArm-M3 motors
+2. **Behaviors**: `luxo_behaviors` package implements Luxo Jr-style animated behaviors
+3. **Vision Processing**: DepthAI camera integration for object detection and tracking
+4. **Interfaces**: Custom ROS2 messages defined in `luxo_interfaces`
+
+### Mock Architecture
+
+- **Serial Port**: Uses `serialio` library to mock hardware serial communication
+- **Camera Data**: Test fixtures provide simulated depthAI camera output
+- **ROS2 Nodes**: Launch files simulate node behavior for testing
+- **Pure Logic**: Core algorithms extracted from ROS2 dependencies for unit testing
+
+## Contributing
+
+Please read [CONTRIBUTING.md](CONTRIBUTING.md) for our code of conduct and submission process.
+
+## License
+
+This project is licensed under the MIT License - see [LICENSE](LICENSE) for details.
+
+## Dependencies
+
+### Python Dependencies
+
+- `depthai==2.30.0` - Camera SDK for vision processing
+- `depthai-sdk==1.15.1` - DepthAI SDK utilities
+- `customtkinter==5.2.0` - Modern GUI toolkit
+- `pyserial==3.5` - Serial communication
+- `blobconverter` - DepthAI blob conversion utilities
+- `pytest` - Testing framework
+
+### ROS2 Dependencies
+
+- ROS2 Humble (Hedgehog)
+- rclpy - Python ROS2 client library
+- std_msgs - Standard ROS2 message types
+- Custom interfaces defined in `luxo_interfaces` package
+
+## Troubleshooting
+
+### Common Issues
+
+1. **Serial Communication Errors**: Ensure serialio is installed and mock data is available
+2. **DepthAI Camera Issues**: Verify camera firmware is up to date
+3. **ROS2 Build Failures**: Check that `roarm_ws_em1` workspace is properly sourced
+4. **Test Failures**: Run `pytest tests/ -v` to see detailed error messages
+
+### Getting Help
+
+- Check the [GitHub Issues](https://github.com/NickEngmann/luxopi-ros/issues) page
+- Review the CI workflow logs for build/test errors
+- Consult the ROS2 Humble documentation
+
