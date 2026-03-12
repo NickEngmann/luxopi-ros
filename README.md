@@ -395,7 +395,268 @@ usbipd attach --wsl Ubuntu-24.04 --hardware-id "03e7:f63b" --auto-attach
 
 ## API Reference
 
+### Python Module Documentation
+
+#### luxo_behaviors.shared_utils
+
+Utility functions shared across the LuxoPi behaviors package.
+
+**Available Functions:**
+
+- `clamp(value, min_val, max_val)` - Clamp a value within specified bounds
+- `interpolate(start, end, t)` - Linear interpolation between two values
+- `normalize_angle(angle)` - Normalize angle to [-π, π] range
+- `lerp_color(color1, color2, t)` - Blend between two colors
+- `smooth_step(edge1, edge2, x)` - Smooth interpolation function
+- `distance(p1, p2)` - Calculate Euclidean distance between two points
+- `angle_difference(a1, a2)` - Calculate shortest angular difference
+
+**Usage Example:**
+```python
+from luxo_behaviors.shared_utils import interpolate, clamp
+
+# Interpolate between two joint positions
+position = interpolate(0.0, 1.0, 0.5)  # Returns 0.5
+
+# Clamp value to safe range
+safe_value = clamp(-5.0, -3.0, 3.0)  # Returns -3.0
+```
+
+#### luxo_behaviors.i2c_device_manager
+
+Manages I2C communication with hardware sensors (APDS9960, VL53L4CD, ADS7830).
+
+**Main Class: `I2CDeviceManager`**
+
+**Supported Sensors:**
+- **APDS9960** - Proximity and gesture sensor
+- **VL53L4CD** - Time-of-flight distance sensor
+- **ADS7830** - Analog-to-digital converter
+
+**Key Methods:**
+
+| Method | Description | Returns |
+|--------|-------------|---------|
+| `initialize_sensor(sensor_type)` | Initialize specified I2C sensor | bool |
+| `read_proximity()` | Read proximity from APDS9960 | int (0-1023) |
+| `read_distance(sensor_id)` | Read distance from VL53L4CD | float (meters) |
+| `read_analog(channel)` | Read analog value from ADS7830 | float (0-3.3V) |
+| `detect_gesture()` | Detect gesture from APDS9960 | str ("none", "up", "down", "left", "right") |
+| `configure_sensor(sensor_type, config)` | Configure sensor parameters | bool |
+| `get_sensor_status()` | Get status of all sensors | dict |
+
+**Usage Example:**
+```python
+from luxo_behaviors.i2c_device_manager import I2CDeviceManager
+
+# Initialize manager
+manager = I2CDeviceManager()
+manager.initialize_sensor('apds9960')
+
+# Read proximity
+proximity = manager.read_proximity()
+if proximity > 500:
+    print("Object detected!")
+
+# Read distance from side sensor
+distance = manager.read_distance('left')
+if distance < 0.3:
+    print("Collision imminent!")
+
+# Cleanup
+manager.cleanup()
+```
+
+#### luxo_behaviors.state_machine
+
+Finite state machine for managing LuxoPi behavior states and transitions.
+
+**Main Class: `LuxoStateMachine`**
+
+**State Enum: `LuxoState`**
+
+| State | Description |
+|-------|-------------|
+| `IDLE` | Waiting for input, no animation playing |
+| `ANIMATING` | Currently playing an animation |
+| `COLLISION_RESPONSE` | Responding to collision detection |
+| `EMOTION_REACTION` | Reacting to detected emotion |
+| `DYNAMIC_ADAPTATION` | In physical teaching mode |
+| `ERROR` | Error state requiring intervention |
+
+**Transition Configuration:**
+
+```python
+from luxo_behaviors.state_machine import LuxoStateMachine, LuxoState
+
+# Create state machine
+sm = LuxoStateMachine()
+
+# Define transition with condition and action
+sm.add_transition(
+    from_state=LuxoState.IDLE,
+    to_state=LuxoState.ANIMATING,
+    condition=lambda: True,
+    action=lambda: print("Starting animation")
+)
+
+# Execute state transition
+sm.transition_to(LuxoState.ANIMATING)
+print(f"Current state: {sm.current_state}")
+```
+
+**Key Methods:**
+
+| Method | Description | Returns |
+|--------|-------------|---------|
+| `transition_to(target_state)` | Attempt to transition to target state | bool |
+| `get_current_state()` | Get current state | LuxoState |
+| `add_transition(from, to, condition, action)` | Add state transition | None |
+| `set_state(state)` | Force set current state | None |
+| `get_transition_history()` | Get list of recent transitions | list |
+
+#### luxo_behaviors.animation_plugin_base
+
+Base class for creating custom animation plugins.
+
+**Main Class: `AnimationPluginBase`**
+
+**Abstract Methods to Implement:**
+
+| Method | Description | Required |
+|--------|-------------|----------|
+| `execute()` | Main animation execution logic | Yes |
+| `get_name()` | Animation identifier | Yes |
+| `get_category()` | Animation category | Yes |
+| `get_duration()` | Expected animation duration | No |
+
+**Animation Categories:**
+- `emotion` - Expressions of feelings (excited, sad, playful)
+- `action` - Physical movements (curious, stretch, dance)
+- `response` - Reactive behaviors (nod, shake, startled)
+- `idle` - Resting states
+
+**Usage Example:**
+```python
+from luxo_behaviors.animation_plugin_base import AnimationPluginBase
+from luxo_behaviors.shared_utils import interpolate
+
+class MyCustomAnimation(AnimationPluginBase):
+    def get_name(self) -> str:
+        return "my_custom_animation"
+    
+    def get_category(self) -> str:
+        return "action"
+    
+    def get_duration(self) -> float:
+        return 2.0
+    
+    def execute(self):
+        # Custom animation logic
+        keyframes = [
+            [0.0, 0.5, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.5, 0.0, 0.0],
+            [0.0, 0.5, 0.0, 0.0, 0.0],
+        ]
+        durations = [0.5, 0.5, 0.5]
+        self.start_animation(keyframes, durations)
+
+# Register and use
+animation = MyCustomAnimation()
+animation.execute()
+```
+
+**Base Class Methods:**
+
+| Method | Description | Returns |
+|--------|-------------|---------|
+| `start_animation(keyframes, durations)` | Start animation with keyframes | None |
+| `set_animation_speed(speed_factor)` | Control animation speed | None |
+| `get_animation_speed()` | Get current speed factor | float |
+| `stop_animation()` | Stop current animation | None |
+| `is_animating()` | Check if animation is playing | bool |
+
+#### luxo_behaviors.animation_plugins.action_animations
+
+Pre-built action animation implementations.
+
+**Available Animations:**
+
+| Animation | Category | Duration | Description |
+|-----------|----------|----------|-------------|
+| `curious` | action | 3.0s | Head tilt and lean forward |
+| `think` | action | 4.0s | Hand to chin, thoughtful pose |
+| `stretch` | action | 3.5s | Full body stretch |
+| `dance` | action | 5.0s | Rhythmic movement sequence |
+| `wave` | response | 2.0s | Friendly hand wave |
+| `nod` | response | 1.5s | Head nodding |
+| `shake` | response | 1.5s | Head shaking |
+| `bow` | action | 2.5s | Respectful bow |
+| `dance_move` | action | 4.0s | Simple dance move |
+| `stretch_arm` | action | 2.0s | Arm extension stretch |
+
+**Animation Keyframe Format:**
+
+```python
+# Each keyframe is [base, shoulder, elbow, wrist, hand]
+keyframes = [
+    [0.0, 0.0, 0.0, 0.0, 0.0],   # Starting position
+    [0.1, 0.5, 0.3, 0.0, 0.0],   # Intermediate pose
+    [0.0, 0.0, 0.0, 0.0, 0.0],   # Return to rest
+]
+durations = [0.5, 0.5, 0.5]     # Time for each transition
+```
+
+**Usage Example:**
+```python
+from luxo_behaviors.animation_plugins.action_animations import (
+    curious_animation,
+    stretch_animation,
+    dance_animation
+)
+
+# Execute specific animation
+curious_animation()
+
+# Or use the animation plugin directly
+from luxo_behaviors.animation_plugin_base import AnimationPluginBase
+animation = AnimationPluginBase("curious")
+animation.execute()
+```
+
+### ROS2 API Reference
+
+#### Topics
+
+| Topic | Type | Description |
+|-------|------|-------------|
+| `/roarm/animation_command` | std_msgs/String | Animation trigger command |
+| `/joint_states` | sensor_msgs/JointState | Current joint positions |
+| `/joint_states_target` | sensor_msgs/JointState | Target joint positions |
+| `/camera/emotion` | std_msgs/String | Detected emotion |
+| `/camera/person_distance` | std_msgs/Float32 | Distance to person (m) |
+| `/head_collision_warning` | std_msgs/Bool | Front collision status |
+| `/left_collision_warning` | std_msgs/Bool | Left collision status |
+| `/right_collision_warning` | std_msgs/Bool | Right collision status |
+| `/dynamic_adaptation_toggle` | std_msgs/Bool | Enable/disable adaptation mode |
+
+#### Services
+
+| Service | Type | Description |
+|---------|------|-------------|
+| `/configure_i2c_sensor` | luxo_interfaces/ConfigureI2CSensor | Configure I2C sensor parameters |
+
+#### Actions
+
+| Action | Type | Description |
+|--------|------|-------------|
+| `/play_animation` | luxo_interfaces/PlayAnimation | Execute animation with progress feedback |
+
+### Additional Documentation
+
 For detailed robot arm commands and JSON API documentation, see [ROBOT_ARM_API.md](ROBOT_ARM_API.md).
+
+For hardware-specific configuration, see [HARDWARE_SETUP.md](HARDWARE_SETUP.md).
 
 ## Contributing
 
