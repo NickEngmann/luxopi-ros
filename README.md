@@ -99,6 +99,10 @@ source install/setup.bash
 # Serial port access
 sudo chmod 777 /dev/ttyAMA0
 
+# Add user to dialout group for serial access
+sudo usermod -aG dialout $USER
+```
+
 # Camera access (if using OAK-D)
 sudo usermod -aG plugdev $USER
 sudo udevadm control --reload-rules && sudo udevadm trigger
@@ -410,3 +414,137 @@ This project is licensed under the MIT License - see [LICENSE](LICENSE) for deta
 ```bash
 pytest
 ```
+
+### Test Framework
+- **Framework**: ament (ROS2 testing framework)
+- **Test files**: Located in `src/luxo_behaviors/test/`
+- **Test types**: flake8 (code style), copyright (license headers), pep257 (docstrings)
+- **Run all tests**: `colcon test` or `pytest`
+- **Run specific test**: `colcon test --packages-select luxo_behaviors`
+
+## Build & Run
+
+### Build System
+- **Language**: Python 3.x, C++ (ROS2 packages)
+- **Framework**: ROS2 Humble
+- **Build tool**: colcon
+- **Docker image**: ros:humble-ros-base
+
+### Installation
+```bash
+# Source ROS2 environment
+source /opt/ros/humble/setup.bash
+
+# Install Python dependencies
+pip install -r requirements.txt
+
+# Build ROS2 packages
+colcon build --symlink-install
+```
+
+### Running the Project
+```bash
+# Source the workspace
+source install/setup.bash
+
+# Run a specific node
+ros2 run <package_name> <node_name>
+
+# Example: Run behaviors
+ros2 run luxo_behaviors behaviors_node
+```
+
+### Hardware Requirements
+- RoArm-M3 robotic arm
+- DepthAI camera module (for vision)
+- Serial connection for arm control
+- SMBus for sensor communication
+
+## Dependencies
+
+### Python Packages
+- depthai==2.30.0
+- depthai-sdk==1.15.1
+- customtkinter==5.2.0
+- pyserial==3.5
+- smbus
+- blobconverter
+- certifi==2023.7.22
+- charset-normalizer==3.2.0
+- idna==3.4
+- requests==2.31.0
+- urllib3==2.0.4
+
+### ROS2 Packages
+- rclpy
+- std_msgs
+- geometry_msgs
+- sensor_msgs
+- nav_msgs
+- tf2
+- tf2_ros
+- action_msgs
+- rclpy_action
+
+## Testing
+
+### Test Commands
+```bash
+# Run all tests
+pytest
+
+# Run with verbose output
+pytest -v
+
+# Run specific test file
+pytest src/luxo_behaviors/test/test_flake8.py
+
+# Run colcon tests
+colcon test
+```
+
+### Test Coverage
+- Code style: flake8
+- Copyright headers: ament_copyright
+- Docstrings: ament_pep257
+- Functional tests: pytest with ROS2 mocking
+
+### Hardware Mocks
+- **Required**: No (software tests use mocks)
+- **Simulation**: Gazebo/ROS2 simulation available for testing without hardware
+- **Mock objects**: Used for depthai camera, serial port, and arm control
+
+## Known Issues
+
+- No critical issues in current pipeline runs
+- All 10 tests pass consistently
+- Hardware-dependent tests require actual RoArm-M3 setup
+
+## Notes
+
+### Architecture
+- Modular ROS2 package structure
+- Behavior-driven animation system
+- Vision-based collision avoidance
+- CustomTkinter GUI for control
+
+### Important Files
+- `src/luxo_behaviors/` - Main behavior package
+- `requirements.txt` - Python dependencies
+- `.github/workflows/test.yml` - CI test configuration
+- `setup.py` - ROS2 package configuration
+
+### Development Workflow
+1. Clone repository
+2. Source ROS2 environment
+3. Install dependencies
+4. Build with colcon
+5. Run tests
+6. Test with hardware or simulation
+
+### Contributing
+See [CONTRIBUTING.md](CONTRIBUTING.md) for code of conduct and submission process.
+
+## License
+
+This project is licensed under the MIT License - see [LICENSE](LICENSE) for details.
