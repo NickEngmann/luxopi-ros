@@ -47,7 +47,7 @@ LuxoPi transforms a RoArm-M3 robotic arm into an interactive desk lamp character
 
 ### Software
 - **OS**: Ubuntu 24.04
-- **ROS2**: Jazzy Foxy
+- **ROS2**: Humble
 - **Python**: 3.8+
 
 ## Installation
@@ -64,10 +64,10 @@ cd luxopi-ros
 # ROS2 packages
 sudo apt update
 sudo apt install -y \
-    ros-jazzy-joint-state-publisher \
-    ros-jazzy-robot-state-publisher \
-    ros-jazzy-rviz2 \
-    ros-jazzy-xacro
+    ros-humble-joint-state-publisher \
+    ros-humble-robot-state-publisher \
+    ros-humble-rviz2 \
+    ros-humble-xacro
 sudo bash ./INSTALL.sh
 
 # Python packages
