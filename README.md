@@ -2,7 +2,167 @@
 
 ![Tests](https://github.com/NickEngmann/luxopi-ros/actions/workflows/test.yml/badge.svg)
 
-A ROS2-based control system for the RoArm-M3 robotic arm with Luxo Jr-style animated behaviors, featuring emotion detection, collision avoidance, and interactive capabilities.
+A ROS2-based control system for the RoArm-M3 robotic arm with Luxo Jr-style animated behaviors, vision processing, and advanced sensor integration.
+
+## Overview
+
+LuxoPi brings the iconic Luxo Jr lamp character to life through ROS2-based control of the RoArm-M3 robotic arm. The system features:
+
+- **Animated Behaviors**: Luxo Jr-style expressions and movements
+- **Vision Processing**: depthai camera integration for environmental awareness
+- **Sensor Suite**: I2C-based proximity, distance, and gesture detection
+- **State Machine**: Dynamic behavior management with custom transition conditions
+- **Safety Systems**: Collision avoidance and emergency escape modes
+
+## Quick Start
+
+### Prerequisites
+
+- ROS2 Humble (Ubuntu 22.04)
+- Python 3.11 or 3.12
+- depthai camera hardware
+- RoArm-M3 robotic arm
+- I2C sensors (APDS9960, VL53L4CD, ADS7830)
+
+### Installation
+
+```bash
+# Clone the repository
+git clone https://github.com/NickEngmann/luxopi-ros.git
+cd luxopi-ros
+
+# Setup ROS2 environment
+source /opt/ros/humble/setup.bash
+
+# Install Python dependencies
+pip install -r requirements.txt
+
+# Install ROS2 dependencies
+rosdep install --from-paths src --ignore-src -r -y
+```
+
+### Building
+
+```bash
+cd roarm_ws_em1
+colcon build --packages-select luxo_behaviors
+source install/setup.bash
+```
+
+### Running
+
+```bash
+# Launch the system
+ros2 launch luxo_behaviors luxo_system.launch.py
+```
+
+## Architecture
+
+### Core Components
+
+1. **State Machine** (`state_machine.py`)
+   - Manages robot behavior states
+   - Supports custom transition conditions
+   - Handles state transitions with actions
+
+2. **I2C Device Manager** (`i2c_device_manager.py`)
+   - APDS9960: Gesture recognition and proximity detection
+   - VL53L4CD: Distance sensors for side detection
+   - ADS7830: Touch sensor support
+
+3. **Vision Processing** (`vision_processor.py`)
+   - depthai camera integration
+   - Object detection and tracking
+   - Environmental mapping
+
+4. **Behavior System** (`behaviors/`)
+   - Luxo Jr-style animations
+   - Voice following
+   - Collision avoidance
+   - Petting interactions
+
+### Safety Features
+
+- **Collision Avoidance**: Real-time proximity detection prevents arm collisions
+- **Emergency Escape**: Automatic escape mode on critical errors
+- **Error Recovery**: Systematic error handling and recovery procedures
+
+## Testing
+
+### Running Tests
+
+```bash
+# Python tests
+pytest tests/ -v
+
+# ROS2 tests
+cd roarm_ws_em1
+colcon test --test-result-tests
+```
+
+### Hardware Mocks
+
+The test suite uses hardware mocks for:
+- ROS2 nodes (simulated with launch files)
+- depthai camera (mocked with test data)
+- Serial port (mocked with serialio)
+- I2C sensors (APDS9960, VL53L4CD, ADS7830)
+
+## Deployment
+
+### Docker Support
+
+```bash
+docker build -t luxopi-ros:latest .
+docker run -it --privileged luxopi-ros:latest
+```
+
+### Production Deployment
+
+1. Verify all sensors are calibrated
+2. Test collision avoidance system
+3. Validate state machine transitions
+4. Run full test suite
+5. Deploy to production environment
+
+## Troubleshooting
+
+### Common Issues
+
+1. **I2C Communication Errors**
+   - Check sensor connections
+   - Verify I2C address configuration
+   - Ensure proper power supply
+
+2. **Camera Initialization Failures**
+   - Check depthai firmware version
+   - Verify USB connection quality
+   - Review camera calibration data
+
+3. **State Machine Stuck States**
+   - Check transition conditions
+   - Review error logs
+   - Reset system state
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Add tests for new features
+4. Ensure all tests pass
+5. Submit a pull request
+
+## License
+
+MIT License - see LICENSE file for details
+
+## Acknowledgments
+
+- Luxo Jr. created by Pixar Animation Studios
+- RoArm-M3 by RoArm Robotics
+- depthai by Luxonis
+- ROS2 community and contributors
+ehaviors, featuring emotion detection, collision avoidance, and interactive capabilities.
 
 ![RoArm Luxo System](docs/images/roarm_luxo_overview.jpg)
 
