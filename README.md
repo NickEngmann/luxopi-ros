@@ -2,7 +2,7 @@
 
 ![Tests](https://github.com/NickEngmann/luxopi-ros/actions/workflows/test.yml/badge.svg)
 
-A ROS2-based control system for the RoArm-M3 robotic arm with Luxo Jr-style animated behaviors, featuring emotion detection, collision avoidance, and interactive capabilities.
+A ROS2-based control system for the RoArm-M3 robotic arm with Luxo Jr-style animated behaviors, vision processing, and educational robotics applications. Built for Raspberry Pi OS with ROS2 Humble distribution. behaviors, featuring emotion detection, collision avoidance, and interactive capabilities.
 
 ![RoArm Luxo System](docs/images/roarm_luxo_overview.jpg)
 
@@ -410,3 +410,19 @@ This project is licensed under the MIT License - see [LICENSE](LICENSE) for deta
 ```bash
 pytest
 ```
+
+## Contributing
+
+We welcome contributions! Please read our [Contributing Guide](CONTRIBUTING.md) for our code of conduct and submission process.
+
+## Support
+
+For issues and questions, please open a GitHub issue or contact the maintainers.
+
+## Acknowledgments
+
+This project builds upon the RoArm-M3 robotic arm control system and incorporates Luxo Jr-inspired animation techniques for educational robotics applications.
+
+---
+
+**Note**: This documentation is maintained as part of the LuxoPi ROS2 project pipeline. For the most up-to-date information, please refer to the official repository.
