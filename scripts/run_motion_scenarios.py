@@ -152,6 +152,8 @@ class Scenarios:
     def playlist(self,names):
         for name in names:
             self.transition('IDLE',force=True)
+            self.wait(lambda:self.current_state=='IDLE')
+            self.spin(.3)  # Allow action-server state subscription to observe reset.
             start=len(self.joints)
             _,feedback,result=self.goal(name,speed=2)
             terminal=self.future(result,timeout=60)
