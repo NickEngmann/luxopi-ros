@@ -37,8 +37,8 @@ class StateManagerNode(Node):
         self._state_history = []
         self._max_history = 100
         self._last_state_requester = "system"
-        self._return_state_stack = []  # Stack to track states to return to
         self._interrupted_states = {}  # Map of state -> what it interrupted
+        self._interrupted_requesters = {}
         
         # Priority management for state requests
         self._node_priorities = {
@@ -328,38 +328,43 @@ class StateManagerNode(Node):
             if priority is None:
                 priority = self._node_priorities.get(requesting_node, 50)
             
-            # For completion transitions, check if we should return to a saved state
-            if is_completion and self._return_state_stack:
-                # Check if current state had interrupted something
-                if self._current_state in self._interrupted_states:
-                    # Return to what we interrupted
-                    requested_state = self._interrupted_states[self._current_state]
-                    del self._interrupted_states[self._current_state]
-                    self.get_logger().info(f"Completion transition: returning to {requested_state.name}")
-            
-            # Check if this request has high enough priority (skip for completions)
+            interrupted_state = self._interrupted_states.get(self._current_state)
+            completing_state = self._current_state
+            restored_requester = None
+            if is_completion and interrupted_state is not None:
+                requested_state = interrupted_state
+                restored_requester = self._interrupted_requesters.get(completing_state)
+
             if not force and not is_completion and not self._has_transition_priority(requesting_node, priority):
                 self.get_logger().info(
-                    f"State transition request from {requesting_node} (priority {priority}) "
-                    f"denied due to insufficient priority"
+                    f"State transition request from {requesting_node} (priority {priority}) denied due to insufficient priority"
                 )
                 return False
-            
-            # Track what state we're interrupting (if not a completion)
-            if not is_completion and self._current_state != requested_state:
-                # This is an interruption - save the current state for potential return
-                if priority > self._get_current_priority():
-                    self._interrupted_states[requested_state] = self._current_state
-                    self.get_logger().info(f"{requested_state.name} interrupted {self._current_state.name}")
-            
-            # Attempt the transition
+
+            previous_state = self._current_state
+            previous_requester = self._last_state_requester
+            previous_priority = self._get_current_priority()
+            interruption = (
+                not is_completion and previous_state != requested_state
+                and previous_state not in (LuxoState.IDLE, LuxoState.INITIALIZING)
+                and priority > previous_priority
+            )
             success = self.transition_to(requested_state, force)
-            
             if success:
+                if interruption:
+                    self._interrupted_states[requested_state] = previous_state
+                    self._interrupted_requesters[requested_state] = (previous_requester, previous_priority)
+                if not interruption and previous_state != requested_state:
+                    self._interrupted_states.pop(previous_state, None)
+                    self._interrupted_requesters.pop(previous_state, None)
+                if is_completion:
+                    self._interrupted_states.pop(completing_state, None)
+                    self._interrupted_requesters.pop(completing_state, None)
+                if restored_requester is not None:
+                    requesting_node, priority = restored_requester
                 self._last_state_requester = requesting_node
-                # Update active node states
                 self._active_node_states[requesting_node] = (requested_state, priority, time.time())
-            
+
             return success
 
     def _get_current_priority(self) -> int:
@@ -371,15 +376,16 @@ class StateManagerNode(Node):
 
     def _has_transition_priority(self, requesting_node: str, priority: int) -> bool:
         """Check if a node has sufficient priority to change state"""
-        # Always allow transitions from ERROR or COLLISION_AVOIDING states
-        if self._current_state in [LuxoState.ERROR, LuxoState.COLLISION_AVOIDING]:
+        # ERROR permits explicit recovery; collision retains safety ownership.
+        if self._current_state == LuxoState.ERROR:
             return True
         
         # Always allow IDLE transitions (they're returns, not interruptions)
         if self._current_state == LuxoState.IDLE:
             return True
 
-        if requesting_node == "animation_command" and (priority == 30 or priority == 50):
+        if (requesting_node == "animation_command" and priority in (30, 50)
+                and self._current_state not in (LuxoState.COLLISION_AVOIDING, LuxoState.ESCAPE_MODE)):
             return True
         # Check against current state requester's priority
         current_priority = self._get_current_priority()
@@ -803,6 +809,9 @@ class StateManagerNode(Node):
         
         # From COLLISION_AVOIDING
         self.add_transition(LuxoState.COLLISION_AVOIDING, LuxoState.IDLE)
+        self.add_transition(LuxoState.COLLISION_AVOIDING, LuxoState.ANIMATING)
+        self.add_transition(LuxoState.COLLISION_AVOIDING, LuxoState.VOICE_FOLLOWING)
+        self.add_transition(LuxoState.COLLISION_AVOIDING, LuxoState.USER_CONTROL)
         self.add_transition(LuxoState.COLLISION_AVOIDING, LuxoState.ESCAPE_MODE)
         self.add_transition(LuxoState.COLLISION_AVOIDING, LuxoState.RETURNING_HOME)
         self.add_transition(LuxoState.COLLISION_AVOIDING, LuxoState.PETTING)
