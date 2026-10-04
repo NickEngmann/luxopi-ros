@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>LuxoPi Simulation Studio</title>
+  <style>
+    :root{color-scheme:dark;--bg:#0c1018;--panel:#151c28;--panel2:#1a2433;--edge:#29364a;--text:#edf3ff;--muted:#95a5bd;--blue:#4b9cff;--green:#57d6aa;--orange:#ffae53;--red:#ff6679;--purple:#bf78ff}
+    *{box-sizing:border-box}body{margin:0;background:radial-gradient(1100px 650px at 5% -15%,#202c43 0,transparent 60%),var(--bg);color:var(--text);font:14px/1.45 Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,sans-serif}
+    header{height:68px;border-bottom:1px solid var(--edge);display:flex;align-items:center;justify-content:space-between;padding:0 26px;background:#0d131dce;position:sticky;top:0;z-index:4;backdrop-filter:blur(12px)}
+    .brand{display:flex;gap:12px;align-items:center;font-size:16px;font-weight:700;letter-spacing:.02em}.brand-mark{width:34px;height:34px;border-radius:11px;background:linear-gradient(135deg,#41a4ff,#a272ff);display:grid;place-items:center;color:white;font-weight:900;font-size:20px;box-shadow:0 0 22px #538eff55}.brand small{display:block;font-size:10px;color:var(--muted);font-weight:500;letter-spacing:.12em;text-transform:uppercase}
+    .topline{display:flex;gap:12px;align-items:center;color:var(--muted);font-size:12px}.pill{border:1px solid var(--edge);border-radius:999px;padding:5px 10px;background:#111925}.dot{width:8px;height:8px;background:var(--green);display:inline-block;border-radius:50%;margin-right:6px;box-shadow:0 0 9px currentColor}.dot.off{background:var(--orange)}
+    main{max-width:1520px;margin:auto;padding:22px;display:grid;grid-template-columns:minmax(350px,1.15fr) minmax(330px,.85fr);gap:18px}.column{display:grid;gap:18px;align-content:start}.card{background:linear-gradient(160deg,#17202d,#131a25 70%);border:1px solid var(--edge);border-radius:17px;box-shadow:0 14px 32px #0002;overflow:hidden}.card-head{padding:15px 18px 12px;border-bottom:1px solid #273246;display:flex;align-items:center;justify-content:space-between}.card-head h2{font-size:13px;margin:0;text-transform:uppercase;letter-spacing:.1em}.card-head span{font-size:11px;color:var(--muted)}.card-body{padding:17px 18px}.hero{min-height:330px;position:relative;background:radial-gradient(ellipse at 48% 75%,#30415b55,transparent 46%),linear-gradient(160deg,#172333,#101722)}.hero .card-body{display:grid;grid-template-columns:minmax(0,1fr) 190px;gap:8px;align-items:center;min-height:277px}.robot-wrap{position:relative;height:260px;min-width:230px}.robot-wrap canvas{width:100%;height:100%;display:block}.robot-canvas{position:absolute;inset:0}.robot-wrap canvas[hidden]{display:none!important}.view-toggle{position:absolute;top:7px;right:7px;z-index:2;display:flex;gap:4px}.view-toggle button{font-size:9px;padding:4px 7px}.robot-hint{position:absolute;bottom:4px;left:4px;color:#8493ab;font-size:10px}.aura-panel{display:grid;justify-items:center;gap:13px}.aura{width:106px;height:106px;border-radius:50%;display:grid;place-items:center;position:relative;filter:drop-shadow(0 0 18px var(--aura));transition:all .25s}.aura:before{content:"";position:absolute;inset:1px;border-radius:50%;border:3px solid var(--aura);box-shadow:0 0 12px var(--aura),inset 0 0 14px color-mix(in srgb,var(--aura) 50%,transparent);animation:breathe 2.4s ease-in-out infinite}.aura:after{content:"";position:absolute;inset:12px;border-radius:50%;border:1px dashed color-mix(in srgb,var(--aura) 62%,transparent);animation:spin 18s linear infinite}.aura-core{width:52px;height:52px;border-radius:17px;background:#263247;border:1px solid #62718a;display:grid;place-items:center;font-size:21px;color:var(--aura)}@keyframes breathe{50%{transform:scale(1.06);opacity:.65}}@keyframes spin{to{transform:rotate(360deg)}}.state-name{font-weight:750;font-size:17px}.anim-name{font-size:11px;color:var(--muted);text-align:center;max-width:180px;overflow-wrap:anywhere}.joint-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:8px}.joint{background:#111925;border:1px solid #263449;border-radius:10px;padding:8px 9px}.joint label{font-size:9px;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);display:block}.joint b{font-size:13px;font-variant-numeric:tabular-nums}
+    .voice-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.voice-box{background:#101722;border:1px solid #263449;border-radius:13px;padding:12px;min-height:76px}.voice-box label{display:block;color:var(--muted);text-transform:uppercase;letter-spacing:.09em;font-size:9px;margin-bottom:7px}.voice-box p{margin:0;white-space:pre-wrap;overflow-wrap:anywhere}.voice-state{font-size:12px;font-weight:700;text-transform:uppercase;color:var(--blue)}.form{display:flex;gap:8px;margin-top:12px}.form input,.field input,.field select{min-width:0;width:100%;background:#0c131e;border:1px solid #30415a;border-radius:9px;padding:10px;color:var(--text);outline:none}.form input:focus,.field input:focus,.field select:focus{border-color:var(--blue)}button{cursor:pointer;color:var(--text);background:#26374f;border:1px solid #3c5273;border-radius:9px;padding:8px 11px;font-weight:650;transition:.15s}button:hover{background:#344c6d;border-color:#6690c5}button.primary{background:linear-gradient(120deg,#2777d9,#7657ce);border:0}button.small{font-size:11px;padding:6px 8px}.quick{display:flex;flex-wrap:wrap;gap:7px;margin-top:9px}.two{display:grid;grid-template-columns:1fr 1fr;gap:12px}.field{display:grid;gap:6px}.field label{display:flex;justify-content:space-between;color:var(--muted);font-size:11px}.field output{color:var(--text);font-variant-numeric:tabular-nums}.range{accent-color:var(--blue);width:100%}.sensor-group{display:grid;gap:13px}.sensor-row{display:flex;align-items:center;justify-content:space-between;gap:8px;padding-bottom:11px;border-bottom:1px solid #273246}.sensor-row:last-child{border-bottom:0;padding-bottom:0}.sensor-title{font-size:12px;font-weight:650}.sensor-sub{font-size:10px;color:var(--muted)}.touches,.directions{display:flex;gap:6px;flex-wrap:wrap}.touch-btn.active{background:#923f53;border-color:#ff758a}.person-controls{display:grid;grid-template-columns:1fr 1fr;gap:8px}.event-log{height:90px;overflow:auto;font:11px/1.55 ui-monospace,SFMono-Regular,Menlo,monospace;color:#a9bad1;background:#0c131e;border:1px solid #263449;border-radius:9px;padding:8px}.log-line{border-bottom:1px solid #202c3b;padding:2px 0}.hint{color:#8494ad;font-size:10px;margin:10px 0 0}.warning{color:#ffc47a}.sensor-chip{border-radius:999px;padding:4px 8px;font-size:10px;background:#202a38;color:#b7c5d8}.sensor-chip.active{background:#543344;color:#ffa8b5}.evidence{color:#90a4be;font:10px/1.45 ui-monospace,monospace;white-space:pre-wrap;max-height:70px;overflow:auto;margin-top:7px}
+    @media(max-width:950px){main{grid-template-columns:1fr;padding:13px}.hero .card-body{grid-template-columns:1fr 150px}.robot-wrap{height:235px}}@media(max-width:560px){header{padding:0 13px}.topline .pill:last-child{display:none}.hero .card-body{grid-template-columns:1fr}.robot-wrap{height:230px}.aura-panel{grid-template-columns:auto 1fr;justify-items:start}.aura{width:70px;height:70px}.aura-core{width:38px;height:38px;border-radius:13px}.joint-grid{grid-template-columns:repeat(2,1fr)}.voice-grid{grid-template-columns:1fr}.two{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand"><div class="brand-mark">L</div><div>LuxoPi <small>Simulation Studio</small></div></div>
+    <div class="topline"><span class="pill"><i class="dot off" id="connectionDot"></i><span id="connectionText">Connecting to ROS…</span></span><span class="pill">ROS-only · no audio or hardware</span></div>
+  </header>
+  <main>
+    <section class="column">
+      <article class="card hero">
+        <div class="card-head"><h2>Robot preview</h2><span>URDF-derived kinematics · live ROS joint states</span></div>
+        <div class="card-body">
+          <div class="robot-wrap"><canvas id="robotCanvas3D" class="robot-canvas"></canvas><canvas id="robotCanvas2D" class="robot-canvas" hidden></canvas><div class="view-toggle"><button id="view3d" class="small">3D meshes</button><button id="view2d" class="small">FK view</button></div><div class="robot-hint" id="modelStatus">Loading local URDF meshes…</div></div>
+          <div class="aura-panel"><div class="aura" id="aura" style="--aura:#328dff"><div class="aura-core">✦</div></div><div><div class="state-name" id="stateName">INITIALIZING</div><div class="anim-name" id="animationName">Waiting for animation state</div></div></div>
+        </div>
+        <div class="card-body" style="padding-top:0"><div class="joint-grid" id="jointGrid"></div></div>
+      </article>
+      <article class="card">
+        <div class="card-head"><h2>Voice conversation</h2><span>Silent deterministic backend or local service</span></div>
+        <div class="card-body">
+          <div class="voice-grid"><div class="voice-box"><label>Captured text</label><p id="transcript">Waiting for a simulated command.</p></div><div class="voice-box"><label>Marisol response</label><p id="response">No response yet.</p></div></div>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-top:11px"><span class="hint" style="margin:0">Bridge status</span><span class="voice-state" id="voiceStatus">IDLE</span></div>
+          <form id="commandForm" class="form"><input id="commandInput" maxlength="2000" placeholder="Type a command, e.g. Open Spotify" autocomplete="off"><button class="primary" type="submit">Send command</button></form>
+          <div class="quick"><button class="small" data-command="Open Spotify">Open Spotify</button><button class="small" data-command="What time is it?">Ask the time</button><button class="small" data-command="Tell me a joke">Tell a joke</button></div>
+          <p class="hint">Commands publish to <code>/voice/command</code>. The dashboard never plays response audio.</p>
+        </div>
+      </article>
+      <article class="card">
+        <div class="card-head"><h2>Sound direction</h2><span>Mic angle → synthetic six-channel audio → production estimator</span></div>
+        <div class="card-body">
+          <div class="field"><label for="directionRange">Arrival angle <output id="directionValue">90°</output></label><input class="range" id="directionRange" type="range" min="0" max="359" value="90"></div>
+          <div class="directions" style="margin-top:9px"><button class="small" data-direction="0">Front · 0°</button><button class="small" data-direction="90">Right · 90°</button><button class="small" data-direction="180">Rear · 180°</button><button class="small" data-direction="270">Left · 270°</button><button class="primary small" id="sendDirection">Inject sound</button></div>
+          <div style="display:flex;gap:8px;align-items:center;margin-top:12px"><span class="sensor-chip" id="voiceActive">Voice inactive</span><span class="sensor-chip">Robot heading: <b id="followDirection">—</b></span></div>
+          <div class="evidence" id="directionEvidence">Waiting for estimator evidence.</div>
+          <p class="hint">Direction inputs are silent simulated mic frames; the real estimator reports direction evidence. Activity should clear after quiet timeout.</p>
+        </div>
+      </article>
+    </section>
+    <section class="column">
+      <article class="card">
+        <div class="card-head"><h2>Touch & gesture</h2><span>Publishes the same sensor topics as the I²C board</span></div>
+        <div class="card-body sensor-group">
+          <div class="sensor-row"><div><div class="sensor-title">Head touch pads</div><div class="sensor-sub">Press to emit touch value 180; release to clear</div></div><div class="touches"><button class="small touch-btn" data-touch="head_top">Top</button><button class="small touch-btn" data-touch="head_left">Left</button><button class="small touch-btn" data-touch="head_right">Right</button><button class="small touch-btn" data-touch="head_bottom">Bottom</button></div></div>
+          <div class="sensor-row"><div><div class="sensor-title">APDS9960 gesture</div><div class="sensor-sub">Swipe / proximity gesture</div></div><div class="touches"><button class="small" data-gesture="left">←</button><button class="small" data-gesture="right">→</button><button class="small" data-gesture="up">↑</button><button class="small" data-gesture="down">↓</button><button class="small" data-gesture="near">Near</button></div></div>
+          <div class="sensor-row"><div><div class="sensor-title">Proximity</div><div class="sensor-sub">APDS raw value</div></div><div style="width:55%" class="field"><label for="proximityRange">Nearness <output id="proximityValue">0</output></label><input class="range" id="proximityRange" type="range" min="0" max="255" value="0"></div><button id="sendProximity" class="small">Send</button></div>
+        </div>
+      </article>
+      <article class="card">
+        <div class="card-head"><h2>Obstacle & collision</h2><span>Raw distance + simulated collision result</span></div>
+        <div class="card-body sensor-group">
+          <div class="two"><div class="field"><label for="leftDistance">Left range <output id="leftDistanceValue">1.00 m</output></label><input class="range" id="leftDistance" type="range" min="0.1" max="4" step="0.05" value="1"></div><div class="field"><label for="rightDistance">Right range <output id="rightDistanceValue">1.00 m</output></label><input class="range" id="rightDistance" type="range" min="0.1" max="4" step="0.05" value="1"></div></div>
+          <div class="touches"><button class="small" id="sendDistances">Publish ranges</button><span class="sensor-chip" id="frontCollision">Front clear</span><span class="sensor-chip" id="leftCollision">Left clear</span><span class="sensor-chip" id="rightCollision">Right clear</span></div><div class="evidence" id="collisionEvidence">Waiting for collision/petting consumer outputs.</div>
+          <div class="sensor-row"><div><div class="sensor-title">Collision event</div><div class="sensor-sub">Simulates the collision detector output for the behavior stack</div></div><div class="touches"><button class="small collision-btn" data-side="front">Front</button><button class="small collision-btn" data-side="left">Left</button><button class="small collision-btn" data-side="right">Right</button></div></div>
+        </div>
+      </article>
+      <article class="card">
+        <div class="card-head"><h2>Person & emotion</h2><span>Mock camera detections · no camera access</span></div>
+        <div class="card-body">
+          <div class="person-controls"><label class="sensor-chip" style="display:flex;align-items:center;gap:8px"><input id="personPresent" type="checkbox" checked> Person visible</label><div class="field"><label for="emotion">Detected emotion</label><select id="emotion"><option>neutral</option><option>happy</option><option>sad</option><option>angry</option><option>surprise</option><option>fear</option><option>disgust</option></select></div></div>
+          <div class="field" style="margin-top:11px"><label for="personDistance">Distance <output id="personDistanceValue">1.5 m</output></label><input id="personDistance" class="range" type="range" min="0.1" max="5" step="0.1" value="1.5"></div>
+          <button id="sendVision" class="small" style="margin-top:10px">Publish person / emotion event</button>
+          <p class="hint">Mock detections publish `/camera/emotion`, `/camera/person_distance`, and `/sim/vision/person_present`.</p>
+        </div>
+      </article>
+      <article class="card">
+        <div class="card-head"><h2>ROS graph health</h2><span id="nodeCount">0 local nodes</span></div>
+        <div class="card-body"><div class="touches" id="graphHealth"></div><p class="hint">Health is sampled from this container’s ROS graph only. ROS_DOMAIN_ID=73 and ROS_LOCALHOST_ONLY=1 isolate the simulator.</p></div>
+      </article>
+      <article class="card">
+        <div class="card-head"><h2>Simulation event log</h2><span>Latest UI events & sensor feedback</span></div>
+        <div class="card-body"><div class="event-log" id="eventLog"><div class="log-line">Dashboard ready. Waiting for ROS state.</div></div><p class="hint warning">The preview is URDF-driven kinematics, not contact dynamics. The checked-in URDF has no collision or inertial tags. Never run hardware mode in this container.</p></div>
+      </article>
+    </section>
+  </main>
+<script>
+const $=id=>document.getElementById(id);let latest={};
+const jointOrder=['base_to_L1','L1_to_L2','L2_to_L3','L3_to_L4'];
+const colors={INITIALIZING:'#328dff',IDLE:'#f0f4ff',ANIMATING:'#e7e9f2',VOICE_FOLLOWING:'#9ba8ff',COLLISION_AVOIDING:'#ff9c36',RETURNING_HOME:'#c9ec9e',ESCAPE_MODE:'#ff3b55',USER_CONTROL:'#ffd447',EMOTION_REACTING:'#bf70ff',PETTING:'#ff69b4',ERROR:'#ff3b55',SHUTDOWN:'#80838c'};
+function log(text){const row=document.createElement('div');row.className='log-line';row.textContent=new Date().toLocaleTimeString()+'  '+text;$('eventLog').prepend(row);while($('eventLog').children.length>30)$('eventLog').lastChild.remove()}
+async function send(event){try{const r=await fetch('/api/events',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(event)});const data=await r.json();if(!r.ok)throw new Error(data.error||r.statusText);log('Injected '+event.type+(event.text?' · '+event.text:''));return true}catch(e){log('Rejected · '+e.message);return false}}
+function selectedAura(d){if(d.status==='listening'||d.voice_active)return '#3c92ff';if(d.status==='speaking')return '#ba62ff';if(d.status==='error')return '#ff3b55';return colors[d.state]||'#f0f4ff'}
+function update(d){latest=d;$('connectionDot').classList.remove('off');$('connectionText').textContent=`ROS API · ${d.health?.node_count||0} nodes`;$('stateName').textContent=d.state||'UNKNOWN';$('animationName').textContent=d.animation||'No active animation';$('voiceStatus').textContent=(d.status||'idle').toUpperCase();$('voiceStatus').style.color=d.status==='speaking'?'#c889ff':d.status==='error'?'#ff7185':d.status==='thinking'?'#ffd377':'#70b6ff';$('transcript').textContent=d.transcript||'Waiting for a simulated command.';$('response').textContent=d.response||'No response yet.';
+ const h=d.health||{};$('nodeCount').textContent=`${h.node_count||0} local nodes`;const labels={state_manager:'State manager',animation_command:'Animation server',sim_motion_controller:'Dry-run motion',sim_direction_node:'Direction estimator',speech_bridge:'Speech bridge',robot_state_publisher:'URDF transforms',simulator_dashboard:'Dashboard'};$('graphHealth').innerHTML=Object.entries(labels).map(([name,label])=>`<span class="sensor-chip ${h.components?.[name]?'active':''}"><i class="dot ${h.components?.[name]?'':'off'}"></i>${label}</span>`).join('');
+ const aura=selectedAura(d);$('aura').style.setProperty('--aura',aura);$('followDirection').textContent=d.direction==null?'—':`${Number(d.direction).toFixed(1)}°`;$('voiceActive').textContent=d.voice_active?'Voice active':'Voice inactive';$('voiceActive').classList.toggle('active',!!d.voice_active);
+ const ev=d.direction_evidence||{};$('directionEvidence').textContent=ev.measured_mic_angle==null?'Waiting for estimator evidence.':`requested mic ${Number(ev.requested_mic_angle).toFixed(1)}° · measured mic ${Number(ev.measured_mic_angle).toFixed(1)}° · robot ${Number(ev.robot_angle).toFixed(1)}° · error ${Number(ev.error_degrees||0).toFixed(2)}°`;
+ const m=new Map((d.joint_names||[]).map((n,i)=>[n,Number((d.positions||[])[i]||0)]));window.luxoJointPositions=Object.fromEntries(m);window.dispatchEvent(new CustomEvent('luxo-joints',{detail:window.luxoJointPositions}));$('jointGrid').innerHTML=jointOrder.map(n=>`<div class="joint"><label>${n.replaceAll('_',' ')}</label><b>${((m.get(n)||0)*180/Math.PI).toFixed(1)}°</b></div>`).join('');drawRobot(m,aura);
+ const s=d.sensors||{};for(const [id,key,label] of [['frontCollision','front_collision','Front'],['leftCollision','left_collision','Left'],['rightCollision','right_collision','Right']]){$(id).textContent=`${label} ${s[key]?'collision':'clear'}`;$(id).classList.toggle('active',!!s[key])}
+ if(s.emotion)$('emotion').value=s.emotion;if(s.person_present!==undefined)$('personPresent').checked=s.person_present;$('collisionEvidence').textContent=[s.collision_details,s.front_severity&&`front ${s.front_severity}`,s.left_severity&&`left ${s.left_severity}`,s.right_severity&&`right ${s.right_severity}`,s.petting_event,s.gesture_result].filter(Boolean).join(' · ')||'Waiting for collision/petting consumer outputs.';
+}
+function drawRobot(joints,aura){if($('robotCanvas2D').hidden)return;const c=$('robotCanvas2D'),ctx=c.getContext('2d'),rect=c.getBoundingClientRect(),dpr=window.devicePixelRatio||1;c.width=Math.max(1,rect.width*dpr);c.height=Math.max(1,rect.height*dpr);ctx.setTransform(dpr,0,0,dpr,0,0);const w=rect.width,h=rect.height;ctx.clearRect(0,0,w,h);
+ ctx.strokeStyle='#263449';ctx.lineWidth=1;for(let i=0;i<4;i++){const y=h-24-i*22;ctx.beginPath();ctx.moveTo(16,y);ctx.lineTo(w-12,y);ctx.stroke()}
+ const base=joints.get('base_to_L1')||0,sh=joints.get('L1_to_L2')||0,el=joints.get('L2_to_L3')||0,wr=joints.get('L3_to_L4')||0;
+ // Frame pivots are transformed from the checked-in URDF: shoulder at z=.03796 m,
+ // elbow offset (.03,0,.23682), wrist offset (0,0,.21599). The terminal .068 m
+ // extent comes from L4.stl bounds plus its URDF visual origin (-.49076 m).
+ const project=p=>({x:w*.48+(p[0]-p[1])*390,y:h-27-p[2]*390-(p[0]+p[1])*72});
+ const rotateY=(a,p)=>[Math.cos(a)*p[0]+Math.sin(a)*p[2],p[1],-Math.sin(a)*p[0]+Math.cos(a)*p[2]];
+ const rotateBase=(p)=>{const c=Math.cos(base),s=Math.sin(base);return [c*p[0]-s*p[1],s*p[0]+c*p[1],p[2]]};
+ const shoulder=rotateBase([0,0,.03796]);
+ const elbowDelta=rotateBase(rotateY(sh,[.03,0,.23682]));
+ const elbow=[shoulder[0]+elbowDelta[0],shoulder[1]+elbowDelta[1],shoulder[2]+elbowDelta[2]];
+ const wristDelta=rotateBase(rotateY(sh+el,[0,0,.21599]));
+ const wrist=[elbow[0]+wristDelta[0],elbow[1]+wristDelta[1],elbow[2]+wristDelta[2]];
+ const endDelta=rotateBase(rotateY(sh+el+wr,[0,0,.068]));
+ const end=[wrist[0]+endDelta[0],wrist[1]+endDelta[1],wrist[2]+endDelta[2]];
+ const p0=project([0,0,0]),p1=project(shoulder),p2=project(elbow),p3=project(wrist),p4=project(end);
+ ctx.fillStyle='#485b76';ctx.beginPath();ctx.roundRect(p0.x-30,p0.y-5,60,12,4);ctx.fill();
+ const links=[[p0,p1,16],[p1,p2,14],[p2,p3,11],[p3,p4,8]];
+ links.forEach(([a,b,width],i)=>{ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.strokeStyle=i===3?'#d8e4f4':'#9cacc4';ctx.lineWidth=width;ctx.lineCap='round';ctx.stroke()});
+ [p1,p2,p3].forEach((p,i)=>{ctx.beginPath();ctx.arc(p.x,p.y,7-i,0,Math.PI*2);ctx.fillStyle='#e0e9f6';ctx.fill()});
+ ctx.beginPath();ctx.arc(p4.x,p4.y,10,0,Math.PI*2);ctx.fillStyle='#1b2637';ctx.fill();ctx.strokeStyle=aura;ctx.lineWidth=3;ctx.shadowColor=aura;ctx.shadowBlur=16;ctx.stroke();ctx.shadowBlur=0;ctx.fillStyle=aura;ctx.beginPath();ctx.arc(p4.x,p4.y,3,0,Math.PI*2);ctx.fill();
+ ctx.fillStyle='#8495ac';ctx.font='10px ui-monospace,monospace';ctx.fillText('base',w*.47,h-6);}
+async function poll(){try{const r=await fetch('/api/state',{cache:'no-store'});if(!r.ok)throw new Error(r.status);update(await r.json())}catch(e){$('connectionDot').classList.add('off');$('connectionText').textContent='ROS bridge disconnected'}}
+$('commandForm').addEventListener('submit',async e=>{e.preventDefault();const text=$('commandInput').value.trim();if(text&&await send({type:'voice_command',text}))$('commandInput').value=''});
+document.querySelectorAll('[data-command]').forEach(b=>b.addEventListener('click',()=>send({type:'voice_command',text:b.dataset.command})));
+$('directionRange').addEventListener('input',e=>$('directionValue').textContent=e.target.value+'°');document.querySelectorAll('[data-direction]').forEach(b=>b.addEventListener('click',()=>{$('directionRange').value=b.dataset.direction;$('directionValue').textContent=b.dataset.direction+'°'}));$('sendDirection').addEventListener('click',()=>send({type:'audio_direction',degrees:Number($('directionRange').value)}));
+document.querySelectorAll('[data-touch]').forEach(b=>{const sensor=b.dataset.touch;const set=async active=>{b.classList.toggle('active',active);await send({type:'touch',sensor,value:active?180:0})};b.addEventListener('pointerdown',e=>{e.preventDefault();set(true)});['pointerup','pointerleave','pointercancel'].forEach(k=>b.addEventListener(k,()=>set(false)))});
+document.querySelectorAll('[data-gesture]').forEach(b=>b.addEventListener('click',()=>send({type:'gesture',gesture:b.dataset.gesture})));
+$('proximityRange').addEventListener('input',e=>$('proximityValue').textContent=e.target.value);$('sendProximity').addEventListener('click',()=>send({type:'proximity',value:Number($('proximityRange').value)}));
+for(const side of ['left','right'])$(side+'Distance').addEventListener('input',e=>$(side+'DistanceValue').textContent=Number(e.target.value).toFixed(2)+' m');$('sendDistances').addEventListener('click',()=>Promise.all(['left','right'].map(side=>send({type:'distance',side,metres:Number($(side+'Distance').value)}))));
+document.querySelectorAll('[data-side]').forEach(b=>{let active=false;b.addEventListener('click',async()=>{active=!active;b.classList.toggle('touch-btn',active);await send({type:'collision',side:b.dataset.side,active})})});
+$('personDistance').addEventListener('input',e=>$('personDistanceValue').textContent=Number(e.target.value).toFixed(1)+' m');$('sendVision').addEventListener('click',()=>send({type:'vision',person_present:$('personPresent').checked,emotion:$('emotion').value,metres:Number($('personDistance').value)}));
+window.addEventListener('resize',()=>drawRobot(new Map((latest.joint_names||[]).map((n,i)=>[n,Number((latest.positions||[])[i]||0)])),selectedAura(latest)));
+poll();setInterval(poll,300);log('Dashboard ready; audio playback and physical sensor access are disabled.');
+</script>
+<script type="module">
+import * as THREE from '/assets/vendor/three.module.js';
+import { STLLoader } from '/assets/vendor/STLLoader.js';
+import { OrbitControls } from '/assets/vendor/OrbitControls.js';
+const canvas=document.getElementById('robotCanvas3D');
+const status=document.getElementById('modelStatus');
+const scene=new THREE.Scene(); scene.background=new THREE.Color('#101722');
+const camera=new THREE.PerspectiveCamera(38,1,.01,20); camera.up.set(0,0,1); camera.position.set(.72,-1.05,.62);
+const renderer=new THREE.WebGLRenderer({canvas,antialias:true,alpha:false}); renderer.setPixelRatio(Math.min(devicePixelRatio,2)); renderer.outputColorSpace=THREE.SRGBColorSpace;
+scene.add(new THREE.HemisphereLight(0xdceaff,0x354155,2)); const key=new THREE.DirectionalLight(0xffffff,2.3); key.position.set(-.5,-.8,1.5);scene.add(key);
+const controls=new OrbitControls(camera,renderer.domElement);controls.target.set(0,0,.24);controls.enableDamping=true;controls.update();
+const robot=new THREE.Group();scene.add(robot); const loader=new STLLoader(); const material=(color)=>new THREE.MeshStandardMaterial({color,metalness:.16,roughness:.58});
+const mats={base:material('#8594aa'),white:material('#e5eaf1')};
+async function mesh(name,mat,parent,origin=[0,0,0]){const geometry=await loader.loadAsync('/assets/roarm/'+name+'.stl');geometry.computeVertexNormals();const m=new THREE.Mesh(geometry,mat);m.position.set(...origin);parent.add(m);return m}
+function child(parent,pos=[0,0,0]){const g=new THREE.Group();g.position.set(...pos);parent.add(g);return g}
+const base=child(robot);await mesh('base',mats.base,base);
+const j1=child(base);await mesh('L1',mats.white,j1);
+const j2=child(j1,[0,0,.03796]);const l2visual=child(j2,[0,0,-.03796]);await mesh('L2',mats.white,l2visual);
+const j3=child(j2,[.03,0,.23682]);const l3visual=child(j3,[-.03,0,-.27477]);await mesh('L3',mats.white,l3visual);
+const j4=child(j3,[0,0,.21599]);const l4visual=child(j4,[-.03,0,-.49076]);await mesh('L4',mats.white,l4visual);
+function joints(values={}){j1.rotation.z=values.base_to_L1||0;j2.rotation.y=values.L1_to_L2||0;j3.rotation.y=values.L2_to_L3||0;j4.rotation.y=values.L3_to_L4||0}
+window.addEventListener('luxo-joints',e=>joints(e.detail));joints(window.luxoJointPositions);
+function resize(){const r=canvas.getBoundingClientRect();renderer.setSize(Math.max(1,r.width),Math.max(1,r.height),false);camera.aspect=Math.max(1,r.width)/Math.max(1,r.height);camera.updateProjectionMatrix()}new ResizeObserver(resize).observe(canvas);resize();
+function render(){requestAnimationFrame(render);controls.update();renderer.render(scene,camera)}render();
+document.getElementById('view3d').onclick=()=>{canvas.hidden=false;document.getElementById('robotCanvas2D').hidden=true;status.textContent='Exact checked-in URDF visual meshes · kinematic only'};
+document.getElementById('view2d').onclick=()=>{canvas.hidden=true;document.getElementById('robotCanvas2D').hidden=false;drawRobot(new Map(Object.entries(window.luxoJointPositions||{})), '#a9c3e8');status.textContent='URDF FK schematic · kinematic only'};
+status.textContent='Exact checked-in URDF visual meshes · kinematic only';
+</script>
+</body>
+</html>
