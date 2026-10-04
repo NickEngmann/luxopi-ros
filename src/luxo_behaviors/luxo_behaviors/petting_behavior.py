@@ -27,6 +27,7 @@ class PettingBehavior:
         self.petting_animation_cooldown = 8.0  # seconds between petting animations
         self.petting_animation_active = False  # Track if petting animation is running
         self.petting_animation_goal_handle = None  # Track current petting animation goal
+        self.petting_transition_pending = False
         
         # Add petting state tracking
         self.last_petting_message_time = self.node.get_clock().now()
@@ -78,20 +79,26 @@ class PettingBehavior:
                 # Check if we should enter PETTING state
                 current_state = self._get_current_state()
                 if current_state in [LuxoState.IDLE, LuxoState.ANIMATING, LuxoState.VOICE_FOLLOWING]:
-                    self.node.get_logger().info("Requesting transition to PETTING state")
-                    
-                    # Request state transition to PETTING
-                    if self._transition_to_state(LuxoState.PETTING):
-                        # Check animation cooldown before triggering
-                        time_since_last_animation = (current_time - self.last_petting_animation_time).nanoseconds / 1e9
-                        
-                        if time_since_last_animation > self.petting_animation_cooldown or not self.petting_animation_active:
-                            self.node.get_logger().info("Triggering petting animation immediately")
-                            self._trigger_petting_animation()
-                        else:
-                            self.node.get_logger().info(f"Petting animation on cooldown ({time_since_last_animation:.1f}s < {self.petting_animation_cooldown}s)")
-                    else:
-                        self.node.get_logger().warn("Failed to transition to PETTING state")
+                    if not self.petting_transition_pending:
+                        self.petting_transition_pending = True
+
+                        def after_transition(accepted):
+                            self.petting_transition_pending = False
+                            if not accepted:
+                                self.node.get_logger().warn("Failed to transition to PETTING state")
+                                return
+                            now = self.node.get_clock().now()
+                            elapsed = (now - self.last_petting_animation_time).nanoseconds / 1e9
+                            if elapsed > self.petting_animation_cooldown or not self.petting_animation_active:
+                                self.node.get_logger().info("Triggering petting animation immediately")
+                                self._trigger_petting_animation()
+                            else:
+                                self.node.get_logger().info(
+                                    f"Petting animation on cooldown ({elapsed:.1f}s < "
+                                    f"{self.petting_animation_cooldown}s)"
+                                )
+
+                        self._transition_to_state(LuxoState.PETTING, on_result=after_transition)
                 else:
                     self.node.get_logger().info(f"Cannot enter PETTING state from {current_state.name} - but still tracking petting")
                 

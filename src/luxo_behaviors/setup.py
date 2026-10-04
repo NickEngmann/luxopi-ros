@@ -38,6 +38,9 @@ setup(
             'collision_detection = luxo_behaviors.collision_detection:main',
             'animation_action_client = luxo_behaviors.animation_action_client:main',
             'watchdog = luxo_behaviors.watchdog_node:main',
+            'speech_bridge = luxo_behaviors.speech_bridge:main',
+            'sim_direction_node = luxo_behaviors.sim_direction_node:main',
+            'sim_motion_controller = luxo_behaviors.sim_motion_controller:main',
         ],
     },
 )

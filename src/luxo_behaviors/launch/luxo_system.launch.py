@@ -5,6 +5,7 @@ from launch.conditions import IfCondition, UnlessCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution, PythonExpression, Command
 from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
 from launch_ros.substitutions import FindPackageShare
 
 def generate_launch_description():
@@ -114,6 +115,32 @@ def generate_launch_description():
         'enable_voice',
         default_value='true',
         description='Enable voice direction detection and following'
+    )
+
+    declare_enable_speech_bridge = DeclareLaunchArgument(
+        'enable_speech_bridge',
+        default_value=PythonExpression(["'true' if '", use_hardware, "' == 'false' else 'false'"]),
+        description='Enable silent speech bridge (simulation default; hardware opt-in)'
+    )
+    declare_speech_backend = DeclareLaunchArgument(
+        'speech_backend', default_value='simulation',
+        description='Speech backend: deterministic simulation or local JSONL service'
+    )
+    declare_speech_service_command = DeclareLaunchArgument(
+        'speech_service_command', default_value='[]',
+        description='Local service command as JSON argv (no shell)'
+    )
+    declare_speech_service_cwd = DeclareLaunchArgument(
+        'speech_service_cwd', default_value='',
+        description='Optional local JSONL service working directory'
+    )
+    declare_speech_service_timeout = DeclareLaunchArgument(
+        'speech_service_timeout', default_value='15.0',
+        description='Local JSONL service request timeout'
+    )
+    declare_speech_event_socket = DeclareLaunchArgument(
+        'speech_event_socket', default_value='',
+        description='Optional same-user Unix datagram live assistant event socket'
     )
 
     # Add a launch argument for camera rotation
@@ -268,7 +295,7 @@ def generate_launch_description():
         ]),
         launch_arguments={
             'gui': LaunchConfiguration('use_gui'),
-            'use_joint_state_publisher': 'true',
+            'use_joint_state_publisher': 'false',
             'use_robot_state_pub': 'false',
             'use_rviz': use_rviz,
         }.items(),
@@ -404,7 +431,54 @@ def generate_launch_description():
             {'direction_smoothing_window': 5},
             {'min_report_interval': 0.5}
         ],
-        condition=IfCondition(LaunchConfiguration('enable_voice'))
+        condition=IfCondition(PythonExpression([
+            "'", use_hardware, "' == 'true' and '", LaunchConfiguration('enable_voice'), "' == 'true'"
+        ]))
+    )
+
+    sim_direction_node = Node(
+        package='luxo_behaviors',
+        executable='sim_direction_node',
+        name='sim_direction_node',
+        output='screen',
+        condition=IfCondition(PythonExpression([
+            "'", use_hardware, "' == 'false' and '", LaunchConfiguration('enable_voice'), "' == 'true'"
+        ]))
+    )
+
+    speech_bridge_node = Node(
+        package='luxo_behaviors',
+        executable='speech_bridge',
+        name='speech_bridge',
+        output='screen',
+        parameters=[{
+            'backend': LaunchConfiguration('speech_backend'),
+            'service_command': ParameterValue(
+                LaunchConfiguration('speech_service_command'), value_type=str
+            ),
+            'service_cwd': ParameterValue(
+                LaunchConfiguration('speech_service_cwd'), value_type=str
+            ),
+            'service_timeout': LaunchConfiguration('speech_service_timeout'),
+            'event_socket': ParameterValue(
+                LaunchConfiguration('speech_event_socket'), value_type=str
+            ),
+        }],
+        condition=IfCondition(LaunchConfiguration('enable_speech_bridge'))
+    )
+
+    sim_motion_controller_node = Node(
+        package='luxo_behaviors',
+        executable='sim_motion_controller',
+        name='sim_motion_controller',
+        output='screen',
+        parameters=[
+            {'publish_rate': 50.0},
+            {'max_joint_velocity': 0.5},
+            {'max_joint_acceleration': 1.0},
+            {'voice_follow_priority': 75},
+        ],
+        condition=UnlessCondition(use_hardware)
     )
 
     # Collision detection logic node (hardware only, now uses I2C manager data)
@@ -469,7 +543,7 @@ def generate_launch_description():
         output='screen',
         parameters=[
             {'publish_joint_states_target': True},
-            {'publish_target_topic': False},
+            {'publish_target_topic': True},
             {'enforce_joint_limits': True},    # Enable joint limits enforcement
         ],
         condition=UnlessCondition(use_hardware)
@@ -490,7 +564,9 @@ def generate_launch_description():
             {'qos_reliability': 0},  # 0=BEST_EFFORT, 1=RELIABLE
             {'qos_durability': 0},   # 0=VOLATILE, 1=TRANSIENT_LOCAL
         ],
-        condition=IfCondition(enable_depth_collision)
+        condition=IfCondition(PythonExpression([
+            "'", use_hardware, "' == 'true' and '", enable_depth_collision, "' == 'true'"
+        ]))
     )
     
     # Camera interaction node (requires camera) - now with emotion detection capability
@@ -505,7 +581,9 @@ def generate_launch_description():
             {'react_to_emotions': LaunchConfiguration('enable_emotion_detection')},
             {'camera_rotation': LaunchConfiguration('camera_rotation')}
         ],
-        condition=IfCondition(use_camera)
+        condition=IfCondition(PythonExpression([
+            "'", use_hardware, "' == 'true' and '", use_camera, "' == 'true'"
+        ]))
     )
     
 
@@ -532,6 +610,12 @@ def generate_launch_description():
         use_joint_state_publisher_arg,
         declare_test_mode,
         declare_enable_voice,
+        declare_enable_speech_bridge,
+        declare_speech_backend,
+        declare_speech_service_command,
+        declare_speech_service_cwd,
+        declare_speech_service_timeout,
+        declare_speech_event_socket,
         declare_enable_depth_collision,
         declare_safety_distance,
         declare_sense_collision,
@@ -555,6 +639,8 @@ def generate_launch_description():
         troubleshooting_info,
         jsp_killer,
         voice_direction_node,
+        sim_direction_node,
+        speech_bridge_node,
         # Launch files
         roarm_launch,
         
@@ -568,6 +654,7 @@ def generate_launch_description():
         hardware_animation_node,
         system_monitor_node,
         simulation_animation_node,
+        sim_motion_controller_node,
         collision_detection_node,
         i2c_device_manager_node,
         collision_logic_node,

@@ -254,13 +254,14 @@ class CommandBehavior:
             self.current_command_id = command_id
             
             # Request USER_CONTROL state for command execution
-            if self._request_user_control_state():
-                # Execute the command
-                self._execute_command(command_name, command_id)
-            else:
-                self.node.get_logger().warn(f"Failed to request USER_CONTROL state for command: {command_name}")
+            self._request_user_control_state(
+                lambda accepted: self._execute_command(command_name, command_id)
+                if accepted else self.node.get_logger().warn(
+                    f"Failed to request USER_CONTROL state for command: {command_name}"
+                )
+            )
     
-    def _request_user_control_state(self) -> bool:
+    def _request_user_control_state(self, on_result=None):
         """Request transition to USER_CONTROL state for command execution."""
         try:
             current_state = self._get_current_state()
@@ -268,27 +269,33 @@ class CommandBehavior:
             # Don't interrupt certain critical states
             if current_state in [LuxoState.ESCAPE_MODE, LuxoState.ERROR]:
                 self.node.get_logger().warn(f"Cannot execute command in {current_state.name} state")
-                return False
+                if on_result:
+                    on_result(False)
+                return
             
             # If already in USER_CONTROL, just mark command in progress
             if current_state == LuxoState.USER_CONTROL:
                 self.command_in_progress = True
                 self.node.get_logger().info("Already in USER_CONTROL state")
-                return True
+                if on_result:
+                    on_result(True)
+                return
             
-            # Request transition with high priority
-            success = self._transition_to_state(LuxoState.USER_CONTROL)
-            if success:
-                self.command_in_progress = True
-                self.node.get_logger().info("Transitioned to USER_CONTROL state for voice command")
-                return True
-            else:
-                self.node.get_logger().warn("Failed to transition to USER_CONTROL state")
-                return False
+            def after_transition(accepted):
+                if accepted:
+                    self.command_in_progress = True
+                    self.node.get_logger().info("Transitioned to USER_CONTROL state for voice command")
+                else:
+                    self.node.get_logger().warn("Failed to transition to USER_CONTROL state")
+                if on_result:
+                    on_result(accepted)
+
+            self._transition_to_state(LuxoState.USER_CONTROL, on_result=after_transition)
                 
         except Exception as e:
             self.node.get_logger().error(f"Error requesting USER_CONTROL state: {e}")
-            return False
+            if on_result:
+                on_result(False)
     
     def _execute_command(self, command_name: str, command_id: int):
         """Execute the specified command."""
@@ -487,11 +494,11 @@ class CommandBehavior:
         self.light_state = False
         self._publish_light_state(self.light_state)
 
-        time.sleep(0.3)  # Short delay before starting animation
-        # First transition to ANIMATING state for the sleep animation
-        if self._transition_to_state(LuxoState.ANIMATING):
-            self.node.get_logger().info("Transitioned to ANIMATING state for sleep animation")
-            
+        def after_transition(accepted):
+            if not accepted:
+                self.node.get_logger().warn("Failed to transition to ANIMATING state for sleep")
+                return
+            self.node.get_logger().info("Transitioned to ANIMATING state for the sleep animation")
             # Now start the sleep animation
             if hasattr(self, '_play_sleep_animation'):
                 success = self._play_sleep_animation()
@@ -504,10 +511,8 @@ class CommandBehavior:
             else:
                 # No animation capability, proceed with immediate sleep
                 self._complete_sleep_sequence()
-        else:
-            self.node.get_logger().warn("Failed to transition to ANIMATING state for sleep")
-            # Proceed with immediate sleep sequence
-            self._complete_sleep_sequence()
+
+        self._transition_to_state(LuxoState.ANIMATING, on_result=after_transition)
     
     def _play_sleep_animation(self):
         """Play the sleep animation and set up completion callback."""
@@ -634,22 +639,10 @@ class CommandBehavior:
             
         # Release lock before transition to avoid deadlock
         self.node.get_logger().info("Requesting transition to IDLE state")
-        # Try requesting with higher priority and force
+        # Complete through the state manager so it can restore the interrupted
+        # state and preserve collision/error priority.
         try:
-            # Use the node's request method directly if available
-            if hasattr(self.node, 'request_state_transition'):
-                success = self.node.request_state_transition(LuxoState.IDLE, priority=150, force=True)
-                if success:
-                    self.node.get_logger().info("Voice command completed - transition to IDLE requested via node method")
-                else:
-                    self.node.get_logger().error("Failed to request transition to IDLE state via node method")
-            else:
-                # Fall back to the mixin method
-                success = self._transition_to_state(LuxoState.IDLE)
-                if success:
-                    self.node.get_logger().info("Voice command completed - transition to IDLE requested via mixin method")
-                else:
-                    self.node.get_logger().error("Failed to request transition to IDLE state via mixin method")
+            self._transition_to_state(LuxoState.IDLE, completion=True)
         except Exception as e:
             self.node.get_logger().error(f"Exception requesting transition to IDLE: {e}")
     

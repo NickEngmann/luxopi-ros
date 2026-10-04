@@ -11,6 +11,11 @@ from luxo_interfaces.action import PlayAnimation
 from luxo_interfaces.srv import RequestStateTransition
 import time
 import json
+from luxo_behaviors.joint_motion import (
+    URDF_JOINT_LIMITS,
+    clamp_joint_positions,
+    format_target_positions,
+)
 import threading
 import importlib
 import inspect
@@ -43,8 +48,8 @@ class AnimationCommandActionServer(Node):
         
         # Joint limits configuration
         self.joint_limits = {
-            'L1_to_L2': {'min': -1.57, 'max': 2.05},
-            # Add other joint limits here if needed
+            name: {'min': lower, 'max': upper}
+            for name, (lower, upper) in URDF_JOINT_LIMITS.items()
         }
         
         self.declare_parameter('enforce_joint_limits', True)
@@ -863,24 +868,16 @@ class AnimationCommandActionServer(Node):
         msg.name = self.joint_names
         
         try:
-            # Extract joint positions (first 5 values)
-            joint_positions = self.target_positions[:len(self.joint_names)]
-            
-            # Ensure we have exactly 5 joint positions
-            while len(joint_positions) < len(self.joint_names):
-                joint_positions.append(0.0)
+            joint_positions = format_target_positions(
+                self.target_positions,
+                self.joint_names,
+                include_acceleration=self.publish_target and self.use_hardware_joint_names,
+            )
             
             validated_positions = [float(pos) for pos in joint_positions]
             
             if self.enforce_joint_limits:
                 validated_positions = self.apply_joint_limits(msg.name, validated_positions)
-            
-            # Keep hardware transport metadata out of ROS JointState messages
-            # used by robot_state_publisher. The hardware interface consumes
-            # the extra acceleration slot on its target topic.
-            if self.publish_target and len(self.target_positions) > 5:
-                # Include acceleration in the position array
-                validated_positions.append(float(self.target_positions[5]))
             
             msg.position = validated_positions
             
@@ -907,19 +904,11 @@ class AnimationCommandActionServer(Node):
     
     def apply_joint_limits(self, joint_names, joint_positions):
         """Apply joint limits to positions."""
-        limited_positions = list(joint_positions)
-        
-        for i, name in enumerate(joint_names):
-            if name in self.joint_limits:
-                limits = self.joint_limits[name]
-                original_value = joint_positions[i]
-                
-                if original_value < limits['min']:
-                    limited_positions[i] = limits['min']
-                elif original_value > limits['max']:
-                    limited_positions[i] = limits['max']
-        
-        return limited_positions
+        limits = {
+            name: (value['min'], value['max'])
+            for name, value in self.joint_limits.items()
+        }
+        return clamp_joint_positions(joint_names, joint_positions, limits)
     
     def ease_in_out(self, t):
         """Cubic easing function for smoother motion."""

@@ -118,9 +118,20 @@ ros2 launch luxo_behaviors luxo_system.launch.py use_hardware:=true
 
 ### Simulation Mode
 ```bash
-# Launch in simulation (no hardware required)
+# Kinematic ROS simulation (no physical device, microphone, or camera required)
 ros2 launch luxo_behaviors luxo_system.launch.py
 ```
+
+Simulation publishes one rate-limited `/joint_states` stream from the shared
+animation target topic and the checked-in four-joint URDF. It provides ROS joint
+states and TF, not Gazebo physics or contact simulation: the URDF currently has
+visual meshes without collision or inertial data. Do not treat simulated
+collisions as physical stopping-distance evidence. Live microphones and the OAK
+camera are hardware-only launch paths; simulation voice direction enters through
+`/sim/audio_direction` and uses the same estimator as the live direction node.
+The text-only speech bridge defaults to a deterministic simulation backend and
+does not play audio. Hardware speech is opt-in with `enable_speech_bridge:=true`
+and `speech_backend:=local` plus a configured JSON argv service command.
 
 ### Full System with All Features
 ```bash
@@ -546,13 +557,13 @@ colcon test
 
 ### Hardware Mocks
 - **Required**: No (software tests use mocks)
-- **Simulation**: Gazebo/ROS2 simulation available for testing without hardware
+- **Simulation**: Headless ROS kinematic target/URDF pipeline; Gazebo dynamics and contact physics are not included
 - **Mock objects**: Used for depthai camera, serial port, and arm control
 
 ## Known Issues
 
 - No critical issues in current pipeline runs
-- All 10 tests pass consistently
+- Run the documented pytest suites for current offline and native ROS evidence
 - Hardware-dependent tests require actual RoArm-M3 setup
 
 ## Notes

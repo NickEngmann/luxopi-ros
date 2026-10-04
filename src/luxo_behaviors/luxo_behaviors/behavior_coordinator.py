@@ -201,7 +201,7 @@ class BehaviorCoordinator(PettingBehavior, IdleBehavior, VoiceBehavior, Collisio
         current_state = self._get_current_state()
         return current_state in states
 
-    def _transition_to_state(self, new_state):
+    def _transition_to_state(self, new_state, on_result=None, completion=False):
         """Request a state transition."""
         try:
             request = RequestStateTransition.Request()
@@ -210,13 +210,18 @@ class BehaviorCoordinator(PettingBehavior, IdleBehavior, VoiceBehavior, Collisio
             request.priority = 100  # High priority
 
             request.force = False
+            request.completion = completion
             
             future = self.request_state_transition_client.call_async(request)
             # Keep the ROS executor nonblocking, but report the real response.
             # call_async returning only means the request was queued locally.
-            return watch_transition_result(future, new_state.name, self.node.get_logger())
+            return watch_transition_result(
+                future, new_state.name, self.node.get_logger(), on_result=on_result
+            )
         except Exception as e:
             self.node.get_logger().error(f"Error requesting state transition: {e}")
+            if on_result is not None:
+                on_result(False)
             return False
     
     def _can_process_voice_command(self) -> bool:
