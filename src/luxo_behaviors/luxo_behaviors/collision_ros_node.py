@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import math
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String, Bool, Int16, Float32, UInt8
@@ -45,6 +46,8 @@ class CollisionNode(Node):
         self.last_left_distance_time = self.get_clock().now()
         self.last_right_distance_time = self.get_clock().now()
         self.data_timeout = 2.0  # seconds
+        self.sensor_reinit_interval = 10.0
+        self._last_sensor_reinit = {}
         
         # Current sensor values
         self.current_proximity = 0
@@ -205,24 +208,37 @@ class CollisionNode(Node):
     
     def proximity_data_callback(self, msg):
         """Handle proximity data from I2C manager"""
+        now = self.get_clock().now()
+        fresh = (now - self.last_proximity_time).nanoseconds / 1e9 <= self.data_timeout
+        self.prev_proximity = self.current_proximity if fresh else 0
         self.current_proximity = msg.data
-        self.last_proximity_time = self.get_clock().now()
+        self.last_proximity_time = now
         
         # Republish raw proximity value
         self.proximity_pub.publish(msg)
     
     def left_distance_callback(self, msg):
         """Handle left distance data from I2C manager"""
+        if not math.isfinite(msg.data) or msg.data < 1.0:
+            return  # Invalid readings do not refresh sensor health.
+        now = self.get_clock().now()
+        fresh = (now - self.last_left_distance_time).nanoseconds / 1e9 <= self.data_timeout
+        self.prev_left_distance = self.current_left_distance if fresh else float('inf')
         self.current_left_distance = msg.data
-        self.last_left_distance_time = self.get_clock().now()
+        self.last_left_distance_time = now
         
         # Republish raw distance value
         self.left_distance_pub.publish(msg)
     
     def right_distance_callback(self, msg):
         """Handle right distance data from I2C manager"""
+        if not math.isfinite(msg.data) or msg.data < 1.0:
+            return  # Invalid readings do not refresh sensor health.
+        now = self.get_clock().now()
+        fresh = (now - self.last_right_distance_time).nanoseconds / 1e9 <= self.data_timeout
+        self.prev_right_distance = self.current_right_distance if fresh else float('inf')
         self.current_right_distance = msg.data
-        self.last_right_distance_time = self.get_clock().now()
+        self.last_right_distance_time = now
         
         # Republish raw distance value
         self.right_distance_pub.publish(msg)
@@ -257,10 +273,12 @@ class CollisionNode(Node):
             return "safe"
     
     def evaluate_collisions(self):
-        """Evaluate collision states based on current sensor data"""
+        """Evaluate two distinct fresh sensor samples, never timer repeats."""
+        self._expire_stale_readings(self.get_clock().now())
         # Front/head collision detection
         collision_detected = (self.current_proximity > self.proximity_threshold and 
                             self.prev_proximity > self.proximity_threshold)
+        collision_detected = collision_detected or self.fsr_collision_active['front']
         
         collision_msg = Bool()
         collision_msg.data = collision_detected
@@ -268,7 +286,7 @@ class CollisionNode(Node):
         
         # Determine severity for front collision
         if collision_detected:
-            severity = "danger" if self.current_proximity > self.proximity_threshold * 2 else "warning"
+            severity = "danger" if self.fsr_collision_active['front'] or self.current_proximity > self.proximity_threshold * 2 else "warning"
             self.get_logger().debug(f"Head Collision warning! Proximity: {self.current_proximity}, Severity: {severity}")
             
             # Publish severity
@@ -285,13 +303,12 @@ class CollisionNode(Node):
             severity_msg.data = "safe"
             self.front_severity_pub.publish(severity_msg)
         
-        self.prev_proximity = self.current_proximity
         
         # Left collision detection
         if self.current_left_distance < float('inf'):
             # Ignore invalid readings below 1cm
             if self.current_left_distance >= 1.0:
-                severity = self.determine_severity(self.current_left_distance)
+                severity = "danger" if self.fsr_collision_active['left'] else self.determine_severity(self.current_left_distance)
                 
                 # Publish severity
                 severity_msg = String()
@@ -300,7 +317,7 @@ class CollisionNode(Node):
                 
                 # Check for collision (two consecutive readings below threshold)
                 if (self.current_left_distance < self.side_distance_threshold and 
-                    self.prev_left_distance < self.side_distance_threshold):
+                    self.prev_left_distance < self.side_distance_threshold) or self.fsr_collision_active['left']:
                     
                     collision_msg = Bool()
                     collision_msg.data = True
@@ -316,13 +333,12 @@ class CollisionNode(Node):
                     collision_msg.data = False
                     self.left_collision_pub.publish(collision_msg)
                 
-                self.prev_left_distance = self.current_left_distance
         
         # Right collision detection
         if self.current_right_distance < float('inf'):
             # Ignore invalid readings below 1cm
             if self.current_right_distance >= 1.0:
-                severity = self.determine_severity(self.current_right_distance)
+                severity = "danger" if self.fsr_collision_active['right'] else self.determine_severity(self.current_right_distance)
                 
                 # Publish severity
                 severity_msg = String()
@@ -331,7 +347,7 @@ class CollisionNode(Node):
                 
                 # Check for collision (two consecutive readings below threshold)
                 if (self.current_right_distance < self.side_distance_threshold and 
-                    self.prev_right_distance < self.side_distance_threshold):
+                    self.prev_right_distance < self.side_distance_threshold) or self.fsr_collision_active['right']:
                     
                     collision_msg = Bool()
                     collision_msg.data = True
@@ -347,7 +363,6 @@ class CollisionNode(Node):
                     collision_msg.data = False
                     self.right_collision_pub.publish(collision_msg)
                 
-                self.prev_right_distance = self.current_right_distance
     
     def touch_head_top_callback(self, msg):
         """Handle head top touch sensor data - triggers petting behavior"""
@@ -563,9 +578,20 @@ class CollisionNode(Node):
                         elif direction == 'front':
                             self.front_severity_pub.publish(severity_msg)
     
+    def _expire_stale_readings(self, now):
+        """Invalidate cached samples so timeout clearing cannot immediately relatch."""
+        if (now - self.last_proximity_time).nanoseconds / 1e9 > self.data_timeout:
+            self.current_proximity = self.prev_proximity = 0
+        for side in ('left', 'right'):
+            timestamp = getattr(self, f'last_{side}_distance_time')
+            if (now - timestamp).nanoseconds / 1e9 > self.data_timeout:
+                setattr(self, f'current_{side}_distance', float('inf'))
+                setattr(self, f'prev_{side}_distance', float('inf'))
+
     def check_data_timeout(self):
-        """Check if sensor data has timed out and publish safe states"""
+        """Preserve existing timeout clearing policy and request nonblocking recovery."""
         current_time = self.get_clock().now()
+        self._expire_stale_readings(current_time)
         
         # Check proximity timeout
         if (current_time - self.last_proximity_time).nanoseconds / 1e9 > self.data_timeout:
@@ -573,11 +599,11 @@ class CollisionNode(Node):
             
             # Publish safe states
             severity_msg = String()
-            severity_msg.data = "safe"
+            severity_msg.data = "danger" if self.fsr_collision_active['front'] else "safe"
             self.front_severity_pub.publish(severity_msg)
             
             collision_msg = Bool()
-            collision_msg.data = False
+            collision_msg.data = self.fsr_collision_active['front']
             self.collision_pub.publish(collision_msg)
             
             # Request sensor reinitialization if available
@@ -588,11 +614,11 @@ class CollisionNode(Node):
             self.get_logger().debug("Left distance data timeout - publishing safe state")
             
             severity_msg = String()
-            severity_msg.data = "safe"
+            severity_msg.data = "danger" if self.fsr_collision_active['left'] else "safe"
             self.left_severity_pub.publish(severity_msg)
             
             collision_msg = Bool()
-            collision_msg.data = False
+            collision_msg.data = self.fsr_collision_active['left']
             self.left_collision_pub.publish(collision_msg)
             
             self.request_sensor_reinit('vl53_left')
@@ -602,11 +628,11 @@ class CollisionNode(Node):
             self.get_logger().debug("Right distance data timeout - publishing safe state")
             
             severity_msg = String()
-            severity_msg.data = "safe"
+            severity_msg.data = "danger" if self.fsr_collision_active['right'] else "safe"
             self.right_severity_pub.publish(severity_msg)
             
             collision_msg = Bool()
-            collision_msg.data = False
+            collision_msg.data = self.fsr_collision_active['right']
             self.right_collision_pub.publish(collision_msg)
             
             self.request_sensor_reinit('vl53_right')
@@ -621,8 +647,14 @@ class CollisionNode(Node):
     
     def request_sensor_reinit(self, sensor_name):
         """Request sensor reinitialization via service"""
-        if not self.sensor_config_client.wait_for_service(timeout_sec=1.0):
+        # Missing I2C service must not stall collision and touch callbacks.
+        if not self.sensor_config_client.service_is_ready():
             return
+        now = self.get_clock().now()
+        previous = self._last_sensor_reinit.get(sensor_name)
+        if previous is not None and (now - previous).nanoseconds / 1e9 < self.sensor_reinit_interval:
+            return
+        self._last_sensor_reinit[sensor_name] = now
         
         request = ConfigureI2CSensor.Request()
         request.sensor_name = sensor_name
