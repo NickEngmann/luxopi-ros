@@ -3,6 +3,7 @@
 Only transport/LED imports are omitted. State manager methods are unmodified.
 """
 import ast
+import json
 import pathlib
 import threading
 import time
@@ -24,14 +25,18 @@ def make_manager():
             return lambda *args: None
     class Node:
         def __init__(self, name):
-            pass
+            self.parameters = {}
+        def declare_parameter(self, name, default):
+            self.parameters[name] = default
+        def get_parameter(self, name):
+            return SimpleNamespace(value=self.parameters[name])
         def get_logger(self):
             return Logger()
         def __getattr__(self, name):
             if name.startswith('create_'):
                 return lambda *args, **kwargs: SimpleNamespace(publish=lambda msg: None)
             raise AttributeError(name)
-    namespace = dict(vars(typing), Node=Node, threading=threading, time=time,
+    namespace = dict(vars(typing), Node=Node, threading=threading, time=time, json=json,
                      LuxoState=state, StateTransition=state_globals['StateTransition'],
                      QoSProfile=lambda **kw: kw,
                      QoSReliabilityPolicy=SimpleNamespace(RELIABLE=1),

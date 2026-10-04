@@ -2,6 +2,7 @@
 #state_manager_node.py
 
 import threading
+import json
 from typing import Dict, List, Callable, Optional, Any, Tuple
 import time
 import rclpy
@@ -79,6 +80,9 @@ class StateManagerNode(Node):
         # Light control state
         self._lights_enabled = True  # Track light state
         
+        self.declare_parameter('simulated_lighting', False)
+        self.simulated_lighting = bool(self.get_parameter('simulated_lighting').value)
+
         # Initialize NeoPixel controller
         self._neopixel_controller = None
         self._neopixel_override_active = False
@@ -125,6 +129,8 @@ class StateManagerNode(Node):
             )
         )
         
+        self.light_state_publisher = self.create_publisher(String, '/luxo/light_state', 10)
+
         # Publish detailed state info for debugging
         self.state_info_publisher = self.create_publisher(
             StateInfo,
@@ -211,6 +217,12 @@ class StateManagerNode(Node):
     
     def _initialize_neopixel(self):
         """Initialize NeoPixel controller for state visualization"""
+        if self.simulated_lighting:
+            from luxo_behaviors.virtual_lighting import VirtualNeoPixelController
+            self._neopixel_controller = VirtualNeoPixelController(
+                pixel_count=60, brightness=0.5, logger=self.get_logger())
+            self.get_logger().info("Simulated lamp enabled; no physical LED driver loaded")
+            return
         try:
             from luxo_behaviors.neopixel_control import NeoPixelController
             self._neopixel_controller = NeoPixelController(
@@ -403,6 +415,10 @@ class StateManagerNode(Node):
             state_msg = String()
             state_msg.data = self._current_state.name
             self.state_publisher.publish(state_msg)
+            if self.simulated_lighting and self._neopixel_controller:
+                snapshot = self._neopixel_controller.snapshot()
+                snapshot.update(enabled=self._lights_enabled, state=self._current_state.name)
+                self.light_state_publisher.publish(String(data=json.dumps(snapshot)))
             
             # Detailed state info using custom message
             info_msg = StateInfo()
@@ -491,7 +507,8 @@ class StateManagerNode(Node):
                     # time.sleep(0.25)  # Allow time for effects to stop
                     # Clear all pixels immediately
                     self._neopixel_controller.clear_all()
-                    time.sleep(0.25)
+                    if not self.simulated_lighting:
+                        time.sleep(0.25)
                     
                     # Set override to prevent any new updates
                     self._neopixel_override_active = True
@@ -510,8 +527,9 @@ class StateManagerNode(Node):
                             self._neopixel_controller.clear_all()
                             self.get_logger().debug("Secondary clear completed")
                     
-                    clear_thread = threading.Thread(target=delayed_clear, daemon=True)
-                    clear_thread.start()
+                    if not self.simulated_lighting:
+                        clear_thread = threading.Thread(target=delayed_clear, daemon=True)
+                        clear_thread.start()
                     
             elif previous_state != self._lights_enabled:
                 # Lights turned ON - re-enable NeoPixel updates
