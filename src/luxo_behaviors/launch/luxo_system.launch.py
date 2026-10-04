@@ -19,6 +19,7 @@ def generate_launch_description():
     
     # Other standard arguments with simplified defaults
     use_gui = LaunchConfiguration('use_gui', default='false')
+    use_rviz = LaunchConfiguration('use_rviz', default='true')
     safety_distance = LaunchConfiguration('safety_distance', default='0.3')
     verbose_output = LaunchConfiguration('verbose', default='false')
     
@@ -75,6 +76,12 @@ def generate_launch_description():
         name='use_gui',
         default_value='false',
         description='Flag to enable joint_state_publisher_gui'
+    )
+
+    declare_use_rviz = DeclareLaunchArgument(
+        name='use_rviz',
+        default_value='true',
+        description='Whether to launch RViz in simulation mode (disable for headless runs)'
     )
     
     # Fix for joint_state_publisher issue - set a default value that doesn't 
@@ -261,7 +268,9 @@ def generate_launch_description():
         ]),
         launch_arguments={
             'gui': LaunchConfiguration('use_gui'),
-            'use_joint_state_publisher': 'true'
+            'use_joint_state_publisher': 'true',
+            'use_robot_state_pub': 'false',
+            'use_rviz': use_rviz,
         }.items(),
         condition=UnlessCondition(use_hardware)
     )
@@ -459,8 +468,8 @@ def generate_launch_description():
         name='animation_command',
         output='screen',
         parameters=[
-            {'publish_joint_states_target': False},  # Changed to false for simulation
-            {'publish_target_topic': True},   # Simulation should use a separate topic
+            {'publish_joint_states_target': True},
+            {'publish_target_topic': False},
             {'enforce_joint_limits': True},    # Enable joint limits enforcement
         ],
         condition=UnlessCondition(use_hardware)
@@ -519,6 +528,7 @@ def generate_launch_description():
         declare_use_camera,
         declare_enable_emotion_detection,
         declare_use_gui,
+        declare_use_rviz,
         use_joint_state_publisher_arg,
         declare_test_mode,
         declare_enable_voice,

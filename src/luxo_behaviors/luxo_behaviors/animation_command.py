@@ -120,7 +120,10 @@ class AnimationCommandActionServer(Node):
             self.joint_names = ['base', 'shoulder', 'elbow', 'wrist', 'hand']
             self.get_logger().info('Using hardware joint names for RoArm compatibility')
         else:
-            self.joint_names = ['base_to_L1', 'L1_to_L2', 'L2_to_L3', 'L3_to_L4', 'hand']
+            # The checked-in RoArm URDF models four revolute joints. Keep the
+            # visualization publisher aligned with that model; the fifth
+            # actuator and acceleration slot are hardware-only.
+            self.joint_names = ['base_to_L1', 'L1_to_L2', 'L2_to_L3', 'L3_to_L4']
         
         # Timer for regular publishing
         self.timer = self.create_timer(0.25, self.publish_joint_states_target)
@@ -861,10 +864,10 @@ class AnimationCommandActionServer(Node):
         
         try:
             # Extract joint positions (first 5 values)
-            joint_positions = self.target_positions[:5] if len(self.target_positions) >= 5 else self.target_positions
+            joint_positions = self.target_positions[:len(self.joint_names)]
             
             # Ensure we have exactly 5 joint positions
-            while len(joint_positions) < 5:
+            while len(joint_positions) < len(self.joint_names):
                 joint_positions.append(0.0)
             
             validated_positions = [float(pos) for pos in joint_positions]
@@ -872,8 +875,10 @@ class AnimationCommandActionServer(Node):
             if self.enforce_joint_limits:
                 validated_positions = self.apply_joint_limits(msg.name, validated_positions)
             
-            # Check if we have acceleration value
-            if len(self.target_positions) > 5:
+            # Keep hardware transport metadata out of ROS JointState messages
+            # used by robot_state_publisher. The hardware interface consumes
+            # the extra acceleration slot on its target topic.
+            if self.publish_target and len(self.target_positions) > 5:
                 # Include acceleration in the position array
                 validated_positions.append(float(self.target_positions[5]))
             

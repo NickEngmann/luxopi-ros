@@ -4,6 +4,7 @@ import rclpy
 from rclpy.node import Node
 from rclpy.action import ActionClient
 from .MultiMsgSync import TwoStageHostSeqSync
+from .camera_queue import enqueue_latest
 import blobconverter
 import depthai as dai
 import numpy as np
@@ -46,14 +47,9 @@ class CameraInteraction(Node):
         
         # === THREADING AND QUEUES FOR LATENCY OPTIMIZATION ===
         
-        # High-priority queue for raw camera frames (minimal latency)
-        self.frame_queue = queue.Queue(maxsize=2)  # Small queue to minimize latency
-        
-        # Low-priority queue for processing (emotion detection, etc.)
-        self.processing_queue = queue.Queue(maxsize=5)
-        
-        # Display data queue (for framebuffer updates)
-        self.display_queue = queue.Queue(maxsize=3)
+        # Keep only the newest pending inference frame; processing a backlog
+        # makes emotion feedback stale and retains several full-size images.
+        self.processing_queue = queue.Queue(maxsize=1)
         
         # Threading control
         self.shutdown_event = threading.Event()
@@ -413,37 +409,28 @@ class CameraInteraction(Node):
     def emotion_processing_worker(self):
         """Background thread for emotion detection and analysis (can have latency)"""
         while not self.shutdown_event.is_set():
+            data = None
             try:
                 # Get processing data with timeout
                 data = self.processing_queue.get(timeout=0.1)
                 if data is None:
                     continue
-                
+
                 frame, detections, recognitions, timestamp = data
-                
-                # Process emotions (this can be slow)
                 self.process_emotions(frame, detections, recognitions, timestamp)
-                
-                self.processing_queue.task_done()
-                
             except queue.Empty:
                 continue
             except Exception as e:
                 self.get_logger().error(f"Error in emotion processing thread: {e}")
+            finally:
+                if data is not None:
+                    self.processing_queue.task_done()
 
     def display_update_worker(self):
         """Background thread for framebuffer display updates (can have latency)"""
-        last_display_update = time.time()
-        
-        while not self.shutdown_event.is_set():
+        interval = max(0.01, self.framebuffer_update_interval)
+        while not self.shutdown_event.wait(interval):
             try:
-                current_time = time.time()
-                
-                # Throttle display updates
-                if current_time - last_display_update < self.framebuffer_update_interval:
-                    time.sleep(0.01)
-                    continue
-                
                 # Get latest display data
                 with self.data_lock:
                     frame = self.latest_frame_for_display
@@ -456,10 +443,6 @@ class CameraInteraction(Node):
                     self._update_framebuffer_display_threaded(
                         frame, emotion, distance, face_bboxes
                     )
-                    last_display_update = current_time
-                
-                time.sleep(0.01)  # Small sleep to prevent busy waiting
-                
             except Exception as e:
                 self.get_logger().error(f"Error in display update thread: {e}")
 
@@ -736,8 +719,6 @@ class CameraInteraction(Node):
                     lamp_info={'status': self.lamp_status, 'last_update': time.time()}
                 )
                 
-                # Show success message briefly
-                time.sleep(1.0)
         except Exception as e:
             self.get_logger().error(f"Error showing camera reconnected message: {e}")
 
@@ -800,7 +781,12 @@ class CameraInteraction(Node):
             
             # Create output queues
             for name in ["color", "detection", "recognition"]:
-                self.queues[name] = self.device.getOutputQueue(name)
+                # A stale host-side FIFO causes visible lag and can eventually
+                # backpressure the device pipeline. The sync layer handles
+                # occasional sequence gaps, so always prefer the newest data.
+                self.queues[name] = self.device.getOutputQueue(
+                    name, maxSize=1, blocking=False
+                )
             
             # Create timer callback for processing camera data if not already created
             if self.timer is None:
@@ -994,114 +980,6 @@ class CameraInteraction(Node):
 
         return pipeline
 
-    def process_camera_data(self):
-        """Process camera data with minimal latency for camera feed"""
-        # Skip if camera is not connected
-        if not self.camera_connected or self.device is None:
-            return
-        
-        try:
-            # Check if device is still valid before processing
-            if not self.device or not hasattr(self.device, 'getOutputQueue'):
-                self.get_logger().warn("Device is invalid, triggering reconnection")
-                self.handle_camera_disconnection()
-                return
-            
-            # Process all available messages
-            for name, q in self.queues.items():
-                try:
-                    # Add all msgs (color frames, object detections and age/gender recognitions) to the Sync class.
-                    if q.has():
-                        self.sync.add_msg(q.get(), name)
-                except Exception as e:
-                    # Individual queue error - might indicate device issue
-                    self.get_logger().error(f"Error accessing queue '{name}': {e}")
-                    self.consecutive_camera_errors += 1
-                    if self.consecutive_camera_errors >= self.max_consecutive_errors:
-                        self.handle_camera_disconnection()
-                    return
-
-            msgs = self.sync.get_msgs()
-            if msgs is not None:
-                frame = msgs["color"].getCvFrame()
-                detections = msgs["detection"].detections
-                recognitions = msgs["recognition"]
-                timestamp = self.get_clock().now()
-
-                # HIGH PRIORITY: Publish camera feed immediately for minimal latency
-                if self.publish_camera_feed and frame is not None:
-                    try:
-                        # Convert and publish frame with minimal processing
-                        image_msg = self.bridge.cv2_to_imgmsg(frame, encoding="bgr8")
-                        image_msg.header.stamp = timestamp.to_msg()
-                        image_msg.header.frame_id = "camera"
-                        self.image_publisher.publish(image_msg)
-                    except Exception as e:
-                        self.get_logger().error(f"Error publishing camera feed: {e}")
-
-                # Store frame for display (thread-safe)
-                with self.data_lock:
-                    self.latest_frame_for_display = frame.copy()
-
-                # LOW PRIORITY: Queue for emotion processing (can have latency)
-                if detections:
-                    try:
-                        # Non-blocking queue put - drop if queue is full to maintain low latency
-                        self.processing_queue.put_nowait((frame.copy(), detections, recognitions, timestamp))
-                    except queue.Full:
-                        # Drop oldest item and add new one
-                        try:
-                            self.processing_queue.get_nowait()
-                            self.processing_queue.put_nowait((frame.copy(), detections, recognitions, timestamp))
-                        except queue.Empty:
-                            pass
-                else:
-                    # No faces detected - update display data
-                    with self.data_lock:
-                        self.latest_face_bboxes = []
-                        
-                # Reset error counter on successful processing
-                self.consecutive_camera_errors = 0
-                
-        except RuntimeError as e:
-            # Handle specific RuntimeError that indicates communication issues
-            if "Communication exception" in str(e) or "X_LINK_ERROR" in str(e):
-                self.consecutive_camera_errors += 1
-                
-                # Throttle error logging
-                current_time = self.get_clock().now()
-                time_since_last_log = (current_time - self.last_camera_error_log_time).nanoseconds / 1e9
-                
-                if time_since_last_log >= self.camera_error_log_interval:
-                    self.get_logger().error(f"Camera communication error: {e} (consecutive errors: {self.consecutive_camera_errors})")
-                    self.last_camera_error_log_time = current_time
-                
-                # Trigger reconnection immediately on communication errors
-                if self.consecutive_camera_errors >= 2:  # Lower threshold for communication errors
-                    self.get_logger().warn("Camera communication failure detected, attempting reconnection...")
-                    self.handle_camera_disconnection()
-            else:
-                # Other RuntimeErrors
-                self.get_logger().error(f"Runtime error in camera processing: {e}")
-                self.consecutive_camera_errors += 1
-                if self.consecutive_camera_errors >= self.max_consecutive_errors:
-                    self.handle_camera_disconnection()
-        except Exception as e:
-            # Increment error counter for any other errors
-            self.consecutive_camera_errors += 1
-            
-            # Throttle error logging
-            current_time = self.get_clock().now()
-            time_since_last_log = (current_time - self.last_camera_error_log_time).nanoseconds / 1e9
-            
-            if time_since_last_log >= self.camera_error_log_interval:
-                self.get_logger().error(f"Error processing camera data: {e} (consecutive errors: {self.consecutive_camera_errors})")
-                self.last_camera_error_log_time = current_time
-            
-            # Check if we should attempt reconnection
-            if self.consecutive_camera_errors >= self.max_consecutive_errors:
-                self.get_logger().warn(f"Camera appears to be disconnected after {self.consecutive_camera_errors} consecutive errors. Attempting reconnection...")
-                self.handle_camera_disconnection()
 
     def process_emotions(self, frame, detections, recognitions, timestamp):
         """Process emotion detection (can have latency - runs in background thread)"""
@@ -1325,16 +1203,10 @@ class CameraInteraction(Node):
 
                 # LOW PRIORITY: Queue for emotion processing (can have latency)
                 if detections:
-                    try:
-                        # Non-blocking queue put - drop if queue is full to maintain low latency
-                        self.processing_queue.put_nowait((frame.copy(), detections, recognitions, timestamp))
-                    except queue.Full:
-                        # Drop oldest item and add new one
-                        try:
-                            self.processing_queue.get_nowait()
-                            self.processing_queue.put_nowait((frame.copy(), detections, recognitions, timestamp))
-                        except queue.Empty:
-                            pass
+                    enqueue_latest(
+                        self.processing_queue,
+                        (frame.copy(), detections, recognitions, timestamp),
+                    )
                 else:
                     # No faces detected - update display data
                     with self.data_lock:
@@ -1662,6 +1534,15 @@ class CameraInteraction(Node):
     
     def destroy_node(self):
         """Clean up resources when the node is shut down"""
+        # Stop timer producers before workers exit so shutdown cannot enqueue
+        # new frames after the inference worker has begun stopping.
+        if hasattr(self, 'camera_retry_timer') and self.camera_retry_timer is not None:
+            self.camera_retry_timer.cancel()
+            self.camera_retry_timer = None
+        if hasattr(self, 'timer') and self.timer is not None:
+            self.timer.cancel()
+            self.timer = None
+
         # Signal threads to stop
         self.shutdown_event.set()
         
@@ -1679,14 +1560,6 @@ class CameraInteraction(Node):
             self.get_logger().info("Displaying shutdown message on framebuffer")
             self.framebuffer_display.cleanup()
         
-        # Cancel retry timer
-        if hasattr(self, 'camera_retry_timer') and self.camera_retry_timer is not None:
-            self.camera_retry_timer.cancel()
-            
-        # Cancel main timer
-        if hasattr(self, 'timer') and self.timer is not None:
-            self.timer.cancel()
-            
         # Close camera device
         if hasattr(self, 'device') and self.device is not None:
             self.get_logger().info("Shutting down camera")

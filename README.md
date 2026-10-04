@@ -177,6 +177,22 @@ ros2 topic pub --once /roarm/animation_command std_msgs/String "data: excited 1.
 - `/joint_states` - Current joint positions
 - `/joint_states_target` - Target joint positions
 
+#### Action Goal Preemption
+The `play_animation` action serializes animation execution. Accepting a newer
+goal requests cancellation of the previous goal, and cancellation is tracked
+per goal so the newer request cannot clear the older request's stop signal.
+Interpolation checks cancellation on each update (about every 10 ms) and stops
+publishing later target positions. This stops ROS-side trajectory updates; it
+does not claim to provide an immediate motor brake on the RoArm firmware.
+
+The cancellation tracker is ROS-independent and can be regression-tested
+without hardware:
+
+```bash
+cd src/luxo_behaviors
+python -m pytest -q tests/test_motion_control.py
+```
+
 ### Camera Interaction
 
 Real-time emotion detection triggers corresponding animations.
@@ -408,6 +424,24 @@ Please read [CONTRIBUTING.md](CONTRIBUTING.md) for our code of conduct and submi
 ## License
 
 This project is licensed under the MIT License - see [LICENSE](LICENSE) for details.
+
+### Camera Pipeline Checks
+
+The camera node uses one-slot, non-blocking DepthAI output queues and a one-frame
+emotion queue. When inference falls behind, it replaces stale pending work with
+the newest frame; incomplete DepthAI sequence groups are capped at 16 so dropped
+outputs cannot grow host memory indefinitely. Framebuffer updates wait on the
+shutdown event instead of polling continuously, and retry callbacks do not sleep
+after reconnecting.
+
+The buffering and sequence-sync behavior has hardware-free tests:
+
+```bash
+pytest src/luxo_behaviors/test/test_camera_buffering.py
+```
+
+`dev/emotional_camera_api.py` follows the same latest-frame policy. A real OAK
+camera is still needed to validate DepthAI model throughput and image quality.
 
 ## Running Tests
 

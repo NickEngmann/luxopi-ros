@@ -7,7 +7,7 @@ import os
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
 from launch.conditions import IfCondition, UnlessCondition
-from launch.substitutions import Command, LaunchConfiguration
+from launch.substitutions import Command, LaunchConfiguration, PythonExpression
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
  
@@ -43,10 +43,10 @@ def generate_launch_description():
     default_value=default_rviz_config_path,
     description='Full path to the RVIZ config file to use')
      
-  declare_use_joint_state_publisher_cmd = DeclareLaunchArgument(
+  declare_gui = DeclareLaunchArgument(
     name='gui',
-    default_value='False',
-    description='Flag to enable joint_state_publisher_gui')
+    default_value='false',
+    description='Use the joint-state publisher GUI instead of its headless mode')
    
   declare_use_robot_state_pub_cmd = DeclareLaunchArgument(
     name='use_robot_state_pub',
@@ -73,14 +73,18 @@ def generate_launch_description():
  
   # Publish the joint state values for the non-fixed joints in the URDF file.
   start_joint_state_publisher_cmd = Node(
-    condition=IfCondition(use_joint_state_publisher),
+    condition=IfCondition(PythonExpression([
+      "'", use_joint_state_publisher, "' == 'true' and '", gui, "' == 'false'"
+    ])),
     package='joint_state_publisher',
     executable='joint_state_publisher',
     name='joint_state_publisher')
  
   # A GUI to manipulate the joint state values
   start_joint_state_publisher_gui_node = Node(
-    condition=IfCondition(use_joint_state_publisher),
+    condition=IfCondition(PythonExpression([
+      "'", use_joint_state_publisher, "' == 'true' and '", gui, "' == 'true'"
+    ])),
     package='joint_state_publisher_gui',
     executable='joint_state_publisher_gui',
     name='joint_state_publisher_gui')
@@ -109,7 +113,7 @@ def generate_launch_description():
   # Declare the launch options
   ld.add_action(declare_urdf_model_path_cmd)
   ld.add_action(declare_rviz_config_file_cmd)
-  ld.add_action(declare_use_joint_state_publisher_cmd)
+  ld.add_action(declare_gui)
   ld.add_action(declare_use_robot_state_pub_cmd)  
   ld.add_action(declare_use_rviz_cmd) 
   ld.add_action(declare_use_sim_time_cmd)
