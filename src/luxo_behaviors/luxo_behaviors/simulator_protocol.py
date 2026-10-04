@@ -7,7 +7,7 @@ TOUCH_SENSORS = {"head_top", "head_left", "head_bottom", "head_right"}
 DISTANCE_SIDES = {"left", "right"}
 COLLISION_SIDES = {"front", "left", "right"}
 GESTURES = {"left", "right", "up", "down", "near", "far", "none"}
-EMOTIONS = {"neutral", "happy", "sad", "angry", "surprise", "fear", "disgust"}
+EMOTIONS = {"neutral", "happy", "sad", "surprise", "anger"}
 ANIMATION_NAMES = {
     "folded_wiggle", "bouncy_wiggle", "sleepy_melt", "nod", "shake", "close", "stop",
     "gentle_sway", "curious_exploration", "breathing", "attentive_listening", "playful_bob",

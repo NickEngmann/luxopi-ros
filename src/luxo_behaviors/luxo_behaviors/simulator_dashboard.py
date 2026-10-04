@@ -88,12 +88,12 @@ class SimulatorDashboard(Node):
             "collision_status": self.create_publisher(
                 String, "/collision_status_for_animation", 10
             ),
-            "vision": self.create_publisher(String, "/camera/emotion", 10),
+            "vision": self.create_publisher(String, "/sim/camera/emotion", 10),
             "person_distance": self.create_publisher(
-                Float32, "/camera/person_distance", 10
+                Float32, "/sim/camera/person_distance", 10
             ),
             "person_present": self.create_publisher(
-                Bool, "/sim/vision/person_present", 10
+                Bool, "/sim/camera/person_present", 10
             ),
             "light_control": self.create_publisher(Bool, "/luxo/light_control", 10),
             "brightness": self.create_publisher(String, "/luxo/brightness_control", 10),
@@ -124,6 +124,7 @@ class SimulatorDashboard(Node):
         self.create_subscription(String, "/gestures", self._gesture_result_cb, 10)
         self.create_subscription(String, "/camera/emotion", self._emotion_cb, 10)
         self.create_subscription(Float32, "/camera/person_distance", self._person_distance_cb, 10)
+        self.create_subscription(Bool, "/camera/person_present", self._person_present_cb, 10)
         self.create_subscription(String, "/luxo/light_state", self._light_state_cb, 10)
 
         self._drain_timer = self.create_timer(0.02, self._drain_events)
@@ -338,6 +339,9 @@ class SimulatorDashboard(Node):
 
     def _person_distance_cb(self, msg):
         self._sensor_update(person_distance=float(msg.data))
+
+    def _person_present_cb(self, msg):
+        self._sensor_update(person_present=bool(msg.data))
 
     def _light_state_cb(self, msg):
         try:
