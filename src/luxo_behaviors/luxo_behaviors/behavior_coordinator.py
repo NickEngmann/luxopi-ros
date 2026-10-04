@@ -12,6 +12,7 @@ import time
 from sensor_msgs.msg import JointState
 from std_msgs.msg import String, Float32, Bool
 from luxo_interfaces.srv import RequestStateTransition
+from .transition_requests import watch_transition_result
 from luxo_interfaces.msg import StateInfo
 from luxo_behaviors.state_machine import LuxoState
 import numpy as np
@@ -211,8 +212,9 @@ class BehaviorCoordinator(PettingBehavior, IdleBehavior, VoiceBehavior, Collisio
             request.force = False
             
             future = self.request_state_transition_client.call_async(request)
-            # Fire and forget - don't wait for response
-            return True
+            # Keep the ROS executor nonblocking, but report the real response.
+            # call_async returning only means the request was queued locally.
+            return watch_transition_result(future, new_state.name, self.node.get_logger())
         except Exception as e:
             self.node.get_logger().error(f"Error requesting state transition: {e}")
             return False
