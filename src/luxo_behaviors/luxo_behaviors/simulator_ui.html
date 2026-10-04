@@ -33,11 +33,28 @@
       <article class="card">
         <div class="card-head"><h2>Voice conversation</h2><span>Silent deterministic backend or local service</span></div>
         <div class="card-body">
-          <div class="voice-grid"><div class="voice-box"><label>Captured text</label><p id="transcript">Waiting for a simulated command.</p></div><div class="voice-box"><label>Marisol response</label><p id="response">No response yet.</p></div></div>
+          <div class="voice-grid"><div class="voice-box"><label>Captured text</label><p id="transcript">Waiting for a simulated command.</p></div><div class="voice-box"><label>Luxo reply</label><p id="response">No response yet.</p></div></div>
           <div style="display:flex;justify-content:space-between;align-items:center;margin-top:11px"><span class="hint" style="margin:0">Bridge status</span><span class="voice-state" id="voiceStatus">IDLE</span></div>
-          <form id="commandForm" class="form"><input id="commandInput" maxlength="2000" placeholder="Type a command, e.g. Open Spotify" autocomplete="off"><button class="primary" type="submit">Send command</button></form>
-          <div class="quick"><button class="small" data-command="Open Spotify">Open Spotify</button><button class="small" data-command="What time is it?">Ask the time</button><button class="small" data-command="Tell me a joke">Tell a joke</button></div>
-          <p class="hint">Commands publish to <code>/voice/command</code>. The dashboard never plays response audio.</p>
+          <form id="commandForm" class="form"><input id="commandInput" maxlength="2000" placeholder="Type a command, e.g. Please dance" autocomplete="off"><button class="primary" type="submit">Send command</button></form>
+          <div class="quick"><button class="small" data-command="Please dance">Please dance</button><button class="small" data-command="Please nod">Please nod</button><button class="small" data-command="Tell me a joke">Tell a joke</button></div>
+          <p class="hint">Simulated speech text publishes to the local Luxo command bridge. Nothing is played aloud or sent to an external service.</p>
+        </div>
+      </article>
+      <article class="card">
+        <div class="card-head"><h2>Animation control</h2><span>Registered ROS animation actions · model-driven dry run</span></div>
+        <div class="card-body">
+          <div class="two"><div class="field"><label for="animationNameSelect">Animation</label><select id="animationNameSelect"></select></div><div class="field"><label for="animationSpeed">Speed <output id="animationSpeedValue">1.00×</output></label><input id="animationSpeed" class="range" type="range" min="0.1" max="2" step="0.05" value="1"></div></div>
+          <div class="touches" style="margin-top:11px"><button id="runAnimation" class="primary small">Run animation</button><button id="cancelAnimation" class="small">Cancel active</button><span class="sensor-chip" id="animationResult">No direct animation goal sent</span></div>
+          <p class="hint">Runs the same PlayAnimation action used by Luxo. Stop is a registered safe-return animation; Cancel requests action cancellation.</p>
+        </div>
+      </article>
+      <article class="card">
+        <div class="card-head"><h2>Lights</h2><span>Virtual light controller · ROS state telemetry</span></div>
+        <div class="card-body sensor-group">
+          <div class="sensor-row"><label class="sensor-chip" style="display:flex;align-items:center;gap:8px"><input id="lightsEnabled" type="checkbox" checked> Lights enabled</label><span class="sensor-chip" id="lightStateLabel">Waiting for simulated light state</span></div>
+          <div class="two"><div class="field"><label for="brightnessRange">Brightness <output id="brightnessValue">50%</output></label><input id="brightnessRange" class="range" type="range" min="0" max="1" step="0.01" value="0.5"></div><div class="field"><label for="colorTempRange">White temperature <output id="colorTempValue">50%</output></label><input id="colorTempRange" class="range" type="range" min="0" max="1" step="0.01" value="0.5"></div></div>
+          <div class="two"><div class="field"><label for="lightColor">Solid color</label><select id="lightColor"><option>white</option><option>red</option><option>orange</option><option>yellow</option><option>green</option><option>cyan</option><option>blue</option><option>purple</option></select></div><button id="sendLights" class="small">Apply light settings</button></div>
+          <p class="hint">Controls publish only to the simulator light-state service. Actual values appear when the virtual NeoPixel controller reports them.</p>
         </div>
       </article>
       <article class="card">
@@ -69,12 +86,12 @@
         </div>
       </article>
       <article class="card">
-        <div class="card-head"><h2>Person & emotion</h2><span>Mock camera detections · no camera access</span></div>
+        <div class="card-head"><h2>Camera signal injection</h2><span>Mock output channels · no camera access</span></div>
         <div class="card-body">
           <div class="person-controls"><label class="sensor-chip" style="display:flex;align-items:center;gap:8px"><input id="personPresent" type="checkbox" checked> Person visible</label><div class="field"><label for="emotion">Detected emotion</label><select id="emotion"><option>neutral</option><option>happy</option><option>sad</option><option>angry</option><option>surprise</option><option>fear</option><option>disgust</option></select></div></div>
           <div class="field" style="margin-top:11px"><label for="personDistance">Distance <output id="personDistanceValue">1.5 m</output></label><input id="personDistance" class="range" type="range" min="0.1" max="5" step="0.1" value="1.5"></div>
           <button id="sendVision" class="small" style="margin-top:10px">Publish person / emotion event</button>
-          <p class="hint">Mock detections publish `/camera/emotion`, `/camera/person_distance`, and `/sim/vision/person_present`.</p>
+          <p class="hint">Injects mock camera output channels without opening a camera; person-presence currently has no production behavior subscriber.</p>
         </div>
       </article>
       <article class="card">
@@ -90,6 +107,7 @@
 <script>
 const $=id=>document.getElementById(id);let latest={};
 const jointOrder=['base_to_L1','L1_to_L2','L2_to_L3','L3_to_L4'];
+const animationNames=['folded_wiggle','bouncy_wiggle','sleepy_melt','nod','shake','close','stop','gentle_sway','curious_exploration','breathing','attentive_listening','playful_bob','scanning_watch','settling_adjust','dreamy_drift','neck_stretch','sleep','yawning_stretch','shoulder_shimmy','look_around_casual','contented_sigh','head_bobbing','tail_wag','pondering','excited','sad','playful','startled','curious','think','stretch','dance','idle'];
 const colors={INITIALIZING:'#328dff',IDLE:'#f0f4ff',ANIMATING:'#e7e9f2',VOICE_FOLLOWING:'#9ba8ff',COLLISION_AVOIDING:'#ff9c36',RETURNING_HOME:'#c9ec9e',ESCAPE_MODE:'#ff3b55',USER_CONTROL:'#ffd447',EMOTION_REACTING:'#bf70ff',PETTING:'#ff69b4',ERROR:'#ff3b55',SHUTDOWN:'#80838c'};
 function log(text){const row=document.createElement('div');row.className='log-line';row.textContent=new Date().toLocaleTimeString()+'  '+text;$('eventLog').prepend(row);while($('eventLog').children.length>30)$('eventLog').lastChild.remove()}
 async function send(event){try{const r=await fetch('/api/events',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(event)});const data=await r.json();if(!r.ok)throw new Error(data.error||r.statusText);log('Injected '+event.type+(event.text?' · '+event.text:''));return true}catch(e){log('Rejected · '+e.message);return false}}
@@ -100,7 +118,7 @@ function update(d){latest=d;$('connectionDot').classList.remove('off');$('connec
  const ev=d.direction_evidence||{};$('directionEvidence').textContent=ev.measured_mic_angle==null?'Waiting for estimator evidence.':`requested mic ${Number(ev.requested_mic_angle).toFixed(1)}° · measured mic ${Number(ev.measured_mic_angle).toFixed(1)}° · robot ${Number(ev.robot_angle).toFixed(1)}° · error ${Number(ev.error_degrees||0).toFixed(2)}°`;
  const m=new Map((d.joint_names||[]).map((n,i)=>[n,Number((d.positions||[])[i]||0)]));window.luxoJointPositions=Object.fromEntries(m);window.dispatchEvent(new CustomEvent('luxo-joints',{detail:window.luxoJointPositions}));$('jointGrid').innerHTML=jointOrder.map(n=>`<div class="joint"><label>${n.replaceAll('_',' ')}</label><b>${((m.get(n)||0)*180/Math.PI).toFixed(1)}°</b></div>`).join('');drawRobot(m,aura);
  const s=d.sensors||{};for(const [id,key,label] of [['frontCollision','front_collision','Front'],['leftCollision','left_collision','Left'],['rightCollision','right_collision','Right']]){$(id).textContent=`${label} ${s[key]?'collision':'clear'}`;$(id).classList.toggle('active',!!s[key])}
- if(s.emotion)$('emotion').value=s.emotion;if(s.person_present!==undefined)$('personPresent').checked=s.person_present;$('collisionEvidence').textContent=[s.collision_details,s.front_severity&&`front ${s.front_severity}`,s.left_severity&&`left ${s.left_severity}`,s.right_severity&&`right ${s.right_severity}`,s.petting_event,s.gesture_result].filter(Boolean).join(' · ')||'Waiting for collision/petting consumer outputs.';
+ if(s.emotion)$('emotion').value=s.emotion;if(s.person_present!==undefined)$('personPresent').checked=s.person_present;if(s.light_state){const l=s.light_state;if(typeof l.enabled==='boolean')$('lightsEnabled').checked=l.enabled;if(Number.isFinite(Number(l.brightness))){$('brightnessRange').value=l.brightness;$('brightnessValue').textContent=Math.round(Number(l.brightness)*100)+'%'}if(Number.isFinite(Number(l.color_temperature))){$('colorTempRange').value=l.color_temperature;$('colorTempValue').textContent=Math.round(Number(l.color_temperature)*100)+'%'}if(Array.isArray(l.rgbw))$('lightStateLabel').textContent=`${l.simulated?'SIM':'LIVE'} · ${l.state|| (l.enabled===false?'off':'on')} · ${l.effect||'solid'} · ${l.pixel_count||0} px · RGBW ${l.rgbw.join('/')}`;else $('lightStateLabel').textContent=l.enabled===false?'Lights disabled':'Lights enabled'}if(s.animation_result)$('animationResult').textContent=`${s.animation_result.message} · ${Number(s.animation_result.duration||0).toFixed(1)} s`;else if(s.animation_error)$('animationResult').textContent=s.animation_error;else if(s.animation_request)$('animationResult').textContent=`${s.animation_request} · ${Number(s.animation_speed||1).toFixed(2)}×`; $('collisionEvidence').textContent=[s.collision_details,s.front_severity&&`front ${s.front_severity}`,s.left_severity&&`left ${s.left_severity}`,s.right_severity&&`right ${s.right_severity}`,s.petting_event,s.gesture_result].filter(Boolean).join(' · ')||'Waiting for collision/petting consumer outputs.';
 }
 function drawRobot(joints,aura){if($('robotCanvas2D').hidden)return;const c=$('robotCanvas2D'),ctx=c.getContext('2d'),rect=c.getBoundingClientRect(),dpr=window.devicePixelRatio||1;c.width=Math.max(1,rect.width*dpr);c.height=Math.max(1,rect.height*dpr);ctx.setTransform(dpr,0,0,dpr,0,0);const w=rect.width,h=rect.height;ctx.clearRect(0,0,w,h);
  ctx.strokeStyle='#263449';ctx.lineWidth=1;for(let i=0;i<4;i++){const y=h-24-i*22;ctx.beginPath();ctx.moveTo(16,y);ctx.lineTo(w-12,y);ctx.stroke()}
@@ -135,6 +153,7 @@ $('proximityRange').addEventListener('input',e=>$('proximityValue').textContent=
 for(const side of ['left','right'])$(side+'Distance').addEventListener('input',e=>$(side+'DistanceValue').textContent=Number(e.target.value).toFixed(2)+' m');$('sendDistances').addEventListener('click',()=>Promise.all(['left','right'].map(side=>send({type:'distance',side,metres:Number($(side+'Distance').value)}))));
 document.querySelectorAll('[data-side]').forEach(b=>{let active=false;b.addEventListener('click',async()=>{active=!active;b.classList.toggle('touch-btn',active);await send({type:'collision',side:b.dataset.side,active})})});
 $('personDistance').addEventListener('input',e=>$('personDistanceValue').textContent=Number(e.target.value).toFixed(1)+' m');$('sendVision').addEventListener('click',()=>send({type:'vision',person_present:$('personPresent').checked,emotion:$('emotion').value,metres:Number($('personDistance').value)}));
+$('animationNameSelect').innerHTML=animationNames.map(n=>`<option value="${n}">${n.replaceAll('_',' ')}</option>`).join('');$('animationNameSelect').value='dance';$('animationSpeed').addEventListener('input',e=>$('animationSpeedValue').textContent=Number(e.target.value).toFixed(2)+'×');$('runAnimation').addEventListener('click',()=>send({type:'animation',name:$('animationNameSelect').value,speed:Number($('animationSpeed').value)}));$('cancelAnimation').addEventListener('click',()=>send({type:'cancel_animation'}));$('brightnessRange').addEventListener('input',e=>$('brightnessValue').textContent=Math.round(Number(e.target.value)*100)+'%');$('colorTempRange').addEventListener('input',e=>$('colorTempValue').textContent=Math.round(Number(e.target.value)*100)+'%');$('sendLights').addEventListener('click',()=>Promise.all([send({type:'light_control',enabled:$('lightsEnabled').checked}),send({type:'brightness',value:Number($('brightnessRange').value)}),send({type:'color_temperature',value:Number($('colorTempRange').value)}),send({type:'light_color',color:$('lightColor').value})]));
 window.addEventListener('resize',()=>drawRobot(new Map((latest.joint_names||[]).map((n,i)=>[n,Number((latest.positions||[])[i]||0)])),selectedAura(latest)));
 poll();setInterval(poll,300);log('Dashboard ready; audio playback and physical sensor access are disabled.');
 </script>

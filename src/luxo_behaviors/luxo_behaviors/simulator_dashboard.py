@@ -9,7 +9,9 @@ from urllib.parse import urlparse
 
 import rclpy
 from ament_index_python.packages import get_package_share_directory
+from rclpy.action import ActionClient
 from rclpy.node import Node
+from luxo_interfaces.action import PlayAnimation
 from sensor_msgs.msg import JointState
 from std_msgs.msg import Bool, Float32, Int16, String, UInt8
 
@@ -46,6 +48,8 @@ class SimulatorDashboard(Node):
 
         self._events = queue.Queue(maxsize=64)
         self._mesh_dir = Path(get_package_share_directory("roarm")) / "meshes"
+        self._animation_client = ActionClient(self, PlayAnimation, "play_animation")
+        self._active_animation_goal = None
         self._lock = threading.Lock()
         self._snapshot = {
             "state": "INITIALIZING",
@@ -91,6 +95,10 @@ class SimulatorDashboard(Node):
             "person_present": self.create_publisher(
                 Bool, "/sim/vision/person_present", 10
             ),
+            "light_control": self.create_publisher(Bool, "/luxo/light_control", 10),
+            "brightness": self.create_publisher(String, "/luxo/brightness_control", 10),
+            "color_temperature": self.create_publisher(String, "/luxo/color_temp_control", 10),
+            "light_color": self.create_publisher(String, "/luxo/color_control", 10),
         }
 
         self.create_subscription(String, "/luxo/current_state", self._state_cb, 10)
@@ -116,6 +124,7 @@ class SimulatorDashboard(Node):
         self.create_subscription(String, "/gestures", self._gesture_result_cb, 10)
         self.create_subscription(String, "/camera/emotion", self._emotion_cb, 10)
         self.create_subscription(Float32, "/camera/person_distance", self._person_distance_cb, 10)
+        self.create_subscription(String, "/luxo/light_state", self._light_state_cb, 10)
 
         self._drain_timer = self.create_timer(0.02, self._drain_events)
         self._graph_timer = self.create_timer(1.0, self._refresh_graph)
@@ -330,6 +339,13 @@ class SimulatorDashboard(Node):
     def _person_distance_cb(self, msg):
         self._sensor_update(person_distance=float(msg.data))
 
+    def _light_state_cb(self, msg):
+        try:
+            state = json.loads(msg.data)
+        except json.JSONDecodeError:
+            state = {"error": "light-state telemetry was not valid JSON"}
+        self._sensor_update(light_state=state)
+
     def _sensor_update(self, **values):
         with self._lock:
             self._snapshot["sensors"].update(values)
@@ -344,7 +360,31 @@ class SimulatorDashboard(Node):
 
     def _publish_event(self, event):
         kind = event["type"]
-        if kind == "voice_command":
+        if kind == "animation":
+            if not self._animation_client.server_is_ready():
+                self._sensor_update(animation_error="play_animation action server unavailable")
+                return
+            goal = PlayAnimation.Goal()
+            goal.animation_name = event["name"]
+            goal.speed_multiplier = event["speed"]
+            goal.allow_interruption = True
+            goal.use_hardware_feedback = False
+            self._sensor_update(
+                animation_request=event["name"],
+                animation_speed=event["speed"],
+                animation_error="",
+            )
+            self._animation_client.send_goal_async(goal).add_done_callback(
+                self._animation_goal_response
+            )
+        elif kind == "cancel_animation":
+            handle = self._active_animation_goal
+            if handle is not None and handle.is_active:
+                handle.cancel_goal_async()
+                self._sensor_update(animation_cancel_requested=True)
+            else:
+                self._sensor_update(animation_cancel_requested=False)
+        elif kind == "voice_command":
             self._publishers[kind].publish(String(data=event["text"]))
             self._sensor_update(last_voice_command=event["text"])
         elif kind == "audio_direction":
@@ -381,6 +421,47 @@ class SimulatorDashboard(Node):
                 emotion=event["emotion"],
                 person_distance=event["metres"],
             )
+        elif kind == "light_control":
+            self._publishers[kind].publish(Bool(data=event["enabled"]))
+            self._sensor_update(light_control_requested=event["enabled"])
+        elif kind == "brightness":
+            self._publishers[kind].publish(String(data=f"brightness:{event['value']:.3f}"))
+            self._sensor_update(brightness_requested=event["value"])
+        elif kind == "color_temperature":
+            self._publishers[kind].publish(String(data=f"color_temp:{event['value']:.3f}"))
+            self._sensor_update(color_temperature_requested=event["value"])
+        elif kind == "light_color":
+            self._publishers[kind].publish(String(data=f"color:{event['color']}"))
+            self._sensor_update(light_color_requested=event["color"])
+
+    def _animation_goal_response(self, future):
+        try:
+            handle = future.result()
+        except Exception as exc:
+            self._sensor_update(animation_error=f"animation goal failed: {exc}")
+            return
+        if not handle.accepted:
+            self._sensor_update(animation_error="animation goal rejected")
+            return
+        self._active_animation_goal = handle
+        self._sensor_update(animation_cancel_requested=False, animation_error="")
+        handle.get_result_async().add_done_callback(self._animation_result)
+
+    def _animation_result(self, future):
+        try:
+            wrapped = future.result()
+            result = wrapped.result
+            self._sensor_update(
+                animation_result={
+                    "success": bool(result.success),
+                    "message": result.message,
+                    "duration": float(result.actual_duration),
+                    "state": result.final_state,
+                },
+                animation_cancel_requested=False,
+            )
+        except Exception as exc:
+            self._sensor_update(animation_error=f"animation result failed: {exc}")
 
     def destroy_node(self):
         self._drain_timer.cancel()

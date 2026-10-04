@@ -4,7 +4,7 @@ import math
 
 import pytest
 
-from luxo_behaviors.simulator_protocol import normalize_event
+from luxo_behaviors.simulator_protocol import ANIMATION_NAMES, normalize_event
 
 
 @pytest.mark.parametrize(
@@ -30,6 +30,30 @@ from luxo_behaviors.simulator_protocol import normalize_event
 )
 def test_normalize_valid_simulator_inputs(event, expected):
     assert normalize_event(event) == expected
+
+
+def test_registered_animation_catalog_is_thirty_three_and_accepts_safe_speed():
+    assert len(ANIMATION_NAMES) == 33
+    assert normalize_event({"type": "animation", "name": "dance", "speed": 1.25}) == {
+        "type": "animation",
+        "name": "dance",
+        "speed": 1.25,
+    }
+
+
+@pytest.mark.parametrize(
+    "event",
+    [
+        {"type": "animation", "name": "does_not_exist"},
+        {"type": "animation", "name": "dance", "speed": 2.1},
+        {"type": "brightness", "value": -0.1},
+        {"type": "color_temperature", "value": 1.1},
+        {"type": "light_color", "color": "infrared"},
+    ],
+)
+def test_animation_and_light_controls_reject_invalid_values(event):
+    with pytest.raises(ValueError):
+        normalize_event(event)
 
 
 @pytest.mark.parametrize(

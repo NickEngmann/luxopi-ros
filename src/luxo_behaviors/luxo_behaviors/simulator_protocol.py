@@ -8,6 +8,15 @@ DISTANCE_SIDES = {"left", "right"}
 COLLISION_SIDES = {"front", "left", "right"}
 GESTURES = {"left", "right", "up", "down", "near", "far", "none"}
 EMOTIONS = {"neutral", "happy", "sad", "angry", "surprise", "fear", "disgust"}
+ANIMATION_NAMES = {
+    "folded_wiggle", "bouncy_wiggle", "sleepy_melt", "nod", "shake", "close", "stop",
+    "gentle_sway", "curious_exploration", "breathing", "attentive_listening", "playful_bob",
+    "scanning_watch", "settling_adjust", "dreamy_drift", "neck_stretch", "sleep",
+    "yawning_stretch", "shoulder_shimmy", "look_around_casual", "contented_sigh",
+    "head_bobbing", "tail_wag", "pondering", "excited", "sad", "playful", "startled",
+    "curious", "think", "stretch", "dance", "idle",
+}
+LIGHT_COLORS = {"red", "orange", "yellow", "green", "cyan", "blue", "purple", "white"}
 MAX_COMMAND_CHARS = 2000
 MAX_EVENT_BYTES = 4096
 
@@ -30,6 +39,33 @@ def normalize_event(payload):
         if len(text) > MAX_COMMAND_CHARS:
             raise ValueError("voice command is too long")
         return {"type": kind, "text": text}
+
+    if kind == "animation":
+        name = payload.get("name")
+        if name not in ANIMATION_NAMES:
+            raise ValueError("unknown animation")
+        speed = _number(payload.get("speed", 1.0), "speed")
+        if not 0.1 <= speed <= 2.0:
+            raise ValueError("animation speed must be between 0.1 and 2.0")
+        return {"type": kind, "name": name, "speed": speed}
+
+    if kind == "cancel_animation":
+        return {"type": kind}
+
+    if kind == "light_control":
+        return {"type": kind, "enabled": _boolean(payload.get("enabled"), "enabled")}
+
+    if kind in {"brightness", "color_temperature"}:
+        level = _number(payload.get("value"), "value")
+        if not 0.0 <= level <= 1.0:
+            raise ValueError(f"{kind} must be between 0.0 and 1.0")
+        return {"type": kind, "value": level}
+
+    if kind == "light_color":
+        color = payload.get("color")
+        if color not in LIGHT_COLORS:
+            raise ValueError("unknown light color")
+        return {"type": kind, "color": color}
 
     if kind == "audio_direction":
         angle = _number(payload.get("degrees"), "degrees")
