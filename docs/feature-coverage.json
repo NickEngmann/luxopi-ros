@@ -1,0 +1,484 @@
+{
+  "inventory": {
+    "states": [
+      "IDLE",
+      "ANIMATING",
+      "VOICE_FOLLOWING",
+      "COLLISION_AVOIDING",
+      "RETURNING_HOME",
+      "ESCAPE_MODE",
+      "USER_CONTROL",
+      "EMOTION_REACTING",
+      "PETTING",
+      "ERROR",
+      "INITIALIZING",
+      "SHUTDOWN"
+    ],
+    "animations": [
+      {
+        "name": "attentive_listening",
+        "category": "idle",
+        "keyframes": 16,
+        "dimensions": [
+          6
+        ],
+        "duration_seconds": 8.9
+      },
+      {
+        "name": "bouncy_wiggle",
+        "category": "petting",
+        "keyframes": 12,
+        "dimensions": [
+          6
+        ],
+        "duration_seconds": 6.95
+      },
+      {
+        "name": "breathing",
+        "category": "idle",
+        "keyframes": 15,
+        "dimensions": [
+          6
+        ],
+        "duration_seconds": 13.4
+      },
+      {
+        "name": "close",
+        "category": "response",
+        "keyframes": 5,
+        "dimensions": [
+          6
+        ],
+        "duration_seconds": 10.03
+      },
+      {
+        "name": "contented_sigh",
+        "category": "idle",
+        "keyframes": 11,
+        "dimensions": [
+          6
+        ],
+        "duration_seconds": 9.1
+      },
+      {
+        "name": "curious",
+        "category": "action",
+        "keyframes": 12,
+        "dimensions": [
+          6
+        ],
+        "duration_seconds": 6.55
+      },
+      {
+        "name": "curious_exploration",
+        "category": "idle",
+        "keyframes": 16,
+        "dimensions": [
+          6
+        ],
+        "duration_seconds": 8.7
+      },
+      {
+        "name": "dance",
+        "category": "action",
+        "keyframes": 16,
+        "dimensions": [
+          6
+        ],
+        "duration_seconds": 8.05
+      },
+      {
+        "name": "dreamy_drift",
+        "category": "idle",
+        "keyframes": 15,
+        "dimensions": [
+          6
+        ],
+        "duration_seconds": 14.75
+      },
+      {
+        "name": "excited",
+        "category": "emotion",
+        "keyframes": 18,
+        "dimensions": [
+          6
+        ],
+        "duration_seconds": 10.05
+      },
+      {
+        "name": "folded_wiggle",
+        "category": "petting",
+        "keyframes": 10,
+        "dimensions": [
+          6
+        ],
+        "duration_seconds": 9.19
+      },
+      {
+        "name": "gentle_sway",
+        "category": "idle",
+        "keyframes": 17,
+        "dimensions": [
+          6
+        ],
+        "duration_seconds": 12.15
+      },
+      {
+        "name": "head_bobbing",
+        "category": "idle",
+        "keyframes": 12,
+        "dimensions": [
+          6
+        ],
+        "duration_seconds": 5.2
+      },
+      {
+        "name": "idle",
+        "category": "action",
+        "keyframes": 6,
+        "dimensions": [
+          6
+        ],
+        "duration_seconds": 4.95
+      },
+      {
+        "name": "look_around_casual",
+        "category": "idle",
+        "keyframes": 13,
+        "dimensions": [
+          6
+        ],
+        "duration_seconds": 8.1
+      },
+      {
+        "name": "neck_stretch",
+        "category": "idle",
+        "keyframes": 15,
+        "dimensions": [
+          6
+        ],
+        "duration_seconds": 11.8
+      },
+      {
+        "name": "nod",
+        "category": "response",
+        "keyframes": 12,
+        "dimensions": [
+          6
+        ],
+        "duration_seconds": 5.3
+      },
+      {
+        "name": "playful",
+        "category": "emotion",
+        "keyframes": 18,
+        "dimensions": [
+          6
+        ],
+        "duration_seconds": 9.9
+      },
+      {
+        "name": "playful_bob",
+        "category": "idle",
+        "keyframes": 16,
+        "dimensions": [
+          6
+        ],
+        "duration_seconds": 7.95
+      },
+      {
+        "name": "pondering",
+        "category": "idle",
+        "keyframes": 13,
+        "dimensions": [
+          6
+        ],
+        "duration_seconds": 9.7
+      },
+      {
+        "name": "sad",
+        "category": "emotion",
+        "keyframes": 15,
+        "dimensions": [
+          6
+        ],
+        "duration_seconds": 14.25
+      },
+      {
+        "name": "scanning_watch",
+        "category": "idle",
+        "keyframes": 16,
+        "dimensions": [
+          6
+        ],
+        "duration_seconds": 8.35
+      },
+      {
+        "name": "settling_adjust",
+        "category": "idle",
+        "keyframes": 16,
+        "dimensions": [
+          6
+        ],
+        "duration_seconds": 9.6
+      },
+      {
+        "name": "shake",
+        "category": "response",
+        "keyframes": 14,
+        "dimensions": [
+          6
+        ],
+        "duration_seconds": 7.3
+      },
+      {
+        "name": "shoulder_shimmy",
+        "category": "idle",
+        "keyframes": 14,
+        "dimensions": [
+          6
+        ],
+        "duration_seconds": 5.9
+      },
+      {
+        "name": "sleep",
+        "category": "idle",
+        "keyframes": 6,
+        "dimensions": [
+          6
+        ],
+        "duration_seconds": 5.12
+      },
+      {
+        "name": "sleepy_melt",
+        "category": "petting",
+        "keyframes": 11,
+        "dimensions": [
+          6
+        ],
+        "duration_seconds": 10.25
+      },
+      {
+        "name": "startled",
+        "category": "emotion",
+        "keyframes": 18,
+        "dimensions": [
+          6
+        ],
+        "duration_seconds": 10.35
+      },
+      {
+        "name": "stop",
+        "category": "response",
+        "keyframes": 3,
+        "dimensions": [
+          6
+        ],
+        "duration_seconds": 2.59
+      },
+      {
+        "name": "stretch",
+        "category": "action",
+        "keyframes": 20,
+        "dimensions": [
+          6
+        ],
+        "duration_seconds": 13.9
+      },
+      {
+        "name": "tail_wag",
+        "category": "idle",
+        "keyframes": 13,
+        "dimensions": [
+          6
+        ],
+        "duration_seconds": 6.8
+      },
+      {
+        "name": "think",
+        "category": "action",
+        "keyframes": 15,
+        "dimensions": [
+          6
+        ],
+        "duration_seconds": 8.7
+      },
+      {
+        "name": "yawning_stretch",
+        "category": "idle",
+        "keyframes": 14,
+        "dimensions": [
+          6
+        ],
+        "duration_seconds": 10.75
+      }
+    ],
+    "voice_command_ids": {
+      "1": "wake_word",
+      "2": "wake_word",
+      "104": "turn_off_light",
+      "103": "turn_on_light",
+      "105": "increase_brightness",
+      "106": "decrease_brightness",
+      "107": "set_brightness_max",
+      "108": "set_brightness_min",
+      "109": "increase_color_temp",
+      "110": "decrease_color_temp",
+      "111": "set_color_temp_max",
+      "112": "set_color_temp_min",
+      "116": "set_color_red",
+      "117": "set_color_orange",
+      "118": "set_color_yellow",
+      "119": "set_color_green",
+      "120": "set_color_cyan",
+      "121": "set_color_blue",
+      "122": "set_color_purple",
+      "123": "set_color_white",
+      "80": "wake_up",
+      "113": "wake_up",
+      "115": "wake_up",
+      "81": "go_to_sleep",
+      "82": "go_to_sleep",
+      "93": "go_to_sleep",
+      "114": "go_to_sleep"
+    }
+  },
+  "features": [
+    {
+      "id": "animations",
+      "input": "/roarm/animation_command",
+      "consumer": "animation_command",
+      "offline_evidence": "tests/test_feature_contract.py",
+      "offline_scope": "trajectory-generation",
+      "ros_scope": "motion-agent native action suite pending",
+      "physical": "unvalidated"
+    },
+    {
+      "id": "voice_direction",
+      "input": "/sim/audio_direction",
+      "consumer": "sim_direction_node then motion controller",
+      "offline_evidence": "tests/test_direction_estimation.py",
+      "offline_scope": "actual delayed PCM\u2192GCC angle",
+      "ros_scope": "native joint-turn pending",
+      "physical": "unvalidated"
+    },
+    {
+      "id": "voice_conversation",
+      "input": "/voice/command",
+      "consumer": "voice-event bridge",
+      "offline_evidence": "AI event service suite",
+      "offline_scope": "offline model+bridge",
+      "ros_scope": "native speech consumer pending",
+      "physical": "unvalidated"
+    },
+    {
+      "id": "collision",
+      "input": "/i2c/vl53_left/distance",
+      "consumer": "collision_node",
+      "offline_evidence": "tests/test_collision_faults.py",
+      "offline_scope": "actual callback classification",
+      "ros_scope": "native controller collision pending",
+      "physical": "unvalidated"
+    },
+    {
+      "id": "touch_petting",
+      "input": "/touch_sensors/head_top",
+      "consumer": "collision_node then behavior coordinator",
+      "offline_evidence": "tests/test_state_scenarios.py; tests/test_collision_faults.py",
+      "offline_scope": "state interruption only",
+      "ros_scope": "raw touch\u2192petting motion pending",
+      "physical": "unvalidated"
+    },
+    {
+      "id": "gestures",
+      "input": "/i2c/apds9960/gesture",
+      "consumer": "collision_node passthrough /gestures",
+      "offline_evidence": "tests/test_feature_contract.py",
+      "offline_scope": "actual passthrough callback",
+      "ros_scope": "no gesture-motion consumer exists",
+      "physical": "unvalidated"
+    },
+    {
+      "id": "vision_emotion",
+      "input": "/camera/emotion",
+      "consumer": "camera or sim behavior controller",
+      "offline_evidence": "motion/UI suite pending",
+      "offline_scope": "injected message only pending",
+      "ros_scope": "vendor inference unmeasured",
+      "physical": "unvalidated"
+    },
+    {
+      "id": "vision_person_distance",
+      "input": "/camera/person_distance",
+      "consumer": "camera interaction",
+      "offline_evidence": "pending",
+      "offline_scope": "no inference claim",
+      "ros_scope": "consumer behavior pending",
+      "physical": "unvalidated"
+    },
+    {
+      "id": "lamp_on_off",
+      "input": "/luxo/light_control",
+      "consumer": "state_manager",
+      "offline_evidence": "tests/test_feature_contract.py",
+      "offline_scope": "actual callback+LED sink",
+      "ros_scope": "native visual pending",
+      "physical": "unvalidated"
+    },
+    {
+      "id": "brightness",
+      "input": "/luxo/brightness_control",
+      "consumer": "state_manager",
+      "offline_evidence": "tests/test_feature_contract.py",
+      "offline_scope": "actual callback+LED sink",
+      "ros_scope": "native visual pending",
+      "physical": "unvalidated"
+    },
+    {
+      "id": "color_temperature",
+      "input": "/luxo/color_temp_control",
+      "consumer": "state_manager",
+      "offline_evidence": "tests/test_feature_contract.py",
+      "offline_scope": "actual callback+LED sink",
+      "ros_scope": "native visual pending",
+      "physical": "unvalidated"
+    },
+    {
+      "id": "color",
+      "input": "/luxo/color_control",
+      "consumer": "state_manager",
+      "offline_evidence": "tests/test_feature_contract.py",
+      "offline_scope": "all8actual RGBW colors",
+      "ros_scope": "native visual pending",
+      "physical": "unvalidated"
+    },
+    {
+      "id": "manual_interaction",
+      "input": "hardware feedback / dynamic-adaptation motor torque",
+      "consumer": "dynamic adaptation",
+      "offline_evidence": "motion suite pending",
+      "offline_scope": "physical UART/torque feature; simulator equivalent pending",
+      "ros_scope": "native controller pending",
+      "physical": "unvalidated"
+    },
+    {
+      "id": "watchdog",
+      "input": "/luxo/current_state",
+      "consumer": "watchdog",
+      "offline_evidence": "pending",
+      "offline_scope": "timer recovery pending",
+      "ros_scope": "fault recovery pending",
+      "physical": "unvalidated"
+    },
+    {
+      "id": "states",
+      "input": "/luxo/request_state_transition",
+      "consumer": "state_manager",
+      "offline_evidence": "tests/test_state_scenarios.py",
+      "offline_scope": "all12 actual state methods",
+      "ros_scope": "native service scenarios pending",
+      "physical": "unvalidated"
+    }
+  ],
+  "vendor_catalog_note": "resource/voice_command.md is the DFRobot vendor catalog; only inventory.voice_command_ids are mapped in LuxoPI. Vendor navigation/QR/tag features are not implemented guarantees."
+}
