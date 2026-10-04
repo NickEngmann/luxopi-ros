@@ -8,6 +8,7 @@ if os.environ.get('ROS_DOMAIN_ID')!='73' or os.environ.get('ROS_LOCALHOST_ONLY')
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import Bool,String
+from luxo_interfaces.srv import RequestStateTransition
 
 
 def main():
@@ -36,6 +37,14 @@ def main():
     try:
         wait(lambda:bool(latest))
         assert latest.get('simulated') is True,'Physical lamp sink unexpectedly selected'
+        states=node.create_client(RequestStateTransition,'/luxo/request_state_transition')
+        assert states.wait_for_service(timeout_sec=5),'State manager service absent'
+        request=RequestStateTransition.Request()
+        request.requested_state='IDLE';request.requesting_node='lighting_scenarios';request.priority=100;request.force=True
+        response=states.call_async(request)
+        wait(response.done)
+        assert response.result().success
+        wait(lambda:latest.get('state')=='IDLE' and latest.get('effect')=='solid',timeout=8)
         check('lamp_on','light',Bool(data=True),lambda s:s['enabled']) if not latest.get('enabled') else None
         check('brightness_actual_consumer','brightness',String(data='brightness:0.25'),lambda s:s['brightness']==.25)
         for color,rgb in [('red',[255,0,0,0]),('blue',[0,0,255,0]),('green',[0,255,0,0])]:
