@@ -337,11 +337,11 @@ class VoiceBehavior:
         """Request transition to VOICE_FOLLOWING state."""
         try:
             if hasattr(self, '_transition_to_state'):
-                success = self._transition_to_state(LuxoState.VOICE_FOLLOWING)
-                if success:
-                    self.node.get_logger().info("Successfully transitioned to VOICE_FOLLOWING state")
-                else:
-                    self.node.get_logger().warn("Failed to transition to VOICE_FOLLOWING state")
+                # State requests are asynchronous. The coordinator observes and
+                # logs the eventual service result; a returned Future is not a
+                # success boolean.
+                self._transition_to_state(LuxoState.VOICE_FOLLOWING)
+                self.node.get_logger().debug("Requested VOICE_FOLLOWING state")
             elif hasattr(self, 'request_state_transition_client'):
                 # Use the service client directly if available
                 self._request_voice_following_state_via_service()
