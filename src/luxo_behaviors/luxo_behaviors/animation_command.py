@@ -22,6 +22,7 @@ from luxo_behaviors.animation_plugin_base import AnimationPlugin
 # Import state machine classes and utilities
 from luxo_behaviors.state_machine import LuxoState
 from luxo_behaviors.shared_utils import StateUtils
+from luxo_behaviors.motion_control import AnimationGoalTracker
 
 
 class AnimationCommandActionServer(Node):
@@ -135,7 +136,10 @@ class AnimationCommandActionServer(Node):
         # Action server state
         self._goal_handle = None
         self._goal_lock = threading.Lock()
-        self._cancel_requested = False
+        self._goal_tracker = AnimationGoalTracker()
+        # A replacement goal requests cancellation, then waits here until the
+        # previous goal has stopped publishing targets.
+        self._execution_lock = threading.Lock()
         
         # Movement source tracking
         self.movement_source = "idle"
@@ -354,12 +358,10 @@ class AnimationCommandActionServer(Node):
             # Cancel any existing goal
             if self._goal_handle is not None and self._goal_handle.is_active:
                 self.get_logger().info('Cancelling previous animation goal')
-                # Don't call canceled() directly - just mark for cancellation
-                self._cancel_requested = True
-                # The executing goal will check this flag and cancel itself
-                
+                self._goal_tracker.cancel(self._goal_handle)
+
             self._goal_handle = goal_handle
-            self._cancel_requested = False
+            self._goal_tracker.accept(goal_handle)
         
         # Execute the goal immediately
         goal_handle.execute()
@@ -368,20 +370,23 @@ class AnimationCommandActionServer(Node):
         """Accept or reject a cancel request."""
         self.get_logger().info('Received cancel request')
         with self._goal_lock:
-            self._cancel_requested = True
+            self._goal_tracker.cancel(goal_handle)
         return CancelResponse.ACCEPT
     
     def execute_callback(self, goal_handle):
         """Execute the animation goal (called by action server)."""
-        # Now we execute in the callback thread
-        result = self._execute_animation(goal_handle)
-        return result
+        try:
+            with self._execution_lock:
+                return self._execute_animation(goal_handle)
+        finally:
+            self._goal_tracker.finish(goal_handle)
     
     def _execute_animation(self, goal_handle):
         """Execute animation in the action server thread."""
         start_time = time.time()
         collision_interruptions = 0
         final_state = "completed"
+        cancel_event = self._goal_tracker.event_for(goal_handle)
         
         # Reset collision preemption flag
         self.collision_preempted = False
@@ -390,7 +395,27 @@ class AnimationCommandActionServer(Node):
             goal = goal_handle.request
             animation_name = goal.animation_name
             speed_multiplier = goal.speed_multiplier if 0.1 <= goal.speed_multiplier <= 2.0 else 1.0
-            
+
+            # A goal may be replaced while waiting for the execution lock.
+            # Do not publish status or transition the robot for an already
+            # superseded request.
+            if cancel_event.is_set():
+                result = PlayAnimation.Result()
+                result.success = False
+                result.message = f"Animation {animation_name} preempted before start"
+                result.actual_duration = 0.0
+                result.collision_interruptions = 0
+                result.final_state = (
+                    "canceled" if goal_handle.is_cancel_requested else "preempted"
+                )
+                result.final_positions = list(self.current_positions)
+                if goal_handle.is_active:
+                    if goal_handle.is_cancel_requested:
+                        goal_handle.canceled()
+                    else:
+                        goal_handle.abort()
+                return result
+
             self.get_logger().info(
                 f'Executing animation: {animation_name} with speed {speed_multiplier}'
             )
@@ -441,12 +466,11 @@ class AnimationCommandActionServer(Node):
             total_duration = sum(adjusted_durations)
             
             for i, (keyframe, duration) in enumerate(zip(keyframes, adjusted_durations)):
-                # Check for cancel request (NOT checking goal_handle methods)
-                with self._goal_lock:
-                    if self._cancel_requested:
-                        final_state = "preempted"
-                        self.get_logger().info("Animation preempted by cancel request")
-                        break
+                # Cancellation belongs to this goal, not a server-wide flag.
+                if cancel_event.is_set():
+                    final_state = "canceled" if goal_handle.is_cancel_requested else "preempted"
+                    self.get_logger().info(f"Animation stopped: {final_state}")
+                    break
                 
                 # Check if goal handle is still valid before proceeding
                 if not goal_handle.is_active:
@@ -496,12 +520,25 @@ class AnimationCommandActionServer(Node):
                 )
                 
                 # Move to position
-                self.move_to_position(noisy_keyframe, duration, easing=True, animation_name=animation_name)
+                completed = self.move_to_position(
+                    noisy_keyframe,
+                    duration,
+                    easing=True,
+                    animation_name=animation_name,
+                    cancel_event=cancel_event,
+                )
+
+                if not completed:
+                    final_state = "canceled" if goal_handle.is_cancel_requested else "preempted"
+                    break
                 
                 # If collision interrupted, increment counter
                 if collision_status != "safe":
                     collision_interruptions += 1
-            
+
+            if final_state == "completed" and cancel_event.is_set():
+                final_state = "canceled" if goal_handle.is_cancel_requested else "preempted"
+
             # Animation complete
             self.is_animating = False
             actual_duration = time.time() - start_time
@@ -525,6 +562,8 @@ class AnimationCommandActionServer(Node):
                 if goal_handle.is_active:
                     if final_state == "completed":
                         goal_handle.succeed()
+                    elif final_state == "canceled":
+                        goal_handle.canceled()
                     else:
                         # For any non-completed state, abort
                         goal_handle.abort()
@@ -884,7 +923,10 @@ class AnimationCommandActionServer(Node):
         else:
             return 1 - pow(-2 * t + 2, 3) / 2
     
-    def move_to_position(self, positions, duration=1.0, easing=True, animation_name=None):
+    def move_to_position(
+        self, positions, duration=1.0, easing=True, animation_name=None,
+        cancel_event=None,
+    ):
         """Move to a specific position over a duration with optional easing."""
         start_positions = self.target_positions.copy()
         start_time = self.get_clock().now()
@@ -909,6 +951,9 @@ class AnimationCommandActionServer(Node):
         
         elapsed_time = 0.0
         while elapsed_time < adjusted_duration:
+            if cancel_event is not None and cancel_event.is_set():
+                return False
+
             current_time = self.get_clock().now()
             elapsed_time = (current_time - start_time).nanoseconds / 1e9
             progress = min(1.0, elapsed_time / adjusted_duration)
@@ -938,7 +983,7 @@ class AnimationCommandActionServer(Node):
         
         # Final publish at target position
         self.publish_joint_states_target()
-        
+
         return True
     
     def start_animation(self, keyframes, durations, animation_name=None):

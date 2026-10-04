@@ -8,8 +8,21 @@ import os
 import subprocess
 import atexit
 from std_msgs.msg import String
-from queue import Queue
+from queue import Empty, Full, Queue
 import traceback
+from dataclasses import dataclass, field
+
+
+@dataclass
+class _WriteRequest:
+    """A serial write and its completion result."""
+
+    payload: bytes
+    completion: threading.Event = field(default_factory=threading.Event)
+    succeeded: bool = False
+
+
+_STOP_WRITER = object()
 
 class SerialManager:
     """
@@ -41,9 +54,11 @@ class SerialManager:
         self._read_thread = None
         self._read_thread_active = False
         
-        # Command queue for thread-safe writes
-        self._write_queue = Queue()
-        self._write_lock = threading.Lock()
+        # All serial writes (commands and heartbeats) pass through one writer.
+        # send_command waits for completion to preserve its existing bool API.
+        self._write_queue = Queue(maxsize=100)
+        self._write_thread = None
+        self._write_timeout = 2.0
         
         # Callback for data received
         self.data_callback = None
@@ -129,6 +144,7 @@ class SerialManager:
                     port=self.serial_port, 
                     baudrate=self.baud_rate, 
                     timeout=1.0,
+                    write_timeout=1.0,
                     dsrdtr=None,
                 )
                 
@@ -142,6 +158,13 @@ class SerialManager:
                 
                 self._connection_active = True
                 self._running = True
+
+                self._write_thread = threading.Thread(
+                    target=self._write_loop,
+                    name="serial-writer",
+                    daemon=True,
+                )
+                self._write_thread.start()
             
             self.node.get_logger().info(f"Serial port {self.serial_port} connected successfully at {self.baud_rate} baud")
             
@@ -175,10 +198,6 @@ class SerialManager:
     
     def send_command(self, cmd_str, description=""):
         """Send a command to the robot arm (thread-safe)."""
-        if not self.is_connected():
-            self.node.get_logger().error("Cannot send command: Serial connection is not active")
-            return False
-        
         try:
             # Add description to logs
             if description:
@@ -188,23 +207,55 @@ class SerialManager:
             if not cmd_str.endswith('\r\n'):
                 cmd_str = cmd_str.rstrip('\n') + '\r\n'
             
-            # Thread-safe write
-            with self._write_lock:
-                if self._ser and self._ser.is_open:
-                    self._ser.write(cmd_str.encode())
-                    self._ser.flush()
-                else:
+            request = _WriteRequest(cmd_str.encode())
+            # Serialize admission with close(): commands accepted before close
+            # stay ahead of its stop marker; later commands are rejected.
+            with self._state_lock:
+                if not self._connection_active or self._ser is None or not self._ser.is_open:
+                    self.node.get_logger().error("Cannot send command: Serial connection is not active")
                     return False
-            
-            # Update heartbeat time using ROS time
-            self._last_heartbeat_time = self.node.get_clock().now()
-            
-            return True
+                try:
+                    self._write_queue.put(request, timeout=0.1)
+                except Full:
+                    self.node.get_logger().error("Serial write queue is full; command was rejected")
+                    return False
+
+            if not request.completion.wait(self._write_timeout):
+                self.node.get_logger().error("Timed out waiting for serial command write")
+                return False
+            if request.succeeded:
+                # Update heartbeat time using ROS time only after a successful write.
+                self._last_heartbeat_time = self.node.get_clock().now()
+            return request.succeeded
         except Exception as e:
             self.node.get_logger().error(f"Serial write error: {e}")
             with self._state_lock:
                 self._connection_active = False
             return False
+
+    def _write_loop(self):
+        """Write queued payloads sequentially from the sole writer thread."""
+        while True:
+            request = self._write_queue.get()
+            try:
+                if request is _STOP_WRITER:
+                    return
+                try:
+                    with self._state_lock:
+                        ser = self._ser
+                        can_write = self._connection_active and ser is not None and ser.is_open
+                    if can_write:
+                        ser.write(request.payload)
+                        ser.flush()
+                        request.succeeded = True
+                except Exception as exc:
+                    self.node.get_logger().error(f"Serial write error: {exc}")
+                    with self._state_lock:
+                        self._connection_active = False
+            finally:
+                if request is not _STOP_WRITER:
+                    request.completion.set()
+                self._write_queue.task_done()
     
     def _read_loop(self):
         """Thread main method - reads from serial port"""
@@ -279,14 +330,8 @@ class SerialManager:
             if self.is_connected():
                 heartbeat_cmd = json.dumps({'T': 0}) + '\r\n'
                 
-                # Direct write for heartbeat (bypass queue)
-                with self._write_lock:
-                    if self._ser and self._ser.is_open:
-                        self._ser.write(heartbeat_cmd.encode())
-                        self._ser.flush()
-                        
-                self._last_heartbeat_time = self.node.get_clock().now()
-                self.node.get_logger().debug("Heartbeat sent")
+                if self.send_command(heartbeat_cmd, "Heartbeat"):
+                    self.node.get_logger().debug("Heartbeat sent")
         except Exception as e:
             self.node.get_logger().debug(f"Failed to send heartbeat: {e}")
             with self._state_lock:
@@ -348,12 +393,34 @@ class SerialManager:
         # Signal thread to stop
         with self._state_lock:
             self._running = False
+            self._connection_active = False
+            writer = self._write_thread
+
+        if writer is not None and writer.is_alive():
+            # Shutdown cancels queued commands, then lets any in-flight write
+            # finish before the port closes. New commands are rejected above.
+            while True:
+                try:
+                    pending = self._write_queue.get_nowait()
+                except Empty:
+                    break
+                try:
+                    if pending is not _STOP_WRITER:
+                        pending.succeeded = False
+                        pending.completion.set()
+                finally:
+                    self._write_queue.task_done()
+            self._write_queue.put(_STOP_WRITER)
         
         # Wait for thread to finish
         if (self._read_thread is not None and 
             self._read_thread.is_alive() and 
             threading.current_thread() != self._read_thread):
             self._read_thread.join(timeout=2.0)
+
+        if (writer is not None and writer.is_alive() and
+                threading.current_thread() != writer):
+            writer.join(timeout=2.5)
         
         # Close serial port
         with self._state_lock:
@@ -370,6 +437,7 @@ class SerialManager:
                     self._ser = None
             
             self._connection_active = False
+            self._write_thread = None
             
         self.node.get_logger().info("Serial connection closed")
 
