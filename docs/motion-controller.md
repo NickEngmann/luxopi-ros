@@ -18,6 +18,15 @@ Animation targets remain intact underneath the override and resume after voice
 following completes. The request path is asynchronous and never blocks a ROS
 callback.
 
+The simulation controller also consumes the ROS collision warning outputs. A
+warning immediately holds its current joint target while the state manager
+enters `COLLISION_AVOIDING`; `ESCAPE_MODE`, `ERROR`, and `SHUTDOWN` likewise
+hold simulated motion. Clearing all warnings requests the ordinary idle
+completion transition. This deliberately conservative simulated hold checks
+the arbitration boundary only; it does not model the physical escape trajectory
+or establish a hardware safety guarantee. `/sim/motion_status` exposes the
+state, active warning directions, target, current positions, and hold status.
+
 The simulator's current URDF contains four revolute joints with 0.5 rad/s
 velocity limits. The physical RoArm exposes additional actuator/metadata fields
 and uses hardware-specific base limits and firmware acceleration values. The

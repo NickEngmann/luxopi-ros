@@ -58,6 +58,7 @@ class SimulatorDashboard(Node):
             "direction": None,
             "direction_evidence": {},
             "voice_active": False,
+            "motion": {},
             "sensors": {},
             "graph_nodes": [],
         }
@@ -95,6 +96,7 @@ class SimulatorDashboard(Node):
         self.create_subscription(String, "/luxo/current_state", self._state_cb, 10)
         self.create_subscription(String, "/roarm/current_animation", self._animation_cb, 10)
         self.create_subscription(JointState, "/joint_states", self._joint_cb, 10)
+        self.create_subscription(String, "/sim/motion_status", self._motion_status_cb, 10)
         self.create_subscription(String, "/voice/transcript", self._transcript_cb, 10)
         self.create_subscription(String, "/voice/response", self._response_cb, 10)
         self.create_subscription(String, "/voice/status", self._status_cb, 10)
@@ -280,6 +282,13 @@ class SimulatorDashboard(Node):
 
     def _active_cb(self, msg):
         self._update(voice_active=bool(msg.data))
+
+    def _motion_status_cb(self, msg):
+        try:
+            data = json.loads(msg.data)
+        except json.JSONDecodeError:
+            data = {"error": "motion status was not valid JSON"}
+        self._update(motion=data)
 
     def _direction_evidence_cb(self, msg):
         try:

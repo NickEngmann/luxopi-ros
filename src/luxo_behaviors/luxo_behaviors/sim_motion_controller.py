@@ -1,6 +1,7 @@
 """Safe ROS simulation backend for the RoArm motion target interface."""
 
 import math
+import json
 import time
 
 import rclpy
@@ -18,6 +19,12 @@ from luxo_behaviors.joint_motion import (
 
 JOINT_NAMES = tuple(URDF_JOINT_LIMITS)
 VOICE_FOLLOW_STATES = {"IDLE", "VOICE_FOLLOWING", "ANIMATING", "PETTING", "EMOTION_REACTING"}
+MOTION_HOLD_STATES = {"COLLISION_AVOIDING", "ESCAPE_MODE", "ERROR", "SHUTDOWN"}
+
+
+def motion_is_frozen(state, collision_active):
+    """Hold the simulated arm during collision/safety states or raw collision warnings."""
+    return str(state).upper() in MOTION_HOLD_STATES or any(collision_active)
 
 
 class SimMotionController(Node):
@@ -45,6 +52,7 @@ class SimMotionController(Node):
         self.voice_direction = None
         self.voice_active = False
         self.current_state = "INITIALIZING"
+        self.collision_active = {"front": False, "left": False, "right": False}
         self.last_tick = time.monotonic()
 
         self.target_sub = self.create_subscription(
@@ -59,11 +67,35 @@ class SimMotionController(Node):
         self.state_sub = self.create_subscription(
             String, "/luxo/current_state", self.state_callback, 10
         )
+        self.collision_subscriptions = [
+            self.create_subscription(
+                Bool, topic, self._collision_callback(direction), 10
+            )
+            for direction, topic in (
+                ("front", "/head_collision_warning"),
+                ("left", "/left_collision_warning"),
+                ("right", "/right_collision_warning"),
+            )
+        ]
         self.states = self.create_client(
             RequestStateTransition, "/luxo/request_state_transition"
         )
         self.joint_pub = self.create_publisher(JointState, "/joint_states", 10)
+        self.motion_status = self.create_publisher(String, "/sim/motion_status", 10)
         self.timer = self.create_timer(1.0 / self.publish_rate, self.publish_step)
+
+    def _collision_callback(self, direction):
+        def receive(message):
+            was_active = any(self.collision_active.values())
+            self.collision_active[direction] = bool(message.data)
+            active = any(self.collision_active.values())
+            if active and not was_active and self.current_state not in {
+                "INITIALIZING", "COLLISION_AVOIDING", "ESCAPE_MODE", "ERROR", "SHUTDOWN"
+            }:
+                self._request_state("COLLISION_AVOIDING", completion=False, safety=True)
+            elif was_active and not active and self.current_state == "COLLISION_AVOIDING":
+                self._request_state("IDLE", completion=True, safety=True)
+        return receive
 
     def target_callback(self, message):
         try:
@@ -99,14 +131,14 @@ class SimMotionController(Node):
     def _request_completion(self):
         self._request_state("IDLE", completion=True)
 
-    def _request_state(self, requested_state, completion):
+    def _request_state(self, requested_state, completion, safety=False):
         if not self.states.service_is_ready():
             self.get_logger().warning("State manager unavailable; voice motion remains gated")
             return
         request = RequestStateTransition.Request()
         request.requested_state = requested_state
-        request.requesting_node = "voice_following"
-        request.priority = self.voice_priority
+        request.requesting_node = "behavior_coordinator" if safety else "voice_following"
+        request.priority = 100 if safety else self.voice_priority
         request.force = False
         request.completion = completion
         future = self.states.call_async(request)
@@ -140,7 +172,11 @@ class SimMotionController(Node):
             lower, upper = URDF_JOINT_LIMITS[JOINT_NAMES[0]]
             target[0] = min(upper, max(lower, base))
 
-        if self.current_state in {"ERROR", "SHUTDOWN"}:
+        safety_holds_motion = any(self.collision_active.values())
+        hold_requested = motion_is_frozen(
+            self.current_state, self.collision_active.values()
+        )
+        if hold_requested:
             target = list(self.limiter.positions)
 
         positions = self.limiter.step(target, dt)
@@ -150,6 +186,22 @@ class SimMotionController(Node):
         message.position = positions
         message.velocity = list(self.limiter.velocities)
         self.joint_pub.publish(message)
+        status = String()
+        status.data = json.dumps({
+            "state": self.current_state,
+            "collision_active": any(self.collision_active.values()),
+            "collision_directions": [
+                direction for direction, active in self.collision_active.items() if active
+            ],
+            "voice_override": bool(may_follow and not safety_holds_motion),
+            "motion_hold_requested": hold_requested,
+            "motion_frozen": hold_requested and all(
+                abs(velocity) < 1e-6 for velocity in self.limiter.velocities
+            ),
+            "positions": positions,
+            "target": target,
+        })
+        self.motion_status.publish(status)
 
 
 def main(args=None):

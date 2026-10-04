@@ -122,6 +122,13 @@ ros2 launch luxo_behaviors luxo_system.launch.py use_hardware:=true
 ros2 launch luxo_behaviors luxo_system.launch.py
 ```
 
+In simulation mode the browser control panel is enabled by default at
+`http://localhost:8080` (`enable_simulator_dashboard:=false` disables it). The
+panel injects bounded synthetic voice, direction, touch, gesture, proximity,
+distance, vision, and collision inputs and displays the live state, response,
+joint positions, and sensor outputs. Run the container with a loopback-only
+port mapping such as `-p 127.0.0.1:8080:8080` when opening it from the host.
+
 Simulation publishes one rate-limited `/joint_states` stream from the shared
 animation target topic and the checked-in four-joint URDF. It provides ROS joint
 states and TF, not Gazebo physics or contact simulation: the URDF currently has
@@ -132,6 +139,11 @@ camera are hardware-only launch paths; simulation voice direction enters through
 The text-only speech bridge defaults to a deterministic simulation backend and
 does not play audio. Hardware speech is opt-in with `enable_speech_bridge:=true`
 and `speech_backend:=local` plus a configured JSON argv service command.
+The simulation also runs the ROS-only collision classifier against injected
+sensor topics (`enable_sim_sensors:=false` disables it); no I2C or camera
+drivers are started in simulation. Collision warnings and safety FSM states
+hold simulated motion output. This is a software integration check, not a
+physical collision-response or stopping-distance validation.
 
 ### Full System with All Features
 ```bash

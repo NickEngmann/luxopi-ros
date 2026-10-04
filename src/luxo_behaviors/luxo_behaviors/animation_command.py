@@ -30,6 +30,14 @@ from luxo_behaviors.shared_utils import StateUtils
 from luxo_behaviors.motion_control import AnimationGoalTracker
 
 
+def scaled_duration(duration, speed_multiplier):
+    """Convert a nominal keyframe duration to wall time, exactly once."""
+    speed = float(speed_multiplier)
+    if not 0.1 <= speed <= 2.0:
+        speed = 1.0
+    return max(0.0, float(duration)) / speed
+
+
 class AnimationCommandActionServer(Node):
     def __init__(self):
         super().__init__('animation_command')
@@ -473,7 +481,7 @@ class AnimationCommandActionServer(Node):
             # Execute animation with progress feedback
             total_duration = sum(adjusted_durations)
             
-            for i, (keyframe, duration) in enumerate(zip(keyframes, adjusted_durations)):
+            for i, (keyframe, duration) in enumerate(zip(keyframes, durations)):
                 # Cancellation belongs to this goal, not a server-wide flag.
                 if cancel_event.is_set():
                     final_state = "canceled" if goal_handle.is_cancel_requested else "preempted"
@@ -925,7 +933,7 @@ class AnimationCommandActionServer(Node):
         start_positions = self.target_positions.copy()
         start_time = self.get_clock().now()
         
-        adjusted_duration = duration / self.speed_multiplier
+        adjusted_duration = scaled_duration(duration, self.speed_multiplier)
         
         # Store current animation name for tracking
         if animation_name:
@@ -983,7 +991,8 @@ class AnimationCommandActionServer(Node):
     def start_animation(self, keyframes, durations, animation_name=None):
         """Start an animation with keyframes and durations."""
         self.animation_steps = keyframes
-        self.step_durations = [d / self.speed_multiplier for d in durations]
+        # Keep nominal durations; move_to_position applies the speed exactly once.
+        self.step_durations = list(durations)
         self.current_step = 0
         self.is_animating = True
         self.current_animation_name = animation_name
@@ -1016,7 +1025,9 @@ class AnimationCommandActionServer(Node):
             # Cancel any existing timer
             if hasattr(self, 'animation_timer') and self.animation_timer:
                 self.animation_timer.cancel()
-            self.animation_timer = self.create_timer(duration, self._next_step_callback)
+            self.animation_timer = self.create_timer(
+                scaled_duration(duration, self.speed_multiplier), self._next_step_callback
+            )
         else:
             self.is_animating = False
             self.current_animation_name = None

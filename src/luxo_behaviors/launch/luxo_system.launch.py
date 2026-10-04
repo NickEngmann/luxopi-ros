@@ -61,8 +61,24 @@ def generate_launch_description():
     # Gesture detection argument
     declare_enable_gestures = DeclareLaunchArgument(
         'enable_gestures',
-        default_value='false',
-        description='Enable gesture detection with APDS9960 (default: false)'
+        default_value=PythonExpression(["'true' if '", use_hardware, "' == 'false' else 'false'"]),
+        description='Enable gesture passthrough (simulated inputs in simulation; APDS9960 on hardware)'
+    )
+
+    declare_enable_sim_sensors = DeclareLaunchArgument(
+        'enable_sim_sensors', default_value='true',
+        description='Run ROS-only collision and gesture classification on synthetic sensor topics'
+    )
+    declare_enable_simulator_dashboard = DeclareLaunchArgument(
+        'enable_simulator_dashboard',
+        default_value=PythonExpression(["'true' if '", use_hardware, "' == 'false' else 'false'"]),
+        description='Enable the browser simulator dashboard (simulation only)'
+    )
+    declare_simulator_host = DeclareLaunchArgument(
+        'simulator_host', default_value='0.0.0.0', description='Browser simulator bind address'
+    )
+    declare_simulator_port = DeclareLaunchArgument(
+        'simulator_port', default_value='8080', description='Browser simulator HTTP port'
     )
     
     # Depth collision argument with conditional default
@@ -343,7 +359,10 @@ def generate_launch_description():
         name='state_manager',
         output='screen',
         parameters=[
-            {'ros__parameters': {'log_level': 'info'}}
+            {'ros__parameters': {'log_level': 'info'}},
+            {'simulated_lighting': PythonExpression([
+                "'true' if '", use_hardware, "' == 'false' else 'false'"
+            ])},
         ]
         # No condition - runs in both hardware and simulation modes
     )
@@ -481,6 +500,20 @@ def generate_launch_description():
         condition=UnlessCondition(use_hardware)
     )
 
+    simulator_dashboard_node = Node(
+        package='luxo_behaviors',
+        executable='simulator_dashboard',
+        name='simulator_dashboard',
+        output='screen',
+        parameters=[{
+            'host': LaunchConfiguration('simulator_host'),
+            'port': LaunchConfiguration('simulator_port'),
+        }],
+        condition=IfCondition(PythonExpression([
+            "'", use_hardware, "' == 'false' and '", LaunchConfiguration('enable_simulator_dashboard'), "' == 'true'"
+        ]))
+    )
+
     # Collision detection logic node (hardware only, now uses I2C manager data)
     collision_logic_node = Node(
         package='luxo_behaviors',
@@ -494,7 +527,10 @@ def generate_launch_description():
             {'warning_threshold': 15.0},
             {'enable_gestures': enable_gestures}
         ],
-        condition=IfCondition(PythonExpression(["'", use_hardware, "' == 'true' and '", sense_collision, "' == 'true'"]))
+        condition=IfCondition(PythonExpression([
+            "'", use_hardware, "' == 'true' and '", sense_collision,
+            "' == 'true' or '", use_hardware, "' == 'false' and '", LaunchConfiguration('enable_sim_sensors'), "' == 'true'"
+        ]))
     )
 
     system_monitor_node = Node(
@@ -620,6 +656,10 @@ def generate_launch_description():
         declare_safety_distance,
         declare_sense_collision,
         declare_enable_gestures,
+        declare_enable_sim_sensors,
+        declare_enable_simulator_dashboard,
+        declare_simulator_host,
+        declare_simulator_port,
         declare_verbose,
         declare_camera_rotation,
         declare_enable_dynamic_adaptation,
@@ -655,6 +695,7 @@ def generate_launch_description():
         system_monitor_node,
         simulation_animation_node,
         sim_motion_controller_node,
+        simulator_dashboard_node,
         collision_detection_node,
         i2c_device_manager_node,
         collision_logic_node,

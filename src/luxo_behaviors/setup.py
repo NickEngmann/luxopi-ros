@@ -9,6 +9,11 @@ setup(
     name=package_name,
     version='0.0.1',
     packages=[package_name, package_name + '.animation_plugins'],
+    package_data={package_name: [
+        'simulator_ui.html',
+        'assets/vendor/*.js',
+        'assets/vendor/*.txt',
+    ]},
     data_files=[
         ('share/ament_index/resource_index/packages',
             ['resource/' + package_name]),
@@ -41,6 +46,7 @@ setup(
             'speech_bridge = luxo_behaviors.speech_bridge:main',
             'sim_direction_node = luxo_behaviors.sim_direction_node:main',
             'sim_motion_controller = luxo_behaviors.sim_motion_controller:main',
+            'simulator_dashboard = luxo_behaviors.simulator_dashboard:main',
         ],
     },
 )
