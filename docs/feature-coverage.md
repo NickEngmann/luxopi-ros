@@ -29,3 +29,10 @@ Coverage must be advanced only from actual observed consumer output: an accepted
 Native simulator scenarios run only with `ROS_DOMAIN_ID=73 ROS_LOCALHOST_ONLY=1`, using a controlled graph. The motion and dashboard suites are separate from this manifest. Their observed results should update the ROS-status fields once run; pending fields are intentional and do not represent successful integration.
 
 Unvalidated physical features include microphone wiring/acoustic VAD accuracy, actual motor torque adaptation, real stopping distance, LEDs/speaker electronics, camera stereo calibration and vendor neural-network inference. Delayed-array direction fixtures exercise the shared estimator, but room acoustics and real source locations are not established.
+
+Native environment check: the feature, direction, collision-fault and state
+suites also passed together inside the arm64 `ros:jazzy-ros-base` container:
+**134 passed in 1.91 seconds**. Sources were staged under
+`/tmp/luxopi-feature-smoke`, leaving the running ROS graph untouched. This checks
+native imports and deterministic consumer logic; it does not advance ROS action,
+service transport, dashboard rendering or physical-model evidence statuses.
