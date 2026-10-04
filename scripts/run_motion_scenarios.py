@@ -31,6 +31,7 @@ class Scenarios:
         self.current_state = None
         self.joints, self.targets, self.errors = [], [], []
         self.results=[]
+        self.expected_durations={}
         self.node.create_subscription(String, '/luxo/current_state', lambda msg:setattr(self,'current_state',msg.data),10)
         self.node.create_subscription(JointState, '/joint_states', lambda msg:self.position(msg,self.joints),100)
         self.node.create_subscription(JointState, '/joint_states_target', lambda msg:self.position(msg,self.targets),100)
@@ -159,8 +160,10 @@ class Scenarios:
             terminal=self.future(result,timeout=60)
             assert terminal.status==GoalStatus.STATUS_SUCCEEDED and terminal.result.success,(name,terminal)
             assert feedback,(name,'no action feedback')
+            expected=self.expected_durations.get(name,0)/2
+            assert terminal.result.actual_duration>=expected*.75,(name,'Requested speed was applied more than once',terminal.result.actual_duration,expected)
             self.record('animation_'+name,status=terminal.status,feedback=len(feedback),joint_frames=len(self.joints)-start,
-                        duration=float(terminal.result.actual_duration),final_state=terminal.result.final_state)
+                        duration=float(terminal.result.actual_duration),expected_duration_at_speed=expected,final_state=terminal.result.final_state)
 
 
 def main():
@@ -177,7 +180,9 @@ def main():
         suite.cancelled_dance();suite.preemption();suite.directions()
         if args.all_animations:
             manifest=Path(__file__).resolve().parents[1]/'docs/feature-coverage.json'
-            names=[item['name'] for item in json.loads(manifest.read_text())['inventory']['animations']]
+            entries=json.loads(manifest.read_text())['inventory']['animations']
+            suite.expected_durations={item['name']:item['duration_seconds'] for item in entries}
+            names=[item['name'] for item in entries]
             suite.playlist(names)
     except Exception as exc:
         error=str(exc)
