@@ -64,8 +64,8 @@ class SerialManager:
         self.data_callback = None
         
         # Tracking variables using ROS time
-        self._last_heartbeat_time = self.node.get_clock().now()
-        self.heartbeat_interval = 2.0  # seconds
+        self._last_feedback_poll_time = self.node.get_clock().now()
+        self.feedback_poll_interval = 2.0  # seconds
         
         # Create publisher for arm position feedback
         self.position_publisher = self.node.create_publisher(
@@ -168,8 +168,8 @@ class SerialManager:
             
             self.node.get_logger().info(f"Serial port {self.serial_port} connected successfully at {self.baud_rate} baud")
             
-            # Reset heartbeat timing using ROS time
-            self._last_heartbeat_time = self.node.get_clock().now()
+            # Reset feedback-poll timing using ROS time
+            self._last_feedback_poll_time = self.node.get_clock().now()
             
             # Start read thread if not already running
             if self._read_thread is None or not self._read_thread.is_alive():
@@ -177,8 +177,10 @@ class SerialManager:
                 self._read_thread = threading.Thread(target=self._read_loop, daemon=True)
                 self._read_thread.start()
             
-            # Send a ping to verify connection is working
-            self.send_command(json.dumps({'T': 0}), "Connection test ping")
+            # Request documented joint/coordinate feedback to verify that the
+            # controller is responding. T=0 is the vendor emergency-stop
+            # command, so it must never be used as a connection probe.
+            self.send_command(json.dumps({'T': 105}), "Connection feedback probe")
             
             return True
             
@@ -224,8 +226,8 @@ class SerialManager:
                 self.node.get_logger().error("Timed out waiting for serial command write")
                 return False
             if request.succeeded:
-                # Update heartbeat time using ROS time only after a successful write.
-                self._last_heartbeat_time = self.node.get_clock().now()
+                # Avoid an immediate duplicate position query after any command.
+                self._last_feedback_poll_time = self.node.get_clock().now()
             return request.succeeded
         except Exception as e:
             self.node.get_logger().error(f"Serial write error: {e}")
@@ -273,12 +275,13 @@ class SerialManager:
                     time.sleep(1.0)
                     continue
                 
-                # Check if we should send a heartbeat
+                # Position queries provide useful feedback; serial links do not
+                # need a T=0 "heartbeat" (that command is emergency stop).
                 current_time = self.node.get_clock().now()
-                time_since_heartbeat = (current_time - self._last_heartbeat_time).nanoseconds / 1e9
+                time_since_poll = (current_time - self._last_feedback_poll_time).nanoseconds / 1e9
                 
-                if time_since_heartbeat >= self.heartbeat_interval:
-                    self._send_heartbeat()
+                if time_since_poll >= self.feedback_poll_interval:
+                    self._poll_position_feedback()
                 
                 # Read from serial port
                 if ser.in_waiting > 0:
@@ -324,16 +327,16 @@ class SerialManager:
         except Exception as e:
             self.node.get_logger().error(f"Error processing binary data: {e}")
     
-    def _send_heartbeat(self):
-        """Send a heartbeat message to keep the connection alive"""
+    def _poll_position_feedback(self):
+        """Poll documented position feedback without touching emergency-stop state."""
         try:
             if self.is_connected():
-                heartbeat_cmd = json.dumps({'T': 0}) + '\r\n'
+                heartbeat_cmd = json.dumps({'T': 105}) + '\r\n'
                 
-                if self.send_command(heartbeat_cmd, "Heartbeat"):
-                    self.node.get_logger().debug("Heartbeat sent")
+                if self.send_command(heartbeat_cmd, "Position feedback poll"):
+                    self.node.get_logger().debug("Position feedback poll sent")
         except Exception as e:
-            self.node.get_logger().debug(f"Failed to send heartbeat: {e}")
+            self.node.get_logger().debug(f"Failed to poll position feedback: {e}")
             with self._state_lock:
                 self._connection_active = False
     

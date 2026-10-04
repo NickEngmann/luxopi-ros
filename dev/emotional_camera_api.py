@@ -3,10 +3,12 @@ import sys
 
 try:
     from luxo_behaviors.MultiMsgSync import TwoStageHostSeqSync
+    from luxo_behaviors.camera_queue import create_output_queues
 except ModuleNotFoundError:
     package_root = Path(__file__).resolve().parents[1] / "src" / "luxo_behaviors"
     sys.path.insert(0, str(package_root))
     from luxo_behaviors.MultiMsgSync import TwoStageHostSeqSync
+    from luxo_behaviors.camera_queue import create_output_queues
 import blobconverter
 import cv2
 import depthai as dai
@@ -191,10 +193,7 @@ with dai.Device() as device:
     device.startPipeline(create_pipeline(stereo))
 
     sync = TwoStageHostSeqSync()
-    queues = {}
-    # Create output queues
-    for name in ["color", "detection", "recognition"]:
-        queues[name] = device.getOutputQueue(name, maxSize=1, blocking=False)
+    queues = create_output_queues(device)
 
     # Create window only if showing preview
     if show_preview:
@@ -204,9 +203,11 @@ with dai.Device() as device:
         received_any = False
         for name, q in queues.items():
             # Add all msgs (color frames, object detections and age/gender recognitions) to the Sync class.
-            if q.has():
+            while q.has():
                 sync.add_msg(q.get(), name)
                 received_any = True
+                if name != "recognition":
+                    break
 
         msgs = sync.get_msgs()
         if msgs is not None:

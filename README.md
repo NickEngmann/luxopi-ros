@@ -427,12 +427,13 @@ This project is licensed under the MIT License - see [LICENSE](LICENSE) for deta
 
 ### Camera Pipeline Checks
 
-The camera node uses one-slot, non-blocking DepthAI output queues and a one-frame
-emotion queue. When inference falls behind, it replaces stale pending work with
-the newest frame; incomplete DepthAI sequence groups are capped at 16 so dropped
-outputs cannot grow host memory indefinitely. Framebuffer updates wait on the
-shutdown event instead of polling continuously, and retry callbacks do not sleep
-after reconnecting.
+The camera node uses one-slot, non-blocking DepthAI queues for color and
+detection frames, plus a bounded 256-message queue for per-face recognition
+outputs. The host drains all pending recognition messages each processing tick;
+the synchronizer caps incomplete frame sequences at 16 and evicts the oldest
+sequence. Emotion work is a one-frame latest-only queue. Framebuffer updates
+wait on the shutdown event instead of polling continuously, and retry callbacks
+do not sleep after reconnecting.
 
 The buffering and sequence-sync behavior has hardware-free tests:
 

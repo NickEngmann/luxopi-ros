@@ -4,7 +4,7 @@ import rclpy
 from rclpy.node import Node
 from rclpy.action import ActionClient
 from .MultiMsgSync import TwoStageHostSeqSync
-from .camera_queue import enqueue_latest
+from .camera_queue import create_output_queues, enqueue_latest
 import blobconverter
 import depthai as dai
 import numpy as np
@@ -777,16 +777,10 @@ class CameraInteraction(Node):
             
             # Initialize sync and queues
             self.sync = TwoStageHostSeqSync()
-            self.queues = {}
-            
-            # Create output queues
-            for name in ["color", "detection", "recognition"]:
-                # A stale host-side FIFO causes visible lag and can eventually
-                # backpressure the device pipeline. The sync layer handles
-                # occasional sequence gaps, so always prefer the newest data.
-                self.queues[name] = self.device.getOutputQueue(
-                    name, maxSize=1, blocking=False
-                )
+            # Frame-level messages use latest-only queues. Recognition uses a
+            # larger bounded queue because the two-stage network emits one
+            # result per detected face for each sequence.
+            self.queues = create_output_queues(self.device)
             
             # Create timer callback for processing camera data if not already created
             if self.timer is None:
@@ -912,7 +906,7 @@ class CameraInteraction(Node):
             # To avoid freezing (not necessary for this ObjDet model)
             if 15 < len(msgs):
                 node.warn(f"Removing first element! len {len(msgs)}")
-                msgs.popitem() # Remove first element
+                del msgs[next(iter(msgs))]  # Evict the oldest sequence.
 
         def get_msgs():
             global msgs
@@ -1168,9 +1162,12 @@ class CameraInteraction(Node):
             # Process all available messages
             for name, q in self.queues.items():
                 try:
-                    # Add all msgs (color frames, object detections and age/gender recognitions) to the Sync class.
-                    if q.has():
+                    # Drain every recognition result; unlike frame streams,
+                    # each sequence can produce multiple NNData messages.
+                    while q.has():
                         self.sync.add_msg(q.get(), name)
+                        if name != "recognition":
+                            break
                 except Exception as e:
                     # Individual queue error - might indicate device issue
                     self.get_logger().error(f"Error accessing queue '{name}': {e}")

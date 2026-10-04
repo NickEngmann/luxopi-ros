@@ -5,6 +5,7 @@ import threading
 import types
 import unittest
 from queue import Queue
+from unittest.mock import patch
 from unittest.mock import MagicMock
 
 
@@ -56,25 +57,53 @@ class TestSerialWriter(unittest.TestCase):
         manager._read_thread = None
         manager._write_queue = Queue(maxsize=100)
         manager._write_timeout = 1.0
+        manager._last_feedback_poll_time = "before-poll"
+        manager.feedback_poll_interval = 2.0
         manager._ser = FakeSerial()
         manager._write_thread = threading.Thread(target=manager._write_loop, daemon=True)
         manager._write_thread.start()
         return manager
 
-    def test_commands_and_heartbeats_share_one_ordered_writer(self):
+    def test_commands_and_feedback_polls_share_one_ordered_writer(self):
         manager = self.make_manager()
         self.addCleanup(manager.close)
 
         self.assertTrue(manager.send_command('{"T": 101}'))
-        manager._send_heartbeat()
+        manager._poll_position_feedback()
         self.assertTrue(manager.send_command('{"T": 102}\n'))
 
         self.assertEqual(
             manager._ser.writes,
-            [b'{"T": 101}\r\n', b'{"T": 0}\r\n', b'{"T": 102}\r\n'],
+            [b'{"T": 101}\r\n', b'{"T": 105}\r\n', b'{"T": 102}\r\n'],
         )
         self.assertEqual(len(set(manager._ser.writer_threads)), 1)
-        self.assertEqual(manager._last_heartbeat_time, "test-time")
+        self.assertEqual(manager._last_feedback_poll_time, "test-time")
+
+    def test_connect_uses_feedback_query_instead_of_emergency_stop(self):
+        manager = SerialManager.__new__(SerialManager)
+        manager.node = MagicMock()
+        manager.node.get_clock.return_value.now.return_value = "test-time"
+        manager.serial_port = "/dev/fake"
+        manager.baud_rate = 115200
+        manager._state_lock = threading.RLock()
+        manager._connection_active = False
+        manager._running = False
+        manager._read_thread = None
+        manager.close = MagicMock()
+        manager.check_fix_permissions = MagicMock(return_value=True)
+        manager.send_command = MagicMock(return_value=True)
+        fake_port = MagicMock(is_open=True)
+        fake_serial_module = types.SimpleNamespace(Serial=MagicMock(return_value=fake_port))
+
+        with patch("luxo_behaviors.serial_manager.serial", fake_serial_module), \
+                patch("luxo_behaviors.serial_manager.time.sleep"), \
+                patch("luxo_behaviors.serial_manager.threading.Thread") as thread_factory:
+            thread_factory.return_value.start = MagicMock()
+            self.assertTrue(manager.connect())
+
+        sent_command = manager.send_command.call_args.args[0]
+        self.assertEqual(sent_command, '{"T": 105}')
+        self.assertNotEqual(sent_command, '{"T": 0}')
 
     def test_write_error_marks_connection_inactive_and_returns_false(self):
         manager = self.make_manager()

@@ -8,6 +8,23 @@ from typing import TypeVar
 
 T = TypeVar("T")
 
+# Two-stage inference emits one recognition message for every detected face.
+# Keep small/latest queues for frame-level streams, but leave room for several
+# per-face results across the bounded sequence synchronizer window.
+OUTPUT_QUEUE_CAPACITY = {
+    "color": 1,
+    "detection": 1,
+    "recognition": 256,
+}
+
+
+def create_output_queues(device):
+    """Create bounded DepthAI output queues with per-stream capacities."""
+    return {
+        name: device.getOutputQueue(name, maxSize=capacity, blocking=False)
+        for name, capacity in OUTPUT_QUEUE_CAPACITY.items()
+    }
+
 
 def enqueue_latest(target: Queue[T], item: T) -> bool:
     """Insert an item, evicting the oldest pending item when the queue is full.
