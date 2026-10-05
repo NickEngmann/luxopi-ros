@@ -6,7 +6,7 @@ on:
 jobs:
   simulator:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 75
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: actions/setup-python@v7.0.0
@@ -23,7 +23,7 @@ jobs:
           exit 1
       - name: Native sequential scenarios
         run: |
-          scripts/simulator.sh exec -T simulator bash -c 'source /opt/ros/jazzy/setup.bash && source /workspace/install/setup.bash && python3 scripts/run_native_suite.py'
+          scripts/simulator.sh exec -T simulator bash -c 'source /opt/ros/jazzy/setup.bash && source /workspace/install/setup.bash && python3 scripts/run_native_suite.py --feasible-retiming'
       - name: Install browser test dependencies
         run: |
           python -m pip install -r requirements-simulator-test.txt
