@@ -128,7 +128,9 @@ class ConversationClient:
 class SimulatedConversation:
     """Explicit mock backend; never presented as a language model result."""
 
-    from luxo_behaviors.simulator_protocol import ANIMATION_NAMES
+    # The text adapter consumes the neutral capability registry directly; the
+    # browser/API protocol is a transport, not the source of command policy.
+    from luxo_behaviors.animation_capabilities import ANIMATION_NAMES
     ANIMATIONS = frozenset(ANIMATION_NAMES)
 
     def request(self, text):
