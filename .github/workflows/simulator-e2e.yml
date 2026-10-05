@@ -30,9 +30,10 @@ jobs:
           python -m playwright install --with-deps chromium
       - name: Browser scenarios
         run: python scripts/browser_e2e.py --url http://127.0.0.1:8080
-      - name: Critical-node restart and graph recovery
+      - name: Stale-heartbeat and critical-node recovery
         run: |
           container_id=$(scripts/simulator.sh ps -q simulator)
+          python scripts/restart_e2e.py --pause-state --container "$container_id" --url http://127.0.0.1:8080 --output /tmp/luxopi-paused-health.json
           python scripts/restart_e2e.py --container "$container_id" --url http://127.0.0.1:8080
       - name: Collect test evidence
         if: always()
@@ -46,7 +47,7 @@ jobs:
               case "$report_path" in /tmp/luxopi-final-*) docker cp "$container_id:$report_path" artifacts/ ;; esac
             done < artifacts/report-paths.txt
           fi
-          for artifact in /tmp/luxopi-browser-e2e.json /tmp/luxopi-simulator-dashboard.png /tmp/luxopi-restart-e2e.json; do
+          for artifact in /tmp/luxopi-browser-e2e.json /tmp/luxopi-simulator-dashboard.png /tmp/luxopi-restart-e2e.json /tmp/luxopi-paused-health.json; do
             if [ -f "$artifact" ]; then cp "$artifact" artifacts/; fi
           done
       - uses: actions/upload-artifact@v7.0.1
