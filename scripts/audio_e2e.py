@@ -24,9 +24,16 @@ def main():
         scenarios=[('dance','Please dance.'),('lamp','Turn the lamp blue.'),('brightness','Set brightness to fifty percent.'),('question','Why do plants need water?')]
         for name,expected in scenarios:
             deadline=time.monotonic()+45
-            while snapshot().get('state')!='IDLE':
+            while snapshot().get('state')!='IDLE' or snapshot().get('animation'):
                 if time.monotonic()>deadline:raise AssertionError('Simulator did not settle before '+name)
                 time.sleep(.1)
+            if name=='brightness':
+                reset=urllib.request.Request(args.url+'/api/events',data=json.dumps({'type':'brightness','value':.25}).encode(),headers={'Content-Type':'application/json'},method='POST')
+                with urllib.request.urlopen(reset,timeout=5) as response:assert response.status==202
+                end=time.monotonic()+5
+                while snapshot().get('sensors',{}).get('light_state',{}).get('brightness')!=.25:
+                    if time.monotonic()>end:raise AssertionError('Brightness precondition did not reach actual lamp sink')
+                    time.sleep(.1)
             before=snapshot();positions=before.get('positions',[]);previous_response=before.get('response','')
             body=(args.fixtures/(name+'.wav')).read_bytes()
             request=urllib.request.Request(args.url+'/api/audio',data=body,headers={'Content-Type':'audio/wav'},method='POST')
@@ -44,7 +51,7 @@ def main():
                 light=state.get('sensors',{}).get('light_state',{})
                 lamp=lamp or (name=='lamp' and light.get('rgbw')==[0,0,255,0]) or (name=='brightness' and light.get('brightness')==.5)
                 consumer=(animation and motion) if name=='dance' else lamp if name in ('lamp','brightness') else True
-                if transcript and response_text and consumer and state.get('status')=='idle':break
+                if transcript and response_text and consumer and state.get('status')=='idle' and (name!='dance' or not state.get('animation')):break
                 time.sleep(.1)
             assert transcript and response_text,dict(name=name,last=samples[-1])
             if name=='dance':assert animation and motion,'Actual dance/action motion was not observed'
