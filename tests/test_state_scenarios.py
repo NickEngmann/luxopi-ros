@@ -38,7 +38,7 @@ def make_manager():
             raise AttributeError(name)
     namespace = dict(vars(typing), Node=Node, threading=threading, time=time, json=json,
                      LuxoState=state, StateTransition=state_globals['StateTransition'],
-                     completion_matches_owner=state_globals['completion_matches_owner'],
+                     StateTransitionPolicy=state_globals['StateTransitionPolicy'],
                      QoSProfile=lambda **kw: kw,
                      QoSReliabilityPolicy=SimpleNamespace(RELIABLE=1),
                      QoSHistoryPolicy=SimpleNamespace(KEEP_LAST=1))

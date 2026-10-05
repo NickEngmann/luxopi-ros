@@ -11,7 +11,7 @@ from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSHistoryPolicy
 
 # Import core state machine components from state_machine.py
 from luxo_behaviors.state_machine import (
-    LuxoState, StateTransition, completion_matches_owner,
+    LuxoState, StateTransition, StateTransitionPolicy,
 )
 
 # ROS2 message imports
@@ -56,6 +56,8 @@ class StateManagerNode(Node):
             'system': 50  # Default system priority
         }
         
+        self._transition_policy = StateTransitionPolicy(self._node_priorities)
+
         # Track active nodes and their requested states
         self._active_node_states = {}  # Dict[str, Tuple[LuxoState, int, float]]
         # Format: {node_name: (requested_state, priority, timestamp)}
@@ -332,63 +334,37 @@ class StateManagerNode(Node):
             requesting_node: Name of the node making the request
             priority: Priority level (higher = more important)
             force: If True, bypass priority checks (use carefully!)
-            is_completion: If True, this is a completion transition (bypass priority)
+            is_completion: Complete only the current owner and restore interrupted state
             
         Returns:
             bool: True if transition was successful
         """
         with self._state_lock:
-            # Completion is an ownership operation, not a priority bypass.
-            # Ignore late callbacks once another subsystem has taken control.
-            if is_completion and not completion_matches_owner(
-                    self._last_state_requester, requesting_node):
-                self.get_logger().info(
-                    f"Ignoring stale completion from {requesting_node}; "
-                    f"current owner is {self._last_state_requester}"
-                )
-                return False
-
-            # Use default priority if not specified
-            if priority is None:
-                priority = self._node_priorities.get(requesting_node, 50)
-            
-            interrupted_state = self._interrupted_states.get(self._current_state)
-            completing_state = self._current_state
-            restored_requester = None
-            if is_completion and interrupted_state is not None:
-                requested_state = interrupted_state
-                restored_requester = self._interrupted_requesters.get(completing_state)
-
-            if not force and not is_completion and not self._has_transition_priority(requesting_node, priority):
-                self.get_logger().info(
-                    f"State transition request from {requesting_node} (priority {priority}) denied due to insufficient priority"
-                )
-                return False
-
-            previous_state = self._current_state
-            previous_requester = self._last_state_requester
-            previous_priority = self._get_current_priority()
-            interruption = (
-                not is_completion and previous_state != requested_state
-                and previous_state not in (LuxoState.IDLE, LuxoState.INITIALIZING)
-                and priority > previous_priority
+            decision = self._transition_policy.decide(
+                current_state=self._current_state,
+                current_requester=self._last_state_requester,
+                current_priority=self._get_current_priority(),
+                requested_state=requested_state, requesting_node=requesting_node,
+                priority=priority, force=force, completion=is_completion,
+                interrupted_states=self._interrupted_states,
+                interrupted_requesters=self._interrupted_requesters,
             )
-            success = self.transition_to(requested_state, force)
+            if not decision["accepted"]:
+                self.get_logger().info(
+                    f"State request from {requesting_node} rejected: {decision['reason']}"
+                )
+                return False
+            success = self.transition_to(decision["target_state"], force)
             if success:
-                if interruption:
-                    self._interrupted_states[requested_state] = previous_state
-                    self._interrupted_requesters[requested_state] = (previous_requester, previous_priority)
-                if not interruption and previous_state != requested_state:
-                    self._interrupted_states.pop(previous_state, None)
-                    self._interrupted_requesters.pop(previous_state, None)
-                if is_completion:
-                    self._interrupted_states.pop(completing_state, None)
-                    self._interrupted_requesters.pop(completing_state, None)
-                if restored_requester is not None:
-                    requesting_node, priority = restored_requester
-                self._last_state_requester = requesting_node
-                self._active_node_states[requesting_node] = (requested_state, priority, time.time())
-
+                self._interrupted_states, self._interrupted_requesters = (
+                    self._transition_policy.commit(
+                        decision, self._interrupted_states, self._interrupted_requesters
+                    )
+                )
+                self._last_state_requester = decision["requesting_node"]
+                self._active_node_states[self._last_state_requester] = (
+                    decision["target_state"], decision["priority"], time.time()
+                )
             return success
 
     def _get_current_priority(self) -> int:
@@ -398,25 +374,6 @@ class StateManagerNode(Node):
             return current_priority
         return 0
 
-    def _has_transition_priority(self, requesting_node: str, priority: int) -> bool:
-        """Check if a node has sufficient priority to change state"""
-        # ERROR permits explicit recovery; collision retains safety ownership.
-        if self._current_state == LuxoState.ERROR:
-            return True
-        
-        # Always allow IDLE transitions (they're returns, not interruptions)
-        if self._current_state == LuxoState.IDLE:
-            return True
-
-        if (requesting_node == "animation_command" and priority in (30, 50)
-                and self._current_state not in (LuxoState.COLLISION_AVOIDING, LuxoState.ESCAPE_MODE)):
-            return True
-        # Check against current state requester's priority
-        current_priority = self._get_current_priority()
-        
-        # Higher or equal priority can transition
-        return priority >= current_priority
-    
     def publish_state(self):
         """Publish current state information"""
         try:
