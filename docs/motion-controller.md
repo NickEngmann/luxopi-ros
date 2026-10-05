@@ -33,23 +33,41 @@ Animation targets remain intact underneath the override and resume after voice
 following completes. The request path is asynchronous and never blocks a ROS
 callback.
 
-The simulation controller also consumes the ROS collision warning outputs. A
-warning immediately holds its current joint target while the state manager
-enters `COLLISION_AVOIDING`; `ESCAPE_MODE`, `ERROR`, and `SHUTDOWN` likewise
-hold simulated motion. Clearing all warnings requests the ordinary idle
-completion transition. This deliberately conservative simulated hold checks
-the arbitration boundary only; it does not model the physical escape trajectory
-or establish a hardware safety guarantee. `/sim/motion_status` exposes the
-state, active warning directions, target, current positions, and hold status.
+Both `SimMotionController` and the hardware animation target path consume the
+same ROS-free `ReactiveAvoidance` projection. A warning requests a bounded
+retreat on a configured axis (front: shoulder, sides: base by default); the
+other joints hold their measured pose while the warning persists. These signs
+preserve the pre-existing movement validator conventions and remain configurable;
+they are not physically calibrated sensor-frame directions. A warning cannot
+continue toward its sensor. Danger/contact, opposing side hazards, stale or
+invalid coverage, an unconfigured retreat axis, or a retreat blocked by a joint
+limit requests a hold. The sensor classifier publishes atomic
+`/collision/sensor_status` JSON records with severity, validity and sample ages.
+An optical clear cannot release a latched FSR contact: matching range and FSR
+inputs must both be fresh, and the FSR must publish a release. Fresh clear must
+persist through the dwell, then a new target is required; old animation targets
+are not replayed after the hazard clears. Head-top touch remains a petting
+input, separate from collision response.
+
+This joint-space policy is deliberately conservative. It does not have camera,
+range-sensor or FSR extrinsics, swept-volume collision geometry, or calibrated
+obstacle surfaces, so it cannot guarantee that a configured retreat clears an
+object. The dashboard/MuJoCo sensor scene can exercise the actual classifier and
+policy consumers, but its simulated rays and measurements are not physical
+calibration evidence. `/sim/motion_status` exposes the current state,
+`avoidance_mode`, active directions, requested/adjusted target and positions.
+`ESCAPE_MODE`, `ERROR`, and `SHUTDOWN` remain hard holds in the kinematic
+controller.
 
 The four-axis kinematic profile uses the checked-in URDF limits; the six-axis
 M3 profile uses vendor URDF bounds for visualization and bounded manual input.
 The simulated limiter defaults to 0.5 rad/s and 1.0 rad/s² in either profile.
-These are simulator constraints, not measured firmware performance. The
-hardware interface remains responsible for physical-device bounds, firmware
-acceleration metadata, and sensor safety. Physical velocity/acceleration
-behavior must be verified against the actual firmware transport before sharing
-simulator limits with that backend. The shared browser graph currently starts
+Command trajectory state remains independent of physics feedback; feedback is
+used for reporting and reactive holds rather than reseeding the limiter every
+tick. A newly retargeted trajectory can still need time to brake. Joint bounds
+take precedence at a hard limit, so these are simulator constraints rather
+than a physical firmware performance claim. The hardware interface remains
+responsible for physical-device bounds and serial firmware metadata. The shared browser graph currently starts
 with `urdf4`; a six-axis deployment must select `roarm_m3` explicitly and pass
 the native six-joint motion scenarios before it is treated as verified.
 

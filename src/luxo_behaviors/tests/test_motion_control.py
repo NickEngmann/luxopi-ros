@@ -8,10 +8,10 @@ from luxo_behaviors.motion_control import (
 
 
 class TestCollisionStatusBridge(unittest.TestCase):
-    def test_any_classified_direction_upgrades_animation_status_to_danger(self):
+    def test_boolean_warning_does_not_invent_danger_severity(self):
         self.assertEqual(
             collision_status_from_warnings("safe", [False, True, False]),
-            "danger",
+            "safe",
         )
 
     def test_cleared_sensor_warnings_restore_legacy_status(self):

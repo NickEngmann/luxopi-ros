@@ -391,7 +391,7 @@ class AnimationCommandActionServer(Node):
         atomic = [
             f"{direction}:{sample['severity']}"
             for direction, sample in self._atomic_sensor_status.items()
-            if sample['active'] and sample['valid']
+            if sample['active']
         ]
         if 'danger' in legacy:
             self.collision_status = legacy

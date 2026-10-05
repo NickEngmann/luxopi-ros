@@ -54,6 +54,8 @@ setup(
             'sim_motion_controller = luxo_behaviors.sim_motion_controller:main',
             'physics_command_bridge = luxo_behaviors.physics_command_bridge:main',
             'simulator_dashboard = luxo_behaviors.simulator_dashboard:main',
+            'mujoco_simulator = luxo_behaviors.mujoco_simulator:main',
+            'sim_world_sensors = luxo_behaviors.sim_world_sensors:main',
             'sim_camera_interaction = luxo_behaviors.sim_camera_interaction:main',
             'sim_interaction_adapter = luxo_behaviors.sim_interaction_adapter:main',
         ],

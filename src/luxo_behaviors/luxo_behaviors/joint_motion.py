@@ -90,21 +90,22 @@ class JointMotionLimiter:
             raise ValueError("dt must be finite and positive")
         targets = clamp_joint_positions(self.joint_names, target_positions, self.limits)
         for index, target in enumerate(targets):
-            desired_velocity = (target - self.positions[index]) / dt
-            desired_velocity = min(
-                self.max_velocity[index],
-                max(-self.max_velocity[index], desired_velocity),
+            error = target - self.positions[index]
+            # Use a braking-speed envelope. Dividing a very small updated target
+            # delta by dt can request an instantaneous velocity reversal; the
+            # acceleration clamp below must remain authoritative instead.
+            braking_speed = math.sqrt(2.0 * self.max_acceleration[index] * abs(error))
+            one_step_speed = abs(error) / dt
+            desired_speed = min(
+                self.max_velocity[index], braking_speed, one_step_speed
             )
+            desired_velocity = math.copysign(desired_speed, error) if error else 0.0
             velocity_delta = desired_velocity - self.velocities[index]
             max_velocity_delta = self.max_acceleration[index] * dt
             velocity = self.velocities[index] + min(
                 max_velocity_delta, max(-max_velocity_delta, velocity_delta)
             )
             next_position = self.positions[index] + velocity * dt
-            # Prevent numerical overshoot when the target is inside this step.
-            if (target - self.positions[index]) * (target - next_position) <= 0.0:
-                next_position = target
-                velocity = 0.0
             self.positions[index] = next_position
             self.velocities[index] = velocity
         self.positions = clamp_joint_positions(self.joint_names, self.positions, self.limits)

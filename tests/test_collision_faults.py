@@ -1,5 +1,6 @@
 """Execute actual collision-node methods with deterministic sensor/time faults."""
 import ast
+import json
 import math
 import pathlib
 from types import SimpleNamespace
@@ -18,27 +19,38 @@ def make_node():
     tree = ast.parse(PATH.read_text())
     cls = next(node for node in tree.body if isinstance(node, ast.ClassDef))
     # Constructor is transport setup; callbacks themselves remain unmodified.
-    namespace = dict(Node=object, math=math, Bool=SimpleNamespace, String=SimpleNamespace,
+    namespace = dict(Node=object, math=math, json=__import__('json'),
+                     Bool=SimpleNamespace, String=SimpleNamespace,
                      ConfigureI2CSensor=SimpleNamespace(Request=SimpleNamespace))
     exec(compile(ast.Module(body=[cls], type_ignores=[]), str(PATH), 'exec'), namespace)
     node = namespace['CollisionNode'].__new__(namespace['CollisionNode'])
     node.now = 0.0
     node.get_clock = lambda: SimpleNamespace(now=lambda: Stamp(node.now))
-    logger = SimpleNamespace(debug=lambda *a: None, warn=lambda *a: None, error=lambda *a: None)
+    logger = SimpleNamespace(debug=lambda *a: None, info=lambda *a: None,
+                             warn=lambda *a: None, error=lambda *a: None)
     node.get_logger = lambda: logger
     node.proximity_threshold, node.side_distance_threshold = 15, 8.0
     node.danger_threshold, node.warning_threshold, node.data_timeout = 5.0, 15.0, 2.0
     node.fsr_collision_active = dict(front=False, left=False, right=False)
+    node.fsr_collision_start_time = dict(front=None, left=None, right=None)
+    node.fsr_stale_logged = set()
     node.current_proximity = node.prev_proximity = 0
     node.current_left_distance = node.current_right_distance = float('inf')
     node.prev_left_distance = node.prev_right_distance = float('inf')
+    node.proximity_seen = node.left_distance_seen = node.right_distance_seen = False
     node.last_proximity_time = node.last_left_distance_time = node.last_right_distance_time = Stamp(0)
-    node.last_touch_sensor_time, node.touch_sensors = {}, {}
+    node.last_touch_sensor_time = {
+        name: Stamp(0) for name in ('head_top', 'head_left', 'head_bottom', 'head_right')
+    }
+    node.touch_sensors = dict(head_top=0, head_left=0, head_bottom=0, head_right=0)
+    node.touch_sensor_seen = {name: False for name in node.touch_sensors}
     node.sensor_reinit_interval, node._last_sensor_reinit = 10.0, {}
     node.outputs = {}
     for name in ('collision_pub', 'left_collision_pub', 'right_collision_pub',
                  'front_severity_pub', 'left_severity_pub', 'right_severity_pub',
-                 'collision_details_pub', 'proximity_pub', 'left_distance_pub', 'right_distance_pub'):
+                 'collision_details_pub', 'sensor_status_pub',
+                 'front_sensor_valid_pub', 'left_sensor_valid_pub', 'right_sensor_valid_pub',
+                 'proximity_pub', 'left_distance_pub', 'right_distance_pub'):
         node.outputs[name] = []
         setattr(node, name, SimpleNamespace(publish=lambda msg, name=name: node.outputs[name].append(msg.data)))
     node.requests = []
@@ -134,9 +146,34 @@ def test_configured_severity_boundaries():
     assert node.determine_severity(15) == 'safe'
 
 
+def test_sensor_status_distinguishes_never_seen_and_invalid_samples_from_clear():
+    node = make_node()
+    node.evaluate_collisions()
+    first = json.loads(node.outputs['sensor_status_pub'][-1])
+    assert first['direction'] == 'right'
+    assert first['active'] is False
+    assert first['valid'] is False
+    assert first['sample_age_seconds'] is None
+
+    node.right_distance_callback(SimpleNamespace(data=8.0))
+    node.touch_head_right_callback(SimpleNamespace(data=0))
+    node.evaluate_collisions()
+    sample = json.loads(node.outputs['sensor_status_pub'][-1])
+    assert sample['valid'] is True
+    assert sample['sample_age_seconds'] == 0.0
+    assert sample['valid_timeout_seconds'] == 2.0
+
+    node.right_distance_callback(SimpleNamespace(data=float('nan')))
+    node.evaluate_collisions()
+    invalid = json.loads(node.outputs['sensor_status_pub'][-1])
+    assert invalid['valid'] is False
+    assert invalid['active'] is False
+
+
 def test_fsr_collision_not_cleared_by_safe_distance_or_timeout():
     node = make_node()
     node.fsr_collision_active['front'] = True
+    node.fsr_collision_start_time['front'] = Stamp(0)
     node.fsr_collision_active['left'] = True
     node.left_distance_callback(SimpleNamespace(data=30.0))
     node.evaluate_collisions()
@@ -147,6 +184,33 @@ def test_fsr_collision_not_cleared_by_safe_distance_or_timeout():
     node.check_data_timeout()
     assert node.outputs['collision_pub'][-1] is True
     assert node.outputs['left_collision_pub'][-1] is True
+
+
+def test_safe_range_and_lost_fsr_cannot_clear_contact_but_fresh_release_can():
+    node = make_node()
+    node.startup_complete = True
+    node.fsr_collision_active['front'] = True
+    node.fsr_collision_start_time['front'] = Stamp(0)
+    node.proximity_data_callback(SimpleNamespace(data=0))
+    node.evaluate_collisions()
+    status = json.loads(node.outputs['sensor_status_pub'][-3])
+    assert status['direction'] == 'front'
+    assert status['active'] is True
+    assert status['valid'] is False  # no current FSR release sample
+
+    node.now = 1.0
+    node.proximity_data_callback(SimpleNamespace(data=0))
+    node.evaluate_collisions()
+    status = json.loads(node.outputs['sensor_status_pub'][-3])
+    assert status['active'] is True  # optical clear is not FSR contact release
+    assert status['valid'] is False
+
+    node.touch_head_bottom_callback(SimpleNamespace(data=0))
+    node.proximity_data_callback(SimpleNamespace(data=0))
+    node.evaluate_collisions()
+    status = json.loads(node.outputs['sensor_status_pub'][-3])
+    assert status['active'] is False
+    assert status['valid'] is True
 
 
 def test_side_touch_calibration_preserves_default_and_supports_logical_channels():

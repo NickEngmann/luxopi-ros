@@ -67,5 +67,6 @@ def scaled_duration(duration, speed_multiplier):
 
 
 def collision_status_from_warnings(legacy_status, warnings):
-    """Combine legacy animation status with classified sensor warning flags."""
-    return "danger" if any(bool(active) for active in warnings) else legacy_status
+    """Legacy Bool warnings cannot establish severity or preempt an action."""
+    del warnings
+    return legacy_status

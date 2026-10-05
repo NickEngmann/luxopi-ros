@@ -15,7 +15,9 @@ from luxo_behaviors.joint_profiles import joint_profile
 from luxo_behaviors.sim_motion_rules import (
     motion_is_frozen,
     validate_manual_pose,
+    validate_feedback,
 )
+from luxo_behaviors.reactive_avoidance import ReactiveAvoidance
 
 
 VOICE_FOLLOW_STATES = {"IDLE", "VOICE_FOLLOWING", "ANIMATING", "PETTING", "EMOTION_REACTING"}
@@ -51,6 +53,16 @@ class SimMotionController(Node):
             max_acceleration=self.get_parameter("max_joint_acceleration").value,
         )
         self.animation_target = [0.0] * len(self.joint_names)
+        self.target_received_at = time.monotonic()
+        self.measured_positions = [0.0] * len(self.joint_names)
+        self.measured_velocities = [0.0] * len(self.joint_names)
+        self.feedback_received_at = None
+        self.reactive_avoidance = ReactiveAvoidance(limits=self.joint_limits)
+        self._sensor_status_seen = set()
+        self._sensor_status_at = {}
+        self._warning_started_at = {}
+        self.avoidance_mode = "clear"
+        self.avoidance_directions = []
         self.manual_target = None
         self.manual_target_rejected = ""
         self.voice_direction = None
@@ -79,6 +91,9 @@ class SimMotionController(Node):
         self.state_sub = self.create_subscription(
             String, "/luxo/current_state", self.state_callback, 10
         )
+        self.sensor_status_sub = self.create_subscription(
+            String, "/collision/sensor_status", self.sensor_status_callback, 10
+        )
         self.collision_subscriptions = [
             self.create_subscription(
                 Bool, topic, self._collision_callback(direction), 10
@@ -101,6 +116,10 @@ class SimMotionController(Node):
         def receive(message):
             was_active = any(self.collision_active.values())
             self.collision_active[direction] = bool(message.data)
+            if message.data:
+                self._warning_started_at[direction] = time.monotonic()
+            else:
+                self._warning_started_at.pop(direction, None)
             active = any(self.collision_active.values())
             if active and not was_active and self.current_state not in {
                 "INITIALIZING", "COLLISION_AVOIDING", "ESCAPE_MODE", "ERROR", "SHUTDOWN"
@@ -119,19 +138,38 @@ class SimMotionController(Node):
         # Commit only after all fields pass validation; a bad message must not
         # poison the timer's next limiter step.
         self.animation_target = candidate
+        self.target_received_at = time.monotonic()
 
     def feedback_callback(self, message):
-        """Use physics-owned feedback as the limiter's measured state."""
+        """Store physics feedback separately from the persistent command trajectory."""
         try:
-            measured = ordered_joint_target(message.name, message.position, self.joint_names)
-            measured = clamp_joint_positions(self.joint_names, measured, self.joint_limits)
+            measured, velocities = validate_feedback(
+                message.name, message.position, message.velocity, self.profile
+            )
         except (TypeError, ValueError) as exc:
             self.get_logger().warning(f"Rejected invalid physics feedback: {exc}")
             return
-        self.limiter.positions = measured
-        # Velocity is computed by Gazebo but not relied on for a new target;
-        # resetting avoids carrying simulated acceleration across feedback gaps.
-        self.limiter.velocities = [0.0] * len(self.joint_names)
+        self.measured_positions = measured
+        if velocities is not None:
+            self.measured_velocities = velocities
+        self.feedback_received_at = time.monotonic()
+
+    def sensor_status_callback(self, message):
+        """Consume classifier state atomically so warning severity isn't lost."""
+        try:
+            payload = json.loads(message.data)
+            direction = payload["direction"]
+            self.reactive_avoidance.update_sensor(
+                direction,
+                payload["active"],
+                time.monotonic(),
+                severity=payload["severity"],
+                valid=payload["valid"],
+            )
+            self._sensor_status_seen.add(direction)
+            self._sensor_status_at[direction] = time.monotonic()
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            self.get_logger().warning(f"Rejected malformed collision sensor status: {exc}")
 
     def direction_callback(self, message):
         angle = float(message.data)
@@ -150,6 +188,7 @@ class SimMotionController(Node):
             self.manual_target = validate_manual_pose(
                 self.current_state, message.name, message.position, self.profile
             )
+            self.target_received_at = time.monotonic()
             self.manual_target_rejected = ""
         except (TypeError, ValueError) as exc:
             self.manual_target_rejected = str(exc)
@@ -215,12 +254,46 @@ class SimMotionController(Node):
             lower, upper = self.joint_limits[self.joint_names[0]]
             target[0] = min(upper, max(lower, base))
 
-        safety_holds_motion = any(self.collision_active.values())
-        hold_requested = motion_is_frozen(
-            self.current_state, self.collision_active.values()
+        current = list(self.limiter.positions)
+        if (self.feedback_received_at is not None
+                and now - self.feedback_received_at <= 0.5):
+            current = list(self.measured_positions)
+        warning_unobserved = [
+            direction for direction, active in self.collision_active.items()
+            if active and (
+                direction not in self._sensor_status_seen
+                or self._sensor_status_at.get(direction, float("-inf"))
+                < self._warning_started_at.get(direction, float("inf"))
+            )
+        ]
+        if warning_unobserved:
+            avoidance = {
+                "target": current,
+                "mode": "hold_unknown",
+                "hazards": warning_unobserved,
+                "stale": warning_unobserved,
+            }
+        else:
+            avoidance = self.reactive_avoidance.adjust_target(
+                current,
+                target,
+                self.joint_names,
+                now=now,
+                target_received_at=self.target_received_at,
+            )
+        self.avoidance_mode = avoidance["mode"]
+        self.avoidance_directions = avoidance["hazards"]
+
+        emergency_hold = motion_is_frozen(self.current_state, ())
+        avoidance_hold = self.avoidance_mode.startswith("hold_")
+        hold_requested = emergency_hold or avoidance_hold
+        safety_holds_motion = any(self.collision_active.values()) or bool(
+            self.avoidance_directions
         )
-        if hold_requested:
-            target = list(self.limiter.positions)
+        if emergency_hold:
+            target = current
+        else:
+            target = avoidance["target"]
 
         positions = self.limiter.step(target, dt)
         message = JointState()
@@ -236,6 +309,8 @@ class SimMotionController(Node):
             "collision_directions": [
                 direction for direction, active in self.collision_active.items() if active
             ],
+            "avoidance_mode": self.avoidance_mode,
+            "avoidance_directions": self.avoidance_directions,
             "voice_override": bool(may_follow and not safety_holds_motion),
             "manual_override": bool(manual_override and not hold_requested),
             "manual_target_rejected": self.manual_target_rejected,

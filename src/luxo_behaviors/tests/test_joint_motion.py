@@ -75,6 +75,27 @@ class TestJointMotionLimiter(unittest.TestCase):
         self.assertGreater(first, 1.0)
         self.assertAlmostEqual(limiter.velocities[0], 0.4)
 
+    def test_nearby_retarget_brakes_without_instant_velocity_snap(self):
+        limiter = JointMotionLimiter(
+            ["base_to_L1"], max_velocity=0.5, max_acceleration=1.0
+        )
+        for _ in range(30):
+            limiter.step([2.0], 0.02)
+        old_velocity = limiter.velocities[0]
+        current = limiter.positions[0]
+        limiter.step([current + 0.0001], 0.02)
+        self.assertLessEqual(abs(limiter.velocities[0] - old_velocity), 0.02 + 1e-9)
+        self.assertLessEqual(abs(limiter.velocities[0]), 0.5 + 1e-9)
+
+    def test_static_target_converges_without_small_velocity_limit_cycle(self):
+        limiter = JointMotionLimiter(
+            ["base_to_L1"], max_velocity=0.5, max_acceleration=1.0
+        )
+        for _ in range(1000):
+            limiter.step([1.0], 0.02)
+        self.assertLessEqual(abs(limiter.positions[0] - 1.0), 1e-5)
+        self.assertLessEqual(abs(limiter.velocities[0]), 1e-5)
+
 
 if __name__ == "__main__":
     unittest.main()

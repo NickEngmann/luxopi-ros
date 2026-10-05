@@ -320,6 +320,15 @@ class RoArmHardwareInterface(Node):
                 '/right_collision_warning',
                 self.right_collision_callback, 
                 10)
+
+            # Atomic directional severity and sensor validity feed the same
+            # ROS-free avoidance projection used by the simulator controller.
+            self.collision_sensor_status_sub = self.create_subscription(
+                String,
+                '/collision/sensor_status',
+                self.collision_sensor_status_callback,
+                10,
+            )
                 
             # Subscribe to distance measurements for more precise control
             self.front_proximity_sub = self.create_subscription(
@@ -630,6 +639,18 @@ class RoArmHardwareInterface(Node):
         if msg.data and not self.is_in_state(LuxoState.COLLISION_AVOIDING):
             self.collision_interrupted_state = self.get_current_state()
         self.behavior_coordinator.handle_collision('right', msg.data)
+
+    def collision_sensor_status_callback(self, msg):
+        """Forward one atomic sensor record to the shared avoidance policy."""
+        if not hasattr(self, 'behavior_coordinator'):
+            return
+        try:
+            payload = json.loads(msg.data)
+            if not isinstance(payload, dict):
+                raise ValueError('status must be a JSON object')
+            self.behavior_coordinator.update_reactive_sensor_status(payload)
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            self.get_logger().warning(f"Rejected malformed collision sensor status: {exc}")
 
     def left_collision_callback(self, msg):
         if self.is_in_state(LuxoState.INITIALIZING):

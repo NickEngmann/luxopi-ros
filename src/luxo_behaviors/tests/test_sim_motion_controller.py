@@ -2,16 +2,19 @@ import pytest
 
 from luxo_behaviors.joint_motion import URDF_JOINT_LIMITS
 from luxo_behaviors.joint_profiles import ROARM_M3_NAMES, ROARM_M3_LIMITS
-from luxo_behaviors.sim_motion_rules import motion_is_frozen, validate_manual_pose
+from luxo_behaviors.sim_motion_rules import (
+    motion_is_frozen, validate_manual_pose, validate_feedback,
+)
 
 
-def test_motion_holds_for_active_collision_even_before_state_update():
-    assert motion_is_frozen("IDLE", (False, True, False))
+def test_directional_collision_warnings_are_delegated_to_avoidance_policy():
+    assert not motion_is_frozen("IDLE", (False, True, False))
 
 
 def test_motion_holds_for_safety_states_after_sensor_clears():
-    for state in ("COLLISION_AVOIDING", "ESCAPE_MODE", "ERROR", "SHUTDOWN"):
+    for state in ("ESCAPE_MODE", "ERROR", "SHUTDOWN"):
         assert motion_is_frozen(state, (False, False, False))
+    assert not motion_is_frozen("COLLISION_AVOIDING", (False, False, False))
 
 
 def test_motion_remains_available_in_ordinary_states_without_collision():
@@ -59,3 +62,20 @@ def test_manual_m3_pose_rejects_legacy_four_axis_names():
     names = tuple(URDF_JOINT_LIMITS)
     with pytest.raises(ValueError, match="each expected joint"):
         validate_manual_pose("USER_CONTROL", names, [0.0] * len(names), "roarm_m3")
+
+
+def test_physics_feedback_is_validated_separately_from_command_trajectory():
+    positions, velocities = validate_feedback(
+        ROARM_M3_NAMES, [0.1, 0.2, 0.3, 0.4, 0.5, 0.6],
+        [0.1, -0.2, 0.3, -0.4, 0.5, -0.6], "roarm_m3",
+    )
+    assert positions == pytest.approx([0.1, 0.2, 0.3, 0.4, 0.5, 0.6])
+    assert velocities == pytest.approx([0.1, -0.2, 0.3, -0.4, 0.5, -0.6])
+
+
+def test_physics_feedback_rejects_malformed_nonfinite_velocity():
+    with pytest.raises(ValueError, match="finite"):
+        validate_feedback(
+            ROARM_M3_NAMES, [0.0] * 6, [0.0, 0.0, float("nan"), 0.0, 0.0, 0.0],
+            "roarm_m3",
+        )

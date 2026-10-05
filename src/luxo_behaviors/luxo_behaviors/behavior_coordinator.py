@@ -15,6 +15,7 @@ from luxo_interfaces.srv import RequestStateTransition
 from .transition_requests import watch_transition_result
 from luxo_interfaces.msg import StateInfo
 from luxo_behaviors.state_machine import LuxoState
+from luxo_behaviors.reactive_avoidance import ReactiveAvoidance
 import numpy as np
 
 # Import shared utilities
@@ -121,6 +122,16 @@ class BehaviorCoordinator(PettingBehavior, IdleBehavior, VoiceBehavior, Collisio
         self.current_joints = [0.0, 0.0, 0.0, 0.0, 0.0]  # Current joint positions
         self.target_joints = [0.0, 0.0, 0.0, 0.0, 0.0]   # Target joint positions
         self.joint_velocities = [0.0, 0.0, 0.0, 0.0, 0.0] # Current joint velocities
+        shoulder_limits = self.safety_limits.joint_limits.get('shoulder', {})
+        reactive_limits = {
+            'base_to_L1': (self.base_min_limit, self.base_max_limit),
+        }
+        if shoulder_limits:
+            reactive_limits['L1_to_L2'] = (
+                shoulder_limits['min'], shoulder_limits['max']
+            )
+        self.reactive_avoidance = ReactiveAvoidance(limits=reactive_limits)
+        self._reactive_sensor_status_seen = set()
         
         # Additional tracking variables with ROS time
         self.last_proactive_check = self.node.get_clock().now()
@@ -331,6 +342,31 @@ class BehaviorCoordinator(PettingBehavior, IdleBehavior, VoiceBehavior, Collisio
         
         # Validate and adjust the keyframe
         adjusted_keyframe = MovementValidator.validate_position(keyframe, self.safety_limits)
+
+        # Directional warning projection is shared with the simulator. Only the
+        # configured retreat axes move while a warning is active; all other
+        # joints hold measured pose until a fresh clear and replanned target.
+        names = (
+            'base_to_L1', 'L1_to_L2', 'L2_to_L3', 'L3_to_L4', 'L4_to_L5'
+        )
+        try:
+            decision = self.reactive_avoidance.adjust_target(
+                self.current_joints, adjusted_keyframe, names,
+                now=time.monotonic(),
+            )
+        except (TypeError, ValueError) as exc:
+            self.node.get_logger().error(f"Reactive collision projection failed closed: {exc}")
+            return False, self.current_joints.copy(), 'danger'
+
+        if decision['mode'] == 'adjust':
+            return False, MovementValidator.validate_position(
+                decision['target'], self.safety_limits
+            ), 'warning'
+        if decision['mode'].startswith('hold_'):
+            severity = 'danger' if decision['mode'] in {
+                'hold_imminent', 'hold_blocked', 'hold_no_safe_projection'
+            } else 'warning'
+            return False, self.current_joints.copy(), severity
         
         # Determine severity based on collision status
         severity = "safe"
@@ -347,6 +383,18 @@ class BehaviorCoordinator(PettingBehavior, IdleBehavior, VoiceBehavior, Collisio
             self.node.get_logger().debug(f"Animation keyframe adjusted: {reason}")
         
         return is_safe, adjusted_keyframe, severity
+
+    def update_reactive_sensor_status(self, payload):
+        """Update warning severity/coverage from one atomic classifier record."""
+        direction = payload['direction']
+        self.reactive_avoidance.update_sensor(
+            direction,
+            payload['active'],
+            time.monotonic(),
+            severity=payload['severity'],
+            valid=payload['valid'],
+        )
+        self._reactive_sensor_status_seen.add(direction)
     
     def get_animation_collision_status(self):
         """Return collision status formatted for animation feedback."""
