@@ -1,0 +1,16 @@
+# Merge base, speech and audio overlays before this one. Build both images first.
+services:
+  simulator:
+    image: luxopi/full-simulator:local
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.full-simulator
+    environment:
+      LUXOPI_SIM_BACKEND: mujoco
+      LUXOPI_PIPER_MODEL: /voices/en_US-amy-low.onnx
+      LUXOPI_SPEECH_COMMAND: '["/opt/speech/bin/python", "/opt/luxopi-ai/local_conversation.py", "--backend", "llm", "--asr-model", "/models/moonshine/tiny", "--audio-directory", "/tmp/luxopi-sim-audio", "--wav-directory", "/tmp/luxopi-sim-tts"]'
+    volumes:
+      - type: bind
+        source: ${LUXOPI_AI_CHECKOUT}/voices
+        target: /voices
+        read_only: true

@@ -1,0 +1,10 @@
+# Compose builds the physics and speech images separately first.
+FROM luxopi/physics-simulator:local
+COPY --from=luxopi/speech-simulator:local /opt/speech /opt/speech
+COPY --from=luxopi/speech-simulator:local /opt/llama /opt/llama
+COPY --from=luxopi/speech-simulator:local /opt/luxopi-ai /opt/luxopi-ai
+ENV LUXOPI_LLM_SERVER=/opt/llama/llama-server \
+    LD_LIBRARY_PATH=/opt/llama \
+    LUXOPI_LLM_MODEL=/models/LFM2.5-230M-QAD-Q4_0.gguf
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg sox \
+    && rm -rf /var/lib/apt/lists/*
