@@ -1,7 +1,7 @@
 import pytest
 
 from luxo_behaviors.sim_interaction_rules import (
-    VoiceCueLifecycle, parse_petting_event,
+    VoiceCueLifecycle, parse_petting_event, should_cancel_stale_settle,
 )
 from luxo_behaviors.state_machine import completion_matches_owner
 
@@ -65,3 +65,9 @@ def test_completion_is_accepted_only_for_current_state_owner():
     assert completion_matches_owner("user_control", "user_control")
     assert not completion_matches_owner("collision", "animation_command")
     assert not completion_matches_owner("user_control", "animation_command")
+
+
+def test_new_voice_session_only_cancels_stale_settle_cue():
+    assert should_cancel_stale_settle(True, "settle")
+    assert not should_cancel_stale_settle(True, "nod")
+    assert not should_cancel_stale_settle(False, "settle")

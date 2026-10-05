@@ -10,7 +10,7 @@ from std_msgs.msg import String
 from luxo_interfaces.action import PlayAnimation
 from luxo_interfaces.srv import RequestStateTransition
 from luxo_behaviors.sim_interaction_rules import (
-    VoiceCueLifecycle, parse_petting_event,
+    VoiceCueLifecycle, parse_petting_event, should_cancel_stale_settle,
 )
 
 
@@ -80,6 +80,12 @@ class SimInteractionAdapter(Node):
             self.last_error = f"ignored unknown voice status: {status[:80]}"
             self._publish_status()
             return
+        new_voice_session = status in ACTIVE_VOICE_STATUSES and not self.voice_cues.active
+        if (should_cancel_stale_settle(new_voice_session, self.current_animation)
+                and self.cue_goal_handle is not None):
+            # A previous session's settle is disposable presentation. Stop it
+            # so it cannot make the new listening cue wait or get rejected.
+            self.cue_goal_handle.cancel_goal_async()
         self.voice_status = status
         if status in ACTIVE_VOICE_STATUSES:
             self.voice_generation = self.voice_cues.status(status)
@@ -312,6 +318,9 @@ class SimInteractionAdapter(Node):
                 self.last_error = f"visual cue {cue} was rejected"
                 return
             self.cue_goal_handle = handle
+            if (cue == "settle" and generation != self.voice_generation
+                    and self.voice_cues.active):
+                handle.cancel_goal_async()
             handle.get_result_async().add_done_callback(
                 lambda result: self._cue_goal_result(generation, cue, result)
             )

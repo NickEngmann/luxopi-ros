@@ -6,7 +6,7 @@ from rclpy.action import ActionServer, CancelResponse, GoalResponse
 from rclpy.action import ActionClient
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
-from std_msgs.msg import String
+from std_msgs.msg import Bool, String
 from sensor_msgs.msg import JointState
 from luxo_interfaces.action import PlayAnimation
 from luxo_interfaces.srv import RequestStateTransition
@@ -25,7 +25,9 @@ from luxo_behaviors.animation_plugin_base import AnimationPlugin
 # Import state machine classes and utilities
 from luxo_behaviors.state_machine import LuxoState
 from luxo_behaviors.shared_utils import StateUtils
-from luxo_behaviors.motion_control import AnimationGoalTracker, scaled_duration
+from luxo_behaviors.motion_control import (
+    AnimationGoalTracker, collision_status_from_warnings, scaled_duration,
+)
 from luxo_behaviors.sim_interaction_rules import animation_state_for
 from luxo_behaviors.joint_profiles import ROARM_M3_NAMES, ROARM_M3_LIMITS, animation_pose_for_profile
 from luxo_behaviors.animation_capabilities import load_animation_plugins
@@ -186,12 +188,26 @@ class AnimationCommandActionServer(Node):
 
         # Subscribe to collision status
         self.collision_status = "safe"
+        self._legacy_collision_status = "safe"
+        self._collision_warnings = {"front": False, "left": False, "right": False}
         self.collision_status_sub = self.create_subscription(
             String,
             '/collision_status_for_animation',
             self.collision_status_callback,
             10
         )
+        self.declare_parameter('enable_collision_warning_inputs', False)
+        if self.get_parameter('enable_collision_warning_inputs').value:
+            self.collision_warning_subscriptions = [
+                self.create_subscription(
+                    Bool, topic, self._collision_warning_callback(direction), 10
+                )
+                for direction, topic in (
+                    ('front', '/head_collision_warning'),
+                    ('left', '/left_collision_warning'),
+                    ('right', '/right_collision_warning'),
+                )
+            ]
 
         # Track if animation was preempted by collision
         self.collision_preempted = "danger" in self.collision_status
@@ -323,7 +339,20 @@ class AnimationCommandActionServer(Node):
 
     def collision_status_callback(self, msg):
         """Update collision status from collision avoidance system."""
-        self.collision_status = msg.data
+        self._legacy_collision_status = msg.data
+        self._refresh_collision_status()
+
+    def _collision_warning_callback(self, direction):
+        """Bridge classified sensor warnings into action preemption in sim."""
+        def receive(message):
+            self._collision_warnings[direction] = bool(message.data)
+            self._refresh_collision_status()
+        return receive
+
+    def _refresh_collision_status(self):
+        self.collision_status = collision_status_from_warnings(
+            self._legacy_collision_status, self._collision_warnings.values()
+        )
 
         # Check if this is a danger status while we have an active goal
         if "danger" in self.collision_status and self._goal_handle and self._goal_handle.is_active:
@@ -596,12 +625,15 @@ class AnimationCommandActionServer(Node):
             if final_state == "completed" and cancel_event.is_set():
                 final_state = "canceled" if goal_handle.is_cancel_requested else "preempted"
 
-            # Animation complete
-            self.is_animating = False
+            # A preempted goal may finish after its replacement is accepted.
+            # Only the tracker owner may clear shared motion/session state.
+            owns_shared_state = self._goal_tracker.is_current(goal_handle)
+            if owns_shared_state:
+                self.is_animating = False
             actual_duration = time.time() - start_time
 
             # Transition to IDLE state after animation completes
-            if state_transition_owned:
+            if state_transition_owned and owns_shared_state:
                 self.request_state_transition(
                     LuxoState.IDLE, priority=30, completion=True
                 )
@@ -641,7 +673,8 @@ class AnimationCommandActionServer(Node):
             self.get_logger().error(f"Error executing animation: {e}")
 
             # Request transition to ERROR state on exception
-            self.request_state_transition(LuxoState.ERROR, priority=100)
+            if self._goal_tracker.is_current(goal_handle):
+                self.request_state_transition(LuxoState.ERROR, priority=100)
 
             # Create error result
             result = PlayAnimation.Result()
@@ -662,9 +695,10 @@ class AnimationCommandActionServer(Node):
             return result
         finally:
             # Clear animation name when done
-            anim_msg = String()
-            anim_msg.data = ""
-            self.current_animation_publisher.publish(anim_msg)
+            if self._goal_tracker.is_current(goal_handle):
+                anim_msg = String()
+                anim_msg.data = ""
+                self.current_animation_publisher.publish(anim_msg)
 
     def command_callback(self, msg):
         """Route legacy commands through the action server's single arbiter."""
@@ -898,6 +932,8 @@ class AnimationCommandActionServer(Node):
         elapsed_time = 0.0
         while elapsed_time < adjusted_duration:
             if cancel_event is not None and cancel_event.is_set():
+                return False
+            if self.collision_preempted:
                 return False
 
             current_time = self.get_clock().now()

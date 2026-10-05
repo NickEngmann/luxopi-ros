@@ -10,6 +10,11 @@ VOICE_CUE_FOR_STATUS = {
 }
 
 
+def should_cancel_stale_settle(new_voice_session, current_animation):
+    """Cancel an old settle cue for fresh listening, never a requested action."""
+    return bool(new_voice_session) and current_animation == "settle"
+
+
 class VoiceCueLifecycle:
     """Bounded, session-scoped visual cues that never own conversation state."""
 

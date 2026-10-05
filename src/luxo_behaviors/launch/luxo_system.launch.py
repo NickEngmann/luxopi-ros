@@ -637,6 +637,7 @@ def generate_launch_description():
             {'publish_target_topic': True},
             {'enforce_joint_limits': True},    # Enable joint limits enforcement
             {'joint_profile': LaunchConfiguration('joint_profile')},
+            {'enable_collision_warning_inputs': True},
         ],
         condition=UnlessCondition(use_hardware)
     )

@@ -2,7 +2,27 @@
 
 import unittest
 
-from luxo_behaviors.motion_control import AnimationGoalTracker
+from luxo_behaviors.motion_control import (
+    AnimationGoalTracker, collision_status_from_warnings,
+)
+
+
+class TestCollisionStatusBridge(unittest.TestCase):
+    def test_any_classified_direction_upgrades_animation_status_to_danger(self):
+        self.assertEqual(
+            collision_status_from_warnings("safe", [False, True, False]),
+            "danger",
+        )
+
+    def test_cleared_sensor_warnings_restore_legacy_status(self):
+        self.assertEqual(
+            collision_status_from_warnings("safe", [False, False, False]),
+            "safe",
+        )
+        self.assertEqual(
+            collision_status_from_warnings("danger", [False, False, False]),
+            "danger",
+        )
 
 
 class FakeGoal:
@@ -44,6 +64,18 @@ class TestAnimationGoalTracker(unittest.TestCase):
 
         self.assertIs(tracker.event_for(second), second_event)
         self.assertFalse(second_event.is_set())
+
+    def test_only_latest_goal_owns_shared_animation_state(self):
+        tracker = AnimationGoalTracker()
+        first = FakeGoal()
+        second = FakeGoal()
+        tracker.accept(first)
+        self.assertTrue(tracker.is_current(first))
+        tracker.accept(second)
+        self.assertFalse(tracker.is_current(first))
+        self.assertTrue(tracker.is_current(second))
+        tracker.finish(first)
+        self.assertTrue(tracker.is_current(second))
 
 
 if __name__ == "__main__":

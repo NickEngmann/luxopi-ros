@@ -35,6 +35,11 @@ class AnimationGoalTracker:
         with self._lock:
             return self._events.setdefault(id(goal_handle), threading.Event())
 
+    def is_current(self, goal_handle):
+        """Whether this goal still owns shared animation state and status."""
+        with self._lock:
+            return self._active_goal is goal_handle
+
     def cancel(self, goal_handle):
         """Request cancellation for one specific goal."""
         with self._lock:
@@ -59,3 +64,8 @@ def scaled_duration(duration, speed_multiplier):
     if not 0.1 <= speed <= 2.0:
         speed = 1.0
     return max(0.0, float(duration)) / speed
+
+
+def collision_status_from_warnings(legacy_status, warnings):
+    """Combine legacy animation status with classified sensor warning flags."""
+    return "danger" if any(bool(active) for active in warnings) else legacy_status
