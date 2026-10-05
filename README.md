@@ -53,15 +53,15 @@ LuxoPi transforms a RoArm-M3 robotic arm into an interactive desk lamp character
 
 ### Software
 - **OS**: Ubuntu 24.04
-- **ROS2**: Jazzy Foxy
-- **Python**: 3.8+
+- **ROS2**: Jazzy
+- **Python**: 3.12 (Ubuntu 24.04 development and simulator target)
 
 ## Installation
 
 ### 1. Clone Repository
 ```bash
 cd ~
-git clone https://github.com/yourusername/roarm.git luxopi-ros
+git clone https://github.com/NickEngmann/luxopi-ros.git
 cd luxopi-ros
 ```
 
