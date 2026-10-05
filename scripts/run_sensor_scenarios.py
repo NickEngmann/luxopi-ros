@@ -54,7 +54,8 @@ def main():
         wait(lambda:any(v=='petting_stopped:0' for v in observed['petting']))
         wait(lambda:observed['states'][-1]=='IDLE',timeout=20)
         report('raw_head_touch_to_petting_action',classification=True,state='PETTING',animation='folded_wiggle',joint_frames=len(observed['joints'])-baseline)
-        for side,output in [('left','left'),('bottom','front'),('right','right')]:
+        # Preserve legacy physical channel calibration: side FSR inputs are crossed.
+        for side,output in [('left','right'),('bottom','front'),('right','left')]:
             transition('IDLE')
             start=len(observed[output])
             touch[side].publish(UInt8(data=50))
