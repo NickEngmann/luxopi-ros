@@ -43,6 +43,10 @@ The default profile uses the six named M3 axes and pinned vendor visual geometry
 
 The isolated MuJoCo replay exercised all 38 animations and 458 keyframes with mapped, retimed commands and actual endpoint settlement. All keyframes settled within 0.00053 rad in that run, with no effort saturation or joint-bound violations. This is a synthetic simulation result, not a hardware accuracy or performance measurement. See [virtual obstacle sensors](virtual-obstacle-sensors.md) for the optional world-ray fixture; enable it explicitly, and keep it disabled when injecting raw sensor tests.
 
+An optional [continuous timing prototype](continuous-animation-timing.md) preserves
+waypoints while avoiding a full stop at each stage. Its separate physics sweep
+halved playlist time approximately; live ROS regression coverage is tracked there.
+
 Build the optional combined local speech/physics profile with:
 
 ```sh
