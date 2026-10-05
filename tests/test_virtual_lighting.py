@@ -73,3 +73,12 @@ def test_actual_state_visuals_visible_in_virtual_sink(state_name,effect):
     node._neopixel_last_visual_state=None
     node._update_neopixel_for_state(state[state_name])
     assert node._neopixel_controller.snapshot()['effect']==effect
+
+
+def test_white_temperature_reapplies_even_when_state_is_unchanged():
+    node,state=virtual_manager()
+    node._current_state=state.IDLE
+    node._neopixel_animation_start_time=None
+    node._neopixel_last_visual_state=state.IDLE
+    node.color_temp_control_callback(SimpleNamespace(data='color_temp:1'))
+    assert node._neopixel_controller.snapshot()['rgbw']==[255,200,150,150]

@@ -595,6 +595,7 @@ class StateManagerNode(Node):
                 if self._lights_enabled and self._neopixel_controller:
                     # Only apply if we're currently showing white/default colors
                     if not hasattr(self, '_color_mode') or self._color_mode is None:
+                        # The same state now has a different white color.
                         self._neopixel_last_visual_state = None
                         self._update_neopixel_for_state(self._current_state)
                         
@@ -658,7 +659,8 @@ class StateManagerNode(Node):
                 # self._neopixel_controller.stop_effect()
                 # time.sleep(0.25)  # Allow time for any effects to stop
                 self._neopixel_controller.clear_all()
-                time.sleep(0.1)  # Allow time for effects to stop
+                if not self.simulated_lighting:
+                    time.sleep(0.1)  # Allow time for physical effects to stop
                 self._neopixel_override_active = True
             else:
                 # Lights are off and override is active - force clear again to override any running animations
