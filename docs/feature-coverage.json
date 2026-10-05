@@ -413,7 +413,7 @@
       "consumer": "voice-event bridge",
       "offline_evidence": "AI event service suite",
       "offline_scope": "offline model+bridge",
-      "ros_scope": "passed: explicit voice status retains USER_CONTROL through real legacy-command action; actual supplied-audio ASR/LLM HTTP checked separately",
+      "ros_scope": "passed: supplied-WAV HTTP\u2192actual Moonshine tiny\u2192bounded intent or local LFM\u2192transcript/response/motion/lamp;4 functionalfixtures returnIDLE, notaccuracy",
       "physical": "unvalidated"
     },
     {
@@ -536,5 +536,13 @@
       "/tmp/luxopi-final-20261005T030502Z"
     ],
     "limits": "ROS_DOMAIN_ID73 localhost-only; no physical devices/audio; original33 baseline, new cues require separate native validation"
+  },
+  "audio_http_evidence": {
+    "report": "/tmp/luxopi-audio-http-e2e.json",
+    "initial_failure_report": "/tmp/luxopi-audio-http-e2e-initial-failure.json",
+    "image": "sha256:13195690b9e95ff783366087cc0f4ef79091266aaf076ab1e1f4c61a3abaa100",
+    "passed": 4,
+    "scope": "Piper amy syntheticfixtures; no capture/playback; notaccuracy or physical latency",
+    "fixture_caveat": "original Setbrightness tofiftypercent hallucinated10% prefix; polite0.85xspeed equivalent recognizedcleanly, failedreport retained"
   }
 }

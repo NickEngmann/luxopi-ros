@@ -8,7 +8,7 @@ The machine-readable companion `feature-coverage.json` inventories 38 actual ani
 |---|---|---|
 | animations | passed: original33 full actions at2x plus cancellation/preemption/finite joint limit checks | unvalidated |
 | voice_direction | passed: synthesized delayedPCM through shared estimator to VOICE_FOLLOWING/base joint turn and quiet IDLE | unvalidated |
-| voice_conversation | passed: explicit voice status retains USER_CONTROL through real legacy-command action; actual supplied-audio ASR/LLM HTTP checked separately | unvalidated |
+| voice_conversation | passed: supplied-WAV HTTP→actual Moonshine tiny→boundedintent/localLFM→transcript/response/motion/lamp;4functional fixtures returnIDLE | unvalidated |
 | collision | passed: raw distance classifier causes COLLISION_AVOIDING,20 actualjoint hold frames, restores USER_CONTROL | unvalidated |
 | touch_petting | passed: raw top touch→PETTING→folded_wiggle action475joint frames and releaseIDLE; all3side/bottom outputs | unvalidated |
 | gestures | passed: left/right/up/down actual /gestures passthrough; no movement consumer exists | unvalidated |
@@ -59,3 +59,27 @@ Side FSR topics retain the legacy wiring calibration: raw `head_left` produces a
 right collision and `head_right` a left collision. `swap_touch_sides=true` names
 that default explicitly; false selects matching logical channels. Physical channel
 orientation needs verification on the actual robot before changing the default.
+
+## Supplied-audio functional HTTP check
+
+`python3 scripts/audio_e2e.py --url http://127.0.0.1:8081 --fixtures DIR`
+passed4 fixtures through the actual local Moonshine tiny streaming recognizer,
+bounded command parser or LFM2.5-230M, and ROS consumers. Piper generated WAVs
+were uploaded as `audio/wav`; no microphone or playback device was opened. Dance
+completed with actual joint movement in8.77s; blue lamp reached the actual RGBW
+sink in1.53s; brightness changed0.25→0.5 in1.65s; the plant question received a
+local-model response in1.84s. These totals include HTTP polling and action/speech
+completion; they are not Pi latency or recognition accuracy measurements. All
+four scenarios released ownership and returnedIDLE. UploadedUUID WAVs were
+removed from the shared directory after processing.
+
+The original synthetic brightness clip produced the erroneous transcript
+`10% set brightness to50%.` and correctly did not execute the command. Its
+failed report is retained; a polite equivalent synthesized at0.85x speed
+recognized cleanly. Three synthetic variants were inspected to pick that
+functional fixture. This sensitivity is an explicit limitation, not evidence
+that recognition is reliable across human speakers. Numeric `50%` and spoken
+`fiftypercent` are accepted as the same fixture meaning; extraneous prefixes
+remain failures. Reports: `/tmp/luxopi-audio-http-e2e.json` and
+`/tmp/luxopi-audio-http-e2e-initial-failure.json`; image
+`sha256:13195690b9e95ff783366087cc0f4ef79091266aaf076ab1e1f4c61a3abaa100`.
