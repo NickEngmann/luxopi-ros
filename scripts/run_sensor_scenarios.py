@@ -5,7 +5,7 @@ if os.environ.get('ROS_DOMAIN_ID')!='73' or os.environ.get('ROS_LOCALHOST_ONLY')
     raise SystemExit('Sensor scenarios require domain73 localhost-only')
 import rclpy
 from rclpy.node import Node
-from std_msgs.msg import String,Float32,UInt8,Bool
+from std_msgs.msg import String,Float32,UInt8,Bool,Int16
 from sensor_msgs.msg import JointState
 from luxo_interfaces.srv import RequestStateTransition
 from luxo_behaviors.joint_motion import URDF_JOINT_LIMITS
@@ -24,12 +24,24 @@ def main():
     node.create_subscription(String,'/sim/motion_status',lambda msg:observed['motion'].append(json.loads(msg.data)),100)
     touch={side:node.create_publisher(UInt8,'/touch_sensors/head_'+side,10) for side in ('top','left','bottom','right')}
     distance=node.create_publisher(Float32,'/i2c/vl53_left/distance',10)
+    right_distance=node.create_publisher(Float32,'/i2c/vl53_right/distance',10)
+    proximity=node.create_publisher(Int16,'/i2c/apds9960/proximity',10)
+    raw=dict(left=100.,right=100.,touch={s:0 for s in touch},sent=0.)
+    def send_raw():
+        distance.publish(Float32(data=raw['left']));right_distance.publish(Float32(data=raw['right']))
+        proximity.publish(Int16(data=0))
+        for side,publisher in touch.items():publisher.publish(UInt8(data=raw['touch'][side]))
+        raw['sent']=time.monotonic()
+    def set_touch(side,value):
+        raw['touch'][side]=value;touch[side].publish(UInt8(data=value))
     gesture=node.create_publisher(String,'/i2c/apds9960/gesture',10)
     manual=node.create_publisher(JointState,'/sim/manual_joint_target',10)
     states=node.create_client(RequestStateTransition,'/luxo/request_state_transition')
     def spin(seconds):
         end=time.monotonic()+seconds
-        while time.monotonic()<end:rclpy.spin_once(node,timeout_sec=.02)
+        while time.monotonic()<end:
+            if time.monotonic()-raw['sent']>.08:send_raw()
+            rclpy.spin_once(node,timeout_sec=.02)
     def wait(predicate,timeout=10):
         end=time.monotonic()+timeout
         while not predicate():
@@ -46,13 +58,13 @@ def main():
         spin(6) # Actual classifier startup gate remains enabled.
         transition('IDLE')
         baseline=len(observed['joints'])
-        touch['top'].publish(UInt8(data=50))
+        set_touch('top',50)
         wait(lambda:any(v.startswith('petting_started:') for v in observed['petting']))
         wait(lambda:'PETTING' in observed['states'] and 'folded_wiggle' in observed['animations'])
         wait(lambda:len(observed['joints'])>baseline+10)
         poses=observed['joints'][baseline:]
         wait(lambda:max(max(abs(a-b) for a,b in zip(observed['joints'][baseline],p)) for p in observed['joints'][baseline:])>.02)
-        touch['top'].publish(UInt8(data=0))
+        set_touch('top',0)
         wait(lambda:any(v=='petting_stopped:0' for v in observed['petting']))
         wait(lambda:observed['states'][-1]=='IDLE',timeout=20)
         report('raw_head_touch_to_petting_action',classification=True,state='PETTING',animation='folded_wiggle',joint_frames=len(observed['joints'])-baseline)
@@ -60,11 +72,12 @@ def main():
         for side,output in [('left','right'),('bottom','front'),('right','left')]:
             transition('IDLE')
             start=len(observed[output])
-            touch[side].publish(UInt8(data=50))
+            set_touch(side,50)
             wait(lambda:True in observed[output][start:],timeout=5)
-            touch[side].publish(UInt8(data=0))
+            set_touch(side,0)
             wait(lambda:observed[output][-1] is False,timeout=5)
             report('raw_touch_'+side+'_collision',output=output,classified=True)
+        spin(.4) # Fresh safe ranges+FSR and clear dwell; next target is a replan.
         transition('USER_CONTROL',priority=80)
         start=len(observed['joints'])
         names=observed['joint_names']
@@ -75,13 +88,18 @@ def main():
         wait(lambda:observed['motion'] and observed['motion'][-1].get('manual_override'))
         wait(lambda:max(abs(a-b) for a,b in zip(observed['joints'][start],observed['joints'][-1]))>.03)
         report('manual_input_actual_motion',state='USER_CONTROL',joint_frames=len(observed['joints'])-start)
-        distance.publish(Float32(data=3.0));spin(.05);distance.publish(Float32(data=3.0))
+        raw['left']=3.;send_raw();spin(.12)
         wait(lambda:observed['left'][-1] is True and observed['states'][-1]=='COLLISION_AVOIDING')
         spin(.1);start=len(observed['joints']);spin(.4)
         poses=observed['joints'][start:]
         assert poses and max(max(abs(a-b) for a,b in zip(poses[0],p)) for p in poses)<1e-5,'Raw collision did not freeze actual motion'
-        distance.publish(Float32(data=100.0));spin(.05);distance.publish(Float32(data=100.0))
+        raw['left']=100.;send_raw();spin(.4)
         wait(lambda:observed['left'][-1] is False and observed['states'][-1]!='COLLISION_AVOIDING')
+        held_after_clear=observed['joints'][-1][:]
+        spin(.2)
+        assert max(abs(a-b) for a,b in zip(held_after_clear,observed['joints'][-1]))<1e-5,'Clear replayed stale target'
+        manual.publish(JointState(name=names,position=desired))
+        wait(lambda:max(abs(a-b) for a,b in zip(held_after_clear,observed['joints'][-1]))>.01)
         report('raw_distance_collision_motion_hold_and_recovery',held_joint_frames=len(poses),restored_state=observed['states'][-1])
         transition('IDLE')
         for value in ('left','right','up','down'):
@@ -89,7 +107,7 @@ def main():
         wait(lambda:all(value in observed['gestures'] for value in ('left','right','up','down')),timeout=5)
         report('gesture_actual_passthrough',gestures=observed['gestures'],motion_mapping='not implemented, no claim')
     finally:
-        touch['top'].publish(UInt8(data=0))
+        set_touch('top',0)
         node.destroy_node();rclpy.shutdown()
 
 if __name__=='__main__':main()
