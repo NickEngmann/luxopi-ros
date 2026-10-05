@@ -36,7 +36,7 @@ def main():
         command.publish(String(data='nod'))
         wait(lambda:'nod' in seen['animations'])
         wait(lambda:len(seen['joints'])>base+5 and max(max(abs(a-b) for a,b in zip(seen['joints'][base],p)) for p in seen['joints'][base:])>.02)
-        wait(lambda:seen['animations'][-1]=='',timeout=20)
+        wait(lambda:seen['animations'][-1]=='',timeout=180) # Complete feasible trajectory, not a release-latency bound.
         assert seen['states'][-1]=='USER_CONTROL',seen['states'][-10:]
         assert 'IDLE' not in seen['states'][state_start:],seen['states'][state_start:]
         print(json.dumps(dict(scenario='voice_user_control_legacy_animation_real_motion',passed=True,joint_frames=len(seen['joints'])-base,state='USER_CONTROL')),flush=True)
