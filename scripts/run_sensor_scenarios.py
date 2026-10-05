@@ -90,7 +90,8 @@ def main():
         report('manual_input_actual_motion',state='USER_CONTROL',joint_frames=len(observed['joints'])-start)
         raw['left']=3.;send_raw();spin(.12)
         wait(lambda:observed['left'][-1] is True and observed['states'][-1]=='COLLISION_AVOIDING')
-        spin(.1);start=len(observed['joints']);spin(.4)
+        wait(lambda:observed['motion'][-1].get('motion_frozen'),timeout=1)
+        start=len(observed['joints']);spin(.4)
         poses=observed['joints'][start:]
         assert poses and max(max(abs(a-b) for a,b in zip(poses[0],p)) for p in poses)<1e-5,'Raw collision did not freeze actual motion'
         raw['left']=100.;send_raw();spin(.4)
