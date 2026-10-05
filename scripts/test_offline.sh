@@ -8,4 +8,6 @@ export PYTHONPATH="$robot_checkout/src/luxo_behaviors${PYTHONPATH:+:$PYTHONPATH}
   src/luxo_behaviors/test/test_camera_buffering.py \
   src/luxo_behaviors/test/test_simulator_protocol.py \
   src/luxo_behaviors/test/test_robot_kinematics.py \
-  src/luxo_behaviors/test/test_roarm_m3_kinematics.py "$@"
+  src/luxo_behaviors/test/test_roarm_m3_kinematics.py \
+  src/luxo_behaviors/test/test_simulator_health.py \
+  src/luxo_behaviors/test/test_sim_world_geometry.py "$@"

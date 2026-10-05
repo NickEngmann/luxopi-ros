@@ -46,7 +46,10 @@ def summarize_simulator_health(snapshot, now_monotonic):
     joints_received = snapshot.get("_joints_received_monotonic")
     state_age = None if state_received is None else max(0.0, now_monotonic - state_received)
     joints_age = None if joints_received is None else max(0.0, now_monotonic - joints_received)
-    components = {name: name in present for name in REQUIRED_GRAPH_COMPONENTS}
+    required = tuple(REQUIRED_GRAPH_COMPONENTS)
+    if snapshot.get("simulation_backend") == "mujoco":
+        required += ("mujoco_simulator",)
+    components = {name: name in present for name in required}
     missing = [name for name, found in components.items() if not found]
     state_fresh = state_age is not None and state_age <= HEALTH_STALE_SECONDS
     joints_fresh = joints_age is not None and joints_age <= HEALTH_STALE_SECONDS

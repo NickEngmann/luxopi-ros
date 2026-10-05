@@ -508,6 +508,7 @@ def generate_launch_description():
                 LaunchConfiguration('speech_event_socket'), value_type=str
             ),
             'audio_directory': LaunchConfiguration('simulator_audio_directory'),
+            'simulation_backend': LaunchConfiguration('simulation_backend'),
         }],
         condition=IfCondition(LaunchConfiguration('enable_speech_bridge'))
     )

@@ -12,7 +12,15 @@ compose_args=(--project-directory "$checkout_dir" -f "$checkout_dir/compose.simu
 case "$mode" in
   base) ;;
   speech|audio|full)
-    : "${LUXOPI_AI_CHECKOUT:?Set LUXOPI_AI_CHECKOUT to the luxopi-ai checkout}"
+    if [[ -z "${LUXOPI_AI_CHECKOUT:-}" ]]; then
+      ai_candidate="$(dirname "$checkout_dir")/luxopi-ai"
+      if [[ ! -d "$ai_candidate" ]]; then
+        common_git_dir="$(git -C "$checkout_dir" rev-parse --path-format=absolute --git-common-dir)"
+        ai_candidate="$(dirname "$(dirname "$common_git_dir")")/luxopi-ai"
+      fi
+      [[ -d "$ai_candidate" ]] || { echo 'Set LUXOPI_AI_CHECKOUT to the luxopi-ai checkout.' >&2; exit 2; }
+      export LUXOPI_AI_CHECKOUT="$ai_candidate"
+    fi
     compose_args+=(-f "$checkout_dir/compose.speech-simulator.yml")
     if [[ "$mode" != speech ]]; then compose_args+=(-f "$checkout_dir/compose.audio-simulator.yml"); fi
     if [[ "$mode" == full ]]; then compose_args+=(-f "$checkout_dir/compose.full-simulator.yml"); fi

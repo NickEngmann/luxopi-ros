@@ -40,3 +40,11 @@ def test_health_fails_when_state_or_joint_telemetry_is_stale_or_absent():
     assert health["healthy"] is False
     assert health["state_age_seconds"] is None
     assert health["joint_state_age_seconds"] is None
+
+
+def test_physics_health_requires_actual_feedback_engine():
+    snapshot = healthy_snapshot()
+    snapshot['simulation_backend'] = 'mujoco'
+    assert summarize_simulator_health(snapshot, 10)['missing_required'] == ['mujoco_simulator']
+    snapshot['graph_nodes'].append('mujoco_simulator')
+    assert summarize_simulator_health(snapshot, 10)['healthy']

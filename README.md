@@ -8,9 +8,9 @@ A ROS2-based control system for the RoArm-M3 robotic arm with Luxo Jr-style anim
 
 ## Hardware-free development
 
-The modernized ROS Jazzy simulator runs the real behavior graph in an isolated container. From this checkout, run `scripts/simulator.sh up -d --build`, then open http://127.0.0.1:8080 or http://100.69.210.33:8080 on the tailnet. The helper also works by absolute path from another directory or an SSH session. No physical audio, camera, serial, or LED devices are mounted.
+The modernized ROS Jazzy simulator runs the real behavior graph and defaults to the six-axis vendor M3 model in an isolated container. From this checkout, run `scripts/simulator.sh up -d --build`, then open http://127.0.0.1:8080 or http://100.69.210.33:8080 on the tailnet. The helper also works by absolute path from another directory or an SSH session. No physical audio, camera, serial, or LED devices are mounted.
 
-See [simulator launch and SSH access](docs/simulator-launch.md), [behavior ownership and future Home Assistant boundary](docs/behavior-architecture.md), and [feature evidence](docs/feature-coverage.md). Local speech-model overlays are optional; the default conversation backend is explicitly simulated. The physical installation instructions below describe the historical hardware path and are separate from the container simulator.
+See [simulator launch and SSH access](docs/simulator-launch.md), [behavior ownership and future Home Assistant boundary](docs/behavior-architecture.md), and [feature evidence](docs/feature-coverage.md). The optional [MuJoCo physics and virtual sensor fixture](docs/virtual-obstacle-sensors.md) exercises the vendor inertias and end-effector sensor rays. All 38 animations are retained, including listening/thinking/speaking cues. Local speech-model overlays are optional; the default conversation backend is explicitly simulated. The physical installation instructions below describe the historical hardware path and are separate from the container simulator.
 
 ## Table of Contents
 - [Overview](#overview)

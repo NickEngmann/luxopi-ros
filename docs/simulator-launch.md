@@ -24,7 +24,7 @@ For browser access through SSH, run this on your own computer, leave the connect
 ssh -N -L 18080:127.0.0.1:8080 ubuntu@100.69.210.33
 ```
 
-The helper accepts `--mode base`, `--mode speech`, `--mode audio`, `--mode physics`, or `--mode full` before the Compose command. Speech/audio/full modes require `LUXOPI_AI_CHECKOUT` to name the AI checkout. Each mode resolves its overlay files by absolute checkout path, including when invoked from another directory. Physics/full are optional development backends; consult their validation evidence before treating their motion as calibrated. Build the base image before speech or physics, and both optional images before full.
+The helper accepts `--mode base`, `--mode speech`, `--mode audio`, `--mode physics`, or `--mode full` before the Compose command. Speech/audio/full modes find a sibling `luxopi-ai` checkout, including the canonical sibling when invoked from a Git worktree. Set `LUXOPI_AI_CHECKOUT` to override that location. Each mode resolves its overlay files by absolute checkout path, including when invoked from another directory. Physics/full are optional development backends; consult their validation evidence before treating their motion as calibrated. Build the base image before speech or physics, and both optional images before full.
 
 The helper resolves its checkout from its own location. Container launches use `/workspace`; installed UI modules, meshes, and animation assets resolve from their package locations rather than the SSH shell’s working directory. Relative Compose paths resolve against the checkout. SSH authentication uses your existing account; this change does not create credentials.
 
@@ -39,7 +39,20 @@ docker compose -f compose.simulator.yml exec -T simulator bash -c \
 
 Stop with `docker compose -f compose.simulator.yml down`. The image builds natively and the current ROS base tag can receive upstream updates; it is not a fully frozen dependency environment.
 
-The visual model currently represents the legacy four-axis RoArm-M1. Six-axis M3 geometry, inertia, actuator mapping and physics validation remain separate work; do not treat the current viewer as verified M3 dynamics. Camera controls currently publish simulated detections; their complete shared behavior consumer still needs integration.
+The default profile uses the six named M3 axes and pinned vendor visual geometry. The legacy four-axis model remains selectable for comparison. The default backend is bounded kinematics; the optional MuJoCo backend owns actual physics feedback and retains vendor inertias and collision meshes. Camera controls feed the shared behavior consumers; synthetic detections do not evaluate vision-model accuracy. Sensor warnings now constrain the trajectory through the same policy used by the hardware path. Physical mount transforms, sensor range and stopping margins still need calibration on the actual robot.
+
+The isolated MuJoCo replay exercised all 38 animations and 458 keyframes with mapped, retimed commands and actual endpoint settlement. All keyframes settled within 0.00053 rad in that run, with no effort saturation or joint-bound violations. This is a synthetic simulation result, not a hardware accuracy or performance measurement. See [virtual obstacle sensors](virtual-obstacle-sensors.md) for the optional world-ray fixture; enable it explicitly, and keep it disabled when injecting raw sensor tests.
+
+Build the optional combined local speech/physics profile with:
+
+```sh
+scripts/simulator.sh build
+scripts/simulator.sh --mode speech build
+scripts/simulator.sh --mode physics build
+scripts/simulator.sh --mode full up -d --build
+```
+
+The supplied GGUF and Moonshine model directories must already exist in the AI checkout. All speech tests use supplied WAV files silently; this profile mounts no live audio devices.
 
 Verified on 2026-10-04: clean container build of all three ROS packages; HTTP command acceptance with recognized text and reply visible in dashboard state; four native motion/safety scenarios; ten native lamp scenarios. The lamp test exposed and verified a fix for stale color-temperature rendering. These checks do not replace full browser automation, all-animation timing, M3 physics or real hardware validation.
 
