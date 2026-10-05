@@ -558,8 +558,11 @@ class SimulatorDashboard(Node):
             self._sensor_update(proximity=event["value"])
         elif kind == "distance":
             publisher = self._event_publishers[kind][event["side"]]
-            publisher.publish(Float32(data=event["metres"]))
-            publisher.publish(Float32(data=event["metres"]))
+            # Dashboard/API distances are metres; the physical VL53 topics
+            # and shared collision classifier use centimetres.
+            centimetres = event["metres"] * 100.0
+            publisher.publish(Float32(data=centimetres))
+            publisher.publish(Float32(data=centimetres))
             self._sensor_update(**{f"{event['side']}_distance": event["metres"]})
         elif kind == "collision":
             self._event_publishers[kind][event["side"]].publish(Bool(data=event["active"]))
