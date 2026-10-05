@@ -12,5 +12,10 @@ then expects health200 without a container restart. Reused PID, replacement
 container or unexpected restart fails the check; no host PID is signalled.
 
 Six dependency-light tests pass, including failed-check cleanup, reused PID and
-ambiguous entrypoint guards. Actual container fault execution remains pending;
-these tests do not claim that health503/recovery has been observed yet.
+ambiguous entrypoint guards. On 2026-10-05 the rebuilt default simulator at commit
+`09b1682` passed the actual Docker-owned pause check: health returned HTTP 503
+with a 3.182s stale state heartbeat while joint feedback stayed fresh; resuming the
+same process restored HTTP 200 with a 0.025s state age, without a container
+restart. Evidence: `/tmp/luxopi-latest-restart-e2e.json` on the development host.
+The complete offline suite also passed 443 tests with one skip. This check
+validates simulator monitoring and recovery, not physical robot recovery.
