@@ -2,12 +2,18 @@
 
 Animation plans use one six-value internal frame:
 `[base, shoulder, elbow, wrist, roll, acceleration]`. The last value is
-transport metadata, never a joint position. The `urdf4` profile maps the first
-four axes to the checked-in visualization URDF. The optional `roarm_m3` profile
-uses the six canonical vendor joint names and maps roll to the fifth axis; the
-gripper remains at measured feedback or zero. Hardware commands retain their
-existing conservative roll range. Every plan is validated for shape, finite
-values, duration, and keyframe-name count before execution.
+transport metadata, never a joint position. The `urdf4` profile maps base,
+shoulder, elbow, and wrist to the checked-in visualization joints
+`base_to_L1`, `L1_to_L2`, `L2_to_L3`, and `L3_to_L4`. It omits roll because the
+checked-in legacy URDF has no fifth actuator. The optional `roarm_m3` profile
+uses the vendor order `base_link_to_link1`, `link1_to_link2`,
+`link2_to_link3`, `link3_to_link4`, `link4_to_link5`, and
+`link5_to_gripper_link`; roll maps to axis five and the gripper remains at its
+feedback position or zero. Generic animation poses keep the conservative
+roll range `[-2.5, -0.5]`; manual M3 poses are bounded by the vendor URDF
+limits. Generic animations never command the gripper. Every plan is validated
+for six-value shape, finite values, duration, and keyframe-name count before
+execution.
 
 On hardware, `RoArmHardwareInterface` validates safety conditions and encodes
 targets for the RoArm serial protocol. In kinematic simulation,
@@ -36,13 +42,16 @@ the arbitration boundary only; it does not model the physical escape trajectory
 or establish a hardware safety guarantee. `/sim/motion_status` exposes the
 state, active warning directions, target, current positions, and hold status.
 
-The simulator's current URDF contains four revolute joints with 0.5 rad/s
-velocity limits. The physical RoArm exposes additional actuator/metadata fields
-and uses hardware-specific base limits and firmware acceleration values. The
-simulation limiter therefore validates the visualization/model axes, while the
-hardware interface remains responsible for physical-device bounds and sensor
-safety. Physical velocity/acceleration behavior must be checked against the
-actual firmware transport before sharing simulator limits with that backend.
+The four-axis kinematic profile uses the checked-in URDF limits; the six-axis
+M3 profile uses vendor URDF bounds for visualization and bounded manual input.
+The simulated limiter defaults to 0.5 rad/s and 1.0 rad/s² in either profile.
+These are simulator constraints, not measured firmware performance. The
+hardware interface remains responsible for physical-device bounds, firmware
+acceleration metadata, and sensor safety. Physical velocity/acceleration
+behavior must be verified against the actual firmware transport before sharing
+simulator limits with that backend. The shared browser graph currently starts
+with `urdf4`; a six-axis deployment must select `roarm_m3` explicitly and pass
+the native six-joint motion scenarios before it is treated as verified.
 
 Hardware-free limiter tests cover named target validation, joint bounds,
 velocity/acceleration limits, and reversal behavior. Animation cancellation and
