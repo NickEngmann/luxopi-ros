@@ -34,6 +34,8 @@ class Scenarios:
         self.joints, self.targets, self.errors = [], [], []
         self.results=[]
         self.expected_durations={}
+        self.feasible_retiming=False
+        self.joint_names=[]
         self.node.create_subscription(String, '/luxo/current_state', lambda msg:setattr(self,'current_state',msg.data),10)
         self.node.create_subscription(JointState, '/joint_states', lambda msg:self.position(msg,self.joints),100)
         self.node.create_subscription(JointState, '/joint_states_target', lambda msg:self.position(msg,self.targets),100)
@@ -52,6 +54,7 @@ class Scenarios:
                 lower,upper=ALL_JOINT_LIMITS[name]
                 if not lower-1e-6<=value<=upper+1e-6:
                     self.errors.append('Joint outside URDF limits '+name)
+        if output is self.joints: self.joint_names=list(msg.name)
         output.append((time.monotonic(),tuple(msg.position[:len(msg.name)])))
 
     def spin(self, seconds):
@@ -166,23 +169,58 @@ class Scenarios:
             self.wait(lambda:self.current_state=='IDLE')
             self.spin(.3)  # Allow action-server state subscription to observe reset.
             start=len(self.joints)
+            expected=self.expected_durations.get(name,0)/2
+            if self.feasible_retiming:
+                from luxo_behaviors.animation_capabilities import ANIMATION_CLASSES
+                from luxo_behaviors.joint_profiles import pose_to_animation_positions
+                from luxo_behaviors.trajectory_timing import retime_cubic_plan
+                plugin=ANIMATION_CLASSES[name](None)
+                frames,durations=plugin.get_keyframes()
+                initial=pose_to_animation_positions(self.joint_names,self.joints[-1][1])
+                if getattr(plugin,'preserve_base_position',True):
+                    frames=plugin.adjust_keyframes_to_current_base(frames,initial[0])
+                expected=sum(retime_cubic_plan(initial,frames,durations,speed_multiplier=2,
+                    max_velocity=self.velocity_cap,max_acceleration=self.acceleration_cap,
+                    axes=min(5,len(self.joint_names))))
             _,feedback,result=self.goal(name,speed=2)
-            terminal=self.future(result,timeout=60)
+            terminal=self.future(result,timeout=max(60,expected+20))
             assert terminal.status==GoalStatus.STATUS_SUCCEEDED and terminal.result.success,(name,terminal)
             assert feedback,(name,'no action feedback')
-            expected=self.expected_durations.get(name,0)/2
             assert terminal.result.actual_duration>=expected*.75,(name,'Requested speed was applied more than once',terminal.result.actual_duration,expected)
+            endpoint_error=None
+            settled_velocity=None
+            if self.feasible_retiming:
+                assert self.targets and self.joints
+                target=self.targets[-1][1]
+                endpoint_error=max(abs(a-b) for a,b in zip(target,self.joints[-1][1]))
+                assert endpoint_error <= .02,(name,'endpoint lag',endpoint_error)
+                self.spin(.12)
+                first,last=self.joints[-4],self.joints[-1]
+                dt=last[0]-first[0]
+                settled_velocity=max(abs(a-b)/dt for a,b in zip(first[1],last[1]))
+                assert settled_velocity <= .02,(name,'unsettled endpoint',settled_velocity)
             self.record('animation_'+name,status=terminal.status,feedback=len(feedback),joint_frames=len(self.joints)-start,
-                        duration=float(terminal.result.actual_duration),expected_duration_at_speed=expected,final_state=terminal.result.final_state)
+                        duration=float(terminal.result.actual_duration),expected_duration_at_speed=expected,endpoint_error=endpoint_error,settled_velocity=settled_velocity,final_state=terminal.result.final_state)
 
 
 def main():
     parser=argparse.ArgumentParser()
     parser.add_argument('--all-animations',action='store_true',help='Execute every manifest plugin in full at2x speed')
+    parser.add_argument('--feasible-retiming',action='store_true',help='Require explicitly enabled runtime retiming and settled endpoints')
     parser.add_argument('--output',default='/tmp/luxopi-motion-scenarios.json')
     args=parser.parse_args()
     rclpy.init(); suite=Scenarios()
     error=None
+    if args.feasible_retiming:
+        from rclpy.parameter_client import AsyncParameterClient
+        parameters=AsyncParameterClient(suite.node,'animation_command')
+        assert parameters.wait_for_service(timeout_sec=10)
+        values=suite.future(parameters.get_parameters(['enable_feasible_retiming','max_joint_velocity','max_joint_acceleration'])).values
+        assert values[0].bool_value,'Runtime feasible retiming is not enabled'
+        suite.feasible_retiming=True
+        suite.velocity_cap=values[1].double_value
+        suite.acceleration_cap=values[2].double_value
+        assert suite.velocity_cap>0 and suite.acceleration_cap>0
     try:
         assert suite.actions.wait_for_server(timeout_sec=15),'Action server absent'
         assert suite.states.wait_for_service(timeout_sec=15),'State manager absent'
