@@ -11,10 +11,11 @@ from sensor_msgs.msg import JointState
 from luxo_interfaces.srv import RequestStateTransition
 
 def main():
-    rclpy.init();node=Node('voice_cue_scenarios');seen=dict(states=[],animations=[],joints=[],statuses={})
+    rclpy.init();node=Node('voice_cue_scenarios');seen=dict(states=[],animations=[],joints=[],statuses={},interaction=[])
     for topic,key in [('/luxo/current_state','states'),('/roarm/current_animation','animations')]:
         node.create_subscription(String,topic,lambda m,key=key:seen[key].append(m.data),100)
     node.create_subscription(JointState,'/joint_states',lambda m:seen['joints'].append(list(m.position)),100)
+    node.create_subscription(String,'/sim/interaction_status',lambda m:seen['interaction'].append(json.loads(m.data)),100)
     def statuses(msg):
         for status in msg.status_list:seen['statuses'][bytes(status.goal_info.goal_id.uuid).hex()]=status.status
     node.create_subscription(GoalStatusArray,'/play_animation/_action/status',statuses,100)
@@ -58,9 +59,13 @@ def main():
         report('command_preempts_thinking_cue',joint_frames=len(seen['joints'])-baseline)
         idle()
         start=len(seen['animations']);emit('listening');cue('listening',start)
-        emit('idle');spin(.02);emit('listening');wait(lambda:seen['states'][-1]=='USER_CONTROL')
+        emit('idle');wait(lambda:seen['states'][-1]=='IDLE')
+        # Observe the intervening IDLE edge so an old USER_CONTROL cache cannot
+        # masquerade as the newly granted session. Prior cue is still in flight.
+        interaction_start=len(seen['interaction']);emit('listening')
+        wait(lambda:seen['states'][-1]=='USER_CONTROL' and any(s.get('voice_status')=='listening' and s.get('voice_session_owned') for s in seen['interaction'][interaction_start:]))
         state_start=len(seen['states']);spin(2)
-        assert seen['states'][-1]=='USER_CONTROL' and 'IDLE' not in seen['states'][state_start:]
+        assert seen['states'][-1]=='USER_CONTROL' and 'IDLE' not in seen['states'][state_start:], {'states':seen['states'][state_start:], 'interaction':seen['interaction'][-10:]}
         report('stale_cue_completion_preserves_new_session',state='USER_CONTROL')
         idle()
         start=len(seen['animations']);emit('thinking');cue('thinking',start)
