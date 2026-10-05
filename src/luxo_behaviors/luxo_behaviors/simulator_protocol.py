@@ -179,8 +179,8 @@ def normalize_event(payload):
         if side not in DISTANCE_SIDES:
             raise ValueError("distance side must be left or right")
         metres = _number(payload.get("metres"), "metres")
-        if not 0.01 <= metres <= 10:
-            raise ValueError("distance must be between 0.01 and 10 metres")
+        if not 0 <= metres <= 1.2:
+            raise ValueError("distance must be between 0 and 1.2 metres")
         return {"type": kind, "side": side, "metres": metres}
 
     if kind == "collision":

@@ -116,6 +116,7 @@ def test_animation_and_light_controls_reject_invalid_values(event):
         {"type": "proximity", "value": -1},
         {"type": "distance", "side": "front", "metres": 1},
         {"type": "distance", "side": "left", "metres": math.inf},
+        {"type": "distance", "side": "left", "metres": 1.21},
         {"type": "collision", "side": "rear", "active": True},
         {"type": "collision", "side": "left", "active": "yes"},
         {"type": "vision", "person_present": 1, "emotion": "happy"},

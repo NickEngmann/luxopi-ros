@@ -48,7 +48,7 @@ for item in os.listdir('/proc'):
  if not item.isdigit(): continue
  try: command=open('/proc/'+item+'/cmdline','rb').read().split(b'\\0')
  except (FileNotFoundError,ProcessLookupError,PermissionError): continue
- if any(arg.endswith(b'/lib/luxo_behaviors/state_manager_node') for arg in command): matches.append(int(item))
+ if any(arg.endswith(b'/lib/luxo_behaviors/state_manager') for arg in command): matches.append(int(item))
 assert len(matches)==1,matches
 os.kill(matches[0],signal.SIGTERM)
 print(matches[0])

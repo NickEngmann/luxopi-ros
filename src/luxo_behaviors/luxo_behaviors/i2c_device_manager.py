@@ -14,6 +14,7 @@ import time
 import queue
 from collections import defaultdict
 from enum import Enum, auto
+from luxo_behaviors.range_filter import filtered_clearance
 
 class SensorType(Enum):
     """Enum for supported sensor types"""
@@ -131,37 +132,11 @@ class VL53L4CDSensor(I2CSensor):
                 raw_distance = self.device.distance
                 self.device.clear_interrupt()
                 
-                # Filter out invalid readings
-                if raw_distance <= 0 or raw_distance > 400:  # VL53L4CD max range is 400cm
-                    return None
-                
-                # Add to history
-                self.reading_history.append(raw_distance)
-                if len(self.reading_history) > self.history_size:
-                    self.reading_history.pop(0)
-                
-                # Need at least 3 readings for median filter
-                if len(self.reading_history) < 3:
-                    return {'distance': raw_distance, 'filtered': False}
-                
-                # Calculate median
-                sorted_history = sorted(self.reading_history)
-                median = sorted_history[len(sorted_history) // 2]
-                
-                # Check if current reading is an outlier
-                if abs(raw_distance - median) > self.outlier_threshold:
-                    # Use median instead of outlier
-                    return {'distance': median, 'filtered': True, 'raw': raw_distance}
-                
-                # Use moving average of non-outlier readings
-                valid_readings = [r for r in self.reading_history 
-                                if abs(r - median) <= self.outlier_threshold]
-                
-                if valid_readings:
-                    filtered_distance = sum(valid_readings) / len(valid_readings)
-                    return {'distance': filtered_distance, 'filtered': True, 'raw': raw_distance}
-                else:
-                    return {'distance': median, 'filtered': True, 'raw': raw_distance}
+                return filtered_clearance(
+                    raw_distance, self.reading_history,
+                    history_size=self.history_size,
+                    outlier_threshold=self.outlier_threshold,
+                )
                     
             return None
         except Exception as e:
@@ -422,9 +397,12 @@ class I2CDeviceManager(Node):
                     data = sensor.read()
                     
                 if data:
-                    sensor.last_success_time = self.get_clock().now()
-                    sensor.error_count = 0
-                    sensor.successful_reads += 1
+                    if data.get('valid', True):
+                        sensor.last_success_time = self.get_clock().now()
+                        sensor.error_count = 0
+                        sensor.successful_reads += 1
+                    else:
+                        self._publish_sensor_health(sensor_name, "invalid", "Invalid range sample")
                     
                     # Publish based on sensor type
                     if sensor_name == 'apds9960' and 'proximity' in data:
