@@ -12,7 +12,8 @@ def methods():
     tree = ast.parse(Path('src/luxo_behaviors/luxo_behaviors/animation_command.py').read_text())
     klass = next(n for n in tree.body if isinstance(n, ast.ClassDef))
     body = [n for n in klass.body if isinstance(n, ast.FunctionDef)
-            and n.name in {'sim_profile_feedback_callback', '_wait_for_simulated_pose'}]
+            and n.name in {'sim_profile_feedback_callback', '_wait_for_simulated_pose',
+                           '_refresh_collision_status'}]
     now = [1.0]
     clock = SimpleNamespace(monotonic=lambda: now[0],
                             sleep=lambda delta: now.__setitem__(0, now[0]+delta))
@@ -74,3 +75,13 @@ def test_expected_safety_hold_interrupts_without_actuator_error(mode):
                           _sim_motion_status=(1.0, mode),
                           get_logger=lambda: SimpleNamespace(warning=lambda _: None))
     assert ns['_wait_for_simulated_pose'](obj, [.2, .3, .4, .5, -.7, 10], None) is False
+
+
+def test_outer_warning_band_remains_warning_when_legacy_bool_is_false():
+    ns, _ = methods()
+    ns['collision_status_from_warnings'] = lambda legacy, warnings: legacy
+    obj = SimpleNamespace(_legacy_collision_status='safe', _collision_warnings={'left': False},
+                          _atomic_sensor_status={'left': {'active': False, 'severity': 'warning',
+                                                         'valid': True}}, _goal_handle=None)
+    ns['_refresh_collision_status'](obj)
+    assert obj.collision_status == 'warning:left:warning'
