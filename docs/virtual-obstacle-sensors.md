@@ -20,6 +20,19 @@ ros2 launch luxo_behaviors physics_simulator.launch.py \
   world_obstacles_json:='[{"name":"front_fixture","shape":"box","center_m":[0.15,0,0.61],"half_extents_m":[0.03,0.06,0.06]}]'
 ```
 
+The container helper also accepts fixture configuration through environment
+variables in physics/full modes:
+
+```bash
+LUXOPI_WORLD_SENSOR_FIXTURE=true \
+LUXOPI_WORLD_OBSTACLES_JSON='[{"name":"front_fixture","shape":"box","center_m":[0.15,0,0.61],"half_extents_m":[0.03,0.06,0.06]}]' \
+scripts/simulator.sh --mode physics up -d
+```
+
+Use `LUXOPI_SENSOR_MOUNTS_JSON` for custom mount transforms. Set these variables
+again when recreating the container, or keep them in a private Compose environment
+file. Do not enable the periodic fixture during tests that inject raw sensor samples.
+
 Coordinates are metres in the M3 URDF world frame. Box dimensions are
 half-extents. Scenes are limited to 32 named primitives with dimensions and
 positions bounded to five metres. Rays are normalized and clipped to each

@@ -6,4 +6,7 @@ services:
       dockerfile: docker/Dockerfile.physics-simulator
     environment:
       LUXOPI_SIM_BACKEND: mujoco
+      LUXOPI_WORLD_SENSOR_FIXTURE: "${LUXOPI_WORLD_SENSOR_FIXTURE:-false}"
+      LUXOPI_WORLD_OBSTACLES_JSON: "${LUXOPI_WORLD_OBSTACLES_JSON:-}"
+      LUXOPI_SENSOR_MOUNTS_JSON: "${LUXOPI_SENSOR_MOUNTS_JSON:-}"
       LUXOPI_JOINT_PROFILE: roarm_m3

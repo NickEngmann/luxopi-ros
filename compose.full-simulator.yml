@@ -7,6 +7,9 @@ services:
       dockerfile: docker/Dockerfile.full-simulator
     environment:
       LUXOPI_SIM_BACKEND: mujoco
+      LUXOPI_WORLD_SENSOR_FIXTURE: "${LUXOPI_WORLD_SENSOR_FIXTURE:-false}"
+      LUXOPI_WORLD_OBSTACLES_JSON: "${LUXOPI_WORLD_OBSTACLES_JSON:-}"
+      LUXOPI_SENSOR_MOUNTS_JSON: "${LUXOPI_SENSOR_MOUNTS_JSON:-}"
       LUXOPI_PIPER_MODEL: /voices/en_US-amy-low.onnx
       LUXOPI_SPEECH_COMMAND: '["/opt/speech/bin/python", "/opt/luxopi-ai/local_conversation.py", "--backend", "llm", "--asr-model", "/models/moonshine/tiny", "--audio-directory", "/tmp/luxopi-sim-audio", "--wav-directory", "/tmp/luxopi-sim-tts"]'
     volumes:

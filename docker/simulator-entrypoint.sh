@@ -26,6 +26,9 @@ backend="${LUXOPI_SIM_BACKEND:-kinematic}"
 if [[ "$backend" == mujoco ]]; then
   [[ "$joint_profile" == roarm_m3 ]] || { echo "MuJoCo requires the roarm_m3 joint profile." >&2; exit 2; }
   launch_file=physics_simulator.launch.py
+  optional_args+=("enable_world_sensor_fixture:=${LUXOPI_WORLD_SENSOR_FIXTURE:-false}")
+  [[ -z "${LUXOPI_WORLD_OBSTACLES_JSON:-}" ]] || optional_args+=("world_obstacles_json:=${LUXOPI_WORLD_OBSTACLES_JSON}")
+  [[ -z "${LUXOPI_SENSOR_MOUNTS_JSON:-}" ]] || optional_args+=("sensor_mounts_json:=${LUXOPI_SENSOR_MOUNTS_JSON}")
 elif [[ "$backend" != kinematic ]]; then
   echo "Unsupported simulation backend: $backend" >&2
   exit 2
