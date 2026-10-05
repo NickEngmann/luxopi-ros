@@ -940,15 +940,15 @@ class AnimationCommandActionServer(Node):
         """Do not report a keyframe complete until actual feedback settles."""
         _, expected = animation_pose_for_profile(target, self.joint_profile,
             gripper_position=self.current_gripper_position)
-        deadline = time.monotonic() + 4.0
+        wait_started = time.monotonic()
+        deadline = wait_started + 4.0
         stable_since = None
         while time.monotonic() < deadline:
             if (cancel_event is not None and cancel_event.is_set()) or self.collision_preempted:
                 return False
-            safety = getattr(self, '_sim_motion_status', None)
-            if (safety is not None and time.monotonic() - safety[0] <= .3
-                    and safety[1].startswith('hold_')):
-                self.get_logger().warning('Safety hold requires a new animation plan')
+            safety_reason = self._safety_interrupt_reason(wait_started)
+            if safety_reason:
+                self.get_logger().warning(safety_reason)
                 return False
             sample = self._sim_feedback
             now = time.monotonic()
@@ -974,9 +974,43 @@ class AnimationCommandActionServer(Node):
             payload = json.loads(message.data)
             mode = payload['avoidance_mode']
             if isinstance(mode, str):
-                self._sim_motion_status = (time.monotonic(), mode)
+                now = time.monotonic()
+                previous = getattr(self, '_sim_motion_status', None)
+                if (mode == 'adjust' and previous is not None
+                        and previous[1] == 'adjust' and now - previous[0] <= .3):
+                    adjust_since = previous[2]
+                else:
+                    adjust_since = now if mode == 'adjust' else None
+                self._sim_motion_status = (now, mode, adjust_since)
         except (KeyError, TypeError, ValueError):
             return
+
+    def _safety_interrupt_reason(self, stage_started):
+        """End stale/held plans cleanly; bound time spent demonstrating retreat.
+
+        A newly published stage gets a short grace period for the controller to
+        receive it. Warning adjustments remain active long enough to demonstrate
+        real redirected motion, then require a newly planned action. Danger is
+        handled immediately by ``collision_preempted``.
+        """
+        if not getattr(self, 'enable_feasible_retiming', False):
+            return None
+        now = time.monotonic()
+        if now - stage_started < .15:
+            return None
+        safety = getattr(self, '_sim_motion_status', None)
+        if safety is None:
+            return 'Simulator motion status is unavailable; stopping the animation plan'
+        if now - safety[0] > .3:
+            return 'Simulator motion status is stale; stopping the animation plan'
+        mode = safety[1]
+        if mode.startswith('hold_'):
+            return f'Safety hold ({mode}) requires a new animation plan'
+        if mode == 'adjust':
+            adjust_since = safety[2] if len(safety) > 2 else safety[0]
+            if now - adjust_since >= 2.0:
+                return 'Warning retreat was applied; stopping for a fresh animation plan'
+        return None
 
     def publish_joint_states_target(self):
         """Publish target joint states."""
@@ -1076,6 +1110,10 @@ class AnimationCommandActionServer(Node):
             progress = min(1.0, (time.monotonic() - started) / duration)
             self.target_positions = plan.segment(index, progress)
             self.publish_joint_states_target()
+            safety_reason = self._safety_interrupt_reason(started)
+            if safety_reason:
+                self.get_logger().warning(safety_reason)
+                return False
             if progress >= 1.0:
                 break
             time.sleep(.01)
@@ -1090,6 +1128,7 @@ class AnimationCommandActionServer(Node):
         """Move to a specific position over a duration with optional easing."""
         start_positions = self.target_positions.copy()
         start_time = self.get_clock().now()
+        start_monotonic = time.monotonic()
 
         adjusted_duration = scaled_duration(duration, self.speed_multiplier)
 
@@ -1139,6 +1178,11 @@ class AnimationCommandActionServer(Node):
             if target_intent_id is not None:
                 self._target_intent_id = target_intent_id
             self.publish_joint_states_target()
+
+            safety_reason = self._safety_interrupt_reason(start_monotonic)
+            if safety_reason:
+                self.get_logger().warning(safety_reason)
+                return False
 
             time.sleep(0.01)
 

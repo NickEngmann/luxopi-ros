@@ -13,15 +13,22 @@ def methods():
     klass = next(n for n in tree.body if isinstance(n, ast.ClassDef))
     body = [n for n in klass.body if isinstance(n, ast.FunctionDef)
             and n.name in {'sim_profile_feedback_callback', '_wait_for_simulated_pose',
-                           '_refresh_collision_status'}]
+                           '_refresh_collision_status', 'sim_motion_status_callback',
+                           '_safety_interrupt_reason'}]
     now = [1.0]
     clock = SimpleNamespace(monotonic=lambda: now[0],
                             sleep=lambda delta: now.__setitem__(0, now[0]+delta))
-    ns = dict(time=clock, math=math, joint_profile=joint_profile,
+    ns = dict(time=clock, math=math, json=__import__('json'), joint_profile=joint_profile,
               pose_to_animation_positions=pose_to_animation_positions,
               animation_pose_for_profile=animation_pose_for_profile)
     exec(compile(ast.Module(body=body, type_ignores=[]), '<animation>', 'exec'), ns)
     return ns, now
+
+
+def server_obj(ns, **fields):
+    obj = SimpleNamespace(**fields)
+    obj._safety_interrupt_reason = lambda started: ns['_safety_interrupt_reason'](obj, started)
+    return obj
 
 
 def test_feedback_is_measured_pose_and_gripper_not_acceleration():
@@ -38,9 +45,9 @@ def test_feedback_is_measured_pose_and_gripper_not_acceleration():
 def test_completion_waits_for_settled_measured_pose():
     ns, now = methods()
     target = [.2, .3, .4, .5, -.7, 10]
-    obj = SimpleNamespace(joint_profile='roarm_m3', current_gripper_position=.6,
-                          collision_preempted=False,
-                          _sim_feedback=(1.0, target[:5]+[.6], [0]*6))
+    obj = server_obj(ns, joint_profile='roarm_m3', current_gripper_position=.6,
+                     collision_preempted=False,
+                     _sim_feedback=(1.0, target[:5]+[.6], [0]*6))
     assert ns['_wait_for_simulated_pose'](obj, target, None)
     assert now[0] >= 1.06
 
@@ -48,9 +55,9 @@ def test_completion_waits_for_settled_measured_pose():
 def test_stale_feedback_cannot_report_success_and_danger_interrupts():
     ns, _ = methods()
     target = [.2, .3, .4, .5, -.7, 10]
-    obj = SimpleNamespace(joint_profile='roarm_m3', current_gripper_position=.6,
-                          collision_preempted=False,
-                          _sim_feedback=(0.0, target[:5]+[.6], [0]*6))
+    obj = server_obj(ns, joint_profile='roarm_m3', current_gripper_position=.6,
+                     collision_preempted=False,
+                     _sim_feedback=(0.0, target[:5]+[.6], [0]*6))
     with pytest.raises(RuntimeError, match='did not settle'):
         ns['_wait_for_simulated_pose'](obj, target, None)
     obj.collision_preempted = True
@@ -60,20 +67,21 @@ def test_stale_feedback_cannot_report_success_and_danger_interrupts():
 def test_warning_adjustment_requires_replan_instead_of_fault():
     ns, _ = methods()
     target = [.2, .3, .4, .5, -.7, 10]
-    obj = SimpleNamespace(joint_profile='roarm_m3', current_gripper_position=.6,
-                          collision_preempted=False, collision_status='warning',
-                          get_logger=lambda: SimpleNamespace(warning=lambda _: None),
-                          _sim_feedback=(0.0, target[:5]+[.6], [0]*6))
+    obj = server_obj(ns, joint_profile='roarm_m3', current_gripper_position=.6,
+                     collision_preempted=False, collision_status='warning',
+                     get_logger=lambda: SimpleNamespace(warning=lambda _: None),
+                     _sim_feedback=(0.0, target[:5]+[.6], [0]*6))
     assert not ns['_wait_for_simulated_pose'](obj, target, None)
 
 
 @pytest.mark.parametrize('mode', ['hold_stale', 'hold_replan', 'hold_imminent', 'hold_blocked'])
 def test_expected_safety_hold_interrupts_without_actuator_error(mode):
     ns, _ = methods()
-    obj = SimpleNamespace(joint_profile='roarm_m3', current_gripper_position=0,
-                          collision_preempted=False, _sim_feedback=None,
-                          _sim_motion_status=(1.0, mode),
-                          get_logger=lambda: SimpleNamespace(warning=lambda _: None))
+    obj = server_obj(ns, joint_profile='roarm_m3', current_gripper_position=0,
+                     collision_preempted=False, enable_feasible_retiming=True,
+                     _sim_feedback=None,
+                     _sim_motion_status=(1.0, mode),
+                     get_logger=lambda: SimpleNamespace(warning=lambda _: None))
     assert ns['_wait_for_simulated_pose'](obj, [.2, .3, .4, .5, -.7, 10], None) is False
 
 
@@ -85,3 +93,36 @@ def test_outer_warning_band_remains_warning_when_legacy_bool_is_false():
                                                          'valid': True}}, _goal_handle=None)
     ns['_refresh_collision_status'](obj)
     assert obj.collision_status == 'warning:left:warning'
+
+
+def test_motion_hold_interrupt_has_controller_receipt_grace():
+    ns, now = methods()
+    obj = server_obj(ns, enable_feasible_retiming=True,
+                     _sim_motion_status=(1.0, 'hold_replan', None),
+                     collision_preempted=False)
+    assert ns['_safety_interrupt_reason'](obj, 1.0) is None
+    now[0] = 1.149
+    assert ns['_safety_interrupt_reason'](obj, 1.0) is None
+    now[0] = 1.151
+    assert 'hold_replan' in ns['_safety_interrupt_reason'](obj, 1.0)
+
+
+def test_warning_adjustment_has_a_bounded_motion_demonstration_window():
+    ns, now = methods()
+    obj = server_obj(ns, enable_feasible_retiming=True,
+                     _sim_motion_status=(2.9, 'adjust', 1.0),
+                     collision_preempted=False)
+    now[0] = 2.999
+    assert ns['_safety_interrupt_reason'](obj, 1.0) is None
+    now[0] = 3.0
+    assert 'retreat was applied' in ns['_safety_interrupt_reason'](obj, 1.0)
+
+
+def test_adjustment_timer_survives_repeated_status_publications():
+    ns, now = methods()
+    obj = SimpleNamespace(_sim_motion_status=None)
+    ns['sim_motion_status_callback'](obj, SimpleNamespace(data='{"avoidance_mode":"adjust"}'))
+    start = obj._sim_motion_status[2]
+    now[0] += .05
+    ns['sim_motion_status_callback'](obj, SimpleNamespace(data='{"avoidance_mode":"adjust"}'))
+    assert obj._sim_motion_status[2] == start
