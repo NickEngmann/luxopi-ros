@@ -221,7 +221,7 @@ def main():
     if args.feasible_retiming:
         from rclpy.parameter_client import AsyncParameterClient
         parameters=AsyncParameterClient(suite.node,'animation_command')
-        assert parameters.wait_for_service(timeout_sec=10)
+        assert parameters.wait_for_services(timeout_sec=10)
         values=suite.future(parameters.get_parameters(['enable_feasible_retiming','max_joint_velocity','max_joint_acceleration','joint_profile'])).values
         assert values[0].bool_value,'Runtime feasible retiming is not enabled'
         suite.feasible_retiming=True
