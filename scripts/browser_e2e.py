@@ -52,9 +52,21 @@ def main():
             # network-idle window can never be a reliable page-load condition.
             page.goto(args.url, wait_until='domcontentloaded')
             page.wait_for_function('document.querySelector("#connectionText").textContent.includes("ROS API")')
-            page.wait_for_function('document.querySelector("#modelStatus").textContent.includes("kinematic")', timeout=30000)
+            page.wait_for_function('''() => {
+                const text = document.querySelector('#modelStatus').textContent;
+                return text.includes('kinematic') || text.includes('dynamics');
+            }''', timeout=30000)
             snapshot = wait(lambda s: s['state'] == 'IDLE', timeout=30)
             assert all(snapshot['health']['components'].values()), snapshot['health']
+            backend = snapshot.get('simulation_backend', 'kinematic')
+            assert backend in {'kinematic', 'mujoco'}, backend
+            expected_engine = 'MuJoCo M3 dynamics' if backend == 'mujoco' else 'Kinematic preview'
+            page.wait_for_function(
+                '(expected) => document.querySelector("#engineCaption").textContent.includes(expected)',
+                arg=expected_engine,
+            )
+            warning_text = page.locator('#physicsWarning').inner_text()
+            assert ('uncalibrated simulated actuation' in warning_text) if backend == 'mujoco' else ('kinematic view' in warning_text)
             health_response = page.request.get(args.url + '/healthz')
             assert health_response.status == 200, health_response.text()
             assert health_response.json()['healthy'] is True
@@ -63,7 +75,8 @@ def main():
             assert page.locator('#animationNameSelect option').count() == animation_count
             record('render_and_graph', nodes=snapshot['health']['node_count'],
                    model=page.locator('#modelStatus').inner_text(), animations=animation_count,
-                   joint_names=snapshot['joint_names'], health_status=health_response.status)
+                   joint_names=snapshot['joint_names'], health_status=health_response.status,
+                   simulation_backend=backend, engine_caption=page.locator('#engineCaption').inner_text())
             if len(snapshot['joint_names']) == 6:
                 assert page.locator('#modelSelect').input_value() == 'm3'
                 assert page.locator('#modelStatus').inner_text().find('all six live') >= 0
@@ -183,6 +196,10 @@ def main():
             page.locator('#sendProximity').click()
             snapshot = wait(lambda s: s['sensors'].get('front_severity') == 'danger'
                             and s['motion'].get('motion_frozen'))
+            motion_status = snapshot.get('motion') or snapshot['sensors'].get('motion_status', snapshot.get('motion_status', {}))
+            mode = motion_status.get('avoidance_mode', '')
+            assert mode.startswith('hold_') or mode == 'adjust', motion_status
+            assert mode in page.locator('#motionAvoidance').inner_text()
             record('raw_sensor_collision_to_motion_hold', state=snapshot['state'], motion=snapshot['motion'])
             page.evaluate("document.querySelector('#proximityRange').value = '0'")
             page.locator('#sendProximity').click()

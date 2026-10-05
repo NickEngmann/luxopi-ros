@@ -35,8 +35,10 @@ claim that a camera or distance sensor is mounted there. These origins, their
 directions, and the front proximity mapping are synthetic, uncalibrated test
 values. The front ray maps distance
 linearly to proximity over `front_proximity_range_m` (default 0.12 m); it does
-not reproduce APDS9960 optics. Side outputs use the ray distance in centimetres
-and do not emulate VL53 firmware noise or invalid-return behavior.
+not reproduce APDS9960 optics. Side outputs use ray distance in centimetres,
+clamped to at least 1 cm on direct overlap so the classifier sees its nearest
+valid danger sample instead of discarding a sub-centimetre value. The fixture
+does not emulate VL53 firmware noise or other invalid-return behavior.
 
 This producer has a separate opt-in switch,
 `enable_world_sensor_fixture` (default `false`). `enable_sim_sensors=true`

@@ -28,6 +28,14 @@ def test_inside_box_is_immediate_hit_and_max_range_clips_distant_hit():
     assert raycast_fixture([0.2, 0.2, 0], [1, 0, 0], box[1:], 0.5) is None
 
 
+def test_inside_sphere_is_immediate_hit_not_distance_to_far_surface():
+    sphere = validate_obstacles([
+        {"name": "enclosing", "shape": "sphere", "center_m": [0, 0, 0], "radius_m": 0.2},
+    ])
+
+    assert raycast_fixture([0, 0, 0], [1, 0, 0], sphere, 1.0) == pytest.approx(0.0)
+
+
 def test_mount_ray_rotates_and_translates_from_measured_body_pose():
     angle = math.pi / 2
     rotation = np.asarray([

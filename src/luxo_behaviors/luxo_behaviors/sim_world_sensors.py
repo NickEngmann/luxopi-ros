@@ -162,10 +162,12 @@ class SimWorldSensors(Node):
         ))))
         self.front_pub.publish(front)
         left = Float32()
-        left.data = float(distances["left"] * 100.0)
+        # The real collision adapter treats sub-1 cm ToF readings as invalid.
+        # Clamp a synthetic ray contact to that minimum valid danger reading.
+        left.data = float(max(1.0, distances["left"] * 100.0))
         self.left_pub.publish(left)
         right = Float32()
-        right.data = float(distances["right"] * 100.0)
+        right.data = float(max(1.0, distances["right"] * 100.0))
         self.right_pub.publish(right)
         status = String()
         status.data = json.dumps({

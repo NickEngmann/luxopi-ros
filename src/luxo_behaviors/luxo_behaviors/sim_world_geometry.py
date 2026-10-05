@@ -75,6 +75,10 @@ def _ray_sphere_distance(origin, direction, center, radius):
     offset = tuple(o - c for o, c in zip(origin, center))
     b = sum(o * d for o, d in zip(offset, direction))
     c = sum(o * o for o in offset) - radius * radius
+    if c <= 0.0:
+        # A mount already inside the fixture is an immediate obstacle, not a
+        # clear ray whose first positive surface is the sphere's far side.
+        return 0.0
     discriminant = b * b - c
     if discriminant < 0.0:
         return None
