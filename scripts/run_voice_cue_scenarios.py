@@ -5,7 +5,7 @@ if os.environ.get('ROS_DOMAIN_ID')!='73' or os.environ.get('ROS_LOCALHOST_ONLY')
     raise SystemExit('Requires domain73 localhost-only')
 import rclpy
 from rclpy.node import Node
-from std_msgs.msg import String,Bool
+from std_msgs.msg import String,Float32
 from action_msgs.msg import GoalStatusArray
 from sensor_msgs.msg import JointState
 from luxo_interfaces.srv import RequestStateTransition
@@ -20,7 +20,7 @@ def main():
     node.create_subscription(GoalStatusArray,'/play_animation/_action/status',statuses,100)
     voice=node.create_publisher(String,'/voice/status',10);transcript=node.create_publisher(String,'/voice/transcript',10)
     command=node.create_publisher(String,'/roarm/animation_command',10)
-    collision=node.create_publisher(Bool,'/left_collision_warning',10)
+    collision=node.create_publisher(Float32,'/i2c/vl53_left/distance',10)
     states=node.create_client(RequestStateTransition,'/luxo/request_state_transition')
     def spin(seconds):
         end=time.monotonic()+seconds
@@ -66,11 +66,11 @@ def main():
         start=len(seen['animations']);emit('thinking');cue('thinking',start)
         wait(lambda:any(v==2 for v in seen['statuses'].values()))
         active={k for k,v in seen['statuses'].items() if v==2}
-        collision.publish(Bool(data=True));wait(lambda:seen['states'][-1]=='COLLISION_AVOIDING')
+        collision.publish(Float32(data=3.0));spin(.05);collision.publish(Float32(data=3.0));wait(lambda:seen['states'][-1]=='COLLISION_AVOIDING')
         wait(lambda:any(seen['statuses'].get(k) in (5,6) for k in active))
         report('collision_preempts_noninterrupting_visual_cue',terminal_statuses={k:seen['statuses'].get(k) for k in active})
-        emit('idle');collision.publish(Bool(data=False));wait(lambda:seen['states'][-1]=='IDLE',timeout=20)
+        emit('idle');collision.publish(Float32(data=100.0));spin(.05);collision.publish(Float32(data=100.0));wait(lambda:seen['states'][-1]=='IDLE',timeout=20)
     finally:
-        emit('idle');collision.publish(Bool(data=False));node.destroy_node();rclpy.shutdown()
+        emit('idle');collision.publish(Float32(data=100.0));spin(.05);collision.publish(Float32(data=100.0));node.destroy_node();rclpy.shutdown()
 
 if __name__=='__main__':main()
