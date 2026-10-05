@@ -249,9 +249,13 @@ class CollisionNode(Node):
     
     def left_distance_callback(self, msg):
         """Handle left distance data from I2C manager"""
-        if not math.isfinite(msg.data) or not 1.0 <= msg.data <= 400.0:
+        if (not math.isfinite(msg.data) or msg.data < 0.0
+                or msg.data > 120.0 or msg.data < 0.1):
             self.left_distance_seen = False
             self.prev_left_distance = float('inf')
+            # A finite sub-millimeter return is outside the documented
+            # measurement range, but is safest to treat as immediate contact.
+            self.current_left_distance = 0.0 if math.isfinite(msg.data) and 0.0 <= msg.data < 0.1 else float('inf')
             return  # Invalid readings do not refresh sensor health.
         now = self.get_clock().now()
         fresh = (self.left_distance_seen and
@@ -266,9 +270,11 @@ class CollisionNode(Node):
     
     def right_distance_callback(self, msg):
         """Handle right distance data from I2C manager"""
-        if not math.isfinite(msg.data) or not 1.0 <= msg.data <= 400.0:
+        if (not math.isfinite(msg.data) or msg.data < 0.0
+                or msg.data > 120.0 or msg.data < 0.1):
             self.right_distance_seen = False
             self.prev_right_distance = float('inf')
+            self.current_right_distance = 0.0 if math.isfinite(msg.data) and 0.0 <= msg.data < 0.1 else float('inf')
             return  # Invalid readings do not refresh sensor health.
         now = self.get_clock().now()
         fresh = (self.right_distance_seen and
@@ -402,35 +408,31 @@ class CollisionNode(Node):
         left_active = self.fsr_collision_active['left']
         left_severity = "danger" if left_active else "safe"
         if self.current_left_distance < float('inf'):
-            # Ignore invalid readings below 1cm
-            if self.current_left_distance >= 1.0:
-                severity = "danger" if self.fsr_collision_active['left'] else self.determine_severity(self.current_left_distance)
-                left_severity = severity
+            if self.fsr_collision_active['left'] or self.current_left_distance < self.danger_threshold:
+                severity = "danger"
+            elif (self.current_left_distance < self.warning_threshold
+                  and self.prev_left_distance < self.warning_threshold):
+                severity = "warning"
+            else:
+                severity = "safe"
+            left_severity = severity
+            severity_msg = String()
+            severity_msg.data = severity
+            self.left_severity_pub.publish(severity_msg)
                 
-                # Publish severity
-                severity_msg = String()
-                severity_msg.data = severity
-                self.left_severity_pub.publish(severity_msg)
-                
-                # Check for collision (two consecutive readings below threshold)
-                if (self.current_left_distance < self.side_distance_threshold and 
-                    self.prev_left_distance < self.side_distance_threshold) or self.fsr_collision_active['left']:
-                    left_active = True
-                    
-                    collision_msg = Bool()
-                    collision_msg.data = True
-                    self.left_collision_pub.publish(collision_msg)
-                    self.get_logger().debug(f"Left collision warning! Distance: {self.current_left_distance:.1f} cm, Severity: {severity}")
-                    
-                    # Publish detailed collision information
-                    details_msg = String()
-                    details_msg.data = f"left:{self.current_left_distance:.1f}:{severity}"
-                    self.collision_details_pub.publish(details_msg)
-                else:
-                    left_active = False
-                    collision_msg = Bool()
-                    collision_msg.data = False
-                    self.left_collision_pub.publish(collision_msg)
+            # Preserve the legacy hard Bool's two-sample threshold. Atomic
+            # severity above gives motion consumers immediate danger below 5 cm.
+            left_active = ((self.current_left_distance < self.side_distance_threshold
+                            and self.prev_left_distance < self.side_distance_threshold)
+                           or severity == "danger"
+                           or self.fsr_collision_active['left'])
+            collision_msg = Bool(data=left_active)
+            self.left_collision_pub.publish(collision_msg)
+            if left_active:
+                self.get_logger().debug(f"Left Collision warning! Distance: {self.current_left_distance:.1f} cm, Severity: {severity}")
+                details_msg = String()
+                details_msg.data = f"left:{self.current_left_distance:.1f}:{severity}"
+                self.collision_details_pub.publish(details_msg)
         self.publish_sensor_status(
             "left", left_active, left_valid, left_severity,
             "fsr" if self.fsr_collision_active['left'] else "vl53l4cd",
@@ -442,35 +444,31 @@ class CollisionNode(Node):
         right_active = self.fsr_collision_active['right']
         right_severity = "danger" if right_active else "safe"
         if self.current_right_distance < float('inf'):
-            # Ignore invalid readings below 1cm
-            if self.current_right_distance >= 1.0:
-                severity = "danger" if self.fsr_collision_active['right'] else self.determine_severity(self.current_right_distance)
-                right_severity = severity
+            if self.fsr_collision_active['right'] or self.current_right_distance < self.danger_threshold:
+                severity = "danger"
+            elif (self.current_right_distance < self.warning_threshold
+                  and self.prev_right_distance < self.warning_threshold):
+                severity = "warning"
+            else:
+                severity = "safe"
+            right_severity = severity
+            severity_msg = String()
+            severity_msg.data = severity
+            self.right_severity_pub.publish(severity_msg)
                 
-                # Publish severity
-                severity_msg = String()
-                severity_msg.data = severity
-                self.right_severity_pub.publish(severity_msg)
-                
-                # Check for collision (two consecutive readings below threshold)
-                if (self.current_right_distance < self.side_distance_threshold and 
-                    self.prev_right_distance < self.side_distance_threshold) or self.fsr_collision_active['right']:
-                    right_active = True
-                    
-                    collision_msg = Bool()
-                    collision_msg.data = True
-                    self.right_collision_pub.publish(collision_msg)
-                    self.get_logger().debug(f"Right collision warning! Distance: {self.current_right_distance:.1f} cm, Severity: {severity}")
-                    
-                    # Publish detailed collision information
-                    details_msg = String()
-                    details_msg.data = f"right:{self.current_right_distance:.1f}:{severity}"
-                    self.collision_details_pub.publish(details_msg)
-                else:
-                    right_active = False
-                    collision_msg = Bool()
-                    collision_msg.data = False
-                    self.right_collision_pub.publish(collision_msg)
+            # Keep the hard Bool's existing two-sample policy; danger severity
+            # remains immediate for shared motion-avoidance consumers.
+            right_active = ((self.current_right_distance < self.side_distance_threshold
+                             and self.prev_right_distance < self.side_distance_threshold)
+                            or severity == "danger"
+                            or self.fsr_collision_active['right'])
+            collision_msg = Bool(data=right_active)
+            self.right_collision_pub.publish(collision_msg)
+            if right_active:
+                self.get_logger().debug(f"Right Collision warning! Distance: {self.current_right_distance:.1f} cm, Severity: {severity}")
+                details_msg = String()
+                details_msg.data = f"right:{self.current_right_distance:.1f}:{severity}"
+                self.collision_details_pub.publish(details_msg)
         self.publish_sensor_status(
             "right", right_active, right_valid, right_severity,
             "fsr" if self.fsr_collision_active['right'] else "vl53l4cd",

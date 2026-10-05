@@ -61,7 +61,7 @@ def make_node():
 
 def test_one_sample_repeated_by_timer_is_not_two_sensor_readings():
     node = make_node()
-    node.left_distance_callback(SimpleNamespace(data=4.0))
+    node.left_distance_callback(SimpleNamespace(data=7.0))
     for _ in range(10):
         node.evaluate_collisions()
     assert not any(node.outputs['left_collision_pub'])
@@ -99,17 +99,17 @@ def test_timeout_cannot_relatch_old_danger_samples():
     assert node.current_left_distance == float('inf')
     node.left_distance_callback(SimpleNamespace(data=3.0))
     node.evaluate_collisions()
-    assert node.outputs['left_collision_pub'][-1] is False
+    assert node.outputs['left_collision_pub'][-1] is True  # close danger is immediate
 
 
 def test_recovery_after_gap_requires_two_fresh_samples():
     node = make_node()
-    node.right_distance_callback(SimpleNamespace(data=4.0))
+    node.right_distance_callback(SimpleNamespace(data=7.0))
     node.now = 3
-    node.right_distance_callback(SimpleNamespace(data=4.0))
+    node.right_distance_callback(SimpleNamespace(data=7.0))
     node.evaluate_collisions()
     assert node.outputs['right_collision_pub'][-1] is False
-    node.right_distance_callback(SimpleNamespace(data=4.0))
+    node.right_distance_callback(SimpleNamespace(data=7.0))
     node.evaluate_collisions()
     assert node.outputs['right_collision_pub'][-1] is True
 
@@ -117,7 +117,7 @@ def test_recovery_after_gap_requires_two_fresh_samples():
 def test_invalid_distance_never_refreshes_health_or_reinit_storms():
     node = make_node()
     node.now = 3
-    for invalid in (float('nan'), float('inf'), -2, 0, .9, 400.1, 10000):
+    for invalid in (float('nan'), float('inf'), -2, 0.0, 0.05, 120.1, 400.1, 10000):
         node.left_distance_callback(SimpleNamespace(data=invalid))
     assert node.last_left_distance_time.nanoseconds == 0
     node.check_data_timeout()
@@ -132,21 +132,52 @@ def test_invalid_distance_never_refreshes_health_or_reinit_storms():
 
 def test_invalid_sample_breaks_consecutive_distance_evidence():
     node = make_node()
-    node.left_distance_callback(SimpleNamespace(data=4.0))
+    node.left_distance_callback(SimpleNamespace(data=7.0))
     node.evaluate_collisions()
     assert not node.outputs['left_collision_pub'][-1]
 
     node.now = .1
     node.left_distance_callback(SimpleNamespace(data=float('nan')))
     node.now = .2
-    node.left_distance_callback(SimpleNamespace(data=4.0))
+    node.left_distance_callback(SimpleNamespace(data=7.0))
     node.evaluate_collisions()
     assert not node.outputs['left_collision_pub'][-1]
 
     node.now = .3
-    node.left_distance_callback(SimpleNamespace(data=4.0))
+    node.left_distance_callback(SimpleNamespace(data=7.0))
     node.evaluate_collisions()
     assert node.outputs['left_collision_pub'][-1]
+
+
+def test_submillimeter_return_brakes_conservatively_but_is_not_valid_coverage():
+    for close_distance in (0.0, 0.05):
+        node = make_node()
+        node.touch_head_left_callback(SimpleNamespace(data=0))
+        node.left_distance_callback(SimpleNamespace(data=close_distance))
+        node.evaluate_collisions()
+        status = json.loads(node.outputs['sensor_status_pub'][-2])
+        assert status['direction'] == 'left'
+        assert status['valid'] is False
+        assert status['severity'] == 'danger'
+        assert status['active'] is True
+        assert node.outputs['left_collision_pub'][-1] is True
+
+    node = make_node()
+    node.touch_head_left_callback(SimpleNamespace(data=0))
+    node.left_distance_callback(SimpleNamespace(data=0.1))
+    node.evaluate_collisions()
+    status = json.loads(node.outputs['sensor_status_pub'][-2])
+    assert status['valid'] is True
+    assert status['severity'] == 'danger'
+
+
+def test_vl53l4cd_range_boundary_is_120cm_inclusive():
+    node = make_node()
+    node.left_distance_callback(SimpleNamespace(data=120.0))
+    assert node.left_distance_seen
+    assert node.current_left_distance == 120.0
+    node.right_distance_callback(SimpleNamespace(data=120.1))
+    assert not node.right_distance_seen
 
 
 def test_apds_proximity_rejects_values_outside_unsigned_sensor_range():
@@ -198,6 +229,28 @@ def test_side_warning_band_is_reported_as_warning_before_legacy_hard_bool():
     assert status['active'] is False  # legacy hard Bool remains 8 cm
     assert status['valid'] is True
     assert status['severity'] == 'warning'  # course-adjustment band extends to 15 cm
+
+
+def test_side_warning_requires_two_fresh_readings_but_danger_is_immediate():
+    node = make_node()
+    node.touch_head_right_callback(SimpleNamespace(data=0))
+    node.right_distance_callback(SimpleNamespace(data=10.0))
+    node.evaluate_collisions()
+    status = json.loads(node.outputs['sensor_status_pub'][-1])
+    assert status['severity'] == 'safe'
+    assert status['valid'] is True
+
+    node.now = .1
+    node.right_distance_callback(SimpleNamespace(data=10.0))
+    node.evaluate_collisions()
+    status = json.loads(node.outputs['sensor_status_pub'][-1])
+    assert status['severity'] == 'warning'
+
+    node.now = .2
+    node.right_distance_callback(SimpleNamespace(data=4.0))
+    node.evaluate_collisions()
+    status = json.loads(node.outputs['sensor_status_pub'][-1])
+    assert status['severity'] == 'danger'
 
 
 def test_sensor_status_distinguishes_never_seen_and_invalid_samples_from_clear():

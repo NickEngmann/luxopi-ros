@@ -18,14 +18,18 @@ Corrections preserve thresholds and published message contracts:
   reassert a collision based on old data. Invalid distance readings do not refresh
   freshness. The existing timeout policy clears proximity/distance warning; this
   is not a claim that missing sensors establish a physically safe path.
-- APDS9960 samples must be within 0–255; VL53L4CD samples must be finite and within
-  1–400 cm. Invalid samples do not refresh health and break consecutive-reading
-  evidence rather than being paired with an earlier obstacle sample.
-- Side range readings between the hard-collision threshold (8 cm) and warning
-  threshold (15 cm) publish `severity=warning` while the legacy collision Bool
-  remains false. Motion consumers use the atomic severity record for a bounded
-  retreat in that outer band. The front APDS count is a relative 0–255 value and
-  does not represent a distance in centimeters.
+- APDS9960 samples must be within 0–255; VL53L4CD range samples are valid from
+  0.1 through 120 cm, matching the Adafruit driver's centimeter units and the
+  sensor's specified 1–1200 mm range. Invalid samples do not refresh health and
+  break consecutive-reading evidence rather than being paired with an earlier
+  obstacle sample. A finite sub-0.1 cm return is invalid coverage but is emitted
+  as immediate danger so it cannot be mistaken for a clear path.
+- Two fresh side range readings between the hard-collision threshold (8 cm) and
+  warning threshold (15 cm) publish `severity=warning` while the legacy collision
+  Bool remains false. A single warning-band reading stays safe; readings below
+  the 5 cm danger threshold and FSR contact are immediate. Motion consumers use the atomic
+  severity record for a bounded retreat in that outer band. The front APDS count
+  is a relative 0–255 value and does not represent a distance in centimeters.
 - Required motion coverage is explicit. Hardware with collision sensing enabled
   requires fresh front/left/right classifier records by default; callers can
   configure a smaller/empty direction set for a different sensor profile. A
