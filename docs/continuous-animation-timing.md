@@ -39,5 +39,8 @@ settled velocity in the kinematic backend. Evidence is copied to
 `/tmp/luxopi-continuous-evidence-in-progress/motion.json` on the host. The frozen
 runtime was `178fb02`, before the subsequent once-per-goal safety grace and
 bounded-warning changes; this run must not be described as testing those fixes.
-The other eight suites are still running, so full conversation/dashboard
-regression coverage remains pending. The continuous mode remains opt-in.
+The other eight native suites also passed, including voice ownership, cue
+preemption, raw sensors, watchdog and avoidance. The final report was copied to
+`/tmp/luxopi-continuous-final/summary.json`. Browser validation of this optional
+mode and the newer safety changes remains separate. The continuous mode remains
+opt-in.
