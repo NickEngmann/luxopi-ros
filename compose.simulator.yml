@@ -9,6 +9,7 @@ services:
     environment:
       ROS_DOMAIN_ID: "73"
       ROS_LOCALHOST_ONLY: "1"
+      LUXOPI_JOINT_PROFILE: "${LUXOPI_JOINT_PROFILE:-roarm_m3}"
     ports:
       - "0.0.0.0:8080:8080"
     healthcheck:
