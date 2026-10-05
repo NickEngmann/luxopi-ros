@@ -34,6 +34,41 @@ LIGHT_COLORS = {"red", "orange", "yellow", "green", "cyan", "blue", "purple", "w
 MAX_COMMAND_CHARS = 2000
 MAX_EVENT_BYTES = 4096
 MAX_AUDIO_BYTES = 8 * 1024 * 1024
+HEALTH_STALE_SECONDS = 3.0
+REQUIRED_GRAPH_COMPONENTS = (
+    "state_manager",
+    "animation_command",
+    "sim_motion_controller",
+    "sim_direction_node",
+    "speech_bridge",
+    "robot_state_publisher",
+    "simulator_dashboard",
+)
+
+
+def summarize_simulator_health(snapshot, now_monotonic):
+    """Return liveness and graph health using monotonic receipt timestamps."""
+    present = set(snapshot.get("graph_nodes", []))
+    state_received = snapshot.get("_state_received_monotonic")
+    joints_received = snapshot.get("_joints_received_monotonic")
+    state_age = None if state_received is None else max(0.0, now_monotonic - state_received)
+    joints_age = None if joints_received is None else max(0.0, now_monotonic - joints_received)
+    components = {name: name in present for name in REQUIRED_GRAPH_COMPONENTS}
+    missing = [name for name, found in components.items() if not found]
+    state_fresh = state_age is not None and state_age <= HEALTH_STALE_SECONDS
+    joints_fresh = joints_age is not None and joints_age <= HEALTH_STALE_SECONDS
+    return {
+        "healthy": not missing and state_fresh and joints_fresh,
+        "node_count": len(present),
+        "nodes": sorted(present),
+        "components": components,
+        "missing_required": missing,
+        "state_age_seconds": state_age,
+        "joint_state_age_seconds": joints_age,
+        "state_fresh": state_fresh,
+        "joint_state_fresh": joints_fresh,
+        "stale_after_seconds": HEALTH_STALE_SECONDS,
+    }
 
 
 def normalize_event(payload):

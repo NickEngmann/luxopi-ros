@@ -3,6 +3,7 @@
 import json
 import queue
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
@@ -21,6 +22,7 @@ from luxo_behaviors.simulator_protocol import (
     MAX_AUDIO_BYTES,
     MAX_EVENT_BYTES,
     normalize_event,
+    summarize_simulator_health,
 )
 from luxo_behaviors.roarm_m3_kinematics import M3_JOINT_LIMITS, M3_JOINT_NAMES
 
@@ -180,7 +182,12 @@ class SimulatorDashboard(Node):
 
             def do_GET(self):
                 path = urlparse(self.path).path
-                if path == "/":
+                if path == "/healthz":
+                    snapshot = node.get_snapshot()
+                    health = snapshot["health"]
+                    code = 200 if health["healthy"] else 503
+                    self._reply(code, json.dumps({"healthy": health["healthy"], "health": health}))
+                elif path == "/":
                     try:
                         html = Path(__file__).with_name("simulator_ui.html").read_text(
                             encoding="utf-8"
@@ -302,7 +309,9 @@ class SimulatorDashboard(Node):
             result["sensors"] = dict(self._snapshot["sensors"])
             joint_names = set(result.get("joint_names", []))
             result["aura"] = self._aura_color(result)
-            result["health"] = self._health_summary(result)
+            result["health"] = summarize_simulator_health(result, time.monotonic())
+            result.pop("_state_received_monotonic", None)
+            result.pop("_joints_received_monotonic", None)
             result["audio_upload"] = self._audio_upload_enabled
             if joint_names == set(M3_JOINT_NAMES):
                 limits = M3_JOINT_LIMITS
@@ -314,24 +323,6 @@ class SimulatorDashboard(Node):
                 name: list(bounds) for name, bounds in limits.items()
             }
             return result
-
-    @staticmethod
-    def _health_summary(snapshot):
-        present = set(snapshot.get("graph_nodes", []))
-        expected = (
-            "state_manager",
-            "animation_command",
-            "sim_motion_controller",
-            "sim_direction_node",
-            "speech_bridge",
-            "robot_state_publisher",
-            "simulator_dashboard",
-        )
-        return {
-            "node_count": len(present),
-            "nodes": sorted(present),
-            "components": {name: name in present for name in expected},
-        }
 
     def _refresh_graph(self):
         try:
@@ -358,13 +349,17 @@ class SimulatorDashboard(Node):
             self._snapshot.update(values)
 
     def _state_cb(self, msg):
-        self._update(state=msg.data)
+        self._update(state=msg.data, _state_received_monotonic=time.monotonic())
 
     def _animation_cb(self, msg):
         self._update(animation=msg.data)
 
     def _joint_cb(self, msg):
-        self._update(joint_names=list(msg.name), positions=list(msg.position))
+        self._update(
+            joint_names=list(msg.name),
+            positions=list(msg.position),
+            _joints_received_monotonic=time.monotonic(),
+        )
 
     def _transcript_cb(self, msg):
         self._update(transcript=msg.data)
