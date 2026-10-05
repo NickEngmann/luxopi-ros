@@ -58,6 +58,11 @@ class ConversationClient:
         threading.Thread(target=self._read_output, args=(self._process, self._results), daemon=True).start()
         threading.Thread(target=self._read_errors, args=(self._process,), daemon=True).start()
 
+    def start(self):
+        """Start the owned service early so it can warm models before a command."""
+        with self._lock:
+            self._start()
+
     def request(self, text):
         if not isinstance(text, str) or not text.strip() or len(text) > 2000:
             raise ValueError("text must contain 1–2000 characters")

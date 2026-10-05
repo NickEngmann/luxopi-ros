@@ -146,6 +146,11 @@ class SpeechBridge(Node):
             remove_audio(name, self.audio_directory)
 
     def _run(self):
+        if hasattr(self.client, "start"):
+            try:
+                self.client.start()
+            except Exception as exc:
+                self.get_logger().error(f"Conversation startup failed: {exc}")
         while not self._stopping.is_set():
             try:
                 request = self._pending.get(timeout=0.1)

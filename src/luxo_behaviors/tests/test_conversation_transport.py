@@ -87,8 +87,11 @@ for line in sys.stdin:
     client.close()
     stat_path = Path(f"/proc/{result['model_pid']}/stat")
     deadline = time.monotonic() + 1
-    while stat_path.exists() and time.monotonic() < deadline:
-        if stat_path.read_text().split(")", 1)[1].split()[0] == "Z":
-            break
+    def reaped_or_zombie():
+        try:
+            return stat_path.read_text().split(")", 1)[1].split()[0] == "Z"
+        except FileNotFoundError:
+            return True  # Successful reap can race with the preceding /proc lookup.
+    while not reaped_or_zombie() and time.monotonic() < deadline:
         time.sleep(0.01)
-    assert not stat_path.exists() or stat_path.read_text().split(")", 1)[1].split()[0] == "Z"
+    assert reaped_or_zombie()
