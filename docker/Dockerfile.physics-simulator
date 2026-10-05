@@ -1,0 +1,8 @@
+FROM luxopi/simulator:local
+RUN apt-get update && apt-get install -y --no-install-recommends python3-pip \
+    && python3 -m pip install --break-system-packages --no-cache-dir mujoco==3.14.0 \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY src /workspace/src
+RUN . /opt/ros/jazzy/setup.sh && . /workspace/install/setup.sh && colcon build --packages-select luxo_behaviors
+COPY docker/simulator-entrypoint.sh /simulator-entrypoint.sh

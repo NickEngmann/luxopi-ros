@@ -48,7 +48,9 @@ def main():
             evidence.append(entry)
             print(json.dumps(entry), flush=True)
         try:
-            page.goto(args.url, wait_until='networkidle')
+            # The dashboard polls ROS state continuously, so waiting for a
+            # network-idle window can never be a reliable page-load condition.
+            page.goto(args.url, wait_until='domcontentloaded')
             page.wait_for_function('document.querySelector("#connectionText").textContent.includes("ROS API")')
             page.wait_for_function('document.querySelector("#modelStatus").textContent.includes("kinematic")', timeout=30000)
             snapshot = wait(lambda s: s['state'] == 'IDLE', timeout=30)

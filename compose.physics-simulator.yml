@@ -1,0 +1,9 @@
+services:
+  simulator:
+    image: luxopi/physics-simulator:local
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.physics-simulator
+    environment:
+      LUXOPI_SIM_BACKEND: mujoco
+      LUXOPI_JOINT_PROFILE: roarm_m3
