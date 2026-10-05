@@ -1,0 +1,17 @@
+services:
+  simulator:
+    image: luxopi/speech-simulator:local
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.speech-simulator
+      additional_contexts:
+        ai: ${LUXOPI_AI_CHECKOUT:?Set LUXOPI_AI_CHECKOUT to the luxopi-ai checkout}
+    environment:
+      LUXOPI_SPEECH_BACKEND: local
+      LUXOPI_SPEECH_COMMAND: '["/opt/speech/bin/python", "/opt/luxopi-ai/local_conversation.py", "--backend", "llm"]'
+      LUXOPI_SPEECH_CWD: /opt/luxopi-ai
+    volumes:
+      - type: bind
+        source: ${LUXOPI_AI_CHECKOUT}/models/LFM2.5-230M-QAD-Q4_0.gguf
+        target: /models/LFM2.5-230M-QAD-Q4_0.gguf
+        read_only: true

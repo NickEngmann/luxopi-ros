@@ -1,0 +1,2 @@
+# Optional browser end-to-end testing; install Chromium with playwright install chromium.
+playwright==1.55.0
