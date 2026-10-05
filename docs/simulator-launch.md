@@ -62,6 +62,19 @@ An isolated combined-profile check on 2026-10-05 returned an actual LFM answer t
 
 Four supplied-WAV HTTP cases subsequently passed with actual Moonshine ASR, local intent/LLM processing, and ROS consumers: dance (72.853 seconds including the full retimed movement), blue lamp (1.778 seconds), 50% brightness (2.301 seconds), and a general question (3.366 seconds). Each returned to IDLE; the dance moved actual MuJoCo joint feedback and both lamp commands reached the lamp sink. Report: `/tmp/luxopi-full-audio-e2e.json`, production Python source SHA256 `e5f915e1e4779090e31f90834f5f34e0c268e882ddbcf4ca40dcbc412b91ccd6`. That prototype predates the final dashboard-unit and petting fixes, so it is separate evidence from the final default-profile regression suite. These synthetic host functional checks are not speech accuracy or CM4 latency estimates. The combined profile still needs a full browser regression run.
 
+The final default-profile dashboard/browser run against source revision
+`09b16820ba36469ee972198cac62fad312d707c2` passed all 28 scenarios in
+109.7 seconds. It loaded all seven M3 mesh assets, exercised both robot views,
+all 12 FSM state requests, six-axis manual feedback, the lamp sink, animation
+cancellation, direction estimation, collision hold/clear/replan, and invalid
+request handling. There were no page errors, console errors, or failed HTTP
+requests. Report and screenshot: `/tmp/luxopi-browser-e2e-release.json` and
+`/tmp/luxopi-browser-e2e-release.png`. The separate container-owned pause/restart
+check also verified stale-state health failure and recovery after the state
+manager restarted; see [paused-heartbeat health test](paused-heartbeat-health.md).
+This run covers the default kinematic dashboard, not the optional combined
+speech profile or calibrated physical sensors.
+
 Verified on 2026-10-04: clean container build of all three ROS packages; HTTP command acceptance with recognized text and reply visible in dashboard state; four native motion/safety scenarios; ten native lamp scenarios. The lamp test exposed and verified a fix for stale color-temperature rendering. These checks do not replace full browser automation, all-animation timing, M3 physics or real hardware validation.
 
 ## Local LFM backend
