@@ -54,3 +54,13 @@ def test_stale_feedback_cannot_report_success_and_danger_interrupts():
         ns['_wait_for_simulated_pose'](obj, target, None)
     obj.collision_preempted = True
     assert not ns['_wait_for_simulated_pose'](obj, target, None)
+
+
+def test_warning_adjustment_requires_replan_instead_of_fault():
+    ns, _ = methods()
+    target = [.2, .3, .4, .5, -.7, 10]
+    obj = SimpleNamespace(joint_profile='roarm_m3', current_gripper_position=.6,
+                          collision_preempted=False, collision_status='warning',
+                          get_logger=lambda: SimpleNamespace(warning=lambda _: None),
+                          _sim_feedback=(0.0, target[:5]+[.6], [0]*6))
+    assert not ns['_wait_for_simulated_pose'](obj, target, None)

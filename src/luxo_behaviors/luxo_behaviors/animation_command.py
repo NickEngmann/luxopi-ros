@@ -921,6 +921,11 @@ class AnimationCommandActionServer(Node):
             else:
                 stable_since = None
             time.sleep(.01)
+        if 'warning' in getattr(self, 'collision_status', ''):
+            # The safety controller intentionally changed this course. Do not
+            # turn an unreachable original target into an actuator fault.
+            self.get_logger().warning('Adjusted course requires a new animation plan')
+            return False
         raise RuntimeError('Actual joint feedback did not settle at the animation keyframe')
 
     def publish_joint_states_target(self):
