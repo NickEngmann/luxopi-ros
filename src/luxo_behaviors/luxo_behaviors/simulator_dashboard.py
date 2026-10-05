@@ -70,6 +70,9 @@ class SimulatorDashboard(Node):
             JointState, "/sim/manual_joint_target", 10
         )
         self._pending_manual_target = None
+        self._manual_generation = 0
+        self._manual_granted = False
+        self._manual_deadline = 0.0
         self._lock = threading.Lock()
         self._snapshot = {
             "state": "INITIALIZING",
@@ -448,6 +451,7 @@ class SimulatorDashboard(Node):
             self._snapshot["sensors"].update(values)
 
     def _drain_events(self):
+        self._flush_manual_target()
         for _ in range(32):
             try:
                 event = self._events.get_nowait()
@@ -483,6 +487,10 @@ class SimulatorDashboard(Node):
                 lambda future: self._state_request_done(future, event["state"])
             )
         elif kind == "manual_joint_target":
+            self._manual_generation += 1
+            generation = self._manual_generation
+            self._manual_granted = False
+            self._manual_deadline = time.monotonic() + 3.0
             self._pending_manual_target = dict(event["positions"])
             request = RequestStateTransition.Request()
             request.requested_state = "USER_CONTROL"
@@ -497,7 +505,7 @@ class SimulatorDashboard(Node):
                 )
                 return
             self._state_client.call_async(request).add_done_callback(
-                self._manual_state_request_done
+                lambda future: self._manual_state_request_done(future, generation)
             )
         elif kind == "animation":
             if not self._animation_client.server_is_ready():
@@ -642,38 +650,50 @@ class SimulatorDashboard(Node):
             result = {"success": False, "message": f"state request failed: {exc}"}
         self._sensor_update(state_request_result=result)
 
-    def _manual_state_request_done(self, future):
+    def _manual_state_request_done(self, future, generation):
+        if generation != self._manual_generation:
+            return
         try:
             response = future.result()
             if not response.success or response.current_state != "USER_CONTROL":
-                self._sensor_update(
-                    manual_pose_result={
-                        "success": False,
-                        "state": response.current_state,
-                        "message": response.message,
-                    }
-                )
                 self._pending_manual_target = None
+                self._sensor_update(manual_pose_result={
+                    "success": False, "state": response.current_state,
+                    "message": response.message,
+                })
                 return
-            positions = self._pending_manual_target
-            if not positions:
-                return
-            message = JointState()
-            message.name = list(positions)
-            message.position = list(positions.values())
-            self._manual_target_publisher.publish(message)
-            self._sensor_update(
-                manual_pose_result={
-                    "success": True,
-                    "state": response.current_state,
-                    "message": "pose sent through the simulator motion controller",
-                    "positions": positions,
-                }
-            )
-            self._pending_manual_target = None
+            # A service response does not mean the motion consumer has received
+            # the state topic yet. Wait for its status acknowledgment.
+            self._manual_granted = True
         except Exception as exc:
             self._pending_manual_target = None
             self._sensor_update(manual_pose_result={"success": False, "message": str(exc)})
+
+    def _flush_manual_target(self):
+        positions = self._pending_manual_target
+        if not positions:
+            return
+        if time.monotonic() > self._manual_deadline:
+            self._pending_manual_target = None
+            self._sensor_update(manual_pose_result={
+                "success": False, "message": "motion consumer did not acknowledge USER_CONTROL",
+            })
+            return
+        with self._lock:
+            acknowledged = (self._snapshot["state"] == "USER_CONTROL"
+                            and self._snapshot["motion"].get("state") == "USER_CONTROL")
+        if not self._manual_granted or not acknowledged:
+            return
+        message = JointState()
+        message.name = list(positions)
+        message.position = list(positions.values())
+        self._manual_target_publisher.publish(message)
+        self._sensor_update(manual_pose_result={
+            "success": True, "state": "USER_CONTROL",
+            "message": "pose sent through the simulator motion controller",
+            "positions": positions,
+        })
+        self._pending_manual_target = None
 
     def destroy_node(self):
         self._drain_timer.cancel()
