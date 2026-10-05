@@ -91,10 +91,12 @@ def test_late_animation_completion_cannot_release_safety_owner():
     assert manager.request_state_transition(
         state.COLLISION_AVOIDING, 'behavior_coordinator', 100
     )
-    assert not manager.request_state_transition(
+    assert manager.request_state_transition(
         state.IDLE, 'animation_command', 30, is_completion=True
     )
     assert manager.current_state == state.COLLISION_AVOIDING
+
+    assert manager._last_state_requester == "behavior_coordinator"
 
 
 def test_priority_denial_does_not_record_failed_interrupt():
@@ -175,3 +177,30 @@ def test_new_voice_session_interrupts_ordinary_behavior_immediately():
         assert manager.current_state == state.USER_CONTROL
     assert manager.request_state_transition(state.COLLISION_AVOIDING, 'safety', 100, force=True)
     assert not manager.request_state_transition(state.USER_CONTROL, 'voice_session', 80)
+
+
+def test_finished_suspended_action_does_not_resume_after_collision():
+    manager, state = make_manager()
+    assert manager.request_state_transition(state.IDLE, 'idle', 0)
+    assert manager.request_state_transition(state.ANIMATING, 'animation_command', 50)
+    assert manager.request_state_transition(state.COLLISION_AVOIDING, 'safety', 100)
+    assert manager.request_state_transition(state.IDLE, 'animation_command', 30, is_completion=True)
+    assert manager.current_state == state.COLLISION_AVOIDING
+    assert manager._last_state_requester == 'safety'
+    assert manager.request_state_transition(state.IDLE, 'safety', 100, is_completion=True)
+    assert manager.current_state == state.IDLE
+
+
+def test_suspended_action_release_preserves_newer_voice_session():
+    manager, state = make_manager()
+    assert manager.request_state_transition(state.IDLE, 'idle', 0)
+    assert manager.request_state_transition(state.ANIMATING, 'animation_command', 50)
+    assert manager.request_state_transition(state.USER_CONTROL, 'voice_session', 80)
+    assert manager.request_state_transition(state.COLLISION_AVOIDING, 'safety', 100)
+    assert manager.request_state_transition(state.IDLE, 'animation_command', 30, is_completion=True)
+    assert manager.current_state == state.COLLISION_AVOIDING
+    assert manager.request_state_transition(state.IDLE, 'safety', 100, is_completion=True)
+    assert manager.current_state == state.USER_CONTROL
+    assert manager._last_state_requester == 'voice_session'
+    assert manager.request_state_transition(state.IDLE, 'voice_session', 80, is_completion=True)
+    assert manager.current_state == state.IDLE

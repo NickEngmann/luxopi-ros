@@ -71,6 +71,15 @@ class StateTransitionPolicy:
             if current_state in (self.error_state, self.shutdown_state):
                 return {"accepted": False, "reason": "terminal_state_requires_explicit_recovery"}
             if not completion_matches_owner(current_requester, requesting_node):
+                suspended = interrupted_requesters or {}
+                if any(owner == requesting_node for owner, _ in suspended.values()):
+                    # A suspended action may finish while safety/another session owns
+                    # the robot. Release its lease without changing that live owner.
+                    return {
+                        "accepted": True, "target_state": current_state,
+                        "requesting_node": current_requester,
+                        "priority": current_priority, "release_owner": requesting_node,
+                    }
                 return {"accepted": False, "reason": "completion_owner_mismatch"}
             interrupted_states = interrupted_states or {}
             interrupted_requesters = interrupted_requesters or {}
@@ -107,6 +116,16 @@ class StateTransitionPolicy:
         """Return updated interruption maps after a successful state change."""
         states = dict(interrupted_states)
         requesters = dict(interrupted_requesters)
+        released = decision.get("release_owner")
+        if released:
+            for parent in list(states):
+                owner = requesters.get(parent)
+                if owner is None or owner[0] != released:
+                    continue
+                ended_state = states[parent]
+                states[parent] = states.pop(ended_state, self.idle_state)
+                requesters[parent] = requesters.pop(ended_state, ("idle", 0))
+            return states, requesters
         previous = decision["previous_state"]
         target = decision["target_state"]
         if decision["interrupted"]:

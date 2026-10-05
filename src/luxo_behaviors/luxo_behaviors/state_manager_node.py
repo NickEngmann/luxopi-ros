@@ -361,6 +361,8 @@ class StateManagerNode(Node):
                         decision, self._interrupted_states, self._interrupted_requesters
                     )
                 )
+                if decision.get("release_owner"):
+                    self._active_node_states.pop(decision["release_owner"], None)
                 self._last_state_requester = decision["requesting_node"]
                 self._active_node_states[self._last_state_requester] = (
                     decision["target_state"], decision["priority"], time.time()
