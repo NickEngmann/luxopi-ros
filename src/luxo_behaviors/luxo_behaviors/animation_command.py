@@ -32,6 +32,9 @@ from luxo_behaviors.sim_interaction_rules import animation_state_for
 from luxo_behaviors.joint_profiles import ROARM_M3_NAMES, ROARM_M3_LIMITS, animation_pose_for_profile
 from luxo_behaviors.animation_capabilities import load_animation_plugins
 from luxo_behaviors.animation_plan import validate_animation_plan
+from luxo_behaviors.trajectory_timing import retime_cubic_plan
+from luxo_behaviors.joint_profiles import pose_to_animation_positions, joint_profile
+import math
 
 
 
@@ -49,6 +52,15 @@ class AnimationCommandActionServer(Node):
         self.declare_parameter('joint_profile', 'urdf4')
         self.joint_profile = str(self.get_parameter('joint_profile').value).lower()
         self.current_gripper_position = 0.0
+        self.declare_parameter('enable_feasible_retiming', False)
+        self.declare_parameter('max_joint_velocity', 0.5)
+        self.declare_parameter('max_joint_acceleration', 1.0)
+        self.enable_feasible_retiming = bool(self.get_parameter('enable_feasible_retiming').value)
+        self.max_joint_velocity = float(self.get_parameter('max_joint_velocity').value)
+        self.max_joint_acceleration = float(self.get_parameter('max_joint_acceleration').value)
+        if self.enable_feasible_retiming and self.use_hardware_joint_names:
+            raise ValueError('Feasible retiming requires calibrated simulation feedback')
+        self._sim_feedback = None
 
         # Parameter to control which topic to publish to (hardware vs simulation)
         self.declare_parameter('publish_target_topic', False)
@@ -83,7 +95,7 @@ class AnimationCommandActionServer(Node):
                 self.position_feedback_callback,
                 10)
             self.get_logger().info('Subscribed to roarm/position for hardware feedback')
-        if not self.use_hardware_joint_names and self.joint_profile in {'roarm_m3', 'm3', 'm3_6'}:
+        if not self.use_hardware_joint_names:
             self.position_subscription = self.create_subscription(
                 JointState, '/joint_states', self.sim_profile_feedback_callback, 10
             )
@@ -190,6 +202,7 @@ class AnimationCommandActionServer(Node):
         self.collision_status = "safe"
         self._legacy_collision_status = "safe"
         self._collision_warnings = {"front": False, "left": False, "right": False}
+        self._atomic_sensor_status = {}
         self.collision_status_sub = self.create_subscription(
             String,
             '/collision_status_for_animation',
@@ -198,6 +211,9 @@ class AnimationCommandActionServer(Node):
         )
         self.declare_parameter('enable_collision_warning_inputs', False)
         if self.get_parameter('enable_collision_warning_inputs').value:
+            self.sensor_status_sub = self.create_subscription(
+                String, '/collision/sensor_status', self.sensor_status_callback, 10
+            )
             self.collision_warning_subscriptions = [
                 self.create_subscription(
                     Bool, topic, self._collision_warning_callback(direction), 10
@@ -343,16 +359,49 @@ class AnimationCommandActionServer(Node):
         self._refresh_collision_status()
 
     def _collision_warning_callback(self, direction):
-        """Bridge classified sensor warnings into action preemption in sim."""
+        """Track warning telemetry; Bool input alone never implies danger."""
         def receive(message):
             self._collision_warnings[direction] = bool(message.data)
             self._refresh_collision_status()
         return receive
 
+    def sensor_status_callback(self, message):
+        """Use atomic classifier severity for action preemption decisions."""
+        try:
+            payload = json.loads(message.data)
+            direction = payload['direction']
+            if direction not in ('front', 'left', 'right'):
+                return
+            active = bool(payload['active'])
+            severity = str(payload['severity']).lower()
+            valid = bool(payload['valid'])
+            if severity not in ('safe', 'warning', 'danger', 'contact', 'imminent'):
+                return
+            self._atomic_sensor_status[direction] = {
+                'active': active, 'severity': severity, 'valid': valid,
+            }
+            self._refresh_collision_status()
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            self.get_logger().warning(f"Rejected malformed collision sensor status: {exc}")
+
     def _refresh_collision_status(self):
-        self.collision_status = collision_status_from_warnings(
+        legacy = collision_status_from_warnings(
             self._legacy_collision_status, self._collision_warnings.values()
         )
+        atomic = [
+            f"{direction}:{sample['severity']}"
+            for direction, sample in self._atomic_sensor_status.items()
+            if sample['active'] and sample['valid']
+        ]
+        if 'danger' in legacy:
+            self.collision_status = legacy
+        elif any(any(level in item for level in (':danger', ':contact', ':imminent'))
+                 for item in atomic):
+            self.collision_status = 'danger:' + ','.join(atomic)
+        elif atomic:
+            self.collision_status = 'warning:' + ','.join(atomic)
+        else:
+            self.collision_status = legacy
 
         # Check if this is a danger status while we have an active goal
         if "danger" in self.collision_status and self._goal_handle and self._goal_handle.is_active:
@@ -536,6 +585,29 @@ class AnimationCommandActionServer(Node):
                 keyframes = plugin.prepare_for_current_position(
                     self.current_positions, keyframes
                 )
+
+            if self.enable_feasible_retiming:
+                if self._sim_feedback is None or time.monotonic() - self._sim_feedback[0] > .5:
+                    raise RuntimeError('Fresh joint feedback is required before an animation')
+                # Retime the actual clamped profile targets, not metadata or an
+                # unreachable recipe target. The gripper remains independently held.
+                bounded_frames = []
+                axes = min(5, len(joint_profile(self.joint_profile)[0]))
+                for frame in keyframes:
+                    _, mapped = animation_pose_for_profile(frame, self.joint_profile,
+                        gripper_position=self.current_gripper_position)
+                    bounded = list(frame)
+                    bounded[:axes] = mapped[:axes]
+                    bounded_frames.append(bounded)
+                keyframes = bounded_frames
+                adjusted_durations = retime_cubic_plan(
+                    self.current_positions, keyframes, durations,
+                    speed_multiplier=speed_multiplier,
+                    max_velocity=self.max_joint_velocity,
+                    max_acceleration=self.max_joint_acceleration, axes=axes)
+                durations = adjusted_durations
+                speed_multiplier = 1.0  # Already applied exactly once before retiming.
+                self.target_positions = list(self.current_positions)
 
             # Apply speed multiplier
             self.speed_multiplier = speed_multiplier  # Set the instance variable
@@ -808,15 +880,48 @@ class AnimationCommandActionServer(Node):
             return False
 
     def sim_profile_feedback_callback(self, msg):
-        """Keep animation targets from moving the simulator's gripper axis."""
+        """Observe actual profile feedback; metadata is never a physical axis."""
         try:
-            if len(msg.name) != len(msg.position) or len(set(msg.name)) != len(msg.name):
+            names, _ = joint_profile(self.joint_profile)
+            indexed = dict(zip(msg.name, msg.position))
+            if len(msg.name) != len(msg.position) or set(msg.name) != set(names) or len(indexed) != len(names):
                 return
-            measured = float(dict(zip(msg.name, msg.position))[ROARM_M3_NAMES[5]])
-            if measured == measured and abs(measured) != float('inf'):
-                self.current_gripper_position = min(1.5, max(0.0, measured))
+            measured = [float(indexed[name]) for name in names]
+            if not all(math.isfinite(value) for value in measured):
+                return
+            velocity = dict(zip(msg.name, msg.velocity)) if len(msg.velocity) == len(names) else {}
+            speeds = [float(velocity.get(name, float('inf'))) for name in names]
+            self._sim_feedback = (time.monotonic(), measured, speeds)
+            if len(names) == 6:
+                self.current_gripper_position = min(1.5, max(0.0, measured[5]))
+            if self.enable_feasible_retiming:
+                self.current_positions = pose_to_animation_positions(names, measured)
+                self.hardware_position_received = True
         except (KeyError, TypeError, ValueError):
             return
+
+    def _wait_for_simulated_pose(self, target, cancel_event):
+        """Do not report a keyframe complete until actual feedback settles."""
+        _, expected = animation_pose_for_profile(target, self.joint_profile,
+            gripper_position=self.current_gripper_position)
+        deadline = time.monotonic() + 4.0
+        stable_since = None
+        while time.monotonic() < deadline:
+            if (cancel_event is not None and cancel_event.is_set()) or self.collision_preempted:
+                return False
+            sample = self._sim_feedback
+            now = time.monotonic()
+            settled = (sample is not None and now - sample[0] <= .3
+                       and max(abs(a-b) for a,b in zip(expected, sample[1])) <= .02
+                       and all(math.isfinite(v) and abs(v) <= .02 for v in sample[2]))
+            if settled:
+                stable_since = now if stable_since is None else stable_since
+                if now - stable_since >= .06:
+                    return True
+            else:
+                stable_since = None
+            time.sleep(.01)
+        raise RuntimeError('Actual joint feedback did not settle at the animation keyframe')
 
     def publish_joint_states_target(self):
         """Publish target joint states."""
@@ -966,6 +1071,8 @@ class AnimationCommandActionServer(Node):
         # Final publish at target position
         self.publish_joint_states_target()
 
+        if self.enable_feasible_retiming:
+            return self._wait_for_simulated_pose(target_with_accel, cancel_event)
         return True
 
 

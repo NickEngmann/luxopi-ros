@@ -638,6 +638,9 @@ def generate_launch_description():
             {'enforce_joint_limits': True},    # Enable joint limits enforcement
             {'joint_profile': LaunchConfiguration('joint_profile')},
             {'enable_collision_warning_inputs': True},
+            {'enable_feasible_retiming': True},
+            {'max_joint_velocity': 0.5},
+            {'max_joint_acceleration': 1.0},
         ],
         condition=UnlessCondition(use_hardware)
     )
