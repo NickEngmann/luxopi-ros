@@ -7,9 +7,6 @@ if [[ "${ROS_DOMAIN_ID}" != 73 || "${ROS_LOCALHOST_ONLY}" != 1 ]]; then
   echo 'Simulator requires isolated ROS domain 73 and localhost discovery.' >&2
   exit 2
 fi
-if [[ "${LUXOPI_SIM_BACKEND:-kinematic}" == gazebo ]]; then
-  exec ros2 launch luxo_behaviors physics_simulator.launch.py
-fi
 optional_args=()
 joint_profile="${LUXOPI_JOINT_PROFILE:-urdf4}"
 if [[ "$joint_profile" == roarm_m3 ]]; then
@@ -24,7 +21,16 @@ MODEL
 fi
 [[ -z "${LUXOPI_SPEECH_CWD:-}" ]] || optional_args+=("speech_service_cwd:=${LUXOPI_SPEECH_CWD}")
 [[ -z "${LUXOPI_SIM_AUDIO_DIRECTORY:-}" ]] || optional_args+=("simulator_audio_directory:=${LUXOPI_SIM_AUDIO_DIRECTORY}")
-exec ros2 launch luxo_behaviors luxo_system.launch.py \
+launch_file=luxo_system.launch.py
+backend="${LUXOPI_SIM_BACKEND:-kinematic}"
+if [[ "$backend" == mujoco ]]; then
+  [[ "$joint_profile" == roarm_m3 ]] || { echo "MuJoCo requires the roarm_m3 joint profile." >&2; exit 2; }
+  launch_file=physics_simulator.launch.py
+elif [[ "$backend" != kinematic ]]; then
+  echo "Unsupported simulation backend: $backend" >&2
+  exit 2
+fi
+exec ros2 launch luxo_behaviors "$launch_file" \
   use_hardware:=false use_camera:=false use_gui:=false use_rviz:=false \
   enable_system_monitor:=false enable_watchdog:=true \
   enable_voice:=true enable_speech_bridge:=true enable_sim_sensors:=true enable_gestures:=true \

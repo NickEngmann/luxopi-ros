@@ -101,7 +101,7 @@ def generate_launch_description():
     )
     declare_simulation_backend = DeclareLaunchArgument(
         'simulation_backend', default_value='kinematic',
-        description='Simulation motion transport: kinematic or gazebo'
+        description='Simulation motion transport: kinematic or mujoco'
     )
     declare_robot_description_file = DeclareLaunchArgument(
         'robot_description_file',
@@ -524,7 +524,7 @@ def generate_launch_description():
             {'voice_follow_priority': 75},
             {'joint_profile': LaunchConfiguration('joint_profile')},
             {'publish_joint_states': PythonExpression([
-                "'false' if '", LaunchConfiguration('simulation_backend'), "' == 'gazebo' else 'true'"
+                "'false' if '", LaunchConfiguration('simulation_backend'), "' in ('gazebo', 'mujoco') else 'true'"
             ])},
             {'command_topic': '/sim/bounded_joint_command'},
         ],
