@@ -846,6 +846,12 @@ class StateManagerNode(Node):
         self.add_transition(LuxoState.ERROR, LuxoState.INITIALIZING)
         self.add_transition(LuxoState.ERROR, LuxoState.SHUTDOWN)
         
+        # Higher-priority manual/voice ownership can interrupt ordinary behavior.
+        # The policy still prevents this edge from overriding collision/escape.
+        for state in (LuxoState.ANIMATING, LuxoState.RETURNING_HOME,
+                      LuxoState.EMOTION_REACTING, LuxoState.PETTING):
+            self.add_transition(state, LuxoState.USER_CONTROL)
+
         # A runtime failure must be able to latch ERROR during any live behavior.
         for state in LuxoState:
             if state not in (LuxoState.ERROR, LuxoState.SHUTDOWN, LuxoState.INITIALIZING):

@@ -165,3 +165,13 @@ def test_runtime_errors_latch_until_explicit_recovery():
         assert manager.request_state_transition(state.IDLE, 'recovery', 100)
     assert manager.request_state_transition(state.SHUTDOWN, 'shutdown', 100)
     assert not manager.request_state_transition(state.IDLE, 'shutdown', 100, is_completion=True)
+
+
+def test_new_voice_session_interrupts_ordinary_behavior_immediately():
+    manager, state = make_manager()
+    for ordinary in (state.ANIMATING, state.RETURNING_HOME, state.EMOTION_REACTING, state.PETTING):
+        assert manager.request_state_transition(ordinary, 'ordinary', 50, force=True)
+        assert manager.request_state_transition(state.USER_CONTROL, 'voice_session', 80)
+        assert manager.current_state == state.USER_CONTROL
+    assert manager.request_state_transition(state.COLLISION_AVOIDING, 'safety', 100, force=True)
+    assert not manager.request_state_transition(state.USER_CONTROL, 'voice_session', 80)
