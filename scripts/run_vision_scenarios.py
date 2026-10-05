@@ -51,6 +51,7 @@ def main():
         person.publish(Bool(data=True));wait(lambda:observed['presence'][-1] is True,timeout=5)
         wait(lambda:observed['presence'][-1] is False,timeout=5)
         print(json.dumps(dict(scenario='stale_person_presence_expires',passed=True)),flush=True)
+        wait(lambda:observed['states'][-1]=='IDLE' and not observed['animations'][-1],timeout=40)
     finally:
         node.destroy_node();rclpy.shutdown()
 
