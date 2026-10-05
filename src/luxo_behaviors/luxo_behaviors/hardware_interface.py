@@ -1061,7 +1061,8 @@ class RoArmHardwareInterface(Node):
                 # Validate the target positions (only joint positions)
                 is_safe, adjusted_positions, severity = self.behavior_coordinator.validate_animation_keyframe(
                     target_positions[:5], 
-                    animation_name
+                    animation_name,
+                    target_received_at=time.monotonic(),
                 )
                 
                 if not is_safe:
@@ -1081,7 +1082,9 @@ class RoArmHardwareInterface(Node):
                 safe_positions = list(safe_positions) + [acceleration]
             
             # Apply collision avoidance and send command
-            self.send_safe_joint_command(safe_positions, "Joint control")
+            self.send_safe_joint_command(
+                safe_positions, "Joint control", target_received_at=time.monotonic()
+            )
             
             # Explicitly publish to joint_states to ensure our topic is active
             self.publish_actual_joint_states(self.current_joints)
@@ -1219,7 +1222,7 @@ class RoArmHardwareInterface(Node):
             
         return False, []
 
-    def send_safe_joint_command(self, positions, description=""):
+    def send_safe_joint_command(self, positions, description="", target_received_at=None):
         """Send a joint command with safety checks applied"""
         if not self.is_connected():
             return False
@@ -1246,6 +1249,24 @@ class RoArmHardwareInterface(Node):
         # Apply collision avoidance safety limits
         if self.enable_collision_avoidance:
             safe_positions = self.behavior_coordinator.apply_safety_limits(safe_positions)
+            if len(safe_positions) >= 5:
+                try:
+                    now = time.monotonic()
+                    received = target_received_at
+                    decision = self.behavior_coordinator.reactive_avoidance.adjust_target(
+                        self.current_joints[:5],
+                        safe_positions[:5],
+                        ('base_to_L1', 'L1_to_L2', 'L2_to_L3', 'L3_to_L4', 'L4_to_L5'),
+                        now=now,
+                        target_received_at=received,
+                    )
+                    safe_positions = list(safe_positions)
+                    safe_positions[:5] = decision['target']
+                except (TypeError, ValueError) as exc:
+                    self.get_logger().error(
+                        f"Reactive joint-command guard rejected target: {exc}"
+                    )
+                    safe_positions = self.current_joints.copy()
         
         try:
             # Only disable DEMA if it's active and the command is something other than regular joint control

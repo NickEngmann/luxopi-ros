@@ -324,7 +324,8 @@ class BehaviorCoordinator(PettingBehavior, IdleBehavior, VoiceBehavior, Collisio
             
             return True
 
-    def validate_animation_keyframe(self, keyframe, animation_name=None):
+    def validate_animation_keyframe(self, keyframe, animation_name=None,
+                                    target_received_at=None):
         """
         Check if a keyframe is safe to execute given current collision status.
         
@@ -352,7 +353,7 @@ class BehaviorCoordinator(PettingBehavior, IdleBehavior, VoiceBehavior, Collisio
         try:
             decision = self.reactive_avoidance.adjust_target(
                 self.current_joints, adjusted_keyframe, names,
-                now=time.monotonic(),
+                now=time.monotonic(), target_received_at=target_received_at,
             )
         except (TypeError, ValueError) as exc:
             self.node.get_logger().error(f"Reactive collision projection failed closed: {exc}")

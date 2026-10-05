@@ -98,6 +98,25 @@ def test_imminent_contact_and_conflicting_sides_hold_current_pose():
     assert result["target"] == current
 
 
+def test_contact_holds_all_direct_commands_until_fresh_release_and_new_target():
+    motion = policy()
+    current = [0.0, 0.2, 0.5, 0.0, 0.0, 0.0]
+    warn(motion, "front", 1.0, severity="contact", valid=False)
+    result = decision(motion, current, [0.0, 0.5, 0.8, 0.2, 0.4, 0.0], 1.01)
+    assert result["mode"] == "hold_stale"
+    assert result["target"] == current
+
+    clear(motion, "front", 1.1, valid=False)  # another sensor cannot clear FSR
+    result = decision(motion, current, [0.0, 0.5, 0.8, 0.2, 0.4, 0.0], 1.2)
+    assert result["mode"] == "hold_stale"
+
+    clear(motion, "front", 1.3, valid=True)  # fresh FSR release and valid range
+    result = decision(motion, current, [0.0, 0.5, 0.8, 0.2, 0.4, 0.0], 1.6, received=1.55)
+    assert result["mode"] == "hold_replan"
+    result = decision(motion, current, [0.0, 0.5, 0.8, 0.2, 0.4, 0.0], 1.6, received=1.56)
+    assert result["mode"] == "clear"
+
+
 def test_joint_limit_without_escape_room_holds_instead_of_claiming_adjustment():
     motion = policy()
     current = [ROARM_M3_LIMITS[ROARM_M3_NAMES[0]][1], 0.2, 0.5, 0.0, 0.0, 0.0]
