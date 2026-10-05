@@ -1,16 +1,18 @@
 services:
   simulator:
+    image: luxopi/simulator:local
     build:
       context: .
       dockerfile: docker/Dockerfile.simulator
     init: true
+    restart: unless-stopped
     environment:
       ROS_DOMAIN_ID: "73"
       ROS_LOCALHOST_ONLY: "1"
     ports:
-      - "127.0.0.1:8080:8080"
+      - "0.0.0.0:8080:8080"
     healthcheck:
-      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/api/state', timeout=3)"]
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=3)"]
       interval: 10s
       timeout: 5s
       retries: 12
