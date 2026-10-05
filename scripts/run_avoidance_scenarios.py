@@ -33,7 +33,7 @@ def main():
     evidence = {'started_at': datetime.datetime.now(datetime.timezone.utc).isoformat(),
                 'runtime_commit': os.environ.get('LUXOPI_RUNTIME_COMMIT', 'unknown'),
                 'cases': [], 'passed': False}
-    data = {'joints': [], 'names': [], 'state': None, 'motion': {}, 'sensors': []}
+    data = {'joints': [], 'names': [], 'state': None, 'motion': {}, 'sensors': [], 'velocity': [], 'hold_onset': None}
     def joints(msg):
         assert len(msg.name) == len(msg.position) and all(math.isfinite(v) for v in msg.position)
         assert len(set(msg.name)) == len(msg.name)
@@ -41,9 +41,16 @@ def main():
             assert name in limits and limits[name][0]-.001 <= value <= limits[name][1]+.001
         data['names'] = list(msg.name)
         data['joints'].append(list(msg.position))
+        data['velocity']=list(msg.velocity)
     node.create_subscription(JointState, '/joint_states', joints, 100)
     node.create_subscription(String, '/luxo/current_state', lambda m: data.update(state=m.data), 100)
-    node.create_subscription(String, '/sim/motion_status', lambda m: data.update(motion=json.loads(m.data)), 100)
+    def motion_status(msg):
+        status=json.loads(msg.data)
+        if status.get('motion_hold_requested') and not data['motion'].get('motion_hold_requested'):
+            data['hold_onset']={'time':time.monotonic(),'position':data['joints'][-1][:],
+                                'velocity':data['velocity'][:]}
+        data['motion']=status
+    node.create_subscription(String, '/sim/motion_status', motion_status, 100)
     node.create_subscription(String, '/collision/sensor_status', lambda m: data['sensors'].append(json.loads(m.data)), 100)
     dist = {s: node.create_publisher(Float32, '/i2c/vl53_'+s+'/distance', 10) for s in ('left', 'right')}
     front = node.create_publisher(Int16, '/i2c/apds9960/proximity', 10)
@@ -76,11 +83,24 @@ def main():
         values = list(data['joints'][-1]); values[index] += delta
         manual.publish(JointState(name=data['names'], position=values))
     def held(seconds=.4):
-        spin(.2); start = len(data['joints']); spin(seconds)
-        frames = data['joints'][start:]
-        assert len(frames) >= 3
-        drift = max(abs(a-b) for row in frames for a,b in zip(frames[0], row))
-        assert drift < 1e-4, f'unsafe hold drift {drift}'
+        onset=data['hold_onset']
+        assert onset and len(onset['velocity'])==len(onset['position'])
+        # Simulation caps are .5rad/s and 1rad/s², not hardware braking specs.
+        acceleration=1.
+        initial_speed=max(abs(v) for v in onset['velocity'])
+        deadline=onset['time']+initial_speed/acceleration+.2
+        while not data['motion'].get('motion_frozen'):
+            assert time.monotonic()<=deadline,'Braking exceeded velocity/acceleration bound plus scheduling margin'
+            spin(.02)
+        stopped=data['joints'][-1]
+        for before,after,velocity in zip(onset['position'],stopped,onset['velocity']):
+            bound=velocity*velocity/(2*acceleration)+2*.02*abs(velocity)+.02
+            assert abs(after-before)<=bound,('braking travel exceeded bound',after-before,bound)
+        start=len(data['joints']);spin(seconds)
+        frames=data['joints'][start:]
+        assert len(frames)>=3
+        drift=max(abs(a-b) for row in frames for a,b in zip(frames[0],row))
+        assert drift<1e-4,f'resumed motion after braking {drift}'
         return len(frames)
     def case(name, **values):
         evidence['cases'].append(dict(name=name, passed=True, **values))
@@ -101,20 +121,22 @@ def main():
             wait(lambda: (data['joints'][-1][index]-baseline)*sign > .005)
             assert data['state'] == 'COLLISION_AVOIDING'
             case('warning_'+side+'_redirects_actual_joint', axis=data['names'][index], sign=sign)
-        sample(left=3.); wait(lambda: data['motion'].get('avoidance_mode', '').startswith('hold'))
+        sample(left=3.); wait(lambda: data['motion'].get('avoidance_mode')=='hold_imminent')
         case('danger_holds', frames=held())
-        sample(left=6., right=6.); wait(lambda: data['motion'].get('avoidance_mode', '').startswith('hold'))
+        sample();spin(.4);command();spin(.15)
+        sample(left=6., right=6.); wait(lambda: data['motion'].get('avoidance_mode')=='hold_blocked')
         case('both_sides_blocked_hold', frames=held())
         sample(); spin(.4); command(); spin(.2)
-        raw['contact']=50; contact.publish(UInt8(data=50)); wait(lambda: data['motion'].get('avoidance_mode', '').startswith('hold'))
+        raw['contact']=50; contact.publish(UInt8(data=50)); wait(lambda: data['motion'].get('avoidance_mode')=='hold_imminent')
         case('contact_holds', frames=held()); raw['contact']=0; contact.publish(UInt8(data=0))
         sample(left=6.); spin(.2)
         # Stop all raw samples: expiration must not silently release/replay the old target.
         raw['enabled']=False
         wait(lambda: any(not s.get('valid', True) for s in data['sensors'][-20:]), timeout=15)
-        wait(lambda: data['motion'].get('avoidance_mode', '').startswith('hold'))
+        wait(lambda: data['motion'].get('avoidance_mode')=='hold_stale')
         case('dropout_after_warning_holds', frames=held())
         sample(); spin(.4)
+        wait(lambda: data['motion'].get('avoidance_mode')=='hold_replan')
         case('fresh_clear_does_not_replay_old_target', frames=held())
         baseline = data['joints'][-1][:]; command()
         wait(lambda: max(abs(a-b) for a,b in zip(baseline, data['joints'][-1])) > .01)
@@ -166,6 +188,8 @@ def main():
         evidence['passed'] = True
     except BaseException as exc:
         evidence['error'] = repr(exc)
+        evidence['last_motion']=data['motion']
+        evidence['last_sensors']=data['sensors'][-6:]
         raise
     finally:
         evidence['ended_at'] = datetime.datetime.now(datetime.timezone.utc).isoformat()
