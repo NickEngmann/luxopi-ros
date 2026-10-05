@@ -52,7 +52,6 @@ setup(
             'speech_bridge = luxo_behaviors.speech_bridge:main',
             'sim_direction_node = luxo_behaviors.sim_direction_node:main',
             'sim_motion_controller = luxo_behaviors.sim_motion_controller:main',
-            'physics_command_bridge = luxo_behaviors.physics_command_bridge:main',
             'simulator_dashboard = luxo_behaviors.simulator_dashboard:main',
             'mujoco_simulator = luxo_behaviors.mujoco_simulator:main',
             'sim_world_sensors = luxo_behaviors.sim_world_sensors:main',
