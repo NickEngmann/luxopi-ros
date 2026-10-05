@@ -96,7 +96,9 @@ def main():
             page.wait_for_function('document.querySelector("#transcript").textContent === "Please nod"')
             page.wait_for_function('document.querySelector("#response").textContent !== "No response yet."')
             record('conversation_text_and_reply', transcript=snapshot['transcript'], response=snapshot['response'])
-            wait(lambda s: s['status'] == 'idle' and s['state'] == 'IDLE', timeout=20)
+            # Animation commands are retimed to the simulated actuator limits;
+            # the full nod gesture takes about a minute at those bounds.
+            wait(lambda s: s['status'] == 'idle' and s['state'] == 'IDLE', timeout=90)
 
             # Force every FSM state through the dashboard's explicit simulator-only
             # test control and verify the real state-service response.
@@ -187,8 +189,10 @@ def main():
             page.locator('[data-direction="90"]').click()
             page.locator('#sendDirection').click()
             snapshot = wait(lambda s: s['direction_evidence'].get('requested_mic_angle') == 90)
-            assert abs(snapshot['direction_evidence']['error_degrees']) < 10
-            record('actual_direction_estimator', evidence=snapshot['direction_evidence'])
+            direction_data = snapshot['direction_evidence']
+            direction_error = abs((direction_data['measured_mic_angle'] - direction_data['requested_mic_angle'] + 180) % 360 - 180)
+            assert direction_error < 10, direction_data
+            record('actual_direction_estimator', evidence=direction_data)
             wait(lambda s: not s['voice_active'] and s['state'] == 'IDLE', timeout=15)
 
             # Raw proximity input must reach the collision classifier, not just echo in the UI.
@@ -203,8 +207,26 @@ def main():
             record('raw_sensor_collision_to_motion_hold', state=snapshot['state'], motion=snapshot['motion'])
             page.evaluate("document.querySelector('#proximityRange').value = '0'")
             page.locator('#sendProximity').click()
-            wait(lambda s: not s['motion'].get('motion_frozen') and s['state'] == 'IDLE', timeout=20)
-            record('collision_quiet_recovery')
+            # Motion requires fresh range and matching FSR coverage in all
+            # directions before it releases a stale-sensor hold. Keep the
+            # clear readings alive through the classifier's clear dwell.
+            clear_events = [
+                {'type': 'distance', 'side': 'left', 'metres': 1.0},
+                {'type': 'distance', 'side': 'right', 'metres': 1.0},
+                {'type': 'touch', 'sensor': 'head_bottom', 'value': 0},
+                {'type': 'touch', 'sensor': 'head_left', 'value': 0},
+                {'type': 'touch', 'sensor': 'head_right', 'value': 0},
+            ]
+            clear_until = time.monotonic() + 0.8
+            while time.monotonic() < clear_until:
+                for event in clear_events:
+                    response = page.request.post(args.url + '/api/events', data=event)
+                    assert response.status == 202, response.text()
+                page.wait_for_timeout(80)
+            snapshot = wait(lambda s: not s['motion'].get('motion_frozen')
+                            and s['motion'].get('avoidance_mode') == 'clear'
+                            and s['state'] == 'IDLE', timeout=20)
+            record('collision_quiet_recovery', motion=snapshot['motion'])
 
             response = page.request.post(args.url + '/api/events', data={'type': 'animation', 'name': 'unknown'})
             assert response.status == 400
