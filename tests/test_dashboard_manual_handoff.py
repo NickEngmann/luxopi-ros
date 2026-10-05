@@ -11,7 +11,12 @@ def dashboard():
     methods = [n for n in klass.body if isinstance(n, ast.FunctionDef)
                and n.name in {'_manual_state_request_done', '_flush_manual_target'}]
     clock = SimpleNamespace(monotonic=lambda: 1.0)
-    namespace = {'time': clock, 'JointState': SimpleNamespace}
+    namespace = {
+        'time': clock,
+        'JointState': lambda: SimpleNamespace(
+            header=SimpleNamespace(frame_id=''), name=[], position=[]
+        ),
+    }
     exec(compile(ast.Module(body=methods, type_ignores=[]), '<dashboard>', 'exec'), namespace)
     sent, results = [], []
     obj = SimpleNamespace(
@@ -33,6 +38,7 @@ def test_service_grant_waits_for_motion_consumer_state():
     obj._snapshot['motion']['state'] = 'USER_CONTROL'
     ns['_flush_manual_target'](obj)
     assert len(sent) == 1 and sent[0].position == [.2]
+    assert sent[0].header.frame_id == 'manual:2'
     assert results[-1]['manual_pose_result']['success']
     ns['_flush_manual_target'](obj)
     assert len(sent) == 1

@@ -53,7 +53,10 @@ class SimMotionController(Node):
             max_acceleration=self.get_parameter("max_joint_acceleration").value,
         )
         self.animation_target = [0.0] * len(self.joint_names)
-        self.target_received_at = time.monotonic()
+        self.animation_intent_id = None
+        self.animation_target_received_at = time.monotonic()
+        self.manual_intent_id = None
+        self.manual_target_received_at = None
         self.measured_positions = [0.0] * len(self.joint_names)
         self.measured_velocities = [0.0] * len(self.joint_names)
         self.feedback_received_at = None
@@ -155,7 +158,14 @@ class SimMotionController(Node):
         # Commit only after all fields pass validation; a bad message must not
         # poison the timer's next limiter step.
         self.animation_target = candidate
-        self.target_received_at = time.monotonic()
+        intent_id = str(getattr(message.header, "frame_id", "") or "")
+        if not intent_id:
+            # Older publishers lack an intent ID. Accept their first target,
+            # then treat subsequent unknown-ID updates as keepalives only.
+            intent_id = self.animation_intent_id or "legacy-unknown-intent"
+        if intent_id != self.animation_intent_id:
+            self.animation_intent_id = intent_id
+            self.animation_target_received_at = time.monotonic()
 
     def feedback_callback(self, message):
         """Store physics feedback separately from the persistent command trajectory."""
@@ -207,7 +217,13 @@ class SimMotionController(Node):
             self.manual_target = validate_manual_pose(
                 self.current_state, message.name, message.position, self.profile
             )
-            self.target_received_at = time.monotonic()
+            intent_id = str(getattr(message.header, "frame_id", "") or "")
+            if not intent_id:
+                # Manual topic messages are explicit commands, not keepalives.
+                intent_id = f"legacy-manual-{time.monotonic_ns()}"
+            if intent_id != self.manual_intent_id:
+                self.manual_intent_id = intent_id
+                self.manual_target_received_at = time.monotonic()
             self.manual_target_rejected = ""
         except (TypeError, ValueError) as exc:
             self.manual_target_rejected = str(exc)
@@ -262,6 +278,9 @@ class SimMotionController(Node):
         manual_override = self.current_state == "USER_CONTROL" and self.manual_target is not None
         if manual_override:
             target = list(self.manual_target)
+            target_received_at = self.manual_target_received_at
+        else:
+            target_received_at = self.animation_target_received_at
         may_follow = (
             self.voice_active
             and self.voice_direction is not None
@@ -282,7 +301,7 @@ class SimMotionController(Node):
             target,
             self.joint_names,
             now=now,
-            target_received_at=self.target_received_at,
+            target_received_at=target_received_at,
         )
         self.avoidance_mode = avoidance["mode"]
         self.avoidance_directions = avoidance["hazards"]

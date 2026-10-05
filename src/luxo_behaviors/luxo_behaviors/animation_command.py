@@ -12,6 +12,7 @@ from luxo_interfaces.action import PlayAnimation
 from luxo_interfaces.srv import RequestStateTransition
 import time
 import json
+import uuid
 from luxo_behaviors.joint_motion import (
     URDF_JOINT_LIMITS,
     clamp_joint_positions,
@@ -177,6 +178,8 @@ class AnimationCommandActionServer(Node):
         self._goal_handle = None
         self._goal_lock = threading.Lock()
         self._goal_tracker = AnimationGoalTracker()
+        self._target_intent_id = ""
+        self._target_intent_sequence = 0
         # A replacement goal requests cancellation, then waits here until the
         # previous goal has stopped publishing targets.
         self._execution_lock = threading.Lock()
@@ -535,6 +538,21 @@ class AnimationCommandActionServer(Node):
                         goal_handle.abort()
                 return result
 
+            # One stable identity covers every interpolated keyframe and idle
+            # hold emitted for this goal. Repeated values or changing values
+            # within the same plan are not a new post-hazard intent.
+            goal_id = getattr(goal_handle, 'goal_id', None)
+            raw_uuid = getattr(goal_id, 'uuid', ())
+            try:
+                uuid_bytes = bytes(raw_uuid)
+            except (TypeError, ValueError):
+                uuid_bytes = b''
+            if len(uuid_bytes) == 16:
+                goal_intent_id = str(uuid.UUID(bytes=uuid_bytes))
+            else:
+                self._target_intent_sequence += 1
+                goal_intent_id = f"animation-goal-{self._target_intent_sequence}"
+
             self.get_logger().info(
                 f'Executing animation: {animation_name} with speed {speed_multiplier}'
             )
@@ -684,6 +702,7 @@ class AnimationCommandActionServer(Node):
                     easing=True,
                     animation_name=animation_name,
                     cancel_event=cancel_event,
+                    target_intent_id=goal_intent_id,
                 )
 
                 if not completed:
@@ -955,6 +974,7 @@ class AnimationCommandActionServer(Node):
         # Create joint state message
         msg = JointState()
         msg.header.stamp = self.get_clock().now().to_msg()
+        msg.header.frame_id = self._target_intent_id
         msg.name = self.joint_names
 
         try:
@@ -1015,7 +1035,7 @@ class AnimationCommandActionServer(Node):
 
     def move_to_position(
         self, positions, duration=1.0, easing=True, animation_name=None,
-        cancel_event=None,
+        cancel_event=None, target_intent_id=None,
     ):
         """Move to a specific position over a duration with optional easing."""
         start_positions = self.target_positions.copy()
@@ -1066,6 +1086,8 @@ class AnimationCommandActionServer(Node):
                 self.target_positions.append(target_with_accel[5])
 
             # IMPORTANT: Explicitly publish the joint states during movement
+            if target_intent_id is not None:
+                self._target_intent_id = target_intent_id
             self.publish_joint_states_target()
 
             time.sleep(0.01)
