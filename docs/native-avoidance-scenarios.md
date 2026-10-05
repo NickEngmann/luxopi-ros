@@ -31,6 +31,7 @@ Retained failed evidence includes the initial strict immediate-freeze assumption
 and the real old-target replay regression before stable intent IDs were added.
 This 11-case suite is now included in the nine-suite aggregate, whose new complete
 retimed execution is still pending. Earlier eight-suite results retain their exact
-runtime scope. The separate raw-sensor runner's 20s petting timeout predates slower
-feasible retiming and needs a plan-aware wait; its recent timeout is not a passing
-new raw-sensor result.
+runtime scope. The separate raw-sensor runner timed out waiting 20s for petting release to
+return IDLE. Continuing the slow retimed petting action after the hand is gone
+is a responsiveness regression; an owned-goal cancellation fix is pending. The
+20s check is retained, and this timeout is not a passing new raw-sensor result.
