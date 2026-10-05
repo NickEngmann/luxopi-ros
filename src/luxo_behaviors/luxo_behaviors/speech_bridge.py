@@ -10,6 +10,7 @@ from rclpy.node import Node
 from rclpy.qos import QoSProfile, DurabilityPolicy
 from std_msgs.msg import String, Bool
 
+from luxo_behaviors.audio_input import validate_audio_name, remove_audio
 from luxo_behaviors.conversation_transport import ConversationClient, SimulatedConversation, LocalEventReceiver
 
 
@@ -22,6 +23,8 @@ class SpeechBridge(Node):
         self.declare_parameter("service_timeout", 15.0)
         self.declare_parameter("preview_speaking_seconds", 1.0)
         self.declare_parameter("event_socket", "")
+        self.declare_parameter("audio_directory", "")
+        self.audio_directory = self.get_parameter("audio_directory").value
         backend = self.get_parameter("backend").value
         if backend == "simulation":
             self.client = SimulatedConversation()
@@ -46,6 +49,7 @@ class SpeechBridge(Node):
         self.color_control = self.create_publisher(String, "/luxo/color_control", 10)
         self.color_temp_control = self.create_publisher(String, "/luxo/color_temp_control", 10)
         self.subscription = self.create_subscription(String, "/voice/command", self.command, 10)
+        self.audio_subscription = self.create_subscription(String, "/voice/audio_file", self.audio_command, 10)
         self._pending = queue.Queue(maxsize=1)
         self._stopping = threading.Event()
         self._busy = threading.Event()
@@ -116,19 +120,44 @@ class SpeechBridge(Node):
         self.transcripts.publish(String(data=text))
         self._publish_status("listening")
         try:
-            self._pending.put_nowait(text)
+            self._pending.put_nowait({"text": text})
         except queue.Full:
             self._busy.clear()
+
+    def audio_command(self, message):
+        try:
+            name = validate_audio_name(message.data)
+        except ValueError:
+            self.get_logger().warning("Ignored invalid saved-audio name")
+            return
+        if not self.audio_directory or not hasattr(self.client, "request_audio"):
+            self.get_logger().warning("Saved-audio recognition is disabled")
+            return
+        if self._busy.is_set():
+            remove_audio(name, self.audio_directory)
+            self.get_logger().warning("Conversation busy; audio rejected")
+            return
+        self._busy.set()
+        self._publish_status("listening")
+        try:
+            self._pending.put_nowait({"audio_file": name})
+        except queue.Full:
+            self._busy.clear()
+            remove_audio(name, self.audio_directory)
 
     def _run(self):
         while not self._stopping.is_set():
             try:
-                text = self._pending.get(timeout=0.1)
+                request = self._pending.get(timeout=0.1)
             except queue.Empty:
                 continue
             try:
                 self._publish_status("thinking")
-                result = self.client.request(text)
+                if "audio_file" in request:
+                    result = self.client.request_audio(request["audio_file"])
+                    self.transcripts.publish(String(data=result["text"]))
+                else:
+                    result = self.client.request(request["text"])
                 if self._stopping.is_set():
                     break
                 animation = result.get("animation")
@@ -145,6 +174,8 @@ class SpeechBridge(Node):
                 self.get_logger().error(f"Conversation failed: {exc}")
                 self._publish_status("error")
             finally:
+                if "audio_file" in request:
+                    remove_audio(request["audio_file"], self.audio_directory)
                 self._busy.clear()
                 if not self._stopping.is_set():
                     self._publish_status("idle")

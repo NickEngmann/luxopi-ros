@@ -61,12 +61,19 @@ class ConversationClient:
     def request(self, text):
         if not isinstance(text, str) or not text.strip() or len(text) > 2000:
             raise ValueError("text must contain 1–2000 characters")
+        return self._request({"text": text})
+
+    def request_audio(self, name):
+        from luxo_behaviors.audio_input import validate_audio_name
+        return self._request({"audio_file": validate_audio_name(name)})
+
+    def _request(self, payload):
         with self._lock:
             self._start()
             process = self._process
             request_id = uuid.uuid4().hex
             try:
-                process.stdin.write(json.dumps({"id": request_id, "text": text}) + "\n")
+                process.stdin.write(json.dumps({"id": request_id, **payload}) + "\n")
                 process.stdin.flush()
                 deadline = time.monotonic() + self.timeout
                 while time.monotonic() < deadline:
@@ -116,16 +123,15 @@ class ConversationClient:
 class SimulatedConversation:
     """Explicit mock backend; never presented as a language model result."""
 
-    ANIMATIONS = frozenset({
-        "dance", "curious", "think", "stretch", "excited", "sad", "playful",
-        "startled", "nod", "shake", "idle", "stop", "close",
-    })
+    from luxo_behaviors.simulator_protocol import ANIMATION_NAMES
+    ANIMATIONS = frozenset(ANIMATION_NAMES)
 
     def request(self, text):
         text = text.strip()
         candidate = text.lower().strip(" .!?")
         if candidate.startswith("please "):
             candidate = candidate[7:]
+        candidate = candidate.replace(" ", "_")
         animation = candidate if candidate in self.ANIMATIONS else None
         return {
             "text": text, "response": f"Simulator heard: {text}",
