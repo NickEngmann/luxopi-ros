@@ -31,5 +31,13 @@ joint bounds. Actual hardware calibration, obstacle geometry, torque limits,
 and motion tracking still require the robot. These results are synthetic physics
 checks, not physical collision certification or Raspberry Pi performance data.
 
-The live ROS full-playlist regression is pending. Do not treat the physics sweep
-as proof of conversation ownership, action preemption, or dashboard lifecycle.
+The live ROS motion runner passed 42 cases on 2026-10-05, including all 38
+animations, cancellation, action preemption, direction-driven motion and
+collision rejection. In the isolated continuous probe, dance took 36.859s and
+nod took 28.684s; each animation finished with zero reported endpoint error and
+settled velocity in the kinematic backend. Evidence is copied to
+`/tmp/luxopi-continuous-evidence-in-progress/motion.json` on the host. The frozen
+runtime was `178fb02`, before the subsequent once-per-goal safety grace and
+bounded-warning changes; this run must not be described as testing those fixes.
+The other eight suites are still running, so full conversation/dashboard
+regression coverage remains pending. The continuous mode remains opt-in.
