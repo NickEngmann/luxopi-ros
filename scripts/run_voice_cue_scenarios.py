@@ -69,8 +69,10 @@ def main():
         report('stale_cue_completion_preserves_new_session',state='USER_CONTROL')
         idle()
         start=len(seen['animations']);emit('thinking');cue('thinking',start)
+        spin(.1)  # Drain the previous listening goal's terminal status before taking its successor.
         wait(lambda:any(v==2 for v in seen['statuses'].values()))
         active={k for k,v in seen['statuses'].items() if v==2}
+        assert len(active)==1, {'executing_goals':active,'statuses':seen['statuses']}
         collision.publish(Float32(data=3.0));spin(.05);collision.publish(Float32(data=3.0));wait(lambda:seen['states'][-1]=='COLLISION_AVOIDING')
         wait(lambda:any(seen['statuses'].get(k) in (5,6) for k in active))
         report('collision_preempts_noninterrupting_visual_cue',terminal_statuses={k:seen['statuses'].get(k) for k in active})
