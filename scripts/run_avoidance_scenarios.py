@@ -17,6 +17,8 @@ def main():
         raise SystemExit('Avoidance scenarios require domain73 localhost-only')
     import rclpy
     from rclpy.node import Node
+    from rclpy.action import ActionClient
+    from luxo_interfaces.action import PlayAnimation
     from std_msgs.msg import String, Float32, UInt8, Int16
     from sensor_msgs.msg import JointState
     from luxo_interfaces.srv import RequestStateTransition
@@ -48,6 +50,7 @@ def main():
     contact = node.create_publisher(UInt8, '/touch_sensors/head_bottom', 10)
     manual = node.create_publisher(JointState, '/sim/manual_joint_target', 10)
     service = node.create_client(RequestStateTransition, '/luxo/request_state_transition')
+    actions = ActionClient(node, PlayAnimation, 'play_animation')
     def spin(seconds):
         end = time.monotonic()+seconds
         while time.monotonic() < end:
@@ -108,6 +111,38 @@ def main():
         baseline = data['joints'][-1][:]; command()
         wait(lambda: max(abs(a-b) for a,b in zip(baseline, data['joints'][-1])) > .01)
         case('fresh_clear_new_target_replans', state=data['state'])
+        # A real action must keep running through warning projection, then abort
+        # on danger. Manual target projection alone cannot prove this bridge.
+        sample(); spin(.4)
+        idle = RequestStateTransition.Request()
+        idle.requested_state = 'IDLE'; idle.requesting_node = 'avoidance_scenarios'
+        idle.priority = 100; idle.force = True
+        future = service.call_async(idle); wait(future.done); assert future.result().success
+        wait(lambda: data['state'] == 'IDLE')
+        assert actions.wait_for_server(timeout_sec=10)
+        goal = PlayAnimation.Goal(); goal.animation_name = 'dance'
+        goal.speed_multiplier = .5
+        sent = actions.send_goal_async(goal); wait(sent.done)
+        handle = sent.result(); assert handle.accepted
+        result = handle.get_result_async()
+        wait(lambda: data['state'] == 'ANIMATING')
+        baseline = data['joints'][-1][0]
+        deadline = time.monotonic()+6
+        adjusted = False
+        while time.monotonic() < deadline:
+            sample(left=6.)
+            adjusted = adjusted or data['motion'].get('avoidance_mode') == 'adjust'
+            if adjusted and data['joints'][-1][0]-baseline > .005:
+                break
+        assert adjusted, data['motion']
+        assert data['joints'][-1][0]-baseline > .005
+        assert not result.done(), 'warning incorrectly terminated the action'
+        assert data['state'] == 'COLLISION_AVOIDING'
+        case('active_animation_warning_redirects_without_abort', animation='dance', axis=data['names'][0])
+        sample(left=3.)
+        wait(result.done)
+        assert result.result().status == 6, result.result().status
+        case('active_animation_danger_aborts', terminal_status=result.result().status, held_frames=held())
         evidence['passed'] = True
     except Exception as exc:
         evidence['error'] = repr(exc)
