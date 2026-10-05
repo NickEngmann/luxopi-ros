@@ -56,6 +56,8 @@ def main():
         request('restored animation owner finishes', 'IDLE', 'animation_command', 30, completion=True, expected='IDLE')
         for state in ('EMOTION_REACTING', 'RETURNING_HOME', 'ESCAPE_MODE', 'ERROR', 'INITIALIZING'):
             request('state entry '+state, state, force=True, expected=state)
+            if state == 'ERROR':
+                request('error latch rejects ordinary idle', 'IDLE', expected='ERROR', success=False)
             request('state recovery '+state, 'IDLE', force=True, expected='IDLE')
         request('invalid state', 'UNKNOWN', expected='IDLE', success=False)
         # Terminal state last; reset only with explicit force after observation.
