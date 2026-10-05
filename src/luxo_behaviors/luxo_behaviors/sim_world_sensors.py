@@ -12,7 +12,7 @@ import numpy as np
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import JointState
-from std_msgs.msg import Float32, Int16, String
+from std_msgs.msg import Float32, Int16, String, UInt8
 
 from luxo_behaviors.joint_profiles import ROARM_M3_NAMES
 from luxo_behaviors.mujoco_runtime import build_m3_model
@@ -115,6 +115,13 @@ class SimWorldSensors(Node):
         self.front_pub = self.create_publisher(Int16, "/i2c/apds9960/proximity", 10)
         self.left_pub = self.create_publisher(Float32, "/i2c/vl53_left/distance", 10)
         self.right_pub = self.create_publisher(Float32, "/i2c/vl53_right/distance", 10)
+        # This fixture owns all raw obstacle inputs. Its geometric scene models
+        # optical ranges, not tactile contact, so publish explicit no-contact
+        # samples rather than silently bypass physical FSR freshness checks.
+        self.contact_pubs = {
+            name: self.create_publisher(UInt8, f"/touch_sensors/{name}", 10)
+            for name in ("head_bottom", "head_left", "head_right")
+        }
         self.status_pub = self.create_publisher(String, "/sim/world_sensor_status", 10)
         self.timer = self.create_timer(1.0 / publish_rate, self.publish_samples)
         self.get_logger().info(
@@ -162,17 +169,18 @@ class SimWorldSensors(Node):
         ))))
         self.front_pub.publish(front)
         left = Float32()
-        # The real collision adapter treats sub-1 cm ToF readings as invalid.
-        # Clamp a synthetic ray contact to that minimum valid danger reading.
-        left.data = float(max(1.0, distances["left"] * 100.0))
+        left.data = float(distances["left"] * 100.0)
         self.left_pub.publish(left)
         right = Float32()
-        right.data = float(max(1.0, distances["right"] * 100.0))
+        right.data = float(distances["right"] * 100.0)
         self.right_pub.publish(right)
+        for publisher in self.contact_pubs.values():
+            publisher.publish(UInt8(data=0))
         status = String()
         status.data = json.dumps({
             "simulated": True,
             "extrinsics_calibrated": False,
+            "contact_model": "explicit no-contact fixture samples; no tactile physics",
             "joint_feedback_age_seconds": age,
             "front_proximity": front.data,
             "left_distance_cm": left.data,

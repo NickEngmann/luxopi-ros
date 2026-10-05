@@ -9,6 +9,7 @@ configured mount transforms, then publishes the same raw inputs consumed by
 - `/i2c/apds9960/proximity` (`Int16`, 0–255)
 - `/i2c/vl53_left/distance` and `/i2c/vl53_right/distance` (`Float32`, cm)
 - `/sim/world_sensor_status` (`String`, JSON diagnostics)
+- `/touch_sensors/head_bottom`, `head_left`, and `head_right` (`UInt8`, explicit zero-contact samples)
 
 The default `world_obstacles_json` is `[]`, so this producer returns maximum
 range readings unless a test scene is configured. A bounded box/sphere scene
@@ -49,13 +50,16 @@ directions, and the front proximity mapping are synthetic, uncalibrated test
 values. The front ray maps distance
 linearly to proximity over `front_proximity_range_m` (default 0.12 m); it does
 not reproduce APDS9960 optics. Side outputs use ray distance in centimetres,
-clamped to at least 1 cm on direct overlap so the classifier sees its nearest
-valid danger sample instead of discarding a sub-centimetre value. The fixture
+including zero on overlap so the classifier conservatively brakes. The fixture
 does not emulate VL53 firmware noise or other invalid-return behavior.
 
 This producer has a separate opt-in switch,
 `enable_world_sensor_fixture` (default `false`). `enable_sim_sensors=true`
 starts the regular collision classifier and does not enable synthetic rays.
+The fixture also supplies fresh zero-contact FSR samples, since its geometric
+scene does not model tactile contact. Required range/contact coverage therefore
+remains strict; it is not silently disabled to make a range-only fixture work.
+All raw publications stop on stale joint feedback, including these contact samples.
 The separation prevents a periodic empty scene from clearing manual sensor
 injections or other tests. A stale or missing six-joint feedback sample stops
 new raw publications so the existing collision classifier's timeout path can
