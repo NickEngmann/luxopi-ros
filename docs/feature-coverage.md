@@ -161,3 +161,14 @@ is `/tmp/luxopi-continuous-final`; it predates the latest safety grace fixes.
 See [continuous timing](continuous-animation-timing.md) and
 [silent neural synthesis](optional-speech-synthesis.md) for the separately scoped
 physics and actual-model results. No physical hardware or audio playback was used.
+
+The focused `scripts/run_animation_safety_scenarios.py` run on the `09b1682`
+default graph injected fresh-invalid and then stale range feedback after a real
+warning was latched during an active animation. Both produced `hold_stale`,
+terminated the action as ABORTED (status 6) within 21 ms of hold telemetry, and
+left the state outside ERROR; both faults arrived at keyframe 3 of the same goal.
+The held range sensor was chosen from the current base pose so its configured
+retreat remained feasible. Host evidence: `/tmp/luxopi-animation-safety.json`.
+This action-level check complements, but does not replace, the offline regression
+that repeats 40 short same-goal stage checks and proves the 150 ms grace is not
+restarted per stage. No physical hardware or audio playback was used.
