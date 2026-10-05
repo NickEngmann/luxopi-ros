@@ -7,12 +7,14 @@ package_name = 'luxo_behaviors'
 
 setup(
     name=package_name,
-    version='0.0.1',
+    version='0.1.0',
     packages=[package_name, package_name + '.animation_plugins'],
     package_data={package_name: [
         'simulator_ui.html',
         'assets/vendor/*.js',
         'assets/vendor/*.txt',
+        'assets/roarm_m3/*',
+        'assets/roarm_m3/**/*',
     ]},
     data_files=[
         ('share/ament_index/resource_index/packages',
@@ -21,13 +23,17 @@ setup(
         # Add the launch files
         (os.path.join('share', package_name, 'launch'), 
          glob(os.path.join('launch', '*.launch.py'))),
+        (os.path.join('share', package_name, 'config'),
+         glob(os.path.join('config', '*.yaml'))),
+        (os.path.join('share', package_name, 'worlds'),
+         glob(os.path.join('worlds', '*.sdf'))),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
     maintainer='cyril',
     maintainer_email='cyril@thegarage.dev',
     description='Luxo Jr-style animations for RoArm-M3',
-    license='Apache License 2.0',
+    license='MIT',
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
@@ -46,7 +52,10 @@ setup(
             'speech_bridge = luxo_behaviors.speech_bridge:main',
             'sim_direction_node = luxo_behaviors.sim_direction_node:main',
             'sim_motion_controller = luxo_behaviors.sim_motion_controller:main',
+            'physics_command_bridge = luxo_behaviors.physics_command_bridge:main',
             'simulator_dashboard = luxo_behaviors.simulator_dashboard:main',
+            'sim_camera_interaction = luxo_behaviors.sim_camera_interaction:main',
+            'sim_interaction_adapter = luxo_behaviors.sim_interaction_adapter:main',
         ],
     },
 )

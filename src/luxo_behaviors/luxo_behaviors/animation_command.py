@@ -3,6 +3,7 @@
 import rclpy
 from rclpy.node import Node
 from rclpy.action import ActionServer, CancelResponse, GoalResponse
+from rclpy.action import ActionClient
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
 from std_msgs.msg import String
@@ -28,71 +29,85 @@ from luxo_behaviors.animation_plugin_base import AnimationPlugin
 from luxo_behaviors.state_machine import LuxoState
 from luxo_behaviors.shared_utils import StateUtils
 from luxo_behaviors.motion_control import AnimationGoalTracker, scaled_duration
+from luxo_behaviors.sim_interaction_rules import animation_state_for
+from luxo_behaviors.joint_profiles import ROARM_M3_NAMES, ROARM_M3_LIMITS, animation_pose_for_profile
 
 
 
 class AnimationCommandActionServer(Node):
     def __init__(self):
         super().__init__('animation_command')
-        
+
         # Parameter to control if this node should publish joint states
         self.declare_parameter('publish_joint_states_target', True)
         self.should_publish = self.get_parameter('publish_joint_states_target').get_parameter_value().bool_value
-        
+
         # Parameter to control which joint names to use (for hardware compatibility)
         self.declare_parameter('use_hardware_joint_names', False)
         self.use_hardware_joint_names = self.get_parameter('use_hardware_joint_names').get_parameter_value().bool_value
-        
+        self.declare_parameter('joint_profile', 'urdf4')
+        self.joint_profile = str(self.get_parameter('joint_profile').value).lower()
+        self.current_gripper_position = 0.0
+
         # Parameter to control which topic to publish to (hardware vs simulation)
         self.declare_parameter('publish_target_topic', False)
         self.publish_target = self.get_parameter('publish_target_topic').get_parameter_value().bool_value
-        
+
         # Joint limits configuration
         self.joint_limits = {
             name: {'min': lower, 'max': upper}
             for name, (lower, upper) in URDF_JOINT_LIMITS.items()
         }
-        
+        if self.joint_profile in {'roarm_m3', 'm3', 'm3_6'} and not self.use_hardware_joint_names:
+            self.joint_limits = {
+                name: {'min': lower, 'max': upper}
+                for name, (lower, upper) in ROARM_M3_LIMITS.items()
+            }
+
         self.declare_parameter('enforce_joint_limits', True)
         self.enforce_joint_limits = self.get_parameter('enforce_joint_limits').value
-        
+
         # Hardware position feedback parameter
         self.declare_parameter('use_hardware_position_feedback', False)
         self.use_hardware_position_feedback = self.get_parameter('use_hardware_position_feedback').get_parameter_value().bool_value
-        
+
         # Hardware position feedback
         self.hardware_position_received = False
-        
+
         # Create subscription for hardware position feedback
         if self.use_hardware_position_feedback:
             self.position_subscription = self.create_subscription(
-                String, 
+                String,
                 'roarm/position',
                 self.position_feedback_callback,
                 10)
             self.get_logger().info('Subscribed to roarm/position for hardware feedback')
-        
+        if not self.use_hardware_joint_names and self.joint_profile in {'roarm_m3', 'm3', 'm3_6'}:
+            self.position_subscription = self.create_subscription(
+                JointState, '/joint_states', self.sim_profile_feedback_callback, 10
+            )
+
         # Create subscription for animation commands (backward compatibility)
         self.command_subscription = self.create_subscription(
             String,
             '/roarm/animation_command',
             self.command_callback,
             10)
-        
+
         # Create publisher for joint states
         joint_topic = '/joint_states_target' if self.publish_target else '/joint_states'
         self.joint_publisher = self.create_publisher(
-            JointState, 
+            JointState,
             joint_topic,
             10)
-        
+
         # Publisher for current animation status
         self.current_animation_publisher = self.create_publisher(
             String,
             '/roarm/current_animation',
             10
         )
-        
+
         self.get_logger().info(f'Publishing joint states to: {joint_topic}')
         self.get_logger().info('Publishing animation status to: /roarm/current_animation')
 
@@ -112,7 +127,7 @@ class AnimationCommandActionServer(Node):
             RequestStateTransition,
             '/luxo/request_state_transition'
         )
-        
+
         # Subscribe to state updates
         self.state_subscription = self.create_subscription(
             String,
@@ -125,15 +140,18 @@ class AnimationCommandActionServer(Node):
         if self.use_hardware_joint_names:
             self.joint_names = ['base', 'shoulder', 'elbow', 'wrist', 'hand']
             self.get_logger().info('Using hardware joint names for RoArm compatibility')
+        elif self.joint_profile in {'roarm_m3', 'm3', 'm3_6'}:
+            self.joint_names = list(ROARM_M3_NAMES)
+            self.get_logger().info('Using canonical six-axis RoArm-M3 simulation profile')
         else:
             # The checked-in RoArm URDF models four revolute joints. Keep the
             # visualization publisher aligned with that model; the fifth
             # actuator and acceleration slot are hardware-only.
             self.joint_names = ['base_to_L1', 'L1_to_L2', 'L2_to_L3', 'L3_to_L4']
-        
+
         # Timer for regular publishing
         self.timer = self.create_timer(0.25, self.publish_joint_states_target)
-        
+
         # Animation state
         self.is_animating = False
         self.animation_steps = []
@@ -141,7 +159,7 @@ class AnimationCommandActionServer(Node):
         self.step_durations = []
         self.animation_timer = None
         self.speed_multiplier = 1.0
-        
+
         # Action server state
         self._goal_handle = None
         self._goal_lock = threading.Lock()
@@ -149,15 +167,15 @@ class AnimationCommandActionServer(Node):
         # A replacement goal requests cancellation, then waits here until the
         # previous goal has stopped publishing targets.
         self._execution_lock = threading.Lock()
-        
+
         # Movement source tracking
         self.movement_source = "idle"
         self.last_movement_source_change = self.get_clock().now()
-        
+
         # DEMA control integration
         self.declare_parameter('enable_dema_integration', False)
         self.enable_dema_integration = False
-        
+
         # Create publisher for movement type
         if self.enable_dema_integration:
             self.movement_source_publisher = self.create_publisher(
@@ -166,7 +184,7 @@ class AnimationCommandActionServer(Node):
                 10
             )
             self.get_logger().info("Publishing movement source information for DEMA coordination")
-        
+
         # Subscribe to collision status
         self.collision_status = "safe"
         self.collision_status_sub = self.create_subscription(
@@ -175,18 +193,18 @@ class AnimationCommandActionServer(Node):
             self.collision_status_callback,
             10
         )
-        
+
         # Track if animation was preempted by collision
         self.collision_preempted = False
         self.animation_preemption_time = self.get_clock().now()
-        
+
         # Track animation type for state machine
         self.animation_trigger_source = None  # 'command', 'emotion', 'action'
-        
+
         # Load animation plugins
         self.animation_plugins = self._load_animation_plugins()
         self.get_logger().debug(f'Loaded {len(self.animation_plugins)} animation plugins')
-        
+
         # Create action server
         self._action_server = ActionServer(
             self,
@@ -198,25 +216,28 @@ class AnimationCommandActionServer(Node):
             cancel_callback=self.cancel_callback,
             callback_group=ReentrantCallbackGroup()
         )
-        
+        # Legacy command publishers enter the exact same action arbiter as the
+        # panel. This keeps cancellation/preemption and state ownership unified.
+        self._compat_action_client = ActionClient(self, PlayAnimation, 'play_animation')
+
         # Initialize ROS time tracking
         self._init_time_tracking()
-        
+
         # Maximum attempts to get hardware position
         self.max_position_attempts = 10
         self.position_request_interval = 0.5
-        
+
         self.get_logger().info('Animation command action server initialized')
         self.get_logger().info(f'Available animations: {", ".join(self.animation_plugins.keys())}')
         self.get_logger().info(f'Publishing to topic: {joint_topic}')
         self.get_logger().info(f'Publish enabled: {self.should_publish}')
         self.get_logger().info(f'Hardware joint names: {self.use_hardware_joint_names}')
         self.get_logger().info(f'Joint names: {self.joint_names}')
-        
+
         # Initialize hardware position if enabled
         if self.use_hardware_position_feedback:
             self.request_hardware_position()
-    
+
     def state_update_callback(self, msg):
         """Handle state updates from global state manager"""
         try:
@@ -245,16 +266,51 @@ class AnimationCommandActionServer(Node):
         """Request a state transition from the global state manager"""
         return StateUtils.request_state_transition(self, requested_state, priority, force, completion)
 
+    def _request_transition_and_wait(self, requested_state, priority, timeout=2.0):
+        """Wait for the state manager's actual decision before moving."""
+        if not self.state_client.service_is_ready():
+            self.get_logger().warning('State manager unavailable; refusing animation start')
+            return False
+        request = RequestStateTransition.Request()
+        request.requested_state = requested_state.name
+        request.requesting_node = 'animation_command'
+        request.priority = int(priority)
+        request.force = False
+        request.completion = False
+        done = threading.Event()
+        decision = {'accepted': False, 'message': 'state transition timed out'}
+        future = self.state_client.call_async(request)
+
+        def complete(result_future):
+            try:
+                response = result_future.result()
+                decision['accepted'] = bool(response.success)
+                decision['message'] = response.message
+            except Exception as exc:
+                decision['message'] = str(exc)
+            finally:
+                done.set()
+
+        future.add_done_callback(complete)
+        if not done.wait(timeout):
+            self.get_logger().error(f'Timed out awaiting {requested_state.name} state grant')
+            return False
+        if not decision['accepted']:
+            self.get_logger().warning(
+                f'State manager denied {requested_state.name}: {decision["message"]}'
+            )
+        return decision['accepted']
+
     def set_collision_avoidance(self, behavior_coordinator):
         """Set the collision avoidance reference from hardware interface."""
         self.behavior_coordinator = behavior_coordinator
         self.get_logger().info("Collision avoidance reference set in animation command")
-    
+
     def set_node(self, node):
         """Set the node reference from hardware interface (replaces set_state_machine)."""
         self.node = node
         self.get_logger().info("Node reference set in animation command")
-    
+
     def _init_time_tracking(self):
         """Initialize all ROS time tracking variables."""
         now = self.get_clock().now()
@@ -265,11 +321,11 @@ class AnimationCommandActionServer(Node):
         self.last_animation_end_time = now
         self.last_valid_positions = [0.0] * 5
         self.idle_reset_timer = None
-    
+
     def collision_status_callback(self, msg):
         """Update collision status from collision avoidance system."""
         self.collision_status = msg.data
-        
+
         # Check if this is a danger status while we have an active goal
         if "danger" in self.collision_status and self._goal_handle and self._goal_handle.is_active:
             # Check if interruption is allowed
@@ -277,11 +333,11 @@ class AnimationCommandActionServer(Node):
             if goal.allow_interruption:
                 self.get_logger().warn(f"Collision danger detected during animation: {self.collision_status}")
                 self.collision_preempted = True
-    
+
     def _load_animation_plugins(self) -> Dict[str, AnimationPlugin]:
         """Dynamically load all animation plugins."""
         plugins = {}
-        
+
         # Try to import animation plugin modules
         plugin_modules = [
             'luxo_behaviors.animation_plugins.emotion_animations',
@@ -290,48 +346,48 @@ class AnimationCommandActionServer(Node):
             'luxo_behaviors.animation_plugins.idle_animations',
             'luxo_behaviors.animation_plugins.petting_animations'
         ]
-        
+
         for module_name in plugin_modules:
             try:
                 module = importlib.import_module(module_name)
-                
+
                 # Find all classes that inherit from AnimationPlugin
                 for name, obj in inspect.getmembers(module, inspect.isclass):
                     if issubclass(obj, AnimationPlugin) and obj != AnimationPlugin:
                         # Create instance of the plugin
                         plugin_instance = obj(self)
-                        
+
                         # Validate the plugin
                         if plugin_instance.validate_keyframes():
                             plugins[plugin_instance.name] = plugin_instance
                             self.get_logger().debug(f"Loaded animation plugin: {plugin_instance.name}")
                         else:
                             self.get_logger().error(f"Failed to validate animation plugin: {name}")
-                            
+
             except ImportError as e:
                 self.get_logger().warn(f"Could not import plugin module {module_name}: {e}")
             except Exception as e:
                 self.get_logger().error(f"Error loading plugins from {module_name}: {e}")
-        
+
         return plugins
-    
+
     def goal_callback(self, goal_request):
         """Decide whether to accept or reject a goal request."""
         self.get_logger().debug(f'Received animation goal request: {goal_request.animation_name}')
-        
+
         # Check if animation exists
         if goal_request.animation_name not in self.animation_plugins:
             self.get_logger().warn(f'Unknown animation: {goal_request.animation_name}')
             return GoalResponse.REJECT
-        
+
         # Check if state allows animation
         if not self._can_start_animation():
             self.get_logger().warn(f'Cannot start animation in current state: {self.get_current_state().name}')
             return GoalResponse.REJECT
-        
+
         # Accept the goal
         return GoalResponse.ACCEPT
-    
+
     def _can_start_animation(self) -> bool:
         """Check if current state allows starting an animation."""
         # Check if we can transition to ANIMATING or EMOTION_REACTING
@@ -340,27 +396,24 @@ class AnimationCommandActionServer(Node):
             LuxoState.ANIMATING,  # Allow if already animating
             LuxoState.EMOTION_REACTING,  # Allow if already reacting
             LuxoState.USER_CONTROL, # Allow if in user control mode
-            LuxoState.RETURNING_HOME  # Allow animations to interrupt return to home
+            LuxoState.RETURNING_HOME,  # Allow animations to interrupt return to home
+            LuxoState.PETTING,  # Petting responses keep PETTING as the current owner
         ]
-        
+
         return self.is_in_state(*allowed_states)
-    
+
     def _determine_animation_state(self, animation_name: str) -> LuxoState:
         """Determine which state to transition to based on animation type."""
         # Get the plugin to check its category
         plugin = self.animation_plugins.get(animation_name)
         if not plugin:
             return LuxoState.ANIMATING
-        
+
         # Check animation category
         category = plugin.get_category()
-        
-        # If triggered by emotion detection or emotion category
-        if self.animation_trigger_source == 'emotion' or category == 'emotion':
-            return LuxoState.EMOTION_REACTING
-        else:
-            return LuxoState.ANIMATING
-    
+
+        return animation_state_for(category, self.animation_trigger_source)
+
     def handle_accepted_callback(self, goal_handle):
         """Start executing an accepted goal."""
         with self._goal_lock:
@@ -371,17 +424,17 @@ class AnimationCommandActionServer(Node):
 
             self._goal_handle = goal_handle
             self._goal_tracker.accept(goal_handle)
-        
+
         # Execute the goal immediately
         goal_handle.execute()
-    
+
     def cancel_callback(self, goal_handle):
         """Accept or reject a cancel request."""
         self.get_logger().info('Received cancel request')
         with self._goal_lock:
             self._goal_tracker.cancel(goal_handle)
         return CancelResponse.ACCEPT
-    
+
     def execute_callback(self, goal_handle):
         """Execute the animation goal (called by action server)."""
         try:
@@ -389,17 +442,17 @@ class AnimationCommandActionServer(Node):
                 return self._execute_animation(goal_handle)
         finally:
             self._goal_tracker.finish(goal_handle)
-    
+
     def _execute_animation(self, goal_handle):
         """Execute animation in the action server thread."""
         start_time = time.time()
         collision_interruptions = 0
         final_state = "completed"
         cancel_event = self._goal_tracker.event_for(goal_handle)
-        
+
         # Reset collision preemption flag
         self.collision_preempted = False
-        
+
         try:
             goal = goal_handle.request
             animation_name = goal.animation_name
@@ -428,82 +481,93 @@ class AnimationCommandActionServer(Node):
             self.get_logger().info(
                 f'Executing animation: {animation_name} with speed {speed_multiplier}'
             )
-            
+
             # Publish animation name
             anim_msg = String()
             anim_msg.data = animation_name
             self.current_animation_publisher.publish(anim_msg)
-            
-            # Transition to appropriate state
-            target_state = self._determine_animation_state(animation_name)
-            if not self.request_state_transition(target_state, priority=50):
-                self.get_logger().warn(f"Failed to transition to {target_state.name} state")
-            
+
+            # USER_CONTROL owns its voice session at priority 80. Animations
+            # triggered during that session run inside it; they must not try a
+            # lower-priority ANIMATING transition and then move after denial.
+            if self.get_current_state() != LuxoState.USER_CONTROL:
+                target_state = self._determine_animation_state(animation_name)
+                if not self._request_transition_and_wait(target_state, priority=50):
+                    result = PlayAnimation.Result()
+                    result.success = False
+                    result.message = f"State manager did not grant {target_state.name}; animation not started"
+                    result.actual_duration = 0.0
+                    result.collision_interruptions = 0
+                    result.final_state = "rejected"
+                    result.final_positions = list(self.current_positions)
+                    goal_handle.abort()
+                    return result
+
             # Get the animation plugin
             plugin = self.animation_plugins[animation_name]
-            
+
             # Get hardware position if requested
             if goal.use_hardware_feedback and self.use_hardware_position_feedback:
                 self.request_hardware_position()
-            
+
             # Get keyframes and durations
             keyframes, durations = plugin.get_keyframes()
             keyframe_names = plugin.get_keyframe_names()
-            
+
             # Adjust keyframes to use current base position
             if not hasattr(plugin, 'preserve_base_position') or plugin.preserve_base_position:
                 current_base = self.current_positions[0] if self.current_positions else 0.0
                 keyframes = plugin.adjust_keyframes_to_current_base(keyframes, current_base)
                 self.get_logger().info(f"Adjusted animation to current base position: {current_base:.2f}")
-            
+
             # Prepare keyframes for current position
             if self.hardware_position_received:
                 keyframes = plugin.prepare_for_current_position(
                     self.current_positions, keyframes
                 )
-            
+
             # Apply speed multiplier
             self.speed_multiplier = speed_multiplier  # Set the instance variable
             adjusted_durations = [d / speed_multiplier for d in durations]
-            
+
             # Set movement source
             self.movement_source = "animation"
             self.last_movement_source_change = self.get_clock().now()
             self.is_animating = True  # Set animation flag
-            
+
             # Execute animation with progress feedback
             total_duration = sum(adjusted_durations)
-            
+
             for i, (keyframe, duration) in enumerate(zip(keyframes, durations)):
                 # Cancellation belongs to this goal, not a server-wide flag.
                 if cancel_event.is_set():
                     final_state = "canceled" if goal_handle.is_cancel_requested else "preempted"
                     self.get_logger().info(f"Animation stopped: {final_state}")
                     break
-                
+
                 # Check if goal handle is still valid before proceeding
                 if not goal_handle.is_active:
                     final_state = "preempted"
                     self.get_logger().warn("Goal handle no longer active")
                     break
-                
+
                 # Check if we've been preempted by collision
                 if self.collision_preempted and goal.allow_interruption:
                     final_state = "preempted"
                     self.get_logger().warn("Animation preempted by collision system")
                     break
-                
+
                 # Add noise to keyframe
                 noisy_keyframe = plugin.add_noise_to_position(keyframe)
-                
+
                 # Use actual collision status
                 collision_status = self.collision_status
-                
+
                 # Calculate progress
                 elapsed_time = time.time() - start_time
                 progress = min(1.0, elapsed_time / total_duration)
                 time_remaining = max(0.0, total_duration - elapsed_time)
-                
+
                 # Publish feedback - with error handling
                 try:
                     if goal_handle.is_active:
@@ -515,19 +579,19 @@ class AnimationCommandActionServer(Node):
                         feedback.collision_status = collision_status
                         feedback.current_joints = list(self.current_positions)
                         feedback.time_remaining = time_remaining
-                        
+
                         goal_handle.publish_feedback(feedback)
                 except Exception as e:
                     # If we can't publish feedback, it's likely the goal was canceled
                     self.get_logger().debug(f"Could not publish feedback: {e}")
                     # Don't break - continue animation if possible
-                
+
                 # Log keyframe execution
                 self.get_logger().info(
                     f"Executing keyframe {i+1}/{len(keyframes)}: "
                     f"{feedback.current_step_name if 'feedback' in locals() else f'Step {i+1}'} -> {[round(p, 2) for p in noisy_keyframe]}"
                 )
-                
+
                 # Move to position
                 completed = self.move_to_position(
                     noisy_keyframe,
@@ -540,7 +604,7 @@ class AnimationCommandActionServer(Node):
                 if not completed:
                     final_state = "canceled" if goal_handle.is_cancel_requested else "preempted"
                     break
-                
+
                 # If collision interrupted, increment counter
                 if collision_status != "safe":
                     collision_interruptions += 1
@@ -551,11 +615,11 @@ class AnimationCommandActionServer(Node):
             # Animation complete
             self.is_animating = False
             actual_duration = time.time() - start_time
-            
+
             # Transition to IDLE state after animation completes
             self.request_state_transition(LuxoState.IDLE, priority=30, completion=True)
             self.get_logger().info(f"Animation {final_state} - requesting transition to IDLE")
-            
+
             # Create result
             result = PlayAnimation.Result()
             result.success = final_state == "completed"
@@ -564,7 +628,7 @@ class AnimationCommandActionServer(Node):
             result.collision_interruptions = collision_interruptions
             result.final_state = final_state
             result.final_positions = list(self.current_positions)
-            
+
             # Handle goal completion based on state
             # IMPORTANT: Check if goal handle is still valid before calling methods
             try:
@@ -581,15 +645,15 @@ class AnimationCommandActionServer(Node):
             except Exception as e:
                 self.get_logger().debug(f"Could not update goal state: {e}")
                 # Goal was likely already canceled/aborted
-            
+
             return result
-                    
+
         except Exception as e:
             self.get_logger().error(f"Error executing animation: {e}")
-            
+
             # Request transition to ERROR state on exception
             self.request_state_transition(LuxoState.ERROR, priority=100)
-            
+
             # Create error result
             result = PlayAnimation.Result()
             result.success = False
@@ -598,26 +662,29 @@ class AnimationCommandActionServer(Node):
             result.collision_interruptions = collision_interruptions
             result.final_state = "aborted"
             result.final_positions = list(self.current_positions)
-            
+
             # Try to abort the goal if it's still active
             try:
                 if goal_handle.is_active:
                     goal_handle.abort()
             except Exception as abort_error:
                 self.get_logger().debug(f"Could not abort goal: {abort_error}")
-            
+
             return result
         finally:
             # Clear animation name when done
             anim_msg = String()
             anim_msg.data = ""
             self.current_animation_publisher.publish(anim_msg)
-    
+
     def command_callback(self, msg):
-        """Handle animation command messages (backward compatibility)."""
+        """Route legacy commands through the action server's single arbiter."""
         command_parts = msg.data.strip().lower().split()
+        if not command_parts:
+            self.get_logger().warning('Ignoring empty animation command')
+            return
         base_command = command_parts[0]
-        
+
         # Extract speed parameter if present
         speed = 1.0
         if len(command_parts) > 1:
@@ -626,175 +693,53 @@ class AnimationCommandActionServer(Node):
                 speed = max(0.1, min(2.0, speed))
             except ValueError:
                 pass
-        
+
         # Check if animation exists
         if base_command not in self.animation_plugins:
             self.get_logger().warn(f'Unknown animation command: {base_command}')
             self.get_logger().info(f'Available: {", ".join(self.animation_plugins.keys())}')
             return
-        
-        # Check if state allows animation
-        if not self._can_start_animation():
-            self.get_logger().warn(f'Cannot start animation in current state: {self.get_current_state().name}')
+
+        if not self._compat_action_client.server_is_ready():
+            self.get_logger().warning('Animation action server unavailable; command not executed')
             return
-        
-        # Set trigger source for state determination
-        self.animation_trigger_source = 'command'
-        
-        # Execute via simple method (not action)
-        self.execute_animation_simple(base_command, speed)
-    
-    def execute_animation_simple(self, animation_name, speed=1.0):
-        """Execute animation without action server (for topic compatibility)."""
-        # Prevent running if action-based animation is active
-        with self._goal_lock:
-            if self._goal_handle and self._goal_handle.is_active:
-                self.get_logger().warn("Cannot run topic-based animation while action is active")
+
+        goal = PlayAnimation.Goal()
+        goal.animation_name = base_command
+        goal.speed_multiplier = speed
+        goal.allow_interruption = True
+        goal.use_hardware_feedback = False
+        self._compat_action_client.send_goal_async(goal).add_done_callback(
+            self._compat_goal_response
+        )
+
+    def _compat_goal_response(self, future):
+        try:
+            goal_handle = future.result()
+            if not goal_handle.accepted:
+                self.get_logger().warning('Animation command was rejected by the action arbiter')
                 return
-        
-        # NEW: Clear any stuck animation flags at the start
-        self.animation_preempted = False
-        self.collision_preempted = False
-        self.is_animating = False  # Reset before setting true
-        
-        # NEW: Force clear collision avoidance stuck flags
-        if self.behavior_coordinator:
-            self.get_logger().info("Clearing potential stuck flags before animation")
-            # Clear target override that might be blocking animation
-            if self.behavior_coordinator.target_override_active:
-                self.get_logger().info(f"Clearing active target override: {self.behavior_coordinator.target_override_reason}")
-                self.behavior_coordinator.target_override_active = False
-                self.behavior_coordinator.target_override_joints = None
-            
-            # Clear home position related flags
-            if self.behavior_coordinator.is_returning_to_rest:
-                self.get_logger().info("Clearing is_returning_to_rest flag")
-                self.behavior_coordinator.is_returning_to_rest = False
-            
-            # Clear persistent collision if it's been too long
-            if self.behavior_coordinator.persistent_head_collision_active:
-                current_time = self.node.get_clock().now()
-                collision_duration = (current_time - self.behavior_coordinator.persistent_head_collision_start).nanoseconds / 1e9
-                if collision_duration > 60.0:  # 1 minute timeout
-                    self.get_logger().info(f"Clearing persistent head collision after {collision_duration:.1f}s")
-                    self.behavior_coordinator.persistent_head_collision_active = False
-        
-        # Cancel any active return to home operation
-        if self.is_in_state(LuxoState.RETURNING_HOME):
-            self.get_logger().info("Cancelling return to home operation for animation")
-            # Request transition out of RETURNING_HOME
-            self.request_state_transition(LuxoState.IDLE, priority=60, force=True)
-            # Clear collision avoidance flags
-            if self.behavior_coordinator:
-                self.behavior_coordinator.target_override_active = False
-                self.behavior_coordinator.home_position_stage = 1
-        
-        # NEW: Force clear any stuck DEMA flags
-        if hasattr(self.node, 'enable_dynamic_adaptation') and self.node.enable_dynamic_adaptation:
-            if hasattr(self.node, 'dynamic_adaptation_pending_resume'):
-                self.node.dynamic_adaptation_pending_resume = False
-                self.get_logger().debug("Cleared DEMA pending resume flag")
-        
-        self.get_logger().info(f'Executing animation: {animation_name} with speed {speed}')
-        
-        # Publish animation name at start
-        anim_msg = String()
-        anim_msg.data = animation_name
-        self.current_animation_publisher.publish(anim_msg)
-        
-        # Transition to appropriate state
-        target_state = self._determine_animation_state(animation_name)
-        if not self.request_state_transition(target_state, priority=50):
-            self.get_logger().warn(f"Failed to transition to {target_state.name} state")
-            # Force transition if normal transition failed
-            if self.is_in_state(LuxoState.RETURNING_HOME, LuxoState.ESCAPE_MODE):
-                self.get_logger().info("Force transitioning to animation state")
-                self.request_state_transition(target_state, priority=50, force=True)
-            else:
-                return
-        
-        # Get plugin and execute
-        plugin = self.animation_plugins[animation_name]
-        keyframes, durations = plugin.get_keyframes()
-        
-        # Adjust keyframes to use current base position
-        if not hasattr(plugin, 'preserve_base_position') or plugin.preserve_base_position:
-            current_base = self.current_positions[0] if self.current_positions else 0.0
-            keyframes = plugin.adjust_keyframes_to_current_base(keyframes, current_base)
-            self.get_logger().info(f"Adjusted animation to current base position: {current_base:.2f}")
-        
-        # Prepare for current position if hardware feedback available
-        if self.use_hardware_position_feedback and self.hardware_position_received:
-            keyframes = plugin.prepare_for_current_position(
-                self.current_positions, keyframes
-            )
-        
-        # Start animation
-        self.speed_multiplier = speed
-        self.start_animation(keyframes, durations, animation_name)
-        
-        # Log debug information about animation state
-        self.get_logger().info(f"Animation {animation_name} started - is_animating: {self.is_animating}, state: {self.get_current_state().name}")
-    
-    def _transition_to_idle_after_simple_animation(self):
-        """Transition to IDLE state after simple animation."""
+            goal_handle.get_result_async().add_done_callback(self._compat_goal_result)
+        except Exception as exc:
+            self.get_logger().error(f'Animation command dispatch failed: {exc}')
+
+    def _compat_goal_result(self, future):
         try:
-            # Cancel the timer
-            if hasattr(self, 'idle_reset_timer') and self.idle_reset_timer:
-                self.idle_reset_timer.cancel()
-                self.idle_reset_timer = None
-            
-            # Request transition to IDLE state using completion flag
-            StateUtils.request_state_transition(self, LuxoState.IDLE, priority=30, completion=True)
-            self.get_logger().info("Simple animation completed - requesting completion transition to IDLE")
-                    
-        except Exception as e:
-            self.get_logger().error(f"Error transitioning to idle after simple animation: {e}")
-    
-    def _schedule_home_position(self):
-        """Schedule return to home position after animation."""
-        try:
-            # Cancel the timer
-            if hasattr(self, 'idle_reset_timer') and self.idle_reset_timer:
-                self.idle_reset_timer.cancel()
-                self.idle_reset_timer = None
-            
-            # Use collision avoidance to schedule home if available
-            if self.behavior_coordinator:
-                self.behavior_coordinator.schedule_home_after_animation(delay=0.1)
-            else:
-                # Just set to idle state
-                self.get_logger().info("Setting movement source to idle (collision avoidance not available)")
-                self.movement_source = "idle"
-                self.publish_movement_source()
-                
-                # Request transition to IDLE state
-                self.request_state_transition(LuxoState.IDLE, priority=30)
-        except Exception as e:
-            self.get_logger().error(f"Error scheduling home position: {e}")
-    
-    def _schedule_home_or_idle(self):
-        """Schedule home position if collision avoidance available, otherwise just go idle."""
-        try:
-            if hasattr(self, 'idle_reset_timer') and self.idle_reset_timer:
-                self.idle_reset_timer.cancel()
-                self.idle_reset_timer = None
-            
-            # Just set to idle state since we don't have collision avoidance
-            self.movement_source = "idle"
-            self.publish_movement_source()
-            self.get_logger().info("Animation complete - movement source set to idle")
-            
-            # Request transition to IDLE state
-            self.request_state_transition(LuxoState.IDLE, priority=30)
-        except Exception as e:
-            self.get_logger().error(f"Error in schedule home or idle: {e}")
-    
+            wrapped = future.result()
+            if not wrapped.result.success:
+                self.get_logger().warning(f'Animation command ended: {wrapped.result.message}')
+        except Exception as exc:
+            self.get_logger().error(f'Animation command result failed: {exc}')
+
+
+
+
+
     def position_feedback_callback(self, msg):
         """Handle position feedback from the hardware."""
         try:
             position_list = json.loads(msg.data)
-            
+
             if isinstance(position_list, list) and len(position_list) >= 5:
                 # Filter positions
                 if self.current_positions is None:
@@ -802,86 +747,103 @@ class AnimationCommandActionServer(Node):
                 else:
                     tolerance = 0.03
                     filtered_positions = position_list.copy()
-                    
+
                     for i in range(min(len(position_list), len(self.current_positions))):
                         diff = abs(float(position_list[i]) - float(self.current_positions[i]))
                         if diff < tolerance:
                             filtered_positions[i] = self.current_positions[i]
-                    
+
                     self.current_positions = filtered_positions
-                
+
                 if not self.is_animating:
                     self.target_positions = self.current_positions.copy()
-                
+
                 self.hardware_position_received = True
-                
+
         except Exception as e:
             self.get_logger().error(f"Error parsing position feedback: {e}")
-    
+
     def request_hardware_position(self):
         """Request and wait for hardware position before proceeding."""
         if not self.use_hardware_position_feedback:
             return True
-        
+
         self.get_logger().info("Waiting for initial hardware position...")
-        
+
         attempts = 0
         self.hardware_position_received = False
-        
+
         while attempts < self.max_position_attempts and not self.hardware_position_received:
             time.sleep(self.position_request_interval)
             attempts += 1
-        
+
         if self.hardware_position_received:
             self.get_logger().info("Hardware position received")
             return True
         else:
             self.get_logger().warn("Failed to get hardware position, using defaults")
             return False
-    
+
+    def sim_profile_feedback_callback(self, msg):
+        """Keep animation targets from moving the simulator's gripper axis."""
+        try:
+            if len(msg.name) != len(msg.position) or len(set(msg.name)) != len(msg.name):
+                return
+            measured = float(dict(zip(msg.name, msg.position))[ROARM_M3_NAMES[5]])
+            if measured == measured and abs(measured) != float('inf'):
+                self.current_gripper_position = min(1.5, max(0.0, measured))
+        except (KeyError, TypeError, ValueError):
+            return
+
     def publish_joint_states_target(self):
         """Publish target joint states."""
         if not self.should_publish:
             self.get_logger().debug("Publishing disabled by parameter")
             return
-        
+
         # Check movement source status
         current_time = self.get_clock().now()
-        
+
         if not self.is_animating and self.movement_source == "animation":
             if not hasattr(self, 'last_animation_end_time'):
                 self.last_animation_end_time = current_time
-            
+
             time_since_animation_end = (current_time - self.last_animation_end_time).nanoseconds / 1e9
             if time_since_animation_end > 3.0:
                 self.movement_source = "idle"
                 self.publish_movement_source()
-                
+
                 # Request transition to IDLE state
                 self.request_state_transition(LuxoState.IDLE, priority=30)
-        
+
         if self.is_animating:
             self.last_animation_end_time = current_time
-        
+
         # Create joint state message
         msg = JointState()
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.name = self.joint_names
-        
+
         try:
-            joint_positions = format_target_positions(
-                self.target_positions,
-                self.joint_names,
-                include_acceleration=self.publish_target and self.use_hardware_joint_names,
-            )
-            
+            if self.joint_profile in {'roarm_m3', 'm3', 'm3_6'} and not self.use_hardware_joint_names:
+                _, joint_positions = animation_pose_for_profile(
+                    self.target_positions, self.joint_profile,
+                    gripper_position=self.current_gripper_position,
+                )
+            else:
+                joint_positions = format_target_positions(
+                    self.target_positions,
+                    self.joint_names,
+                    include_acceleration=self.publish_target and self.use_hardware_joint_names,
+                )
+
             validated_positions = [float(pos) for pos in joint_positions]
-            
+
             if self.enforce_joint_limits:
                 validated_positions = self.apply_joint_limits(msg.name, validated_positions)
-            
+
             msg.position = validated_positions
-            
+
             # Encode movement source in velocity field
             source_code = 0  # idle
             if self.movement_source == "animation":
@@ -890,19 +852,19 @@ class AnimationCommandActionServer(Node):
                 source_code = 2
             elif self.movement_source == "user":
                 source_code = 3
-            
+
             msg.velocity = [float(source_code)]
-            
+
             self.joint_publisher.publish(msg)
-            
+
             # Add debug logging
             if self.is_animating:
                 accel_info = f", accel: {validated_positions[5]}" if len(validated_positions) > 5 else ""
                 self.get_logger().debug(f"Published joint states during animation: {[round(p, 2) for p in validated_positions[:5]]}{accel_info}")
-            
+
         except Exception as e:
             self.get_logger().error(f"Error publishing joint states: {e}")
-    
+
     def apply_joint_limits(self, joint_names, joint_positions):
         """Apply joint limits to positions."""
         limits = {
@@ -910,14 +872,14 @@ class AnimationCommandActionServer(Node):
             for name, value in self.joint_limits.items()
         }
         return clamp_joint_positions(joint_names, joint_positions, limits)
-    
+
     def ease_in_out(self, t):
         """Cubic easing function for smoother motion."""
         if t < 0.5:
             return 4 * t * t * t
         else:
             return 1 - pow(-2 * t + 2, 3) / 2
-    
+
     def move_to_position(
         self, positions, duration=1.0, easing=True, animation_name=None,
         cancel_event=None,
@@ -925,9 +887,9 @@ class AnimationCommandActionServer(Node):
         """Move to a specific position over a duration with optional easing."""
         start_positions = self.target_positions.copy()
         start_time = self.get_clock().now()
-        
+
         adjusted_duration = scaled_duration(duration, self.speed_multiplier)
-        
+
         # Store current animation name for tracking
         if animation_name:
             self.current_animation_name = animation_name
@@ -935,7 +897,7 @@ class AnimationCommandActionServer(Node):
             anim_msg = String()
             anim_msg.data = animation_name
             self.current_animation_publisher.publish(anim_msg)
-        
+
         # Handle acceleration value if present
         if len(positions) > 5:
             # Update target positions to include acceleration
@@ -943,7 +905,7 @@ class AnimationCommandActionServer(Node):
         else:
             # No acceleration provided, use default
             target_with_accel = list(positions[:5]) + [10.0]  # Default acceleration
-        
+
         elapsed_time = 0.0
         while elapsed_time < adjusted_duration:
             if cancel_event is not None and cancel_event.is_set():
@@ -952,144 +914,69 @@ class AnimationCommandActionServer(Node):
             current_time = self.get_clock().now()
             elapsed_time = (current_time - start_time).nanoseconds / 1e9
             progress = min(1.0, elapsed_time / adjusted_duration)
-            
+
             if easing:
                 eased_progress = self.ease_in_out(progress)
             else:
                 eased_progress = progress
-            
+
             # Update positions including acceleration
             for i in range(5):  # Only interpolate joint positions, not acceleration
                 self.target_positions[i] = start_positions[i] + eased_progress * (target_with_accel[i] - start_positions[i])
-            
+
             # Set acceleration directly (don't interpolate)
             if len(self.target_positions) > 5:
                 self.target_positions[5] = target_with_accel[5]
             else:
                 self.target_positions.append(target_with_accel[5])
-            
+
             # IMPORTANT: Explicitly publish the joint states during movement
             self.publish_joint_states_target()
-            
+
             time.sleep(0.01)
-        
+
         # Final position update
         self.target_positions = list(target_with_accel)
-        
+
         # Final publish at target position
         self.publish_joint_states_target()
 
         return True
-    
-    def start_animation(self, keyframes, durations, animation_name=None):
-        """Start an animation with keyframes and durations."""
-        self.animation_steps = keyframes
-        # Keep nominal durations; move_to_position applies the speed exactly once.
-        self.step_durations = list(durations)
-        self.current_step = 0
-        self.is_animating = True
-        self.current_animation_name = animation_name
-        
-        self._process_next_step()
-    
-    def _process_next_step(self):
-        """Process the next animation step."""
-        if not self.is_animating or self.current_step >= len(self.animation_steps):
-            if self.is_animating:
-                self.is_animating = False
-                self.current_animation_name = None
-                # Clear animation name
-                anim_msg = String()
-                anim_msg.data = ""
-                self.current_animation_publisher.publish(anim_msg)
-                self.get_logger().info('Legacy animation completed - requesting transition to IDLE')
-                
-                # Request transition to IDLE state
-                self.request_state_transition(LuxoState.IDLE, priority=30)
-            return
-        
-        next_position = self.animation_steps[self.current_step]
-        duration = self.step_durations[self.current_step]
-        
-        self.move_to_position(next_position, duration, easing=True, animation_name=self.current_animation_name)
-        
-        self.current_step += 1
-        if self.current_step < len(self.animation_steps):
-            # Cancel any existing timer
-            if hasattr(self, 'animation_timer') and self.animation_timer:
-                self.animation_timer.cancel()
-            self.animation_timer = self.create_timer(
-                scaled_duration(duration, self.speed_multiplier), self._next_step_callback
-            )
-        else:
-            self.is_animating = False
-            self.current_animation_name = None
-            # Clear animation name
-            anim_msg = String()
-            anim_msg.data = ""
-            self.current_animation_publisher.publish(anim_msg)
-            self.get_logger().info('Legacy animation completed')
-            
-            # Request transition to IDLE state
-            self.request_state_transition(LuxoState.IDLE, priority=30)
-    
-    def _next_step_callback(self):
-        """Handle timer callback for the next animation step."""
-        # Cancel this timer immediately to prevent repeated calls
-        if hasattr(self, 'animation_timer') and self.animation_timer:
-            self.animation_timer.cancel()
-            self.animation_timer = None
-        
-        # Process the next step
-        self._process_next_step()
-    
+
+
+
+
     def _reset_to_idle(self):
         """Reset movement source to idle."""
         if self.movement_source != "idle":
             self.movement_source = "idle"
             self.get_logger().info('Movement source reset to idle')
             self.publish_movement_source()
-            
+
             # Request transition to IDLE state
             self.request_state_transition(LuxoState.IDLE, priority=30)
-        
+
         if self.idle_reset_timer:
             self.idle_reset_timer.cancel()
             self.idle_reset_timer = None
-    
+
     def _reset_to_idle_once(self):
         """Reset to idle and cancel the timer (for one-shot timers)."""
         self._reset_to_idle()
-    
-    def _schedule_home_or_idle(self):
-        """Schedule home position if collision avoidance available, otherwise just go idle."""
-        try:
-            if hasattr(self, 'idle_reset_timer') and self.idle_reset_timer:
-                self.idle_reset_timer.cancel()
-                self.idle_reset_timer = None
-            
-            # Just set to idle state since we don't have collision avoidance
-            self.movement_source = "idle"
-            self.publish_movement_source()
-            self.get_logger().info("Animation complete - movement source set to idle")
-            
-            # Request transition to IDLE state
-            self.request_state_transition(LuxoState.IDLE, priority=30)
-        except Exception as e:
-            self.get_logger().error(f"Error in schedule home or idle: {e}")
-    
+
+
     def publish_movement_source(self):
         """Publish the current movement source."""
         if not self.enable_dema_integration:
             return
-        
+
         try:
             msg = String()
             msg.data = self.movement_source
             self.movement_source_publisher.publish(msg)
         except Exception as e:
             self.get_logger().error(f"Error publishing movement source: {e}")
-    
+
     def set_animation_trigger_source(self, source: str):
         """Set the trigger source for animations (used by camera_interaction)."""
         self.animation_trigger_source = source
@@ -1098,13 +985,13 @@ class AnimationCommandActionServer(Node):
 
 def main(args=None):
     rclpy.init(args=args)
-    
+
     # Use MultiThreadedExecutor for action server
     executor = MultiThreadedExecutor()
     animation_server = AnimationCommandActionServer()
-    
+
     executor.add_node(animation_server)
-    
+
     try:
         executor.spin()
     except KeyboardInterrupt:

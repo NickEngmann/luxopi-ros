@@ -74,11 +74,38 @@ def generate_launch_description():
         default_value=PythonExpression(["'true' if '", use_hardware, "' == 'false' else 'false'"]),
         description='Enable the browser simulator dashboard (simulation only)'
     )
+    declare_enable_sim_vision = DeclareLaunchArgument(
+        'enable_sim_vision',
+        default_value=PythonExpression(["'true' if '", use_hardware, "' == 'false' else 'false'"]),
+        description='Enable the shared-policy simulated camera consumer (simulation only)'
+    )
+    declare_enable_sim_interactions = DeclareLaunchArgument(
+        'enable_sim_interactions',
+        default_value=PythonExpression(["'true' if '", use_hardware, "' == 'false' else 'false'"]),
+        description='Enable simulation-only voice session and touch/petting state consumers'
+    )
     declare_simulator_host = DeclareLaunchArgument(
         'simulator_host', default_value='0.0.0.0', description='Browser simulator bind address'
     )
     declare_simulator_port = DeclareLaunchArgument(
         'simulator_port', default_value='8080', description='Browser simulator HTTP port'
+    )
+    declare_simulator_audio_directory = DeclareLaunchArgument(
+        'simulator_audio_directory', default_value='',
+        description='Optional shared directory for bounded WAV upload/ASR testing'
+    )
+    declare_joint_profile = DeclareLaunchArgument(
+        'joint_profile', default_value='urdf4',
+        description='Simulation joint profile: checked-in four-axis urdf4 or canonical six-axis roarm_m3'
+    )
+    declare_simulation_backend = DeclareLaunchArgument(
+        'simulation_backend', default_value='kinematic',
+        description='Simulation motion transport: kinematic or gazebo'
+    )
+    declare_robot_description_file = DeclareLaunchArgument(
+        'robot_description_file',
+        default_value=PathJoinSubstitution([FindPackageShare('roarm'), 'urdf', 'roarm.urdf']),
+        description='URDF path for robot_state_publisher; physics launcher supplies generated M3 URDF'
     )
     
     # Depth collision argument with conditional default
@@ -331,13 +358,7 @@ def generate_launch_description():
         name='robot_state_publisher',
         output='screen',
         parameters=[{
-            'robot_description': Command([
-                'cat ',
-                PathJoinSubstitution([
-                    FindPackageShare('roarm'),
-                    'urdf/roarm.urdf'
-                ])
-            ]),
+            'robot_description': Command(['cat ', LaunchConfiguration('robot_description_file')]),
             'publish_frequency': 30.0,
             # Ensure this is the root frame
             'frame_prefix': '',
@@ -429,8 +450,11 @@ def generate_launch_description():
             {'joint_timeout': LaunchConfiguration('watchdog_joint_timeout')},
             {'recovery_delay': 10.0},  # seconds between recovery attempts
             {'max_recovery_attempts': 3},
-            {'enable_node_restart': False},  # Start with safe mode (no killing nodes)
-            {'enable_state_recovery': True},  # Try state transitions for recovery
+            {'enable_node_restart': False},
+            {'enable_state_recovery': use_hardware},
+            {'monitor_only': PythonExpression([
+                "'false' if '", use_hardware, "' == 'true' else 'true'"
+            ])},
         ],
         condition=IfCondition(LaunchConfiguration('enable_watchdog'))
     )
@@ -482,6 +506,7 @@ def generate_launch_description():
             'event_socket': ParameterValue(
                 LaunchConfiguration('speech_event_socket'), value_type=str
             ),
+            'audio_directory': LaunchConfiguration('simulator_audio_directory'),
         }],
         condition=IfCondition(LaunchConfiguration('enable_speech_bridge'))
     )
@@ -496,6 +521,11 @@ def generate_launch_description():
             {'max_joint_velocity': 0.5},
             {'max_joint_acceleration': 1.0},
             {'voice_follow_priority': 75},
+            {'joint_profile': LaunchConfiguration('joint_profile')},
+            {'publish_joint_states': PythonExpression([
+                "'false' if '", LaunchConfiguration('simulation_backend'), "' == 'gazebo' else 'true'"
+            ])},
+            {'command_topic': '/sim/bounded_joint_command'},
         ],
         condition=UnlessCondition(use_hardware)
     )
@@ -508,9 +538,33 @@ def generate_launch_description():
         parameters=[{
             'host': LaunchConfiguration('simulator_host'),
             'port': LaunchConfiguration('simulator_port'),
+            'audio_directory': LaunchConfiguration('simulator_audio_directory'),
         }],
         condition=IfCondition(PythonExpression([
             "'", use_hardware, "' == 'false' and '", LaunchConfiguration('enable_simulator_dashboard'), "' == 'true'"
+        ]))
+    )
+
+    sim_camera_interaction_node = Node(
+        package='luxo_behaviors',
+        executable='sim_camera_interaction',
+        name='sim_camera_interaction',
+        output='screen',
+        condition=IfCondition(PythonExpression([
+            "'", use_hardware, "' == 'false' and '",
+            LaunchConfiguration('enable_sim_vision'), "' == 'true'"
+        ]))
+    )
+
+    sim_interaction_adapter_node = Node(
+        package='luxo_behaviors',
+        executable='sim_interaction_adapter',
+        name='sim_interaction_adapter',
+        output='screen',
+        parameters=[{'petting_timeout': 5.0}],
+        condition=IfCondition(PythonExpression([
+            "'", use_hardware, "' == 'false' and '",
+            LaunchConfiguration('enable_sim_interactions'), "' == 'true'"
         ]))
     )
 
@@ -581,6 +635,7 @@ def generate_launch_description():
             {'publish_joint_states_target': True},
             {'publish_target_topic': True},
             {'enforce_joint_limits': True},    # Enable joint limits enforcement
+            {'joint_profile': LaunchConfiguration('joint_profile')},
         ],
         condition=UnlessCondition(use_hardware)
     )
@@ -658,8 +713,14 @@ def generate_launch_description():
         declare_enable_gestures,
         declare_enable_sim_sensors,
         declare_enable_simulator_dashboard,
+        declare_enable_sim_vision,
+        declare_enable_sim_interactions,
         declare_simulator_host,
         declare_simulator_port,
+        declare_simulator_audio_directory,
+        declare_joint_profile,
+        declare_simulation_backend,
+        declare_robot_description_file,
         declare_verbose,
         declare_camera_rotation,
         declare_enable_dynamic_adaptation,
@@ -696,6 +757,8 @@ def generate_launch_description():
         simulation_animation_node,
         sim_motion_controller_node,
         simulator_dashboard_node,
+        sim_camera_interaction_node,
+        sim_interaction_adapter_node,
         collision_detection_node,
         i2c_device_manager_node,
         collision_logic_node,

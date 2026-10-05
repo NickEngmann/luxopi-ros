@@ -1,6 +1,8 @@
 import pytest
 
 from luxo_behaviors.motion_control import scaled_duration
+from luxo_behaviors.sim_interaction_rules import animation_state_for
+from luxo_behaviors.state_machine import LuxoState
 
 
 @pytest.mark.parametrize(
@@ -18,3 +20,9 @@ def test_invalid_animation_speed_uses_normal_speed(speed):
 
 def test_negative_duration_is_clamped_to_zero():
     assert scaled_duration(-1.0, 2.0) == 0.0
+
+
+def test_petting_animation_keeps_petting_as_state_owner():
+    assert animation_state_for("petting") is LuxoState.PETTING
+    assert animation_state_for("idle") is LuxoState.ANIMATING
+    assert animation_state_for("idle", "emotion") is LuxoState.EMOTION_REACTING
