@@ -126,7 +126,7 @@ class Scenarios:
         self.wait(lambda:len(oldfeedback)>=2)
         new,newfeedback,newresult=self.goal('nod',speed=2)
         first=self.future(oldresult)
-        second=self.future(newresult,timeout=30)
+        second=self.future(newresult,timeout=180 if self.feasible_retiming else 30)
         assert first.result.final_state=='preempted' and not first.result.success
         assert first.status in (GoalStatus.STATUS_ABORTED,GoalStatus.STATUS_CANCELED)
         assert second.status==GoalStatus.STATUS_SUCCEEDED and second.result.success
