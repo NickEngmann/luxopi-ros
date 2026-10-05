@@ -2,6 +2,7 @@
 
 import json
 import math
+import os
 import queue
 import threading
 
@@ -10,6 +11,7 @@ from rclpy.node import Node
 from rclpy.qos import QoSProfile, DurabilityPolicy
 from std_msgs.msg import String, Bool
 
+from luxo_behaviors.speech_preview import speaking_preview_duration
 from luxo_behaviors.audio_input import validate_audio_name, remove_audio
 from luxo_behaviors.conversation_transport import ConversationClient, SimulatedConversation, LocalEventReceiver
 
@@ -24,6 +26,8 @@ class SpeechBridge(Node):
         self.declare_parameter("preview_speaking_seconds", 1.0)
         self.declare_parameter("event_socket", "")
         self.declare_parameter("audio_directory", "")
+        self.declare_parameter("synthesize_speech", os.environ.get("LUXOPI_SYNTHESIZE_SPEECH", "false").lower() in {"true", "1", "yes"})
+        self.synthesize_speech = self.get_parameter("synthesize_speech").value
         self.audio_directory = self.get_parameter("audio_directory").value
         backend = self.get_parameter("backend").value
         if backend == "simulation":
@@ -159,10 +163,10 @@ class SpeechBridge(Node):
             try:
                 self._publish_status("thinking")
                 if "audio_file" in request:
-                    result = self.client.request_audio(request["audio_file"])
+                    result = self.client.request_audio(request["audio_file"], synthesize=self.synthesize_speech)
                     self.transcripts.publish(String(data=result["text"]))
                 else:
-                    result = self.client.request(request["text"])
+                    result = self.client.request(request["text"], synthesize=self.synthesize_speech)
                 if self._stopping.is_set():
                     break
                 animation = result.get("animation")
@@ -173,7 +177,8 @@ class SpeechBridge(Node):
                 self.responses.publish(String(data=result["response"]))
                 self._publish_status("speaking")
                 # A visual preview, not actual audio playback or motor feedback.
-                duration = max(0.0, min(10.0, self.get_parameter("preview_speaking_seconds").value))
+                duration = speaking_preview_duration(result, self.get_parameter("preview_speaking_seconds").value,
+                    use_synthesized_audio=self.synthesize_speech)
                 self._stopping.wait(duration)
             except Exception as exc:
                 self.get_logger().error(f"Conversation failed: {exc}")

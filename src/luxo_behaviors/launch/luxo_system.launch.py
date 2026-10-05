@@ -4,7 +4,7 @@ from launch.actions import IncludeLaunchDescription, DeclareLaunchArgument, LogI
 from launch.conditions import IfCondition, UnlessCondition
 from launch.event_handlers import OnProcessExit
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import LaunchConfiguration, PathJoinSubstitution, PythonExpression, Command
+from launch.substitutions import LaunchConfiguration, PathJoinSubstitution, PythonExpression, Command, EnvironmentVariable
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 from launch_ros.substitutions import FindPackageShare
@@ -181,6 +181,10 @@ def generate_launch_description():
         'enable_speech_bridge',
         default_value=PythonExpression(["'true' if '", use_hardware, "' == 'false' else 'false'"]),
         description='Enable silent speech bridge (simulation default; hardware opt-in)'
+    )
+    declare_speech_synthesize = DeclareLaunchArgument(
+        'speech_synthesize', default_value=EnvironmentVariable('LUXOPI_SYNTHESIZE_SPEECH', default_value='false'),
+        description='Generate local Piper WAV responses silently (no playback)'
     )
     declare_speech_backend = DeclareLaunchArgument(
         'speech_backend', default_value='simulation',
@@ -514,6 +518,7 @@ def generate_launch_description():
         output='screen',
         parameters=[{
             'backend': LaunchConfiguration('speech_backend'),
+            'synthesize_speech': ParameterValue(LaunchConfiguration('speech_synthesize'), value_type=bool),
             'service_command': ParameterValue(
                 LaunchConfiguration('speech_service_command'), value_type=str
             ),
@@ -728,6 +733,7 @@ def generate_launch_description():
         declare_test_mode,
         declare_enable_voice,
         declare_enable_speech_bridge,
+        declare_speech_synthesize,
         declare_speech_backend,
         declare_speech_service_command,
         declare_speech_service_cwd,

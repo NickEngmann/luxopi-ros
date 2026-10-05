@@ -8,7 +8,7 @@ from launch.actions import DeclareLaunchArgument, EmitEvent, IncludeLaunchDescri
 from launch.event_handlers import OnProcessExit
 from launch.events import Shutdown
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import LaunchConfiguration, PythonExpression
+from launch.substitutions import LaunchConfiguration, PythonExpression, EnvironmentVariable
 from launch_ros.actions import Node
 from launch.conditions import IfCondition
 from launch_ros.parameter_descriptions import ParameterValue
@@ -43,6 +43,7 @@ def generate_launch_description():
             "simulator_host": LaunchConfiguration("simulator_host"),
             "simulator_port": LaunchConfiguration("simulator_port"),
             "required_sensor_directions": LaunchConfiguration("required_sensor_directions"),
+            "speech_synthesize": LaunchConfiguration("speech_synthesize"),
             "speech_backend": LaunchConfiguration("speech_backend"),
             "speech_service_command": LaunchConfiguration("speech_service_command"),
             "speech_service_cwd": LaunchConfiguration("speech_service_cwd"),
@@ -120,6 +121,7 @@ def generate_launch_description():
         DeclareLaunchArgument("enable_simulator_dashboard", default_value="true"),
         DeclareLaunchArgument("simulator_host", default_value="0.0.0.0"),
         DeclareLaunchArgument("simulator_port", default_value="8080"),
+        DeclareLaunchArgument("speech_synthesize", default_value=EnvironmentVariable("LUXOPI_SYNTHESIZE_SPEECH", default_value="false")),
         DeclareLaunchArgument("speech_backend", default_value="simulation"),
         DeclareLaunchArgument("speech_service_command", default_value="[]"),
         DeclareLaunchArgument("speech_service_cwd", default_value=""),

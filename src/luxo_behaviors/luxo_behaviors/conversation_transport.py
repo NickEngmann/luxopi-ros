@@ -63,14 +63,14 @@ class ConversationClient:
         with self._lock:
             self._start()
 
-    def request(self, text):
+    def request(self, text, *, synthesize=False):
         if not isinstance(text, str) or not text.strip() or len(text) > 2000:
             raise ValueError("text must contain 1–2000 characters")
-        return self._request({"text": text})
+        return self._request({"text": text, **({"synthesize": True} if synthesize else {})})
 
-    def request_audio(self, name):
+    def request_audio(self, name, *, synthesize=False):
         from luxo_behaviors.audio_input import validate_audio_name
-        return self._request({"audio_file": validate_audio_name(name)})
+        return self._request({"audio_file": validate_audio_name(name), **({"synthesize": True} if synthesize else {})})
 
     def _request(self, payload):
         with self._lock:
@@ -133,7 +133,7 @@ class SimulatedConversation:
     from luxo_behaviors.animation_capabilities import ANIMATION_NAMES
     ANIMATIONS = frozenset(ANIMATION_NAMES)
 
-    def request(self, text):
+    def request(self, text, *, synthesize=False):
         text = text.strip()
         candidate = text.lower().strip(" .!?")
         if candidate.startswith("please "):
