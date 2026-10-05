@@ -121,3 +121,25 @@ warning before aborting on danger. Exact hashes and host report are recorded in
 `feature-coverage.json`. This is simulator feedback evidence, not physical
 stopping-distance or collision-free path certification. The new nine-suite
 aggregate/full retimed playlist remains pending.
+
+## Retimed nine-suite consumer checkpoint
+
+On 2026-10-05, all nine core suites passed on the six-joint M3 graph with
+feasible retiming enabled: four motion core cases, 31 state assertions, 10 lamp
+checks, three vision checks, seven raw-sensor checks, two voice-owned animation
+cases, four cue cases, two watchdog cases and 11 reactive avoidance cases.
+Petting release returned IDLE within the original 20s bound after owned-goal
+cancellation was fixed. The raw danger check waits for bounded braking to finish
+before asserting stationary feedback. Nod completion waits allow the complete
+feasible trajectory; user-release bounds were preserved.
+
+Runtime label `63d2795-8a679c6`; production source SHA256
+`7d83d4bc7467350818894f43ea179375c85dd5a590b9bce21caa238dd3791632`.
+Host reports `/tmp/luxopi-final-20261005T140016Z` and
+`/tmp/luxopi-final-20261005T140401Z` preserve actual logs and per-runner hashes.
+The passing prefix was resumed only after identical source/runner checks.
+
+`full_animation_playlist=false`: this checkpoint does not rerun all 38 plugins
+or prove every retimed endpoint. Earlier full38 evidence remains scoped to its
+earlier runtime. Complete retimed playlist/physics and browser validation are
+separate runs. No hardware or audible audio was used.
