@@ -147,3 +147,13 @@ def test_fsr_collision_not_cleared_by_safe_distance_or_timeout():
     node.check_data_timeout()
     assert node.outputs['collision_pub'][-1] is True
     assert node.outputs['left_collision_pub'][-1] is True
+
+
+def test_side_touch_calibration_preserves_default_and_supports_logical_channels():
+    node = make_node()
+    node.swap_touch_sides = True
+    assert node._side_touch_callback('left') == node.touch_head_right_callback
+    assert node._side_touch_callback('right') == node.touch_head_left_callback
+    node.swap_touch_sides = False
+    assert node._side_touch_callback('left') == node.touch_head_left_callback
+    assert node._side_touch_callback('right') == node.touch_head_right_callback

@@ -102,6 +102,10 @@ class CollisionNode(Node):
             10
         )
         
+        # Existing physical FSR wiring crosses the side channels. Keep that
+        # calibration explicit rather than silently changing deployed hardware.
+        self.declare_parameter('swap_touch_sides', True)
+        self.swap_touch_sides = self.get_parameter('swap_touch_sides').value
         # FSR touch sensor subscribers
         self.touch_head_top_sub = self.create_subscription(
             UInt8,
@@ -113,7 +117,7 @@ class CollisionNode(Node):
         self.touch_head_left_sub = self.create_subscription(
             UInt8,
             '/touch_sensors/head_left',
-            self.touch_head_right_callback,
+            self._side_touch_callback('left'),
             10
         )
         
@@ -127,7 +131,7 @@ class CollisionNode(Node):
         self.touch_head_right_sub = self.create_subscription(
             UInt8,
             '/touch_sensors/head_right',
-            self.touch_head_left_callback,
+            self._side_touch_callback('right'),
             10
         )
         
@@ -199,6 +203,12 @@ class CollisionNode(Node):
         
         self.get_logger().info(f'Collision detection will be fully active after {self.startup_delay}s startup delay')
     
+    def _side_touch_callback(self, side):
+        """Resolve named raw side channels using the explicit wiring calibration."""
+        if self.swap_touch_sides:
+            side = 'right' if side == 'left' else 'left'
+        return self.touch_head_left_callback if side == 'left' else self.touch_head_right_callback
+
     def _complete_startup(self):
         """Mark startup as complete and enable full collision detection."""
         self.startup_complete = True
