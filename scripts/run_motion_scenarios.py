@@ -70,7 +70,11 @@ class Scenarios:
         request=RequestStateTransition.Request()
         request.requested_state=state;request.requesting_node=requester
         request.priority=priority;request.force=force;request.completion=completion
-        return self.future(self.states.call_async(request))
+        response=self.future(self.states.call_async(request))
+        if response.success:
+            self.wait(lambda:self.current_state==response.current_state)
+            self.spin(.3)  # State service replies before subscriber caches receive it.
+        return response
 
     def goal(self,name,speed=2):
         feedback=[]
