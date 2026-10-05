@@ -51,12 +51,21 @@ def main():
             if name and (not order or name!=order[-1]):order.append(name)
         assert order[:5]==['listening','acknowledge','thinking','speaking','settle'],order
         report('ordered_voice_cues_and_explicit_idle',order=order)
-        start=len(seen['animations']);emit('thinking');cue('thinking',start)
+        start=len(seen['animations']);emit('thinking');cue('thinking',start);spin(.1)
+        wait(lambda:any(v==2 for v in seen['statuses'].values()))
+        old_goals={k for k,v in seen['statuses'].items() if v==2}
+        assert len(old_goals)==1,old_goals
         state_start=len(seen['states']);baseline=len(seen['joints']);command.publish(String(data='nod'));cue('nod',start)
+        wait(lambda:all(seen['statuses'].get(k) in (5,6) for k in old_goals))
+        spin(.3)  # Allow old finally/callback effects and fresh state/animation telemetry.
+        assert seen['animations'][-1]=='nod' and seen['states'][-1]=='USER_CONTROL', {'states':seen['states'][-10:],'animations':seen['animations'][-10:]}
+        new_goals={k for k,v in seen['statuses'].items() if v==2 and k not in old_goals}
+        assert len(new_goals)==1,new_goals
         wait(lambda:len(seen['joints'])>baseline+5 and max(max(abs(a-b) for a,b in zip(seen['joints'][baseline],p)) for p in seen['joints'][baseline:])>.02)
+        wait(lambda:all(seen['statuses'].get(k)==4 for k in new_goals),timeout=20)
         wait(lambda:seen['animations'][-1]=='',timeout=20)
         assert seen['states'][-1]=='USER_CONTROL' and 'IDLE' not in seen['states'][state_start:]
-        report('command_preempts_thinking_cue',joint_frames=len(seen['joints'])-baseline)
+        report('command_preempts_thinking_cue',joint_frames=len(seen['joints'])-baseline,old_terminal_statuses={k:seen['statuses'][k] for k in old_goals},replacement_terminal_statuses={k:seen['statuses'][k] for k in new_goals},replacement_owned_during_old_completion=True)
         idle()
         start=len(seen['animations']);emit('listening');cue('listening',start)
         emit('idle');wait(lambda:seen['states'][-1]=='IDLE')
