@@ -98,7 +98,8 @@ def main():
         held_after_clear=observed['joints'][-1][:]
         spin(.2)
         assert max(abs(a-b) for a,b in zip(held_after_clear,observed['joints'][-1]))<1e-5,'Clear replayed stale target'
-        manual.publish(JointState(name=names,position=desired))
+        replan=held_after_clear[:];replan[0]+=.08
+        manual.publish(JointState(name=names,position=replan))
         wait(lambda:max(abs(a-b) for a,b in zip(held_after_clear,observed['joints'][-1]))>.01)
         report('raw_distance_collision_motion_hold_and_recovery',held_joint_frames=len(poses),restored_state=observed['states'][-1])
         transition('IDLE')
