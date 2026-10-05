@@ -13,7 +13,7 @@ files=sorted(base.glob('src/**/*.py'))+sorted(base.glob('roarm_ws_em1/src/**/*.p
 digest=hashlib.sha256()
 for file in files:digest.update(str(file.relative_to(base)).encode());digest.update(file.read_bytes())
 report=dict(started_at=datetime.datetime.now(datetime.UTC).isoformat(),runtime_commit=os.environ.get('LUXOPI_RUNTIME_COMMIT','unknown'),source_sha256=digest.hexdigest(),feasible_retiming=args.feasible_retiming,suites=[],output_directory=str(out))
-SUITES = [('run_motion_scenarios.py',['--all-animations','--output',str(out/'motion.json')]),('run_state_scenarios.py',[]),('run_lighting_scenarios.py',[]),('run_vision_scenarios.py',[]),('run_sensor_scenarios.py',[]),('run_voice_motion_scenarios.py',[]),('run_voice_cue_scenarios.py',[]),('run_watchdog_scenarios.py',[])]
+SUITES = [('run_motion_scenarios.py',['--all-animations','--output',str(out/'motion.json')]),('run_state_scenarios.py',[]),('run_lighting_scenarios.py',[]),('run_vision_scenarios.py',[]),('run_sensor_scenarios.py',[]),('run_voice_motion_scenarios.py',[]),('run_voice_cue_scenarios.py',[]),('run_watchdog_scenarios.py',[]),('run_avoidance_scenarios.py',['--output',str(out/'avoidance.json')])]
 if args.feasible_retiming:
     SUITES[0][1].append('--feasible-retiming')
 report['runner_sha256'] = {script: hashlib.sha256((base/'scripts'/script).read_bytes()).hexdigest() for script,_ in SUITES}

@@ -637,5 +637,80 @@
     "production_changes_during_run": false,
     "reports_copied_to_host": true,
     "limits": "Silent domain73 localhost-only transport/action evidence; finite bounded six-joint feedback and action timing do not prove endpoint tracking or physical accuracy. Later avoidance/retiming source changes are outside this runtime."
+  },
+  "reactive_avoidance_native_evidence": {
+    "started_at": "2026-10-05T13:47:11.964639+00:00",
+    "runtime_commit": "c9c8fbb-intent-fix",
+    "cases": [
+      {
+        "name": "warning_left_redirects_actual_joint",
+        "passed": true,
+        "axis": "base_link_to_link1",
+        "sign": 1
+      },
+      {
+        "name": "warning_right_redirects_actual_joint",
+        "passed": true,
+        "axis": "base_link_to_link1",
+        "sign": -1
+      },
+      {
+        "name": "warning_front_redirects_actual_joint",
+        "passed": true,
+        "axis": "link1_to_link2",
+        "sign": 1
+      },
+      {
+        "name": "danger_holds",
+        "passed": true,
+        "frames": 21
+      },
+      {
+        "name": "both_sides_blocked_hold",
+        "passed": true,
+        "frames": 20
+      },
+      {
+        "name": "contact_holds",
+        "passed": true,
+        "frames": 21
+      },
+      {
+        "name": "dropout_after_warning_holds",
+        "passed": true,
+        "frames": 20
+      },
+      {
+        "name": "fresh_clear_does_not_replay_old_target",
+        "passed": true,
+        "frames": 20
+      },
+      {
+        "name": "fresh_clear_new_target_replans",
+        "passed": true,
+        "state": "USER_CONTROL"
+      },
+      {
+        "name": "active_animation_warning_redirects_without_abort",
+        "passed": true,
+        "animation": "dance",
+        "axis": "base_link_to_link1",
+        "hazard": "right",
+        "retreat_sign": -1
+      },
+      {
+        "name": "active_animation_danger_aborts",
+        "passed": true,
+        "terminal_status": 6,
+        "held_frames": 21
+      }
+    ],
+    "passed": true,
+    "ended_at": "2026-10-05T13:47:37.807657+00:00",
+    "source_sha256": "336e59b285d1139439c0b0633e5394cbffe4bad4f14eeca927c62a7d2b077714",
+    "runner_sha256": "46b2d70ba6d0c3e1d8512f0ff56e3a7650fcdbdb8fb9b5db5e32ee3ffd2f766b",
+    "host_report": "/tmp/luxopi-reactive-avoidance-intent-fixed.json",
+    "duration_seconds": 25.843,
+    "scope": "11 native raw-sensor/actual six-joint/action tests; silent simulator only; bounded braking not physical stopping distance; final9 aggregate pending"
   }
 }

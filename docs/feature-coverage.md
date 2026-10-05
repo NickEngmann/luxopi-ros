@@ -110,3 +110,14 @@ endpoint tracking: a separate physics sweep observed substantial target lag
 despite action completion. Later feasible-duration retiming and reactive obstacle
 avoidance changes require new validation and are outside this checkpoint.
 No physical hardware or audible audio was used.
+
+## Reactive obstacle avoidance checkpoint
+
+All 11 raw-sensor avoidance cases passed in 25.843s at 13:47 UTC on
+`c9c8fbb-intent-fix`: three actual warning-direction redirects, danger/contact
+and blocked-side bounded braking, stale-sensor hold, fresh-clear replay prevention,
+new-intent replanning, and a running dance action that changed yaw course under
+warning before aborting on danger. Exact hashes and host report are recorded in
+`feature-coverage.json`. This is simulator feedback evidence, not physical
+stopping-distance or collision-free path certification. The new nine-suite
+aggregate/full retimed playlist remains pending.
