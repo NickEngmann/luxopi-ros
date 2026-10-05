@@ -7,10 +7,8 @@ to detect when nodes stop publishing (silent failure mode). When a failure is
 detected, it can trigger various recovery mechanisms.
 """
 
-import os
-import signal
-import subprocess
 import threading
+import math
 import time
 from datetime import datetime, timedelta
 
@@ -42,6 +40,9 @@ class WatchdogNode(Node):
         self.declare_parameter('recovery_delay', 10.0)  # seconds between recovery attempts
         self.declare_parameter('max_recovery_attempts', 3)
         self.declare_parameter('enable_node_restart', False)  # Whether to kill/restart nodes
+        self.declare_parameter('monitor_only', False)
+        self.declare_parameter('state_topic', '/luxo/state_info')
+        self.declare_parameter('joint_topic', '/joint_states')
         self.declare_parameter('enable_state_recovery', True)  # Whether to try state transitions
         
         # Get parameters
@@ -56,6 +57,9 @@ class WatchdogNode(Node):
         self.max_recovery_attempts = self.get_parameter('max_recovery_attempts').value
         self.enable_node_restart = self.get_parameter('enable_node_restart').value
         self.enable_state_recovery = self.get_parameter('enable_state_recovery').value
+        self.monitor_only = self.get_parameter('monitor_only').value
+        self.started_at = self.get_clock().now()
+        self.active_animation = False
         
         # Topic monitoring - timing
         self.last_state_msg = None
@@ -91,19 +95,19 @@ class WatchdogNode(Node):
         }
         
         # Lock for thread safety
-        self.lock = threading.Lock()
+        self.lock = threading.RLock()
         
         # Subscribers - Core topics
         self.state_sub = self.create_subscription(
             StateInfo,
-            '/luxo/current_state',
+            self.get_parameter('state_topic').value,
             self.state_callback,
             10
         )
         
         self.joint_sub = self.create_subscription(
             JointState,
-            '/joint_states',
+            self.get_parameter('joint_topic').value,
             self.joint_callback,
             10
         )
@@ -118,7 +122,7 @@ class WatchdogNode(Node):
         
         self.animation_status_sub = self.create_subscription(
             GoalStatusArray,
-            '/animation_action/_action/status',
+            '/play_animation/_action/status',
             self.animation_status_callback,
             10
         )
@@ -168,7 +172,7 @@ class WatchdogNode(Node):
         self._last_check_time = time.time()
         self._check_count = 0
         
-        self.get_logger().info('Watchdog node initialized')
+        self.get_logger().info(f'Watchdog node initialized (monitor_only={self.monitor_only})')
         self.get_logger().info(f'Monitoring timeouts - State: {self.state_timeout}s, Joint: {self.joint_timeout}s')
     
     def state_callback(self, msg):
@@ -193,7 +197,7 @@ class WatchdogNode(Node):
             self.last_joint_msg = self.get_clock().now()
             
             # Track joint changes
-            if msg.position and len(msg.position) >= 6:
+            if msg.position and all(math.isfinite(p) for p in msg.position):
                 if self.last_joint_positions is None:
                     self.last_joint_positions = list(msg.position)
                     self.last_joint_change_time = self.get_clock().now()
@@ -221,6 +225,7 @@ class WatchdogNode(Node):
         """Record animation action status."""
         with self.lock:
             self.last_animation_status = self.get_clock().now()
+            self.active_animation = any(s.status in (1, 2) for s in msg.status_list)
     
     def serial_feedback_callback(self, msg):
         """Record serial position feedback."""
@@ -246,31 +251,28 @@ class WatchdogNode(Node):
         
         with self.lock:
             # Check state topic
-            if self.last_state_msg is not None:
-                state_age = (current_time - self.last_state_msg).nanoseconds / 1e9
+            if True:
+                state_age = (current_time - (self.last_state_msg or self.started_at)).nanoseconds / 1e9
                 if state_age > self.state_timeout and not self.state_failure_detected:
                     self.state_failure_detected = True
                     self.get_logger().error(f'State topic timeout detected! Last message {state_age:.1f}s ago')
                     self.trigger_recovery('state')
             
             # Check joint topic
-            if self.last_joint_msg is not None:
-                joint_age = (current_time - self.last_joint_msg).nanoseconds / 1e9
+            if True:
+                joint_age = (current_time - (self.last_joint_msg or self.started_at)).nanoseconds / 1e9
                 if joint_age > self.joint_timeout and not self.joint_failure_detected:
                     self.joint_failure_detected = True
                     self.get_logger().error(f'Joint topic timeout detected! Last message {joint_age:.1f}s ago')
                     self.trigger_recovery('joint')
             
-            # Check animation commands (more lenient as not always active)
-            if self.last_animation_cmd is not None:
-                animation_age = (current_time - self.last_animation_cmd).nanoseconds / 1e9
+            # Commands are sparse events (including action clients bypassing the legacy
+            # topic); idle silence is healthy. Only an executing action owes status.
+            if self.active_animation and self.last_animation_status is not None:
+                animation_age = (current_time - self.last_animation_status).nanoseconds / 1e9
                 if animation_age > self.animation_timeout and not self.animation_failure_detected:
-                    # Only flag if we're in a state that should be animating
-                    if self.last_state_value in ['ANIMATING', 'IDLE']:
-                        self.animation_failure_detected = True
-                        self.get_logger().error(f'Animation timeout detected! Last command {animation_age:.1f}s ago in {self.last_state_value} state')
-                        self.trigger_recovery('animation')
-            
+                    self.animation_failure_detected = True
+                    self.trigger_recovery('animation')
             # Check serial feedback
             if self.last_serial_feedback is not None:
                 serial_age = (current_time - self.last_serial_feedback).nanoseconds / 1e9
@@ -281,6 +283,8 @@ class WatchdogNode(Node):
     
     def trigger_recovery(self, failure_type):
         """Trigger recovery mechanism based on failure type."""
+        if self.monitor_only:
+            return
         # Check if we should attempt recovery
         if self.recovery_attempts[failure_type] >= self.max_recovery_attempts:
             self.get_logger().error(f'Max recovery attempts reached for {failure_type}')
@@ -317,7 +321,7 @@ class WatchdogNode(Node):
             # Try requesting a state transition to force state manager to respond
             self.get_logger().info('Attempting state transition to IDLE to recover state manager')
             
-            if self.state_transition_client.wait_for_service(timeout_sec=2.0):
+            if self.state_transition_client.service_is_ready():
                 request = RequestStateTransition.Request()
                 request.requested_state = 'IDLE'
                 request.requesting_node = 'watchdog'
@@ -340,7 +344,7 @@ class WatchdogNode(Node):
             # Try transitioning through states to reset hardware
             self.get_logger().info('Attempting state transition to RETURNING_HOME to recover hardware')
             
-            if self.state_transition_client.wait_for_service(timeout_sec=2.0):
+            if self.state_transition_client.service_is_ready():
                 request = RequestStateTransition.Request()
                 request.requested_state = 'RETURNING_HOME'
                 request.requesting_node = 'watchdog'
@@ -402,7 +406,7 @@ class WatchdogNode(Node):
         self.get_logger().info('Attempting to recover animation system')
         
         # Try triggering an idle animation to kickstart the system
-        if self.state_transition_client.wait_for_service(timeout_sec=2.0):
+        if self.state_transition_client.service_is_ready():
             # First try to go to IDLE
             request = RequestStateTransition.Request()
             request.requested_state = 'IDLE'
@@ -421,7 +425,7 @@ class WatchdogNode(Node):
         self.get_logger().info('Attempting to recover serial communication')
         
         # Try RETURNING_HOME to force serial communication
-        if self.state_transition_client.wait_for_service(timeout_sec=2.0):
+        if self.state_transition_client.service_is_ready():
             request = RequestStateTransition.Request()
             request.requested_state = 'RETURNING_HOME'
             request.requesting_node = 'watchdog'
@@ -442,7 +446,7 @@ class WatchdogNode(Node):
             self.stuck_joints_detected = False
         
         # Force a state transition cycle
-        if self.state_transition_client.wait_for_service(timeout_sec=2.0):
+        if self.state_transition_client.service_is_ready():
             # Go to RETURNING_HOME then IDLE
             request = RequestStateTransition.Request()
             request.requested_state = 'RETURNING_HOME'
@@ -464,7 +468,7 @@ class WatchdogNode(Node):
         # Try multiple recovery strategies in sequence
         
         # 1. Force state transition to break out of stuck logic
-        if self.state_transition_client.wait_for_service(timeout_sec=2.0):
+        if self.state_transition_client.service_is_ready():
             request = RequestStateTransition.Request()
             request.requested_state = 'ERROR'  # Force ERROR state first
             request.requesting_node = 'watchdog'
@@ -590,7 +594,7 @@ class WatchdogNode(Node):
                 
                 # Don't flag IDLE as stuck (it's normal to be idle for long periods)
                 if (state_duration > self.stuck_state_duration and 
-                    self.last_state_value not in ['IDLE', 'SHUTDOWN'] and
+                    self.last_state_value in ['RETURNING_HOME', 'ESCAPING'] and
                     not self.stuck_state_detected):
                     self.stuck_state_detected = True
                     self.get_logger().error(
@@ -598,20 +602,10 @@ class WatchdogNode(Node):
                     )
                     self.trigger_recovery('stuck')
             
-            # Check for stuck joints
-            if self.last_joint_change_time is not None:
-                joint_stillness = (current_time - self.last_joint_change_time).nanoseconds / 1e9
-                
-                # Only flag if we're in a state that should have movement
-                if (joint_stillness > self.stuck_joint_duration and
-                    self.last_state_value in ['ANIMATING', 'VOICE_FOLLOWING', 'COLLISION_AVOIDING'] and
-                    not self.stuck_joints_detected):
-                    self.stuck_joints_detected = True
-                    self.get_logger().error(
-                        f'Joints stuck detected! No movement for {joint_stillness:.1f}s in {self.last_state_value} state'
-                    )
-                    self.trigger_recovery('stuck')
-    
+            # Joint stillness alone cannot prove a fault: collision safety holds,
+            # steady sound bearings and endpoint holds intentionally do not move.
+            # Joint transport timeout is checked independently in check_topics.
+
     def check_correlations(self):
         """Check cross-topic correlations to detect silent failures."""
         current_time = self.get_clock().now()
@@ -620,23 +614,6 @@ class WatchdogNode(Node):
             # Silent failure: System metrics continue but no commands
             if (self.last_state_msg is not None and 
                 self.last_joint_msg is not None):
-                
-                # Check if we're getting state/joint updates but no animation commands
-                if self.last_animation_cmd is not None:
-                    animation_age = (current_time - self.last_animation_cmd).nanoseconds / 1e9
-                    state_age = (current_time - self.last_state_msg).nanoseconds / 1e9
-                    
-                    # If state is updating but animations aren't in an active state
-                    if (state_age < 5.0 and  # State is updating
-                        animation_age > 120.0 and  # No animations for 2 minutes
-                        self.last_state_value in ['IDLE', 'ANIMATING'] and
-                        not self.silent_failure_detected):
-                        
-                        self.silent_failure_detected = True
-                        self.get_logger().error(
-                            f'SILENT FAILURE detected! State updating but no animations for {animation_age:.1f}s'
-                        )
-                        self.trigger_recovery('silent')
                 
                 # Check if serial feedback stopped while joints are updating
                 if self.last_serial_feedback is not None:

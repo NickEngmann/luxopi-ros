@@ -32,7 +32,8 @@ class SystemMonitor(Node):
         
         # CPU tracking for smoothed readings
         self.cpu_readings = []
-        self.max_cpu_readings = int(self.cpu_window * self.publish_rate)
+        self.publish_rate = max(0.1, float(self.publish_rate))
+        self.max_cpu_readings = max(1, int(self.cpu_window * self.publish_rate))
         
         # Create timer for periodic publishing
         self.timer = self.create_timer(1.0 / self.publish_rate, self.publish_metrics)
@@ -63,7 +64,7 @@ class SystemMonitor(Node):
                 
         except Exception as e:
             self.get_logger().error(f"Error reading CPU usage: {e}")
-            return 0.0
+            return float('nan')
     
     def get_ram_usage(self):
         """Get RAM usage percentage"""
@@ -72,7 +73,7 @@ class SystemMonitor(Node):
             return memory.percent
         except Exception as e:
             self.get_logger().error(f"Error reading RAM usage: {e}")
-            return 0.0
+            return float('nan')
     
     def get_temperature(self):
         """Get CPU temperature in Celsius"""
@@ -102,12 +103,12 @@ class SystemMonitor(Node):
                 pass
             
             # If all else fails, return a reasonable default
-            self.get_logger().debug("Could not read temperature, using default")
-            return 45.0
+            self.get_logger().debug("Could not read temperature; reporting unavailable")
+            return float('nan')
             
         except Exception as e:
             self.get_logger().error(f"Error reading temperature: {e}")
-            return 45.0
+            return float('nan')
     
     def publish_metrics(self):
         """Publish all system metrics"""
