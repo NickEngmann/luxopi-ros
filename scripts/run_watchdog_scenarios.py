@@ -3,6 +3,7 @@
 import json
 import os
 import subprocess
+import signal
 import time
 if os.environ.get('ROS_DOMAIN_ID') != '73' or os.environ.get('ROS_LOCALHOST_ONLY') != '1':
     raise SystemExit('Requires ROS_DOMAIN_ID=73 ROS_LOCALHOST_ONLY=1')
@@ -22,7 +23,7 @@ def main():
                '-r','/watchdog/status:=/test/watchdog/status','-p','state_topic:=/test/watchdog/state',
                '-p','joint_topic:=/test/watchdog/joints','-p','monitor_only:=true',
                '-p','state_timeout:=1.0','-p','joint_timeout:=1.0']
-    process = subprocess.Popen(command,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+    process = subprocess.Popen(command,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,start_new_session=True)
     def spin(seconds):
         end = time.monotonic()+seconds
         while time.monotonic()<end:
@@ -42,9 +43,9 @@ def main():
         assert 'FAIL:' not in latest[-1] and '(IDLE)' in latest[-1],latest[-1]
         report('fresh_four_joint_heartbeats_clear_fault')
     finally:
-        process.terminate()
+        os.killpg(process.pid, signal.SIGTERM)
         try: process.wait(timeout=3)
-        except subprocess.TimeoutExpired: process.kill();process.wait()
+        except subprocess.TimeoutExpired: os.killpg(process.pid, signal.SIGKILL);process.wait()
         node.destroy_node();rclpy.shutdown()
 
 if __name__=='__main__': main()
