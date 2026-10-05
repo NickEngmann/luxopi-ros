@@ -21,6 +21,7 @@ from luxo_behaviors.simulator_protocol import (
     MANUAL_JOINT_LIMITS,
     MAX_AUDIO_BYTES,
     MAX_EVENT_BYTES,
+    ANIMATION_NAMES,
     normalize_event,
     summarize_simulator_health,
 )
@@ -313,6 +314,7 @@ class SimulatorDashboard(Node):
             result.pop("_state_received_monotonic", None)
             result.pop("_joints_received_monotonic", None)
             result["audio_upload"] = self._audio_upload_enabled
+            result["animation_names"] = sorted(ANIMATION_NAMES)
             if joint_names == set(M3_JOINT_NAMES):
                 limits = M3_JOINT_LIMITS
             elif joint_names == set(MANUAL_JOINT_LIMITS):
