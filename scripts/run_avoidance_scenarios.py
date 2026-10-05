@@ -47,13 +47,21 @@ def main():
     node.create_subscription(String, '/collision/sensor_status', lambda m: data['sensors'].append(json.loads(m.data)), 100)
     dist = {s: node.create_publisher(Float32, '/i2c/vl53_'+s+'/distance', 10) for s in ('left', 'right')}
     front = node.create_publisher(Int16, '/i2c/apds9960/proximity', 10)
-    contact = node.create_publisher(UInt8, '/touch_sensors/head_bottom', 10)
+    touch = {s: node.create_publisher(UInt8, '/touch_sensors/head_'+s, 10) for s in ('top','left','right','bottom')}
+    contact = touch['bottom']
     manual = node.create_publisher(JointState, '/sim/manual_joint_target', 10)
     service = node.create_client(RequestStateTransition, '/luxo/request_state_transition')
     actions = ActionClient(node, PlayAnimation, 'play_animation')
+    raw={'left':100.,'right':100.,'head':0,'contact':0,'enabled':True,'sent':0.}
+    def publish_raw():
+        dist['left'].publish(Float32(data=raw['left']));dist['right'].publish(Float32(data=raw['right']))
+        front.publish(Int16(data=raw['head']))
+        for side,publisher in touch.items():publisher.publish(UInt8(data=raw['contact'] if side=='bottom' else 0))
+        raw['sent']=time.monotonic()
     def spin(seconds):
         end = time.monotonic()+seconds
         while time.monotonic() < end:
+            if raw['enabled'] and time.monotonic()-raw['sent']>.08: publish_raw()
             rclpy.spin_once(node, timeout_sec=.02)
     def wait(predicate, timeout=10):
         end = time.monotonic()+timeout
@@ -62,9 +70,8 @@ def main():
                 raise AssertionError(f'expectation timed out; state={data["state"]}; motion={data["motion"]}')
             spin(.02)
     def sample(left=100., right=100., head=0):
-        for _ in range(2):
-            dist['left'].publish(Float32(data=left)); dist['right'].publish(Float32(data=right))
-            front.publish(Int16(data=head)); spin(.06)
+        raw.update(left=left,right=right,head=head,enabled=True)
+        for _ in range(2):publish_raw();spin(.06)
     def command(index=0, delta=.12):
         values = list(data['joints'][-1]); values[index] += delta
         manual.publish(JointState(name=data['names'], position=values))
@@ -79,7 +86,7 @@ def main():
         evidence['cases'].append(dict(name=name, passed=True, **values))
     try:
         assert service.wait_for_service(timeout_sec=10)
-        wait(lambda: data['joints'] and data['state'] == 'IDLE'); spin(6)
+        wait(lambda: data['joints'] and data['state'] is not None); spin(6)
         request = RequestStateTransition.Request()
         request.requested_state = 'USER_CONTROL'; request.requesting_node = 'avoidance_scenarios'
         request.priority = 80; request.force = True
@@ -99,10 +106,11 @@ def main():
         sample(left=6., right=6.); wait(lambda: data['motion'].get('avoidance_mode', '').startswith('hold'))
         case('both_sides_blocked_hold', frames=held())
         sample(); spin(.4); command(); spin(.2)
-        contact.publish(UInt8(data=50)); wait(lambda: data['motion'].get('avoidance_mode', '').startswith('hold'))
-        case('contact_holds', frames=held()); contact.publish(UInt8(data=0))
+        raw['contact']=50; contact.publish(UInt8(data=50)); wait(lambda: data['motion'].get('avoidance_mode', '').startswith('hold'))
+        case('contact_holds', frames=held()); raw['contact']=0; contact.publish(UInt8(data=0))
         sample(left=6.); spin(.2)
         # Stop all raw samples: expiration must not silently release/replay the old target.
+        raw['enabled']=False
         wait(lambda: any(not s.get('valid', True) for s in data['sensors'][-20:]), timeout=15)
         wait(lambda: data['motion'].get('avoidance_mode', '').startswith('hold'))
         case('dropout_after_warning_holds', frames=held())
@@ -126,33 +134,46 @@ def main():
         handle = sent.result(); assert handle.accepted
         result = handle.get_result_async()
         wait(lambda: data['state'] == 'ANIMATING')
-        baseline = data['joints'][-1][0]
-        deadline = time.monotonic()+6
-        adjusted = False
-        while time.monotonic() < deadline:
-            sample(left=6.)
-            adjusted = adjusted or data['motion'].get('avoidance_mode') == 'adjust'
-            if adjusted and data['joints'][-1][0]-baseline > .005:
-                break
-        assert adjusted, data['motion']
-        assert data['joints'][-1][0]-baseline > .005
-        assert not result.done(), 'warning incorrectly terminated the action'
-        assert data['state'] == 'COLLISION_AVOIDING'
-        case('active_animation_warning_redirects_without_abort', animation='dance', axis=data['names'][0])
-        sample(left=3.)
+        # Wait for actual unsafe yaw rather than assuming the first recipe
+        # frame moves the base (it preserves current yaw).
+        start_yaw=data['joints'][-1][0]
+        deadline=time.monotonic()+90
+        while time.monotonic()<deadline:
+            sample()
+            yaw_delta=data['joints'][-1][0]-start_yaw
+            if abs(yaw_delta)>.015: break
+            assert not result.done(),'Action finished without observable yaw motion'
+        assert abs(yaw_delta)>.015,'No moving yaw segment observed'
+        side='right' if yaw_delta>0 else 'left'
+        retreat_sign=-1 if side=='right' else 1
+        baseline=data['joints'][-1][0]
+        adjusted=False
+        deadline=time.monotonic()+10
+        while time.monotonic()<deadline:
+            sample(left=6. if side=='left' else 100.,right=6. if side=='right' else 100.)
+            adjusted=adjusted or data['motion'].get('avoidance_mode')=='adjust'
+            if adjusted and (data['joints'][-1][0]-baseline)*retreat_sign>.005: break
+        assert adjusted,data['motion']
+        assert (data['joints'][-1][0]-baseline)*retreat_sign>.005
+        assert not result.done(),'warning incorrectly terminated the action'
+        assert data['state']=='COLLISION_AVOIDING'
+        case('active_animation_warning_redirects_without_abort',animation='dance',
+             axis=data['names'][0],hazard=side,retreat_sign=retreat_sign)
+        sample(left=3. if side=='left' else 100.,right=3. if side=='right' else 100.)
         wait(result.done)
         assert result.result().status == 6, result.result().status
         case('active_animation_danger_aborts', terminal_status=result.result().status, held_frames=held())
         evidence['passed'] = True
-    except Exception as exc:
+    except BaseException as exc:
         evidence['error'] = repr(exc)
         raise
     finally:
-        contact.publish(UInt8(data=0)); sample()
         evidence['ended_at'] = datetime.datetime.now(datetime.timezone.utc).isoformat()
         with open(args.output, 'w') as output:
             json.dump(evidence, output, indent=2)
-        node.destroy_node(); rclpy.shutdown()
+        if rclpy.ok():
+            raw['contact']=0; contact.publish(UInt8(data=0)); sample()
+            node.destroy_node(); rclpy.shutdown()
 
 
 if __name__ == '__main__':
