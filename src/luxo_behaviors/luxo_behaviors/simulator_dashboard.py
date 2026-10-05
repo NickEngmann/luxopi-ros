@@ -52,6 +52,7 @@ class SimulatorDashboard(Node):
         self.declare_parameter("host", "0.0.0.0")
         self.declare_parameter("port", 8080)
         self.declare_parameter("audio_directory", "")
+        self.declare_parameter("simulation_backend", "kinematic")
         host = self.get_parameter("host").value
         port = int(self.get_parameter("port").value)
         self._audio_directory = str(self.get_parameter("audio_directory").value).strip()
@@ -75,6 +76,7 @@ class SimulatorDashboard(Node):
         self._manual_deadline = 0.0
         self._lock = threading.Lock()
         self._snapshot = {
+            "simulation_backend": str(self.get_parameter("simulation_backend").value),
             "state": "INITIALIZING",
             "animation": "",
             "status": "idle",
@@ -685,6 +687,7 @@ class SimulatorDashboard(Node):
         if not self._manual_granted or not acknowledged:
             return
         message = JointState()
+        message.header.frame_id = f"manual:{self._manual_generation}"
         message.name = list(positions)
         message.position = list(positions.values())
         self._manual_target_publisher.publish(message)
