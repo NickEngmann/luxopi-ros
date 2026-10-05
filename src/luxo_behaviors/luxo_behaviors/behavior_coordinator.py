@@ -564,7 +564,10 @@ class BehaviorCoordinator(PettingBehavior, IdleBehavior, VoiceBehavior, Collisio
                                 self.target_override_reason = "Home position stage 2"
                                 
                                 # Send command to move to stage 2
-                                self.send_safe_joint_command(home_with_variation, "Moving to home position stage 2")
+                                self.send_safe_joint_command(
+                                    home_with_variation, "Moving to home position stage 2",
+                                    target_received_at=time.monotonic(),
+                                )
                             else:
                                 self.node.get_logger().debug(f"At home position stage 1, waiting {self.home_position_stage_timeout - time_at_stage_1:.1f}s before stage 2")
                         
@@ -604,7 +607,10 @@ class BehaviorCoordinator(PettingBehavior, IdleBehavior, VoiceBehavior, Collisio
                     self.target_override_time = current_time
                     self.target_override_joints = self.current_idle_head_target.copy()
                     self.target_override_reason = "idle head variation"
-                    self.send_safe_joint_command(self.current_idle_head_target, "Idle head variation")
+                    self.send_safe_joint_command(
+                        self.current_idle_head_target, "Idle head variation",
+                        target_received_at=time.monotonic(),
+                    )
             
             # Check for extended idle timeout
             if self.check_extended_idle_timeout(current_time):
@@ -691,7 +697,10 @@ class BehaviorCoordinator(PettingBehavior, IdleBehavior, VoiceBehavior, Collisio
                     self.target_override_reason = "Reverting to home position stage 1"
                     
                     # Send command to move to home_position_1
-                    self.send_safe_joint_command(home_with_variation, "Reverting to home position stage 1")
+                    self.send_safe_joint_command(
+                        home_with_variation, "Reverting to home position stage 1",
+                        target_received_at=time.monotonic(),
+                    )
                     
                     # Log the current differences for debugging
                     self.node.get_logger().info(f"Current differences from home_position_2: {[round(d, 4) for d in differences]}")
@@ -893,7 +902,8 @@ class BehaviorCoordinator(PettingBehavior, IdleBehavior, VoiceBehavior, Collisio
             # Move to the home position - override unsafe zones in this case
             success = self.send_safe_joint_command(
                 home_with_variation, 
-                description 
+                description,
+                target_received_at=time.monotonic(),
             )
             
             # Reset collision counters and escape status
@@ -945,7 +955,9 @@ class BehaviorCoordinator(PettingBehavior, IdleBehavior, VoiceBehavior, Collisio
             self.last_movement_time = self.node.get_clock().now()
             
             # Send the command
-            success = self.send_safe_joint_command(safe_position, description)
+            success = self.send_safe_joint_command(
+                safe_position, description, target_received_at=time.monotonic()
+            )
             
             # Short delay to let the movement start
             time.sleep(0.1)  # Hardware timing delay - keep as time.sleep

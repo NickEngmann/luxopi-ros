@@ -524,6 +524,7 @@ class RoArmHardwareInterface(Node):
         self.get_logger().info("Entering USER_CONTROL state")
         # Store the position we want to maintain
         self.user_control_position = self.current_joints.copy() if hasattr(self, 'current_joints') and self.current_joints else None
+        self.user_control_target_received_at = time.monotonic()
         # Start a timer to maintain position during USER_CONTROL
         if not hasattr(self, 'user_control_timer') or self.user_control_timer is None:
             self.user_control_timer = self.create_timer(0.1, self._maintain_user_control_position)
@@ -540,7 +541,11 @@ class RoArmHardwareInterface(Node):
         """Maintain robot position during USER_CONTROL state."""
         if self.is_in_state(LuxoState.USER_CONTROL) and hasattr(self, 'user_control_position') and self.user_control_position:
             # Send the stored position to maintain it
-            self.send_safe_joint_command(self.user_control_position, "USER_CONTROL position maintenance")
+            self.send_safe_joint_command(
+                self.user_control_position,
+                "USER_CONTROL position maintenance",
+                target_received_at=getattr(self, 'user_control_target_received_at', None),
+            )
     
     def _on_enter_error(self):
         """Called when entering ERROR state."""

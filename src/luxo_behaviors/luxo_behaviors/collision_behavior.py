@@ -421,7 +421,8 @@ class CollisionBehavior:
             # Send command
             self.send_safe_joint_command(
                 new_position_with_acceleration, 
-                f"Collision avoidance (count: {consecutive_count}, accel: {acceleration})"
+                f"Collision avoidance (count: {consecutive_count}, accel: {acceleration})",
+                target_received_at=time.monotonic(),
             )
             
             # Create persistent override
@@ -554,7 +555,10 @@ class CollisionBehavior:
             if right_status['distance'] <= self.hard_limit_distance:
                 temp_position = self.current_joints.copy()
                 temp_position[0] += right_adjustment
-                self.send_safe_joint_command(temp_position, "Immediate right collision response")
+                self.send_safe_joint_command(
+                    temp_position, "Immediate right collision response",
+                    target_received_at=time.monotonic(),
+                )
         elif right_factor > 0.1 and right_cooldown_active:
             time_since_adjustment = (current_time - self.adjustment_history['right']['last_time']).nanoseconds / 1e9
             self.node.get_logger().debug(f"Skipping right adjustment - on cooldown ({time_since_adjustment:.1f}s)")
@@ -589,7 +593,10 @@ class CollisionBehavior:
             if left_status['distance'] <= self.hard_limit_distance:
                 temp_position = self.current_joints.copy()
                 temp_position[0] += left_adjustment
-                self.send_safe_joint_command(temp_position, "Immediate left collision response")
+                self.send_safe_joint_command(
+                    temp_position, "Immediate left collision response",
+                    target_received_at=time.monotonic(),
+                )
         elif left_factor > 0.1 and left_cooldown_active:
             time_since_adjustment = (current_time - self.adjustment_history['left']['last_time']).nanoseconds / 1e9
             self.node.get_logger().debug(f"Skipping left adjustment - on cooldown ({time_since_adjustment:.1f}s)")
@@ -665,7 +672,10 @@ class CollisionBehavior:
         self.last_failed_adjustment_time = current_time
         
         # Send adjusted target
-        self.send_safe_joint_command(adjusted_targets, "Collision avoidance adjustment")
+        self.send_safe_joint_command(
+            adjusted_targets, "Collision avoidance adjustment",
+            target_received_at=time.monotonic(),
+        )
         
         # Set target override
         self.target_override_active = True
@@ -892,7 +902,8 @@ class CollisionBehavior:
         # Send command
         self.send_safe_joint_command(
             new_position, 
-            f"Escape maneuver ({direction}, attempt {self.escape_attempts})"
+            f"Escape maneuver ({direction}, attempt {self.escape_attempts})",
+            target_received_at=time.monotonic(),
         )
         
         # Update tracking
@@ -930,7 +941,10 @@ class CollisionBehavior:
         new_position = MovementValidator.validate_position(new_position, self.safety_limits)
         
         # Send command
-        self.send_safe_joint_command(new_position, f"Animation-safe escape ({direction})")
+        self.send_safe_joint_command(
+            new_position, f"Animation-safe escape ({direction})",
+            target_received_at=time.monotonic(),
+        )
         
         # Shorter escape duration during animations
         self.escape_mode_duration = min(self.escape_mode_duration, 3.0)

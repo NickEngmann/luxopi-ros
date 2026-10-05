@@ -469,7 +469,10 @@ class VoiceBehavior:
         )
         
         # Send the command with high priority
-        self.send_safe_joint_command(voice_position_with_accel, "Voice following with variation")
+        self.send_safe_joint_command(
+            voice_position_with_accel, "Voice following with variation",
+            target_received_at=time.monotonic(),
+        )
         
         # Set this as a target override to prevent other systems from interfering
         self.target_override_active = True
