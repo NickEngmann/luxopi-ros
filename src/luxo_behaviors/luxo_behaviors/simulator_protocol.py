@@ -1,6 +1,7 @@
 """Validation and normalization for the local simulator dashboard API."""
 
 import math
+import re
 
 
 TOUCH_SENSORS = {"head_top", "head_left", "head_bottom", "head_right"}
@@ -8,6 +9,17 @@ DISTANCE_SIDES = {"left", "right"}
 COLLISION_SIDES = {"front", "left", "right"}
 GESTURES = {"left", "right", "up", "down", "near", "far", "none"}
 EMOTIONS = {"neutral", "happy", "sad", "surprise", "anger"}
+STATE_NAMES = {
+    "IDLE", "ANIMATING", "VOICE_FOLLOWING", "COLLISION_AVOIDING", "RETURNING_HOME",
+    "ESCAPE_MODE", "USER_CONTROL", "EMOTION_REACTING", "PETTING", "ERROR",
+    "INITIALIZING", "SHUTDOWN",
+}
+MANUAL_JOINT_LIMITS = {
+    "base_to_L1": (-3.14, 3.14),
+    "L1_to_L2": (-1.570796, 1.570796),
+    "L2_to_L3": (-0.78539815, 3.1415926),
+    "L3_to_L4": (-2.3561942, 2.3561942),
+}
 ANIMATION_NAMES = {
     "folded_wiggle", "bouncy_wiggle", "sleepy_melt", "nod", "shake", "close", "stop",
     "gentle_sway", "curious_exploration", "breathing", "attentive_listening", "playful_bob",
@@ -19,6 +31,7 @@ ANIMATION_NAMES = {
 LIGHT_COLORS = {"red", "orange", "yellow", "green", "cyan", "blue", "purple", "white"}
 MAX_COMMAND_CHARS = 2000
 MAX_EVENT_BYTES = 4096
+MAX_AUDIO_BYTES = 8 * 1024 * 1024
 
 
 def normalize_event(payload):
@@ -40,6 +53,15 @@ def normalize_event(payload):
             raise ValueError("voice command is too long")
         return {"type": kind, "text": text}
 
+    if kind == "audio_file":
+        name = payload.get("name")
+        if not isinstance(name, str) or not re.fullmatch(
+            r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\.wav",
+            name,
+        ):
+            raise ValueError("audio file must be a UUID WAV basename")
+        return {"type": kind, "name": name}
+
     if kind == "animation":
         name = payload.get("name")
         if name not in ANIMATION_NAMES:
@@ -51,6 +73,24 @@ def normalize_event(payload):
 
     if kind == "cancel_animation":
         return {"type": kind}
+
+    if kind == "state_request":
+        state = payload.get("state")
+        if state not in STATE_NAMES:
+            raise ValueError("unknown Luxo state")
+        return {"type": kind, "state": state}
+
+    if kind == "manual_joint_target":
+        positions = payload.get("positions")
+        if not isinstance(positions, dict) or set(positions) != set(MANUAL_JOINT_LIMITS):
+            raise ValueError("manual pose must specify all four URDF joints")
+        normalized = {}
+        for name, bounds in MANUAL_JOINT_LIMITS.items():
+            value = _number(positions[name], name)
+            if not bounds[0] <= value <= bounds[1]:
+                raise ValueError(f"{name} is outside its URDF limits")
+            normalized[name] = value
+        return {"type": kind, "positions": normalized}
 
     if kind == "light_control":
         return {"type": kind, "enabled": _boolean(payload.get("enabled"), "enabled")}

@@ -4,7 +4,7 @@ import math
 
 import pytest
 
-from luxo_behaviors.simulator_protocol import ANIMATION_NAMES, normalize_event
+from luxo_behaviors.simulator_protocol import ANIMATION_NAMES, STATE_NAMES, normalize_event
 
 
 @pytest.mark.parametrize(
@@ -41,6 +41,35 @@ def test_registered_animation_catalog_is_thirty_three_and_accepts_safe_speed():
     }
 
 
+def test_all_twelve_fsm_states_and_four_joint_manual_pose_are_supported():
+    assert len(STATE_NAMES) == 12
+    assert normalize_event({"type": "state_request", "state": "ERROR"}) == {
+        "type": "state_request",
+        "state": "ERROR",
+    }
+    pose = {
+        "base_to_L1": 0.1,
+        "L1_to_L2": -0.2,
+        "L2_to_L3": 0.3,
+        "L3_to_L4": -0.4,
+    }
+    assert normalize_event({"type": "manual_joint_target", "positions": pose}) == {
+        "type": "manual_joint_target",
+        "positions": pose,
+    }
+
+
+def test_audio_file_event_accepts_only_uuid_wav_basename():
+    name = "51a9e721-3460-4bb5-b4a8-b5ec2ac249e7.wav"
+    assert normalize_event({"type": "audio_file", "name": name}) == {
+        "type": "audio_file",
+        "name": name,
+    }
+    for invalid in ("../../recording.wav", "recording.wav", name + ".wav", "../" + name):
+        with pytest.raises(ValueError):
+            normalize_event({"type": "audio_file", "name": invalid})
+
+
 @pytest.mark.parametrize(
     "event",
     [
@@ -49,6 +78,8 @@ def test_registered_animation_catalog_is_thirty_three_and_accepts_safe_speed():
         {"type": "brightness", "value": -0.1},
         {"type": "color_temperature", "value": 1.1},
         {"type": "light_color", "color": "infrared"},
+        {"type": "state_request", "state": "NOT_A_STATE"},
+        {"type": "manual_joint_target", "positions": {"base_to_L1": 99}},
     ],
 )
 def test_animation_and_light_controls_reject_invalid_values(event):
