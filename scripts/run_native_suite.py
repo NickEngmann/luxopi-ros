@@ -5,6 +5,7 @@ import datetime,hashlib,json,os,pathlib,subprocess,time
 if os.environ.get('ROS_DOMAIN_ID') != '73' or os.environ.get('ROS_LOCALHOST_ONLY') != '1':
     raise SystemExit('Requires ROS_DOMAIN_ID=73 ROS_LOCALHOST_ONLY=1')
 parser=argparse.ArgumentParser(description=__doc__)
+parser.add_argument('--core-motion',action='store_true',help='Run four motion core cases without the full animation playlist')
 parser.add_argument('--feasible-retiming',action='store_true',help='Enable slower plan-derived timing and endpoint checks; allow up to one hour')
 parser.add_argument('--resume-report',type=pathlib.Path,help='Reuse only a verified passing prefix from identical production sources and runner hashes')
 args=parser.parse_args()
@@ -12,14 +13,17 @@ base=pathlib.Path(__file__).resolve().parents[1];out=pathlib.Path('/tmp/luxopi-f
 files=sorted(base.glob('src/**/*.py'))+sorted(base.glob('roarm_ws_em1/src/**/*.py'))
 digest=hashlib.sha256()
 for file in files:digest.update(str(file.relative_to(base)).encode());digest.update(file.read_bytes())
-report=dict(started_at=datetime.datetime.now(datetime.UTC).isoformat(),runtime_commit=os.environ.get('LUXOPI_RUNTIME_COMMIT','unknown'),source_sha256=digest.hexdigest(),feasible_retiming=args.feasible_retiming,suites=[],output_directory=str(out))
+report=dict(started_at=datetime.datetime.now(datetime.UTC).isoformat(),runtime_commit=os.environ.get('LUXOPI_RUNTIME_COMMIT','unknown'),source_sha256=digest.hexdigest(),feasible_retiming=args.feasible_retiming,full_animation_playlist=not args.core_motion,suites=[],output_directory=str(out))
 SUITES = [('run_motion_scenarios.py',['--all-animations','--output',str(out/'motion.json')]),('run_state_scenarios.py',[]),('run_lighting_scenarios.py',[]),('run_vision_scenarios.py',[]),('run_sensor_scenarios.py',[]),('run_voice_motion_scenarios.py',[]),('run_voice_cue_scenarios.py',[]),('run_watchdog_scenarios.py',[]),('run_avoidance_scenarios.py',['--output',str(out/'avoidance.json')])]
+if args.core_motion:
+    SUITES[0][1].remove('--all-animations')
 if args.feasible_retiming:
     SUITES[0][1].append('--feasible-retiming')
 report['runner_sha256'] = {script: hashlib.sha256((base/'scripts'/script).read_bytes()).hexdigest() for script,_ in SUITES}
 prefix=0
 if args.resume_report:
     previous=json.loads(args.resume_report.read_text())
+    assert previous.get('full_animation_playlist',True)==report['full_animation_playlist'],'Motion coverage changed; run full suite'
     assert previous.get('feasible_retiming',False)==report['feasible_retiming'],'Retiming mode changed; run full suite'
     assert previous['source_sha256']==report['source_sha256'],'Production source changed; run the full suite'
     for old in previous['suites']:
