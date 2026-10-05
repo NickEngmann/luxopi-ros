@@ -134,7 +134,7 @@ class AnimationPlugin(ABC):
         animation_base_reference = keyframes[0][0] if len(keyframes[0]) > 0 else 0.0
         
         for keyframe in keyframes:
-            adjusted_keyframe = keyframe.copy()
+            adjusted_keyframe = list(keyframe)
             if len(adjusted_keyframe) > 0:
                 # Calculate the offset from the animation's reference position
                 base_offset = keyframe[0] - animation_base_reference
@@ -177,7 +177,7 @@ class AnimationPlugin(ABC):
         if not keyframes:
             return keyframes
             
-        modified_keyframes = [kf.copy() for kf in keyframes]
+        modified_keyframes = [list(kf) for kf in keyframes]
         
         # Create a blend between current position and first keyframe
         first_keyframe = modified_keyframes[0].copy()

@@ -119,3 +119,17 @@ def test_gesture_passthrough_actual_consumer_enabled_disabled():
     for direction in ('left','right','up','down'):
         node.gesture_callback(SimpleNamespace(data=direction))
     assert seen==['left','right','up','down']
+
+
+def test_immutable_plan_can_be_adjusted_without_mutation():
+    from types import SimpleNamespace
+    from luxo_behaviors.animation_capabilities import ANIMATION_CLASSES
+    from luxo_behaviors.animation_plan import validate_animation_plan
+    node = SimpleNamespace(get_logger=lambda: SimpleNamespace(debug=lambda *args: None))
+    plugin = ANIMATION_CLASSES["dance"](node)
+    frames, durations = validate_animation_plan(*plugin.get_keyframes())
+    adjusted = plugin.adjust_keyframes_to_current_base(frames, 0.3)
+    prepared = plugin.prepare_for_current_position([0.3, -0.65, 1.2, 1.0, -1.5], adjusted)
+    assert prepared and adjusted
+    assert frames == validate_animation_plan(*plugin.get_keyframes())[0]
+    assert adjusted[0][0] == 0.3
