@@ -24,6 +24,8 @@ For browser access through SSH, run this on your own computer, leave the connect
 ssh -N -L 18080:127.0.0.1:8080 ubuntu@100.69.210.33
 ```
 
+The helper accepts `--mode base`, `--mode speech`, `--mode audio`, `--mode physics`, or `--mode full` before the Compose command. Speech/audio/full modes require `LUXOPI_AI_CHECKOUT` to name the AI checkout. Each mode resolves its overlay files by absolute checkout path, including when invoked from another directory. Physics/full are optional development backends; consult their validation evidence before treating their motion as calibrated. Build the base image before speech or physics, and both optional images before full.
+
 The helper resolves its checkout from its own location. Container launches use `/workspace`; installed UI modules, meshes, and animation assets resolve from their package locations rather than the SSH shell’s working directory. Relative Compose paths resolve against the checkout. SSH authentication uses your existing account; this change does not create credentials.
 
 Run native behavior checks:
