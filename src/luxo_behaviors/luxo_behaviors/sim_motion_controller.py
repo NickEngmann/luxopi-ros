@@ -225,7 +225,7 @@ class SimMotionController(Node):
         positions = self.limiter.step(target, dt)
         message = JointState()
         message.header.stamp = self.get_clock().now().to_msg()
-        message.name = list(JOINT_NAMES)
+        message.name = list(self.joint_names)
         message.position = positions
         message.velocity = list(self.limiter.velocities)
         self.joint_pub.publish(message)
