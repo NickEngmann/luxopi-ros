@@ -143,3 +143,21 @@ The passing prefix was resumed only after identical source/runner checks.
 or prove every retimed endpoint. Earlier full38 evidence remains scoped to its
 earlier runtime. Complete retimed playlist/physics and browser validation are
 separate runs. No hardware or audible audio was used.
+
+## Latest sensor and safety checkpoint
+
+The rebuilt `09b1682` default graph passed all nine core suites on 2026-10-05,
+after required coverage, valid physical sensor ranges, once-per-goal safety grace,
+and bounded warning-plan changes. Production SHA256:
+`65bc5fa4ccdac93ff98533d34df120fbef4792377c7adeb2ecba6ea5c738f191`.
+Complete host logs: `/tmp/luxopi-final-20261005T185002Z`; exact runner hashes and
+configuration are recorded in `feature-coverage.json`. The offline suite passed
+443 tests with one skip. The Docker-owned stalled state-manager test separately
+observed stale health503 followed by health200 on resume, without a restart.
+
+An independent frozen `178fb02` continuous-mode graph passed nine suites,
+including all 38 animation plugins and four core motion cases. Its host evidence
+is `/tmp/luxopi-continuous-final`; it predates the latest safety grace fixes.
+See [continuous timing](continuous-animation-timing.md) and
+[silent neural synthesis](optional-speech-synthesis.md) for the separately scoped
+physics and actual-model results. No physical hardware or audio playback was used.
