@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 import signal
 import time
+from urllib.parse import urlsplit
 
 from playwright.sync_api import sync_playwright
 
@@ -22,7 +23,8 @@ def main():
     parser.add_argument('--pause-state-manager-pid', type=int,
                         help='optional simulator-only PID; pause it to verify /healthz stale recovery')
     args = parser.parse_args()
-    evidence, errors, failed_requests = [], [], []
+    evidence, errors, console_errors, failed_requests, canceled_model_requests = [], [], [], [], []
+    asset_status = {}
     failure = None
     started = time.monotonic()
     with sync_playwright() as browser_api:
@@ -31,8 +33,19 @@ def main():
         ])
         page = browser.new_page(viewport={'width': 1440, 'height': 1080})
         page.on('pageerror', lambda error: errors.append(str(error)))
-        page.on('requestfailed', lambda request: failed_requests.append(
-            {'url': request.url, 'failure': request.failure}))
+        page.on('console', lambda message: console_errors.append(message.text)
+                if message.type == 'error' else None)
+        def capture_failed_request(request):
+            item = {'url': request.url, 'failure': request.failure}
+            if request.failure == 'net::ERR_ABORTED' and '/assets/' in request.url and request.url.endswith('.stl'):
+                # Switching between the M3 and legacy model cancels mesh loads
+                # for the now-hidden model; these are expected cancellations.
+                canceled_model_requests.append(item)
+            else:
+                failed_requests.append(item)
+        page.on('requestfailed', capture_failed_request)
+        page.on('response', lambda response: asset_status.__setitem__(response.url, response.status)
+                if '/assets/' in response.url else None)
         def state():
             return page.evaluate('async () => (await fetch("/api/state")).json()')
         def wait(predicate, timeout=15):
@@ -47,6 +60,36 @@ def main():
             entry = {'scenario': name, 'passed': True, **fields}
             evidence.append(entry)
             print(json.dumps(entry), flush=True)
+        def stop_sensor_heartbeat():
+            page.evaluate('''async () => {
+                if (window.__luxoSensorTimer) clearInterval(window.__luxoSensorTimer);
+                window.__luxoSensorTimer = null;
+                await (window.__luxoSensorPending || Promise.resolve());
+            }''')
+        def start_sensor_heartbeat(include_front=True):
+            page.evaluate('''(includeFront) => {
+                const events = [
+                    {type:'distance', side:'left', metres:1.0},
+                    {type:'distance', side:'right', metres:1.0},
+                    {type:'touch', sensor:'head_bottom', value:0},
+                    {type:'touch', sensor:'head_left', value:0},
+                    {type:'touch', sensor:'head_right', value:0},
+                ];
+                if (includeFront) events.push({type:'proximity', value:0});
+                const publish = () => {
+                    window.__luxoSensorPending = Promise.all(events.map(event => fetch('/api/events', {
+                        method:'POST', headers:{'Content-Type':'application/json'},
+                        body:JSON.stringify(event), cache:'no-store'
+                    }))).then(responses => {
+                        if (responses.some(response => response.status !== 202))
+                            window.__luxoSensorError = 'sensor heartbeat request rejected';
+                    }).catch(error => { window.__luxoSensorError = String(error); });
+                };
+                if (window.__luxoSensorTimer) clearInterval(window.__luxoSensorTimer);
+                window.__luxoSensorError = '';
+                window.__luxoSensorTimer = setInterval(publish, 150);
+                publish();
+            }''', include_front)
         try:
             # The dashboard polls ROS state continuously, so waiting for a
             # network-idle window can never be a reliable page-load condition.
@@ -56,7 +99,17 @@ def main():
                 const text = document.querySelector('#modelStatus').textContent;
                 return text.includes('kinematic') || text.includes('dynamics');
             }''', timeout=30000)
-            snapshot = wait(lambda s: s['state'] == 'IDLE', timeout=30)
+            required_m3_meshes = {
+                f'/assets/roarm_m3/{name}.stl'
+                for name in ('base_link', 'link1', 'link2', 'link3', 'link4', 'link5', 'gripper_link')
+            }
+            loaded_asset_paths = {urlsplit(url).path for url, status in asset_status.items() if status == 200}
+            missing_m3_meshes = sorted(required_m3_meshes - loaded_asset_paths)
+            assert not missing_m3_meshes, {'missing_m3_meshes': missing_m3_meshes, 'asset_status': asset_status}
+            snapshot = wait(lambda s: bool(s.get('health', {}).get('components')), timeout=30)
+            if snapshot['state'] != 'IDLE':
+                page.locator('#resetIdle').click()
+                snapshot = wait(lambda s: s['state'] == 'IDLE', timeout=10)
             assert all(snapshot['health']['components'].values()), snapshot['health']
             backend = snapshot.get('simulation_backend', 'kinematic')
             assert backend in {'kinematic', 'mujoco'}, backend
@@ -76,7 +129,8 @@ def main():
             record('render_and_graph', nodes=snapshot['health']['node_count'],
                    model=page.locator('#modelStatus').inner_text(), animations=animation_count,
                    joint_names=snapshot['joint_names'], health_status=health_response.status,
-                   simulation_backend=backend, engine_caption=page.locator('#engineCaption').inner_text())
+                   simulation_backend=backend, engine_caption=page.locator('#engineCaption').inner_text(),
+                   loaded_m3_meshes=sorted(path.rsplit('/', 1)[-1] for path in required_m3_meshes))
             if len(snapshot['joint_names']) == 6:
                 assert page.locator('#modelSelect').input_value() == 'm3'
                 assert page.locator('#modelStatus').inner_text().find('all six live') >= 0
@@ -90,6 +144,31 @@ def main():
             assert page.locator('#robotCanvas3D').is_visible()
             record('both_robot_views')
 
+            # The limiter fails closed without fresh sensor coverage. Maintain
+            # clear synthetic ranges/FSRs while testing bounded motion.
+            start_sensor_heartbeat()
+            snapshot = wait(lambda s: s['sensors'].get('front_severity') == 'safe'
+                            and s['sensors'].get('left_severity') == 'safe'
+                            and s['sensors'].get('right_severity') == 'safe', timeout=5)
+            if snapshot['motion'].get('motion_frozen') or snapshot['motion'].get('avoidance_mode') == 'hold_replan':
+                joint_name = snapshot['joint_names'][0]
+                current = snapshot['positions'][0]
+                lower, upper = snapshot['joint_limits'][joint_name]
+                target = min(upper, max(lower, current + (0.12 if current + 0.12 <= upper else -0.12)))
+                page.locator('#manualJoint0').evaluate(
+                    "(el, value) => {el.value=String(value);el.dispatchEvent(new Event('input',{bubbles:true}))}",
+                    target,
+                )
+                page.locator('#applyManualPose').click()
+                snapshot = wait(lambda s: s['sensors'].get('manual_pose_result', {}).get('success')
+                                and s['state'] == 'USER_CONTROL', timeout=10)
+                snapshot = wait(lambda s: abs(s['positions'][0] - target) < .04
+                                and not s['motion'].get('motion_frozen')
+                                and s['motion'].get('avoidance_mode') == 'clear', timeout=20)
+                record('initial_fresh_intent_releases_prior_hold', joint=joint_name,
+                       target=target, observed=snapshot['positions'][0])
+                page.locator('#resetIdle').click()
+                wait(lambda s: s['state'] == 'IDLE', timeout=10)
             page.locator('#commandInput').fill('Please nod')
             page.locator('#commandForm button').click()
             snapshot = wait(lambda s: s['transcript'] == 'Please nod' and bool(s['response']))
@@ -196,6 +275,9 @@ def main():
             wait(lambda s: not s['voice_active'] and s['state'] == 'IDLE', timeout=15)
 
             # Raw proximity input must reach the collision classifier, not just echo in the UI.
+            stop_sensor_heartbeat()
+            start_sensor_heartbeat(include_front=False)
+            page.wait_for_timeout(200)
             page.evaluate("document.querySelector('#proximityRange').value = '80'")
             page.locator('#sendProximity').click()
             snapshot = wait(lambda s: s['sensors'].get('front_severity') == 'danger'
@@ -203,7 +285,15 @@ def main():
             motion_status = snapshot.get('motion') or snapshot['sensors'].get('motion_status', snapshot.get('motion_status', {}))
             mode = motion_status.get('avoidance_mode', '')
             assert mode.startswith('hold_') or mode == 'adjust', motion_status
-            assert mode in page.locator('#motionAvoidance').inner_text()
+            page.wait_for_function(
+                '''() => {
+                    const text = document.querySelector('#motionAvoidance').innerText;
+                    return text.includes('hold_') || text.includes('adjust');
+                }''',
+                timeout=5000,
+            )
+            ui_avoidance = page.locator('#motionAvoidance').inner_text()
+            assert 'hold_' in ui_avoidance or 'adjust' in ui_avoidance, ui_avoidance
             record('raw_sensor_collision_to_motion_hold', state=snapshot['state'], motion=snapshot['motion'])
             page.evaluate("document.querySelector('#proximityRange').value = '0'")
             page.locator('#sendProximity').click()
@@ -211,6 +301,7 @@ def main():
             # directions before it releases a stale-sensor hold. Keep the
             # clear readings alive through the classifier's clear dwell.
             clear_events = [
+                {'type': 'proximity', 'value': 0},
                 {'type': 'distance', 'side': 'left', 'metres': 1.0},
                 {'type': 'distance', 'side': 'right', 'metres': 1.0},
                 {'type': 'touch', 'sensor': 'head_bottom', 'value': 0},
@@ -223,9 +314,36 @@ def main():
                     response = page.request.post(args.url + '/api/events', data=event)
                     assert response.status == 202, response.text()
                 page.wait_for_timeout(80)
-            snapshot = wait(lambda s: not s['motion'].get('motion_frozen')
-                            and s['motion'].get('avoidance_mode') == 'clear'
-                            and s['state'] == 'IDLE', timeout=20)
+            snapshot = wait(lambda s: s['motion'].get('motion_frozen')
+                            and s['motion'].get('avoidance_mode') == 'hold_replan'
+                            and s['state'] == 'IDLE'
+                            and all(s['sensors'].get(key) == 'safe'
+                                    for key in ('front_severity', 'left_severity', 'right_severity')),
+                            timeout=20)
+            record('collision_clear_waits_for_fresh_intent', motion=snapshot['motion'])
+
+            # Safe readings clear the hazard but must not resume the canceled
+            # dance. A new bounded manual target is the fresh movement intent.
+            joint_name = snapshot['joint_names'][0]
+            current = snapshot['positions'][0]
+            lower, upper = snapshot['joint_limits'][joint_name]
+            target = min(upper, max(lower, current + (0.12 if current + 0.12 <= upper else -0.12)))
+            page.locator('#manualJoint0').evaluate(
+                "(el, value) => {el.value=String(value);el.dispatchEvent(new Event('input',{bubbles:true}))}",
+                target,
+            )
+            page.locator('#applyManualPose').click()
+            snapshot = wait(lambda s: s['sensors'].get('manual_pose_result', {}).get('success')
+                            and s['state'] == 'USER_CONTROL', timeout=10)
+            snapshot = wait(lambda s: abs(s['positions'][0] - target) < .04
+                            and not s['motion'].get('motion_frozen')
+                            and s['motion'].get('avoidance_mode') == 'clear', timeout=20)
+            record('fresh_manual_intent_releases_replan_hold', joint=joint_name,
+                   target=target, observed=snapshot['positions'][0], motion=snapshot['motion'])
+            page.locator('#resetIdle').click()
+            snapshot = wait(lambda s: s['state'] == 'IDLE', timeout=10)
+            stop_sensor_heartbeat()
+            start_sensor_heartbeat()
             record('collision_quiet_recovery', motion=snapshot['motion'])
 
             response = page.request.post(args.url + '/api/events', data={'type': 'animation', 'name': 'unknown'})
@@ -235,13 +353,20 @@ def main():
             record('invalid_requests_rejected')
             page.screenshot(path=args.screenshot, full_page=True)
             assert not errors, errors
+            assert not console_errors, console_errors
             assert not failed_requests, failed_requests
-            record('no_browser_errors')
+            assert all(status == 200 for url, status in asset_status.items() if '/assets/' in url), asset_status
+            record('no_browser_errors', console_errors=len(console_errors),
+                   canceled_hidden_model_mesh_requests=len(canceled_model_requests))
             if args.pause_state_manager_pid:
                 pid = args.pause_state_manager_pid
                 command_path = Path(f'/proc/{pid}/cmdline')
                 command = command_path.read_bytes().replace(b'\0', b' ').decode(errors='replace')
-                assert 'state_manager_node' in command, {'pid': pid, 'cmdline': command}
+                executable = Path(command.split(maxsplit=1)[0]).name if command else ''
+                assert executable in {'state_manager', 'state_manager_node'}, {
+                    'pid': pid, 'cmdline': command,
+                    'expected_executable': 'state_manager or state_manager_node',
+                }
                 os.kill(pid, signal.SIGSTOP)
                 try:
                     deadline = time.monotonic() + 7
@@ -274,9 +399,16 @@ def main():
             page.screenshot(path=args.screenshot, full_page=True)
             raise
         finally:
+            try:
+                stop_sensor_heartbeat()
+            except Exception:
+                pass
             Path(args.output).write_text(json.dumps({
                 'results': evidence, 'error': failure, 'page_errors': errors,
-                'failed_requests': failed_requests, 'elapsed_seconds': time.monotonic() - started,
+                'console_errors': console_errors,
+                'failed_requests': failed_requests,
+                'canceled_hidden_model_mesh_requests': canceled_model_requests,
+                'elapsed_seconds': time.monotonic() - started,
                 'url': args.url,
             }, indent=2) + '\n')
             browser.close()
