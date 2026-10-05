@@ -172,14 +172,21 @@ class Scenarios:
             expected=self.expected_durations.get(name,0)/2
             if self.feasible_retiming:
                 from luxo_behaviors.animation_capabilities import ANIMATION_CLASSES
-                from luxo_behaviors.joint_profiles import pose_to_animation_positions
+                from luxo_behaviors.joint_profiles import pose_to_animation_positions, animation_pose_for_profile
                 from luxo_behaviors.trajectory_timing import retime_cubic_plan
-                plugin=ANIMATION_CLASSES[name](None)
+                plugin=ANIMATION_CLASSES[name](self.node)
                 frames,durations=plugin.get_keyframes()
                 initial=pose_to_animation_positions(self.joint_names,self.joints[-1][1])
                 if getattr(plugin,'preserve_base_position',True):
                     frames=plugin.adjust_keyframes_to_current_base(frames,initial[0])
-                expected=sum(retime_cubic_plan(initial,frames,durations,speed_multiplier=2,
+                frames=plugin.prepare_for_current_position(initial,frames)
+                bounded=[]
+                axes=min(5,len(self.joint_names))
+                for frame in frames:
+                    _,mapped=animation_pose_for_profile(frame,self.runtime_profile,
+                        gripper_position=self.joints[-1][1][-1] if len(self.joint_names)==6 else 0.)
+                    row=list(frame);row[:axes]=mapped[:axes];bounded.append(row)
+                expected=sum(retime_cubic_plan(initial,bounded,durations,speed_multiplier=2,
                     max_velocity=self.velocity_cap,max_acceleration=self.acceleration_cap,
                     axes=min(5,len(self.joint_names))))
             _,feedback,result=self.goal(name,speed=2)
@@ -215,11 +222,12 @@ def main():
         from rclpy.parameter_client import AsyncParameterClient
         parameters=AsyncParameterClient(suite.node,'animation_command')
         assert parameters.wait_for_service(timeout_sec=10)
-        values=suite.future(parameters.get_parameters(['enable_feasible_retiming','max_joint_velocity','max_joint_acceleration'])).values
+        values=suite.future(parameters.get_parameters(['enable_feasible_retiming','max_joint_velocity','max_joint_acceleration','joint_profile'])).values
         assert values[0].bool_value,'Runtime feasible retiming is not enabled'
         suite.feasible_retiming=True
         suite.velocity_cap=values[1].double_value
         suite.acceleration_cap=values[2].double_value
+        suite.runtime_profile=values[3].string_value
         assert suite.velocity_cap>0 and suite.acceleration_cap>0
     try:
         assert suite.actions.wait_for_server(timeout_sec=15),'Action server absent'
