@@ -204,3 +204,13 @@ def test_suspended_action_release_preserves_newer_voice_session():
     assert manager._last_state_requester == 'voice_session'
     assert manager.request_state_transition(state.IDLE, 'voice_session', 80, is_completion=True)
     assert manager.current_state == state.IDLE
+
+
+def test_background_idle_cannot_clear_runtime_fault():
+    manager, state = make_manager()
+    assert manager.request_state_transition(state.IDLE, 'idle', 0)
+    assert manager.request_state_transition(state.ERROR, 'runtime', 100)
+    assert not manager.request_state_transition(state.IDLE, 'idle', 30)
+    assert not manager.request_state_transition(state.IDLE, 'voice_session', 80)
+    assert manager.current_state == state.ERROR
+    assert manager.request_state_transition(state.IDLE, 'maintenance', 100)

@@ -143,7 +143,10 @@ class StateTransitionPolicy:
 
     def _has_priority(self, current_state, requesting_node, priority,
                       current_priority):
-        if current_state in (self.error_state, self.idle_state):
+        if current_state == self.error_state:
+            # Ordinary idle/voice callbacks are not a maintenance recovery.
+            return priority >= max(100, current_priority)
+        if current_state == self.idle_state:
             return True
         if (requesting_node == "animation_command" and priority in (30, 50)
                 and current_state not in (self.collision_state, self.escape_state)):
