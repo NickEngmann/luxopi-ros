@@ -226,6 +226,8 @@ class WatchdogNode(Node):
         with self.lock:
             self.last_animation_status = self.get_clock().now()
             self.active_animation = any(s.status in (1, 2) for s in msg.status_list)
+            self.animation_failure_detected = False
+            self.recovery_attempts['animation'] = 0
     
     def serial_feedback_callback(self, msg):
         """Record serial position feedback."""

@@ -70,3 +70,22 @@ def test_executing_action_status_timeout_then_terminal_is_not_active():
     w = node(); w.animation_status_callback(NS(status_list=[NS(status=2)]))
     w.now = 61; w.check_topics(); assert w.animation_failure_detected
     w.animation_status_callback(NS(status_list=[NS(status=4)])); assert not w.active_animation
+    assert not w.animation_failure_detected
+
+
+def test_monitor_unavailable_metrics_are_not_fabricated_healthy_values(tmp_path):
+    import os
+    path = PATH.with_name('system_monitor.py')
+    cls = next(n for n in ast.parse(path.read_text()).body if isinstance(n, ast.ClassDef))
+    def unavailable(*a, **k): raise OSError('sensor absent')
+    ns = dict(Node=Node, os=os, time=time,
+              psutil=NS(cpu_percent=unavailable, virtual_memory=unavailable, sensors_temperatures=unavailable))
+    exec(compile(ast.Module(body=[cls], type_ignores=[]), str(path), 'exec'),ns)
+    obj = ns['SystemMonitor'].__new__(ns['SystemMonitor'])
+    obj.get_logger=lambda:NS(error=lambda *a:None,debug=lambda *a:None)
+    obj.temp_source=str(tmp_path/'absent')
+    assert math.isnan(obj.get_temperature())
+    assert math.isnan(obj.get_cpu_usage())
+    assert math.isnan(obj.get_ram_usage())
+    obj.temp_source=str(tmp_path/'thermal'); (tmp_path/'thermal').write_text('42000')
+    assert obj.get_temperature() == 42.0
