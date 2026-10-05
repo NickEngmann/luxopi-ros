@@ -513,6 +513,7 @@ class AnimationCommandActionServer(Node):
     def _execute_animation(self, goal_handle):
         """Execute animation in the action server thread."""
         start_time = time.time()
+        self._safety_intent_started = None
         collision_interruptions = 0
         final_state = "completed"
         cancel_event = self._goal_tracker.event_for(goal_handle)
@@ -996,6 +997,9 @@ class AnimationCommandActionServer(Node):
         if not getattr(self, 'enable_feasible_retiming', False):
             return None
         now = time.monotonic()
+        intent_started = getattr(self, '_safety_intent_started', None)
+        if intent_started is not None:
+            stage_started = intent_started
         if now - stage_started < .15:
             return None
         safety = getattr(self, '_sim_motion_status', None)
@@ -1110,6 +1114,8 @@ class AnimationCommandActionServer(Node):
             progress = min(1.0, (time.monotonic() - started) / duration)
             self.target_positions = plan.segment(index, progress)
             self.publish_joint_states_target()
+            if self._safety_intent_started is None:
+                self._safety_intent_started = time.monotonic()
             safety_reason = self._safety_interrupt_reason(started)
             if safety_reason:
                 self.get_logger().warning(safety_reason)
@@ -1178,6 +1184,8 @@ class AnimationCommandActionServer(Node):
             if target_intent_id is not None:
                 self._target_intent_id = target_intent_id
             self.publish_joint_states_target()
+            if self.enable_feasible_retiming and self._safety_intent_started is None:
+                self._safety_intent_started = time.monotonic()
 
             safety_reason = self._safety_interrupt_reason(start_monotonic)
             if safety_reason:

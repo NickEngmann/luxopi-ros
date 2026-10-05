@@ -107,6 +107,21 @@ def test_motion_hold_interrupt_has_controller_receipt_grace():
     assert 'hold_replan' in ns['_safety_interrupt_reason'](obj, 1.0)
 
 
+def test_short_stages_cannot_restart_the_per_goal_safety_grace():
+    ns, now = methods()
+    obj = server_obj(ns, enable_feasible_retiming=True,
+                     _safety_intent_started=1.0,
+                     _sim_motion_status=(1.0, 'hold_stale', None),
+                     collision_preempted=False)
+    for index in range(40):
+        now[0] = 1.151 + index * .01
+        obj._sim_motion_status = (now[0], 'hold_stale', None)
+        # A fresh stage starts every 10 ms. Grace belongs to the goal's first
+        # target, so none of these stage boundaries may defer interruption.
+        reason = ns['_safety_interrupt_reason'](obj, now[0] - .01)
+        assert 'hold_stale' in reason
+
+
 def test_warning_adjustment_has_a_bounded_motion_demonstration_window():
     ns, now = methods()
     obj = server_obj(ns, enable_feasible_retiming=True,
