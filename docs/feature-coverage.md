@@ -6,7 +6,7 @@ The machine-readable companion `feature-coverage.json` inventories 38 actual ani
 
 | Feature | Actual native ROS evidence | Physical/model scope |
 |---|---|---|
-| animations | passed: original33 full actions at2x plus cancellation/preemption/finite joint limit checks | unvalidated |
+| animations | passed: all38 full actions at2x plus4 core checks; finite bounded six-joint feedback | unvalidated |
 | voice_direction | passed: synthesized delayedPCM through shared estimator to VOICE_FOLLOWING/base joint turn and quiet IDLE | unvalidated |
 | voice_conversation | passed: supplied-WAV HTTP→actual Moonshine tiny→boundedintent/localLFM→transcript/response/motion/lamp;4functional fixtures returnIDLE | unvalidated |
 | collision | passed: raw distance classifier causes COLLISION_AVOIDING,20 actualjoint hold frames, restores USER_CONTROL | unvalidated |
@@ -20,7 +20,7 @@ The machine-readable companion `feature-coverage.json` inventories 38 actual ani
 | color | passed: actual virtual red/blue/green/white RGBW; all8colors offline | unvalidated |
 | manual_interaction | passed: USER_CONTROL manual joint target produces actual controller motion; torque/UART unvalidated | unvalidated |
 | watchdog | passed: integrated monitor-only node; isolated native missing heartbeat fault then fresh4joint+IDLE clears fault | unvalidated |
-| states | passed:28 real service assertions across12 states,priority/restoration/recovery/invalid/terminal guards | unvalidated |
+| states | passed:31 real service assertions across12 states including ownership and ERROR latch | unvalidated |
 
 Registered plugin names: attentive_listening, bouncy_wiggle, breathing, close, contented_sigh, curious, curious_exploration, dance, dreamy_drift, excited, folded_wiggle, gentle_sway, head_bobbing, idle, look_around_casual, neck_stretch, nod, playful, playful_bob, pondering, sad, scanning_watch, settling_adjust, shake, shoulder_shimmy, sleep, sleepy_melt, startled, stop, stretch, tail_wag, think, yawning_stretch.
 
@@ -83,3 +83,30 @@ that recognition is reliable across human speakers. Numeric `50%` and spoken
 remain failures. Reports: `/tmp/luxopi-audio-http-e2e.json` and
 `/tmp/luxopi-audio-http-e2e-initial-failure.json`; image
 `sha256:13195690b9e95ff783366087cc0f4ef79091266aaf076ab1e1f4c61a3abaa100`.
+
+## Final six-joint native checkpoint
+
+On 2026-10-05, 12:49–12:55 UTC, all eight suites passed on the isolated
+RoArm M3 graph: 42 motion cases (38 complete plugins plus four core cases),
+31 state assertions across all 12 states, 10 lamp checks, three vision checks,
+seven raw-sensor checks, two voice-owned command cases, four voice-cue cases,
+and two watchdog fault/recovery cases. The full motion playlist took 202.332s.
+Cues followed listening, acknowledge, thinking, speaking and settle. A replacement
+command retained ownership through the old goal's terminal callback; raw danger
+distance aborted a noninterrupting cue.
+
+Runtime label `9144558-final-M3-config`; production source SHA256:
+`e917c6e279ec659073f4b43b16de208aa3c36b8af978c7eedb6ad75e4819790a`.
+Host reports: `/tmp/luxopi-final-20261005T124956Z` and
+`/tmp/luxopi-final-20261005T125404Z`. The latter summary reuses the passing
+motion prefix only after checking identical production and runner hashes.
+A failed test incorrectly used privileged priority 100 for ordinary ERROR
+recovery; the corrected priority 30 test passed. Failed evidence was retained.
+Production nodes were unchanged. Per-runner hashes and timings are in
+`feature-coverage.json`.
+
+Finite bounded six-joint feedback and successful action timing do not prove
+endpoint tracking: a separate physics sweep observed substantial target lag
+despite action completion. Later feasible-duration retiming and reactive obstacle
+avoidance changes require new validation and are outside this checkpoint.
+No physical hardware or audible audio was used.

@@ -30,15 +30,14 @@ saved on success/failure. A pending or failed action is not counted as successfu
 feature coverage. Run against a controlled graph without unrelated random behavior
 producers or duplicate joint-state publishers.
 
-The script has been syntax-checked; actual native ROS execution remains pending
-until the integrated simulator launch is ready. Physical motor braking, actual
-microphone accuracy and acoustic speech recognition are outside this suite.
+Actual native execution is recorded below. Physical motor braking, microphone
+accuracy and acoustic recognition remain outside this suite.
 
 ## Integration checkpoint (2026-10-04)
 
 The hardware-free suite now passes 203 tests using `PYTHON=python3.12 bash scripts/test_offline.sh`. Animation duration scaling is shared through a ROS-independent helper and applied once. Local speech bridge intents include validated lamp controls; the standalone speech scenario runner checks transcript, response, status and animation publications without audio playback.
 
-The earlier 37-scenario native animation run exposed a double speed multiplier; that has been corrected, but final native timing and browser E2E reruns are still pending. The current visual/kinematic model is the legacy four-axis RoArm model, not a validated six-axis M3 physics model. Direction estimation fixtures exercise the shared GCC-PHAT estimator, but do not establish physical microphone-array accuracy. No physical robot is attached.
+The earlier 37-scenario native animation run exposed a double speed multiplier; that has been corrected, and the final native M3 checkpoint is below. Browser/physics validation are separate evidence. Direction estimation fixtures exercise the shared GCC-PHAT estimator, but do not establish physical microphone-array accuracy. No physical robot is attached.
 
 Completed baseline2026-10-05 UTC:37/37 cases passed (33 complete original
 plugins plus4core) in190.7s. Each action succeeded with feedback and finite
@@ -49,3 +48,30 @@ base, quiet restoredIDLE, collision priority rejectedvoice. Source SHA256 and
 retained initial runner-failure evidence are in `feature-coverage.json`; host
 report `/tmp/luxopi-final-20261005T025813Z/motion.json`. New cue plugins are
 outside this original33 baseline and must be rerun from the updated manifest.
+
+## Final six-joint native checkpoint
+
+On 2026-10-05, 12:49–12:55 UTC, all eight suites passed on the isolated
+RoArm M3 graph: 42 motion cases (38 complete plugins plus four core cases),
+31 state assertions across all 12 states, 10 lamp checks, three vision checks,
+seven raw-sensor checks, two voice-owned command cases, four voice-cue cases,
+and two watchdog fault/recovery cases. The full motion playlist took 202.332s.
+Cues followed listening, acknowledge, thinking, speaking and settle. A replacement
+command retained ownership through the old goal's terminal callback; raw danger
+distance aborted a noninterrupting cue.
+
+Runtime label `9144558-final-M3-config`; production source SHA256:
+`e917c6e279ec659073f4b43b16de208aa3c36b8af978c7eedb6ad75e4819790a`.
+Host reports: `/tmp/luxopi-final-20261005T124956Z` and
+`/tmp/luxopi-final-20261005T125404Z`. The latter summary reuses the passing
+motion prefix only after checking identical production and runner hashes.
+A failed test incorrectly used privileged priority 100 for ordinary ERROR
+recovery; the corrected priority 30 test passed. Failed evidence was retained.
+Production nodes were unchanged. Per-runner hashes and timings are in
+`feature-coverage.json`.
+
+Finite bounded six-joint feedback and successful action timing do not prove
+endpoint tracking: a separate physics sweep observed substantial target lag
+despite action completion. Later feasible-duration retiming and reactive obstacle
+avoidance changes require new validation and are outside this checkpoint.
+No physical hardware or audible audio was used.

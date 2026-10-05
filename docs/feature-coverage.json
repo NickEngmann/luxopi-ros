@@ -395,7 +395,7 @@
       "consumer": "animation_command",
       "offline_evidence": "tests/test_feature_contract.py",
       "offline_scope": "trajectory-generation",
-      "ros_scope": "passed: original33 full actions at2x plus cancellation/preemption/finite joint limit checks",
+      "ros_scope": "passed: all38 full actions at2x plus4 core checks and finite bounded six-joint feedback",
       "physical": "unvalidated"
     },
     {
@@ -521,7 +521,7 @@
       "consumer": "state_manager",
       "offline_evidence": "tests/test_state_scenarios.py",
       "offline_scope": "all12 actual state methods",
-      "ros_scope": "passed:28 real service assertions across12 states,priority/restoration/recovery/invalid/terminal guards",
+      "ros_scope": "passed:31 real service assertions across12 states including ownership and ERROR latch",
       "physical": "unvalidated"
     }
   ],
@@ -544,5 +544,98 @@
     "passed": 4,
     "scope": "Piper amy syntheticfixtures; no capture/playback; notaccuracy or physical latency",
     "fixture_caveat": "original Setbrightness tofiftypercent hallucinated10% prefix; polite0.85xspeed equivalent recognizedcleanly, failedreport retained"
+  },
+  "final_m3_native_evidence": {
+    "started_at": "2026-10-05T12:54:04.682006+00:00",
+    "runtime_commit": "9144558-final-M3-config",
+    "source_sha256": "e917c6e279ec659073f4b43b16de208aa3c36b8af978c7eedb6ad75e4819790a",
+    "suites": [
+      {
+        "script": "run_motion_scenarios.py",
+        "passed": true,
+        "exit_code": 0,
+        "duration_seconds": 202.332,
+        "log": "/tmp/luxopi-final-20261005T124956Z/run_motion_scenarios.py.log",
+        "reused_from": "/tmp/luxopi-final-20261005T124956Z/summary.json"
+      },
+      {
+        "script": "run_state_scenarios.py",
+        "passed": true,
+        "exit_code": 0,
+        "duration_seconds": 1.617,
+        "log": "/tmp/luxopi-final-20261005T125404Z/run_state_scenarios.py.log"
+      },
+      {
+        "script": "run_lighting_scenarios.py",
+        "passed": true,
+        "exit_code": 0,
+        "duration_seconds": 5.775,
+        "log": "/tmp/luxopi-final-20261005T125404Z/run_lighting_scenarios.py.log"
+      },
+      {
+        "script": "run_vision_scenarios.py",
+        "passed": true,
+        "exit_code": 0,
+        "duration_seconds": 21.603,
+        "log": "/tmp/luxopi-final-20261005T125404Z/run_vision_scenarios.py.log"
+      },
+      {
+        "script": "run_sensor_scenarios.py",
+        "passed": true,
+        "exit_code": 0,
+        "duration_seconds": 22.202,
+        "log": "/tmp/luxopi-final-20261005T125404Z/run_sensor_scenarios.py.log"
+      },
+      {
+        "script": "run_voice_motion_scenarios.py",
+        "passed": true,
+        "exit_code": 0,
+        "duration_seconds": 8.731,
+        "log": "/tmp/luxopi-final-20261005T125404Z/run_voice_motion_scenarios.py.log"
+      },
+      {
+        "script": "run_voice_cue_scenarios.py",
+        "passed": true,
+        "exit_code": 0,
+        "duration_seconds": 23.811,
+        "log": "/tmp/luxopi-final-20261005T125404Z/run_voice_cue_scenarios.py.log"
+      },
+      {
+        "script": "run_watchdog_scenarios.py",
+        "passed": true,
+        "exit_code": 0,
+        "duration_seconds": 14.494,
+        "log": "/tmp/luxopi-final-20261005T125404Z/run_watchdog_scenarios.py.log"
+      }
+    ],
+    "output_directory": "/tmp/luxopi-final-20261005T125404Z",
+    "runner_sha256": {
+      "run_motion_scenarios.py": "6ac499f05880b70595bd90c22fe28313556a6c6c03180f197200e5d8cb05ad40",
+      "run_state_scenarios.py": "9d48beadbf094a82f9af501b8c2578039a46b5b5c16ae04a87f3d37bada7b134",
+      "run_lighting_scenarios.py": "04cd3d1ae0f8f9c2efddceda51c25920cb6e3c5ec4b0dff300420141a8f20579",
+      "run_vision_scenarios.py": "ed0a55a32c154f013c983c6960d3b97160e17a39f26ceef4269699a9edb063f7",
+      "run_sensor_scenarios.py": "0c41ef98bc8bb557195c3b68c107818fedefc6c4aad518c5120f3218147c6c22",
+      "run_voice_motion_scenarios.py": "c33a8581c2224c9002b9da5fafd029124a59ae24c3d4f678e37fb9f114c248e0",
+      "run_voice_cue_scenarios.py": "a17f913971a858f747126f774b74315a41a13079bb0b768bbd49b88cbb8d1590",
+      "run_watchdog_scenarios.py": "eed123b3872649dacddbfc68ad4d7c55cfff680bc855a504ccd6f12599648386"
+    },
+    "resumed_from": "/tmp/luxopi-final-20261005T124956Z/summary.json",
+    "ended_at": "2026-10-05T12:55:42.917705+00:00",
+    "joint_profile": "roarm_m3",
+    "animation_count": 38,
+    "suite_count": 8,
+    "assertion_counts": {
+      "motion": 42,
+      "states": 31,
+      "lighting": 10,
+      "vision": 3,
+      "sensors": 7,
+      "voice_motion": 2,
+      "voice_cues": 4,
+      "watchdog": 2
+    },
+    "production_changes_during_run": false,
+    "reports_copied_to_host": true,
+    "limits": "Silent domain73 localhost-only transport/action evidence; finite bounded six-joint feedback and action timing do not prove endpoint tracking or physical accuracy. Later avoidance/retiming source changes are outside this runtime."
   }
 }
