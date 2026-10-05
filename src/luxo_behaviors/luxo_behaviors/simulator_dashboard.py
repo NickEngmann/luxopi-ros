@@ -17,10 +17,12 @@ from std_msgs.msg import Bool, Float32, Int16, String, UInt8
 from luxo_interfaces.srv import RequestStateTransition
 
 from luxo_behaviors.simulator_protocol import (
+    MANUAL_JOINT_LIMITS,
     MAX_AUDIO_BYTES,
     MAX_EVENT_BYTES,
     normalize_event,
 )
+from luxo_behaviors.roarm_m3_kinematics import M3_JOINT_LIMITS, M3_JOINT_NAMES
 
 
 STATE_AURAS = {
@@ -283,8 +285,10 @@ class SimulatorDashboard(Node):
                     # The helper returns a validated UUID basename, so remove only
                     # the file created by this rejected request.
                     try:
-                        (Path(node._audio_directory) / name).unlink(missing_ok=True)
-                    except OSError as exc:
+                        from luxo_behaviors.audio_input import remove_audio
+
+                        remove_audio(name, node._audio_directory)
+                    except (OSError, ValueError) as exc:
                         node.get_logger().warning(f"could not remove rejected upload {name}: {exc}")
                     self._reply(429, json.dumps({"error": "simulator event queue is full"}))
                     return
@@ -296,9 +300,19 @@ class SimulatorDashboard(Node):
         with self._lock:
             result = dict(self._snapshot)
             result["sensors"] = dict(self._snapshot["sensors"])
+            joint_names = set(result.get("joint_names", []))
             result["aura"] = self._aura_color(result)
             result["health"] = self._health_summary(result)
             result["audio_upload"] = self._audio_upload_enabled
+            if joint_names == set(M3_JOINT_NAMES):
+                limits = M3_JOINT_LIMITS
+            elif joint_names == set(MANUAL_JOINT_LIMITS):
+                limits = MANUAL_JOINT_LIMITS
+            else:
+                limits = {}
+            result["joint_limits"] = {
+                name: list(bounds) for name, bounds in limits.items()
+            }
             return result
 
     @staticmethod

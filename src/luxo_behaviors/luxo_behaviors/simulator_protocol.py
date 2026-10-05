@@ -3,6 +3,8 @@
 import math
 import re
 
+from luxo_behaviors.roarm_m3_kinematics import M3_JOINT_LIMITS, M3_JOINT_NAMES
+
 
 TOUCH_SENSORS = {"head_top", "head_left", "head_bottom", "head_right"}
 DISTANCE_SIDES = {"left", "right"}
@@ -55,10 +57,7 @@ def normalize_event(payload):
 
     if kind == "audio_file":
         name = payload.get("name")
-        if not isinstance(name, str) or not re.fullmatch(
-            r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\.wav",
-            name,
-        ):
+        if not isinstance(name, str) or not re.fullmatch(r"[0-9a-fA-F]{32}\.wav", name):
             raise ValueError("audio file must be a UUID WAV basename")
         return {"type": kind, "name": name}
 
@@ -82,10 +81,17 @@ def normalize_event(payload):
 
     if kind == "manual_joint_target":
         positions = payload.get("positions")
-        if not isinstance(positions, dict) or set(positions) != set(MANUAL_JOINT_LIMITS):
-            raise ValueError("manual pose must specify all four URDF joints")
+        if not isinstance(positions, dict):
+            raise ValueError("manual pose must specify all joint positions")
+        supplied = set(positions)
+        if supplied == set(MANUAL_JOINT_LIMITS):
+            limits = MANUAL_JOINT_LIMITS
+        elif supplied == set(M3_JOINT_NAMES):
+            limits = M3_JOINT_LIMITS
+        else:
+            raise ValueError("manual pose must specify all four legacy or all six vendor joints")
         normalized = {}
-        for name, bounds in MANUAL_JOINT_LIMITS.items():
+        for name, bounds in limits.items():
             value = _number(positions[name], name)
             if not bounds[0] <= value <= bounds[1]:
                 raise ValueError(f"{name} is outside its URDF limits")

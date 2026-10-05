@@ -5,6 +5,7 @@ import math
 import pytest
 
 from luxo_behaviors.simulator_protocol import ANIMATION_NAMES, STATE_NAMES, normalize_event
+from luxo_behaviors.roarm_m3_kinematics import M3_JOINT_NAMES
 
 
 @pytest.mark.parametrize(
@@ -60,7 +61,7 @@ def test_all_twelve_fsm_states_and_four_joint_manual_pose_are_supported():
 
 
 def test_audio_file_event_accepts_only_uuid_wav_basename():
-    name = "51a9e721-3460-4bb5-b4a8-b5ec2ac249e7.wav"
+    name = "51a9e72134604bb5b4a8b5ec2ac249e7.wav"
     assert normalize_event({"type": "audio_file", "name": name}) == {
         "type": "audio_file",
         "name": name,
@@ -68,6 +69,19 @@ def test_audio_file_event_accepts_only_uuid_wav_basename():
     for invalid in ("../../recording.wav", "recording.wav", name + ".wav", "../" + name):
         with pytest.raises(ValueError):
             normalize_event({"type": "audio_file", "name": invalid})
+
+
+def test_six_axis_manual_pose_requires_exact_vendor_names_and_limits():
+    pose = {name: 0.0 for name in M3_JOINT_NAMES}
+    pose["link5_to_gripper_link"] = 1.25
+    normalized = normalize_event({"type": "manual_joint_target", "positions": pose})
+    assert normalized["positions"] == pose
+    pose["link5_to_gripper_link"] = 1.6
+    with pytest.raises(ValueError, match="outside"):
+        normalize_event({"type": "manual_joint_target", "positions": pose})
+    pose.pop("link5_to_gripper_link")
+    with pytest.raises(ValueError, match="four legacy or all six"):
+        normalize_event({"type": "manual_joint_target", "positions": pose})
 
 
 @pytest.mark.parametrize(
