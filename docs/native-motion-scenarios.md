@@ -39,3 +39,13 @@ microphone accuracy and acoustic speech recognition are outside this suite.
 The hardware-free suite now passes 203 tests using `PYTHON=python3.12 bash scripts/test_offline.sh`. Animation duration scaling is shared through a ROS-independent helper and applied once. Local speech bridge intents include validated lamp controls; the standalone speech scenario runner checks transcript, response, status and animation publications without audio playback.
 
 The earlier 37-scenario native animation run exposed a double speed multiplier; that has been corrected, but final native timing and browser E2E reruns are still pending. The current visual/kinematic model is the legacy four-axis RoArm model, not a validated six-axis M3 physics model. Direction estimation fixtures exercise the shared GCC-PHAT estimator, but do not establish physical microphone-array accuracy. No physical robot is attached.
+
+Completed baseline2026-10-05 UTC:37/37 cases passed (33 complete original
+plugins plus4core) in190.7s. Each action succeeded with feedback and finite
+URDF-bounded actual joints;2x durations matched configured durations (for example
+breathing7.03s vs6.70s expected). Cancel ended CANCELED, preemption ABORTED the
+old goal without duplicate joint publishers, delayedPCM direction turned the
+base, quiet restoredIDLE, collision priority rejectedvoice. Source SHA256 and
+retained initial runner-failure evidence are in `feature-coverage.json`; host
+report `/tmp/luxopi-final-20261005T025813Z/motion.json`. New cue plugins are
+outside this original33 baseline and must be rerun from the updated manifest.

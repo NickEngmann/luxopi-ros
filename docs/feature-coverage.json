@@ -395,7 +395,7 @@
       "consumer": "animation_command",
       "offline_evidence": "tests/test_feature_contract.py",
       "offline_scope": "trajectory-generation",
-      "ros_scope": "motion-agent native action suite pending",
+      "ros_scope": "passed: original33 full actions at2x plus cancellation/preemption/finite joint limit checks",
       "physical": "unvalidated"
     },
     {
@@ -404,7 +404,7 @@
       "consumer": "sim_direction_node then motion controller",
       "offline_evidence": "tests/test_direction_estimation.py",
       "offline_scope": "actual delayed PCM\u2192GCC angle",
-      "ros_scope": "native joint-turn pending",
+      "ros_scope": "passed: synthesized delayedPCM through shared estimator to VOICE_FOLLOWING/base joint turn and quiet IDLE",
       "physical": "unvalidated"
     },
     {
@@ -413,7 +413,7 @@
       "consumer": "voice-event bridge",
       "offline_evidence": "AI event service suite",
       "offline_scope": "offline model+bridge",
-      "ros_scope": "native speech consumer pending",
+      "ros_scope": "passed: explicit voice status retains USER_CONTROL through real legacy-command action; actual supplied-audio ASR/LLM HTTP checked separately",
       "physical": "unvalidated"
     },
     {
@@ -422,7 +422,7 @@
       "consumer": "collision_node",
       "offline_evidence": "tests/test_collision_faults.py",
       "offline_scope": "actual callback classification",
-      "ros_scope": "native controller collision pending",
+      "ros_scope": "passed: raw distance classifier causes COLLISION_AVOIDING,20 actualjoint hold frames, restores USER_CONTROL",
       "physical": "unvalidated"
     },
     {
@@ -431,7 +431,7 @@
       "consumer": "collision_node then behavior coordinator",
       "offline_evidence": "tests/test_state_scenarios.py; tests/test_collision_faults.py",
       "offline_scope": "state interruption only",
-      "ros_scope": "raw touch\u2192petting motion pending",
+      "ros_scope": "passed: raw top touch\u2192PETTING\u2192folded_wiggle action475joint frames and releaseIDLE; all3side/bottom outputs",
       "physical": "unvalidated"
     },
     {
@@ -440,25 +440,25 @@
       "consumer": "collision_node passthrough /gestures",
       "offline_evidence": "tests/test_feature_contract.py",
       "offline_scope": "actual passthrough callback",
-      "ros_scope": "no gesture-motion consumer exists",
+      "ros_scope": "passed: left/right/up/down actual /gestures passthrough; no movement consumer exists",
       "physical": "unvalidated"
     },
     {
       "id": "vision_emotion",
-      "input": "/camera/emotion",
-      "consumer": "camera or sim behavior controller",
-      "offline_evidence": "motion/UI suite pending",
-      "offline_scope": "injected message only pending",
-      "ros_scope": "vendor inference unmeasured",
+      "input": "/sim/camera/emotion",
+      "consumer": "shared VisionReactionMixin + sim_camera_interaction",
+      "offline_evidence": "tests/test_vision_reactions.py",
+      "offline_scope": "actual shared policy/callbacks,16 cases",
+      "ros_scope": "passed: injected detection\u2192shared sad policy\u2192EMOTION_REACTING\u2192real sad action259joint frames; neural inference not tested",
       "physical": "unvalidated"
     },
     {
       "id": "vision_person_distance",
-      "input": "/camera/person_distance",
-      "consumer": "camera interaction",
-      "offline_evidence": "pending",
-      "offline_scope": "no inference claim",
-      "ros_scope": "consumer behavior pending",
+      "input": "/sim/camera/person_distance and person_present",
+      "consumer": "shared VisionReactionMixin + sim_camera_interaction",
+      "offline_evidence": "tests/test_vision_reactions.py",
+      "offline_scope": "actual shared policy/callbacks,16 cases",
+      "ros_scope": "passed:1.2m detection output, explicit person loss and3s stale expiry; no neural inference claim",
       "physical": "unvalidated"
     },
     {
@@ -467,7 +467,7 @@
       "consumer": "state_manager",
       "offline_evidence": "tests/test_feature_contract.py",
       "offline_scope": "actual callback+LED sink",
-      "ros_scope": "native visual pending",
+      "ros_scope": "passed: actual virtual lamp off/on telemetry",
       "physical": "unvalidated"
     },
     {
@@ -476,7 +476,7 @@
       "consumer": "state_manager",
       "offline_evidence": "tests/test_feature_contract.py",
       "offline_scope": "actual callback+LED sink",
-      "ros_scope": "native visual pending",
+      "ros_scope": "passed: actual virtual brightness0.25\u21920.5",
       "physical": "unvalidated"
     },
     {
@@ -485,7 +485,7 @@
       "consumer": "state_manager",
       "offline_evidence": "tests/test_feature_contract.py",
       "offline_scope": "actual callback+LED sink",
-      "ros_scope": "native visual pending",
+      "ros_scope": "passed: actual virtual warm1.0 andneutral0.5 RGBW",
       "physical": "unvalidated"
     },
     {
@@ -494,7 +494,7 @@
       "consumer": "state_manager",
       "offline_evidence": "tests/test_feature_contract.py",
       "offline_scope": "all8actual RGBW colors",
-      "ros_scope": "native visual pending",
+      "ros_scope": "passed: actual virtual red/blue/green/white RGBW; all8colors offline",
       "physical": "unvalidated"
     },
     {
@@ -503,16 +503,16 @@
       "consumer": "dynamic adaptation",
       "offline_evidence": "motion suite pending",
       "offline_scope": "physical UART/torque feature; simulator equivalent pending",
-      "ros_scope": "native controller pending",
+      "ros_scope": "passed: USER_CONTROL manual joint target produces actual controller motion; torque/UART unvalidated",
       "physical": "unvalidated"
     },
     {
       "id": "watchdog",
-      "input": "/luxo/current_state",
+      "input": "/luxo/state_info and /joint_states",
       "consumer": "watchdog",
-      "offline_evidence": "pending",
-      "offline_scope": "timer recovery pending",
-      "ros_scope": "fault recovery pending",
+      "offline_evidence": "tests/test_watchdog_faults.py",
+      "offline_scope": "actual timer/callback fault checks and unavailable health metrics,6 cases",
+      "ros_scope": "passed: integrated monitor-only node; isolated native missing heartbeat fault then fresh4joint+IDLE clears fault",
       "physical": "unvalidated"
     },
     {
@@ -521,9 +521,20 @@
       "consumer": "state_manager",
       "offline_evidence": "tests/test_state_scenarios.py",
       "offline_scope": "all12 actual state methods",
-      "ros_scope": "native service scenarios pending",
+      "ros_scope": "passed:28 real service assertions across12 states,priority/restoration/recovery/invalid/terminal guards",
       "physical": "unvalidated"
     }
   ],
-  "vendor_catalog_note": "resource/voice_command.md is the DFRobot vendor catalog; only inventory.voice_command_ids are mapped in LuxoPI. Vendor navigation/QR/tag features are not implemented guarantees."
+  "vendor_catalog_note": "resource/voice_command.md is the DFRobot vendor catalog; only inventory.voice_command_ids are mapped in LuxoPI. Vendor navigation/QR/tag features are not implemented guarantees.",
+  "native_evidence": {
+    "date": "2026-10-05 UTC",
+    "runtime_commit": "e34f4d7 with script-only test corrections0fa48b3/fb4c6b1/4971ab3",
+    "source_sha256": "bb04a2c9849831237f9c236df5b612dc0555fbc15a044bc2db4cae1787c8a8d5",
+    "production_changes_during_run": false,
+    "reports": [
+      "/tmp/luxopi-final-20261005T025813Z",
+      "/tmp/luxopi-final-20261005T030502Z"
+    ],
+    "limits": "ROS_DOMAIN_ID73 localhost-only; no physical devices/audio; original33 baseline, new cues require separate native validation"
+  }
 }
