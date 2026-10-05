@@ -20,6 +20,8 @@ def main():
     parser.add_argument('--url', default='http://127.0.0.1:8080')
     parser.add_argument('--output', default='/tmp/luxopi-browser-e2e.json')
     parser.add_argument('--screenshot', default='/tmp/luxopi-simulator-dashboard.png')
+    parser.add_argument('--expected-backend', choices=('kinematic', 'mujoco'),
+                        help='fail if the dashboard reports a different simulation engine')
     parser.add_argument('--pause-state-manager-pid', type=int,
                         help='optional simulator-only PID; pause it to verify /healthz stale recovery')
     args = parser.parse_args()
@@ -113,6 +115,12 @@ def main():
             assert all(snapshot['health']['components'].values()), snapshot['health']
             backend = snapshot.get('simulation_backend', 'kinematic')
             assert backend in {'kinematic', 'mujoco'}, backend
+            if args.expected_backend:
+                assert backend == args.expected_backend, {
+                    'expected_backend': args.expected_backend,
+                    'reported_backend': backend,
+                    'engine_caption': page.locator('#engineCaption').inner_text(),
+                }
             expected_engine = 'MuJoCo M3 dynamics' if backend == 'mujoco' else 'Kinematic preview'
             page.wait_for_function(
                 '(expected) => document.querySelector("#engineCaption").textContent.includes(expected)',

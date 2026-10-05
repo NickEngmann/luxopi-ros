@@ -9,6 +9,17 @@ from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 from launch_ros.substitutions import FindPackageShare
 
+
+def _simulator_dashboard_parameters():
+    """Keep the dashboard's displayed engine aligned with the launched backend."""
+    return {
+        'host': LaunchConfiguration('simulator_host'),
+        'port': LaunchConfiguration('simulator_port'),
+        'audio_directory': LaunchConfiguration('simulator_audio_directory'),
+        'simulation_backend': LaunchConfiguration('simulation_backend'),
+    }
+
+
 def generate_launch_description():
     # Launch arguments with better defaults for simulation
     use_hardware = LaunchConfiguration('use_hardware', default='false')
@@ -560,11 +571,7 @@ def generate_launch_description():
         executable='simulator_dashboard',
         name='simulator_dashboard',
         output='screen',
-        parameters=[{
-            'host': LaunchConfiguration('simulator_host'),
-            'port': LaunchConfiguration('simulator_port'),
-            'audio_directory': LaunchConfiguration('simulator_audio_directory'),
-        }],
+        parameters=[_simulator_dashboard_parameters()],
         condition=IfCondition(PythonExpression([
             "'", use_hardware, "' == 'false' and '", LaunchConfiguration('enable_simulator_dashboard'), "' == 'true'"
         ]))
