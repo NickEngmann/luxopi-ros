@@ -34,7 +34,8 @@ from luxo_behaviors.command_behavior import CommandBehavior
 class BehaviorCoordinator(PettingBehavior, IdleBehavior, VoiceBehavior, CollisionBehavior, CommandBehavior):
     """Class to handle behavior coordination for the Luxo robot."""
     
-    def __init__(self, node, send_safe_joint_command_callback, publish_actual_joint_states_callback):
+    def __init__(self, node, send_safe_joint_command_callback, publish_actual_joint_states_callback,
+                 required_sensor_directions=()):
         """
         Initialize the BehaviorCoordinator system.
         
@@ -130,7 +131,10 @@ class BehaviorCoordinator(PettingBehavior, IdleBehavior, VoiceBehavior, Collisio
             reactive_limits['L1_to_L2'] = (
                 shoulder_limits['min'], shoulder_limits['max']
             )
-        self.reactive_avoidance = ReactiveAvoidance(limits=reactive_limits)
+        self.reactive_avoidance = ReactiveAvoidance(
+            limits=reactive_limits,
+            required_directions=required_sensor_directions,
+        )
         self._reactive_sensor_status_seen = set()
         
         # Additional tracking variables with ROS time

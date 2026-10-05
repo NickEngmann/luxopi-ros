@@ -8,7 +8,7 @@ from launch.actions import DeclareLaunchArgument, EmitEvent, IncludeLaunchDescri
 from launch.event_handlers import OnProcessExit
 from launch.events import Shutdown
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import LaunchConfiguration
+from launch.substitutions import LaunchConfiguration, PythonExpression
 from launch_ros.actions import Node
 from launch.conditions import IfCondition
 from launch_ros.parameter_descriptions import ParameterValue
@@ -41,6 +41,7 @@ def generate_launch_description():
             "enable_simulator_dashboard": LaunchConfiguration("enable_simulator_dashboard"),
             "simulator_host": LaunchConfiguration("simulator_host"),
             "simulator_port": LaunchConfiguration("simulator_port"),
+            "required_sensor_directions": LaunchConfiguration("required_sensor_directions"),
             "speech_backend": LaunchConfiguration("speech_backend"),
             "speech_service_command": LaunchConfiguration("speech_service_command"),
             "speech_service_cwd": LaunchConfiguration("speech_service_cwd"),
@@ -99,6 +100,18 @@ def generate_launch_description():
         DeclareLaunchArgument("enable_speech_bridge", default_value="true"),
         DeclareLaunchArgument("enable_sim_sensors", default_value="true"),
         DeclareLaunchArgument("enable_world_sensor_fixture", default_value="false"),
+        DeclareLaunchArgument(
+            "required_sensor_directions",
+            default_value=PythonExpression([
+                "'front,left,right' if '",
+                LaunchConfiguration("enable_world_sensor_fixture"),
+                "' == 'true' else ''",
+            ]),
+            description=(
+                "Required fresh collision sensor directions; world sensor fixtures "
+                "require front,left,right by default, while sensorless scenes are optional"
+            ),
+        ),
         DeclareLaunchArgument("enable_sim_vision", default_value="true"),
         DeclareLaunchArgument("enable_gestures", default_value="true"),
         DeclareLaunchArgument("joint_profile", default_value="roarm_m3"),

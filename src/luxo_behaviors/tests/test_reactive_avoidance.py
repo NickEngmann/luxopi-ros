@@ -58,6 +58,15 @@ def test_right_and_front_warning_use_their_configured_axes():
     assert result["target"][1] == pytest.approx(0.28)
 
 
+def test_warning_severity_remains_actionable_when_legacy_collision_bool_is_false():
+    motion = policy()
+    current = [0.0, 0.2, 0.5, 0.0, 0.0, 0.0]
+    motion.update_sensor("left", False, 1.0, severity="warning", valid=True)
+    result = decision(motion, current, [-0.4, 0.2, 0.5, 0.0, 0.0, 0.0], 1.01)
+    assert result["mode"] == "adjust"
+    assert result["target"][0] == pytest.approx(0.08)
+
+
 def test_front_warning_holds_unmapped_axes_instead_of_extending_toward_sensor():
     current = [0.0, 0.2, 0.5, 0.1, -0.2, 0.0]
     motion = policy()
@@ -162,6 +171,41 @@ def test_clear_hysteresis_requires_a_fresh_post_clear_target():
     assert result["mode"] == "hold_replan"  # equal to the clear edge is not fresh
     result = decision(motion, current, [0.2, *current[1:]], 1.4, received=1.36)
     assert result["mode"] == "clear"
+
+
+def test_configured_required_sensor_coverage_holds_before_first_sample_and_on_dropout():
+    required = ReactiveAvoidance(
+        limits=ROARM_M3_LIMITS, required_directions="front,left,right"
+    )
+    current = [0.0, 0.2, 0.5, 0.0, 0.0, 0.0]
+    requested = [0.1, 0.3, 0.6, 0.1, 0.1, 0.0]
+
+    result = decision(required, current, requested, 1.0, received=1.0)
+    assert result["mode"] == "hold_stale"
+    assert result["stale"] == ["front", "left", "right"]
+    assert result["target"] == current
+
+    for direction in ("front", "left", "right"):
+        clear(required, direction, 1.1)
+    result = decision(required, current, requested, 1.2, received=1.2)
+    assert result["mode"] == "clear"
+
+    clear(required, "left", 1.3, valid=False)
+    result = decision(required, current, requested, 1.31, received=1.31)
+    assert result["mode"] == "hold_stale"
+    assert result["stale"] == ["left"]
+
+
+def test_optional_sensor_profile_remains_motion_capable_without_coverage():
+    optional = policy()
+    current = [0.0, 0.2, 0.5, 0.0, 0.0, 0.0]
+    requested = [0.1, 0.3, 0.6, 0.1, 0.1, 0.0]
+    assert decision(optional, current, requested, 1.0, received=1.0)["mode"] == "clear"
+
+
+def test_required_sensor_configuration_rejects_unknown_directions():
+    with pytest.raises(ValueError, match="unknown required"):
+        ReactiveAvoidance(required_directions=("camera",))
 
 
 @pytest.mark.parametrize("retreats", [

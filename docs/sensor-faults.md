@@ -2,11 +2,11 @@
 
 `python3 -m pytest tests/test_collision_faults.py -q` executes actual collision
 callbacks/evaluation/recovery methods with synthetic inputs and deterministic
-clock/service faults. Eight tests cover two distinct distance/proximity samples,
-threshold severity boundaries, malformed/nonfinite readings, stale caches,
-fresh recovery after a gap, absent I2C service, bounded reinitialization requests,
-and force-sensor collision preservation while an unrelated proximity/distance
-source reads safe or expires. No Blinka, DepthAI, PyAudio, ROS transport or physical
+clock/service faults. Coverage includes two distinct distance/proximity samples,
+threshold severity boundaries, malformed/nonfinite/out-of-range readings, stale
+caches, fresh recovery after a gap, absent I2C service, bounded reinitialization
+requests, and force-sensor collision preservation while an unrelated range sensor
+reads safe or expires. No Blinka, DepthAI, PyAudio, ROS transport or physical
 sensors are imported by this offline suite.
 
 Corrections preserve thresholds and published message contracts:
@@ -18,6 +18,21 @@ Corrections preserve thresholds and published message contracts:
   reassert a collision based on old data. Invalid distance readings do not refresh
   freshness. The existing timeout policy clears proximity/distance warning; this
   is not a claim that missing sensors establish a physically safe path.
+- APDS9960 samples must be within 0–255; VL53L4CD samples must be finite and within
+  1–400 cm. Invalid samples do not refresh health and break consecutive-reading
+  evidence rather than being paired with an earlier obstacle sample.
+- Side range readings between the hard-collision threshold (8 cm) and warning
+  threshold (15 cm) publish `severity=warning` while the legacy collision Bool
+  remains false. Motion consumers use the atomic severity record for a bounded
+  retreat in that outer band. The front APDS count is a relative 0–255 value and
+  does not represent a distance in centimeters.
+- Required motion coverage is explicit. Hardware with collision sensing enabled
+  requires fresh front/left/right classifier records by default; callers can
+  configure a smaller/empty direction set for a different sensor profile. A
+  sensorless simulator remains optional by default; a physics world-ray fixture
+  requires all three range directions unless overridden. Coverage only proves
+  that samples are arriving and valid, not that sensor mounts or retreat axes are
+  physically calibrated.
 - Service readiness probes are nonblocking. Reinitialization requests are capped
   at one per sensor per ten seconds while data remains unavailable.
 - Active touch/force collisions remain asserted when another sensor reports safe

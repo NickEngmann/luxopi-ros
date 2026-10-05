@@ -43,6 +43,14 @@ continue toward its sensor. Danger/contact, opposing side hazards, stale or
 invalid coverage, an unconfigured retreat axis, or a retreat blocked by a joint
 limit requests a hold. The sensor classifier publishes atomic
 `/collision/sensor_status` JSON records with severity, validity and sample ages.
+Range warnings are actionable from the classifier's `severity` field even when
+the legacy hard-collision Bool has not crossed its closer stop threshold. Motion
+coverage can also require fresh `front,left,right` samples before any movement;
+hardware enables this by default when collision sensing is enabled. Sensorless
+kinematic simulation leaves coverage optional. Required direction validity
+includes fresh range and matching FSR samples. The MuJoCo world-ray fixture
+requires all three directions by default and must supply synthetic fresh FSR
+clear samples; custom scenes may explicitly override `required_sensor_directions`.
 An optical clear cannot release a latched FSR contact: matching range and FSR
 inputs must both be fresh, and the FSR must publish a release. Fresh clear must
 persist through the dwell, then a new target is required; old animation targets

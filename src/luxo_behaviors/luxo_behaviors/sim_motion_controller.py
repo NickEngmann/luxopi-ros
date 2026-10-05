@@ -40,6 +40,7 @@ class SimMotionController(Node):
         self.declare_parameter("max_joint_velocity", 0.5)
         self.declare_parameter("max_joint_acceleration", 1.0)
         self.declare_parameter("voice_follow_priority", 75)
+        self.declare_parameter("required_sensor_directions", "")
         self.publish_rate = float(self.get_parameter("publish_rate").value)
         self.profile = str(self.get_parameter("joint_profile").value)
         self.joint_names, self.joint_limits = joint_profile(self.profile)
@@ -60,7 +61,10 @@ class SimMotionController(Node):
         self.measured_positions = [0.0] * len(self.joint_names)
         self.measured_velocities = [0.0] * len(self.joint_names)
         self.feedback_received_at = None
-        self.reactive_avoidance = ReactiveAvoidance(limits=self.joint_limits)
+        self.reactive_avoidance = ReactiveAvoidance(
+            limits=self.joint_limits,
+            required_directions=str(self.get_parameter("required_sensor_directions").value),
+        )
         self._sensor_status_seen = set()
         self._sensor_status_at = {}
         self._sensor_status_payload = {}

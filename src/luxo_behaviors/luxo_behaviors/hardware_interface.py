@@ -27,6 +27,7 @@ class RoArmHardwareInterface(Node):
         
         # Collision avoidance parameters
         self.declare_parameter('enable_collision_avoidance', True)
+        self.declare_parameter('required_sensor_directions', 'front,left,right')
         self.declare_parameter('soft_limit_distance', 12.0)  # cm
         self.declare_parameter('hard_limit_distance', 8.0)   # cm
         self.declare_parameter('max_deceleration', 2.0)  # rad/s²
@@ -227,6 +228,9 @@ class RoArmHardwareInterface(Node):
                 self,  # Pass this node to the collision system
                 self.send_safe_joint_command,  # Callback to send joint commands
                 self.publish_actual_joint_states,  # Callback to publish joint states
+                required_sensor_directions=str(
+                    self.get_parameter('required_sensor_directions').value
+                ),
             )
             
             # Pass idle animation parameters to collision avoidance

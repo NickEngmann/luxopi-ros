@@ -58,6 +58,18 @@ def generate_launch_description():
         default_value=PythonExpression(["'false' if '", use_hardware, "' == 'false' else 'true'"]),
         description='Enable I2C proximity and distance sensors (default: true in hardware, false in simulation)'
     )
+    declare_required_sensor_directions = DeclareLaunchArgument(
+        'required_sensor_directions',
+        default_value=PythonExpression([
+            "'front,left,right' if '", use_hardware,
+            "' == 'true' and '", sense_collision, "' == 'true' else ''"
+        ]),
+        description=(
+            'Comma-separated directions required for motion coverage. Hardware with '
+            'collision sensing requires all three by default; simulation defaults to '
+            'optional unless explicitly configured.'
+        ),
+    )
     
     # Gesture detection argument
     declare_enable_gestures = DeclareLaunchArgument(
@@ -417,6 +429,7 @@ def generate_launch_description():
             {'enable_movement_source_integration': True},  # Explicitly enable movement source integration
             {'ros__parameters': {'log_level': 'error'}},
             {'enable_voice_following': LaunchConfiguration('enable_voice')},
+            {'required_sensor_directions': LaunchConfiguration('required_sensor_directions')},
             {'voice_follow_speed': 0.3},
             {'voice_follow_deadzone': 15.0},
             {'voice_follow_smoothing': 0.3}
@@ -523,6 +536,7 @@ def generate_launch_description():
             {'max_joint_velocity': 0.5},
             {'max_joint_acceleration': 1.0},
             {'voice_follow_priority': 75},
+            {'required_sensor_directions': LaunchConfiguration('required_sensor_directions')},
             {'joint_profile': LaunchConfiguration('joint_profile')},
             {'publish_joint_states': PythonExpression([
                 "'false' if '", LaunchConfiguration('simulation_backend'), "' in ('gazebo', 'mujoco') else 'true'"
@@ -716,6 +730,7 @@ def generate_launch_description():
         declare_enable_depth_collision,
         declare_safety_distance,
         declare_sense_collision,
+        declare_required_sensor_directions,
         declare_enable_gestures,
         declare_enable_sim_sensors,
         declare_enable_simulator_dashboard,

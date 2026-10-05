@@ -229,8 +229,16 @@ class CollisionNode(Node):
     
     def proximity_data_callback(self, msg):
         """Handle proximity data from I2C manager"""
+        # APDS9960 proximity is an unsigned 8-bit count even though the ROS
+        # transport uses Int16. Reject malformed publisher values as unknown.
+        if (isinstance(msg.data, bool) or not isinstance(msg.data, int)
+                or not 0 <= msg.data <= 255):
+            self.proximity_seen = False
+            self.prev_proximity = 0
+            return
         now = self.get_clock().now()
-        fresh = (now - self.last_proximity_time).nanoseconds / 1e9 <= self.data_timeout
+        fresh = (self.proximity_seen and
+                 (now - self.last_proximity_time).nanoseconds / 1e9 <= self.data_timeout)
         self.prev_proximity = self.current_proximity if fresh else 0
         self.current_proximity = msg.data
         self.last_proximity_time = now
@@ -241,11 +249,13 @@ class CollisionNode(Node):
     
     def left_distance_callback(self, msg):
         """Handle left distance data from I2C manager"""
-        if not math.isfinite(msg.data) or msg.data < 1.0:
+        if not math.isfinite(msg.data) or not 1.0 <= msg.data <= 400.0:
             self.left_distance_seen = False
+            self.prev_left_distance = float('inf')
             return  # Invalid readings do not refresh sensor health.
         now = self.get_clock().now()
-        fresh = (now - self.last_left_distance_time).nanoseconds / 1e9 <= self.data_timeout
+        fresh = (self.left_distance_seen and
+                 (now - self.last_left_distance_time).nanoseconds / 1e9 <= self.data_timeout)
         self.prev_left_distance = self.current_left_distance if fresh else float('inf')
         self.current_left_distance = msg.data
         self.last_left_distance_time = now
@@ -256,11 +266,13 @@ class CollisionNode(Node):
     
     def right_distance_callback(self, msg):
         """Handle right distance data from I2C manager"""
-        if not math.isfinite(msg.data) or msg.data < 1.0:
+        if not math.isfinite(msg.data) or not 1.0 <= msg.data <= 400.0:
             self.right_distance_seen = False
+            self.prev_right_distance = float('inf')
             return  # Invalid readings do not refresh sensor health.
         now = self.get_clock().now()
-        fresh = (now - self.last_right_distance_time).nanoseconds / 1e9 <= self.data_timeout
+        fresh = (self.right_distance_seen and
+                 (now - self.last_right_distance_time).nanoseconds / 1e9 <= self.data_timeout)
         self.prev_right_distance = self.current_right_distance if fresh else float('inf')
         self.current_right_distance = msg.data
         self.last_right_distance_time = now
@@ -314,8 +326,9 @@ class CollisionNode(Node):
         fsr_name = {"front": "head_bottom", "left": "head_left", "right": "head_right"}[direction]
         fsr_age = (now - self.last_touch_sensor_time[fsr_name]).nanoseconds / 1e9
         fsr_fresh = self.touch_sensor_seen[fsr_name] and fsr_age <= self.data_timeout
-        # A range reading cannot clear a latched FSR contact by itself. Both
-        # sensing paths must be recently observed before a direction is clear.
+        # Require both range and FSR health for physical coverage. An optical
+        # clear or FSR timeout cannot release a latched contact.
+        fsr_contact_latched = self.fsr_collision_active[direction]
         combined_valid = bool(valid and fsr_fresh)
         age = (now - sensor_stamp).nanoseconds / 1e9 if sensor_seen else None
         message = String()
@@ -327,6 +340,8 @@ class CollisionNode(Node):
             "source": source,
             "sample_age_seconds": age,
             "fsr_sample_age_seconds": fsr_age if self.touch_sensor_seen[fsr_name] else None,
+            "fsr_sample_fresh": bool(fsr_fresh),
+            "fsr_contact_latched": bool(fsr_contact_latched),
             "valid_timeout_seconds": self.data_timeout,
         }, separators=(",", ":"))
         self.sensor_status_pub.publish(message)

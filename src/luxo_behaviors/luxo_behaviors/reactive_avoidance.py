@@ -26,15 +26,15 @@ DEFAULT_RETREATS = {
 class ReactiveAvoidance:
     """Latch atomic sensor statuses and adapt only along configured retreats.
 
-    A true warning changes a keyframe only if it requests motion toward that
-    sensor. Imminent/contact, conflicting left+right hazards, unknown coverage,
+    A true warning replaces motion with a bounded retreat on its configured
+    axis. Imminent/contact, conflicting left+right hazards, unknown coverage,
     or a retreat that cannot fit within joint limits requests a hold. A fresh
     measured clear must persist through the dwell and a new target must arrive
     after that clear edge before the previous course can resume.
     """
 
     def __init__(self, *, limits=None, retreats=None, escape_step=0.08,
-                 stale_after=0.5, clear_dwell=0.25):
+                 stale_after=0.5, clear_dwell=0.25, required_directions=()):
         self.limits = dict(limits or {})
         self.retreats = self._validate_retreats(
             DEFAULT_RETREATS if retreats is None else retreats
@@ -42,6 +42,14 @@ class ReactiveAvoidance:
         self.escape_step = self._positive_finite(escape_step, "escape_step")
         self.stale_after = self._positive_finite(stale_after, "stale_after")
         self.clear_dwell = self._positive_finite(clear_dwell, "clear_dwell")
+        if isinstance(required_directions, str):
+            required_directions = [
+                value.strip() for value in required_directions.split(",") if value.strip()
+            ]
+        self.required_directions = frozenset(required_directions)
+        unknown = self.required_directions.difference(DIRECTIONS)
+        if unknown:
+            raise ValueError(f"unknown required sensor directions: {sorted(unknown)}")
         self._sensors = {
             direction: {
                 "active": False,
@@ -93,7 +101,11 @@ class ReactiveAvoidance:
         sensor = self._sensors[direction]
         sensor["last_update"] = now
         sensor["valid"] = bool(valid)
-        if bool(active):
+        # Collision ROS publishes the useful 8–15 cm band as severity=warning
+        # while its legacy hard collision Bool remains false. Preserve the
+        # warning as a course-adjustment signal for both hardware and sim.
+        hazard = bool(active) or SEVERITY_RANK[severity] > SEVERITY_RANK["safe"]
+        if hazard:
             sensor["active"] = True
             if SEVERITY_RANK[severity] > SEVERITY_RANK[sensor["severity"]]:
                 sensor["severity"] = severity
@@ -109,6 +121,11 @@ class ReactiveAvoidance:
         now = self._finite(now, "snapshot timestamp")
         active, stale, imminent = set(), set(), set()
         for direction, sensor in self._sensors.items():
+            if direction in self.required_directions and (
+                not sensor["valid"] or sensor["last_update"] is None
+                or now - sensor["last_update"] > self.stale_after
+            ):
+                stale.add(direction)
             if not sensor["active"]:
                 continue
             if (not sensor["valid"] or sensor["last_update"] is None

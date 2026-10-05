@@ -117,7 +117,7 @@ def test_recovery_after_gap_requires_two_fresh_samples():
 def test_invalid_distance_never_refreshes_health_or_reinit_storms():
     node = make_node()
     node.now = 3
-    for invalid in (float('nan'), float('inf'), -2, 0, .9):
+    for invalid in (float('nan'), float('inf'), -2, 0, .9, 400.1, 10000):
         node.left_distance_callback(SimpleNamespace(data=invalid))
     assert node.last_left_distance_time.nanoseconds == 0
     node.check_data_timeout()
@@ -128,6 +128,44 @@ def test_invalid_distance_never_refreshes_health_or_reinit_storms():
     node.now = 14
     node.check_data_timeout()
     assert len(node.requests) == 6
+
+
+def test_invalid_sample_breaks_consecutive_distance_evidence():
+    node = make_node()
+    node.left_distance_callback(SimpleNamespace(data=4.0))
+    node.evaluate_collisions()
+    assert not node.outputs['left_collision_pub'][-1]
+
+    node.now = .1
+    node.left_distance_callback(SimpleNamespace(data=float('nan')))
+    node.now = .2
+    node.left_distance_callback(SimpleNamespace(data=4.0))
+    node.evaluate_collisions()
+    assert not node.outputs['left_collision_pub'][-1]
+
+    node.now = .3
+    node.left_distance_callback(SimpleNamespace(data=4.0))
+    node.evaluate_collisions()
+    assert node.outputs['left_collision_pub'][-1]
+
+
+def test_apds_proximity_rejects_values_outside_unsigned_sensor_range():
+    node = make_node()
+    node.proximity_data_callback(SimpleNamespace(data=100))
+    original_stamp = node.last_proximity_time.nanoseconds
+    for invalid in (-1, 256, 32767, True):
+        node.now += .1
+        node.proximity_data_callback(SimpleNamespace(data=invalid))
+        assert not node.proximity_seen
+        assert node.last_proximity_time.nanoseconds == original_stamp
+
+    node.now += .1
+    node.proximity_data_callback(SimpleNamespace(data=100))
+    node.evaluate_collisions()
+    assert node.outputs['collision_pub'][-1] is False
+    node.proximity_data_callback(SimpleNamespace(data=100))
+    node.evaluate_collisions()
+    assert node.outputs['collision_pub'][-1] is True
 
 
 def test_missing_i2c_service_never_blocks():
@@ -144,6 +182,22 @@ def test_configured_severity_boundaries():
     assert node.determine_severity(5) == 'warning'
     assert node.determine_severity(14.99) == 'warning'
     assert node.determine_severity(15) == 'safe'
+
+
+def test_side_warning_band_is_reported_as_warning_before_legacy_hard_bool():
+    node = make_node()
+    node.right_distance_callback(SimpleNamespace(data=10.0))
+    node.touch_head_right_callback(SimpleNamespace(data=0))
+    node.evaluate_collisions()
+    node.now = 0.1
+    node.right_distance_callback(SimpleNamespace(data=10.0))
+    node.evaluate_collisions()
+
+    status = json.loads(node.outputs['sensor_status_pub'][-1])
+    assert status['direction'] == 'right'
+    assert status['active'] is False  # legacy hard Bool remains 8 cm
+    assert status['valid'] is True
+    assert status['severity'] == 'warning'  # course-adjustment band extends to 15 cm
 
 
 def test_sensor_status_distinguishes_never_seen_and_invalid_samples_from_clear():
@@ -168,6 +222,37 @@ def test_sensor_status_distinguishes_never_seen_and_invalid_samples_from_clear()
     invalid = json.loads(node.outputs['sensor_status_pub'][-1])
     assert invalid['valid'] is False
     assert invalid['active'] is False
+
+
+def test_fresh_range_alone_is_not_full_physical_direction_coverage():
+    node = make_node()
+    node.right_distance_callback(SimpleNamespace(data=30.0))
+    node.evaluate_collisions()
+    status = json.loads(node.outputs['sensor_status_pub'][-1])
+    assert status['direction'] == 'right'
+    assert status['valid'] is False
+    assert status['fsr_sample_fresh'] is False
+    assert status['fsr_contact_latched'] is False
+
+
+def test_latched_contact_requires_fresh_fsr_sample_even_with_fresh_clear_range():
+    node = make_node()
+    node.fsr_collision_active['right'] = True
+    node.fsr_collision_start_time['right'] = Stamp(0)
+    node.right_distance_callback(SimpleNamespace(data=30.0))
+    node.evaluate_collisions()
+    status = json.loads(node.outputs['sensor_status_pub'][-1])
+    assert status['active'] is True
+    assert status['valid'] is False
+    assert status['fsr_contact_latched'] is True
+
+    node.touch_head_right_callback(SimpleNamespace(data=0))
+    node.right_distance_callback(SimpleNamespace(data=30.0))
+    node.evaluate_collisions()
+    status = json.loads(node.outputs['sensor_status_pub'][-1])
+    assert status['active'] is False
+    assert status['valid'] is True
+    assert status['fsr_sample_fresh'] is True
 
 
 def test_fsr_collision_not_cleared_by_safe_distance_or_timeout():
