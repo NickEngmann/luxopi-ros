@@ -20,6 +20,29 @@ def test_no_registered_feature_removed_or_renamed():
     assert module.inventory() == MANIFEST['inventory']
 
 
+def test_canonical_registry_is_deterministic_and_all_plans_validate():
+    from luxo_behaviors.animation_capabilities import ANIMATION_CLASSES
+    from luxo_behaviors.animation_plan import validate_animation_plan
+    for name, cls in ANIMATION_CLASSES.items():
+        plugin = cls(SimpleNamespace())
+        plan = validate_animation_plan(
+            *plugin.get_keyframes(), keyframe_names=plugin.get_keyframe_names()
+        )
+        assert plan == validate_animation_plan(
+            *plugin.get_keyframes(), keyframe_names=plugin.get_keyframe_names()
+        ), name
+
+
+def test_strict_animation_plan_rejects_bad_shape_duration_and_nonfinite_values():
+    from luxo_behaviors.animation_plan import validate_animation_plan
+    with pytest.raises(ValueError, match='acceleration'):
+        validate_animation_plan([[0, 0, 0, 0, 0]], [1.0])
+    with pytest.raises(ValueError, match='duration'):
+        validate_animation_plan([[0, 0, 0, 0, -1.5, 10]], [float('inf')])
+    with pytest.raises(ValueError, match='non-finite'):
+        validate_animation_plan([[0, 0, float('nan'), 0, -1.5, 10]], [1.0])
+
+
 @pytest.mark.parametrize('name',[item['name'] for item in MANIFEST['inventory']['animations']])
 def test_every_plugin_generates_finite_full_trajectory(name):
     import inspect,importlib

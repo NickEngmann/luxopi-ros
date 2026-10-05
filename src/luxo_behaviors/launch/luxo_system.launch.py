@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 from launch import LaunchDescription
-from launch.actions import IncludeLaunchDescription, DeclareLaunchArgument, LogInfo, ExecuteProcess
+from launch.actions import IncludeLaunchDescription, DeclareLaunchArgument, LogInfo, ExecuteProcess, RegisterEventHandler, Shutdown
 from launch.conditions import IfCondition, UnlessCondition
+from launch.event_handlers import OnProcessExit
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution, PythonExpression, Command
 from launch_ros.actions import Node
@@ -739,6 +740,28 @@ def generate_launch_description():
         i2c_info,
         troubleshooting_info,
         jsp_killer,
+        # A missing motion/state/UI process leaves a misleading, half-live
+        # simulator. Shut down the owned graph so Compose can recover it.
+        RegisterEventHandler(OnProcessExit(
+            target_action=state_manager_node,
+            on_exit=[Shutdown(reason='critical state_manager exited')],
+        )),
+        RegisterEventHandler(OnProcessExit(
+            target_action=sim_motion_controller_node,
+            on_exit=[Shutdown(reason='critical sim_motion_controller exited')],
+        )),
+        RegisterEventHandler(OnProcessExit(
+            target_action=simulation_animation_node,
+            on_exit=[Shutdown(reason='critical animation_command exited')],
+        )),
+        RegisterEventHandler(OnProcessExit(
+            target_action=simulator_dashboard_node,
+            on_exit=[Shutdown(reason='critical simulator_dashboard exited')],
+        )),
+        RegisterEventHandler(OnProcessExit(
+            target_action=speech_bridge_node,
+            on_exit=[Shutdown(reason='critical speech_bridge exited')],
+        )),
         voice_direction_node,
         sim_direction_node,
         speech_bridge_node,

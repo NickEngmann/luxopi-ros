@@ -10,7 +10,9 @@ from rclpy.node import Node
 from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSHistoryPolicy
 
 # Import core state machine components from state_machine.py
-from luxo_behaviors.state_machine import LuxoState, StateTransition
+from luxo_behaviors.state_machine import (
+    LuxoState, StateTransition, completion_matches_owner,
+)
 
 # ROS2 message imports
 from std_msgs.msg import Bool, String, Header
@@ -336,6 +338,16 @@ class StateManagerNode(Node):
             bool: True if transition was successful
         """
         with self._state_lock:
+            # Completion is an ownership operation, not a priority bypass.
+            # Ignore late callbacks once another subsystem has taken control.
+            if is_completion and not completion_matches_owner(
+                    self._last_state_requester, requesting_node):
+                self.get_logger().info(
+                    f"Ignoring stale completion from {requesting_node}; "
+                    f"current owner is {self._last_state_requester}"
+                )
+                return False
+
             # Use default priority if not specified
             if priority is None:
                 priority = self._node_priorities.get(requesting_node, 50)

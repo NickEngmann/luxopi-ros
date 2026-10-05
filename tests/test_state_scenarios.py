@@ -38,6 +38,7 @@ def make_manager():
             raise AttributeError(name)
     namespace = dict(vars(typing), Node=Node, threading=threading, time=time, json=json,
                      LuxoState=state, StateTransition=state_globals['StateTransition'],
+                     completion_matches_owner=state_globals['completion_matches_owner'],
                      QoSProfile=lambda **kw: kw,
                      QoSReliabilityPolicy=SimpleNamespace(RELIABLE=1),
                      QoSHistoryPolicy=SimpleNamespace(KEEP_LAST=1))
@@ -72,8 +73,28 @@ def test_voice_heard_response_and_completion():
     assert manager.request_state_transition(state.VOICE_FOLLOWING, 'voice_following', 75)
     assert manager.request_state_transition(state.USER_CONTROL, 'user_control', 80)
     assert manager.request_state_transition(state.ANIMATING, 'user_control', 80)
-    assert manager.request_state_transition(state.IDLE, 'animation_command', 30, is_completion=True)
+    # An animation running inside a voice session cannot end that session.
+    assert not manager.request_state_transition(
+        state.IDLE, 'animation_command', 30, is_completion=True
+    )
+    assert manager.current_state == state.ANIMATING
+    assert manager.request_state_transition(
+        state.IDLE, 'user_control', 80, is_completion=True
+    )
     assert manager.current_state == state.IDLE
+
+
+def test_late_animation_completion_cannot_release_safety_owner():
+    manager, state = make_manager()
+    manager.transition_to(state.IDLE)
+    assert manager.request_state_transition(state.ANIMATING, 'animation_command', 50)
+    assert manager.request_state_transition(
+        state.COLLISION_AVOIDING, 'behavior_coordinator', 100
+    )
+    assert not manager.request_state_transition(
+        state.IDLE, 'animation_command', 30, is_completion=True
+    )
+    assert manager.current_state == state.COLLISION_AVOIDING
 
 
 def test_priority_denial_does_not_record_failed_interrupt():

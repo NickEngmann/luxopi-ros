@@ -1,14 +1,23 @@
 # Motion transport and simulator contract
 
-The animation server publishes named targets on `/joint_states_target` in both
-modes. On hardware, `RoArmHardwareInterface` validates safety conditions and
-encodes the target for the RoArm serial protocol. In simulation,
+Animation plans use one six-value internal frame:
+`[base, shoulder, elbow, wrist, roll, acceleration]`. The last value is
+transport metadata, never a joint position. The `urdf4` profile maps the first
+four axes to the checked-in visualization URDF. The optional `roarm_m3` profile
+uses the six canonical vendor joint names and maps roll to the fifth axis; the
+gripper remains at measured feedback or zero. Hardware commands retain their
+existing conservative roll range. Every plan is validated for shape, finite
+values, duration, and keyframe-name count before execution.
+
+On hardware, `RoArmHardwareInterface` validates safety conditions and encodes
+targets for the RoArm serial protocol. In kinematic simulation,
 `SimMotionController` is the sole publisher of `/joint_states`; it applies the
-same checked-in four-joint URDF bounds used by the animation server and limits
-each output step by configured velocity and acceleration. `robot_state_publisher`
-consumes that one output stream. The simulation launch disables
-`joint_state_publisher`, which previously could publish a competing set of
-joint positions.
+selected profile bounds and configured velocity/acceleration step limits.
+`robot_state_publisher` consumes that one output stream. Gazebo simulation
+instead leaves feedback ownership to Gazebo and routes animation targets
+through the bounded command bridge. The simulation launch disables
+`joint_state_publisher`, which previously could publish competing joint
+positions.
 
 Voice direction is accepted as a temporary base-joint override only after the
 state manager grants `VOICE_FOLLOWING`. The controller requests that state at
@@ -37,7 +46,15 @@ actual firmware transport before sharing simulator limits with that backend.
 
 Hardware-free limiter tests cover named target validation, joint bounds,
 velocity/acceleration limits, and reversal behavior. Animation cancellation and
-the shared writer are tested separately. Run them with:
+the shared writer are tested separately. Voice status uses short, low-priority
+presentation cues (`listening`, `acknowledge`, `thinking`, `speaking`,
+`settle`) through the same action arbiter. Cues cannot replace a running
+requested action, while explicit actions and collision handling can preempt
+them. `USER_CONTROL` remains owned by the voice session until its actual idle
+status and any primary action have completed; an animation result cannot end a
+state owned by a different subsystem.
+
+Run the offline checks with:
 
 ```sh
 cd src/luxo_behaviors

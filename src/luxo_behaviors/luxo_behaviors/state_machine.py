@@ -29,3 +29,13 @@ class StateTransition:
         self.to_state = to_state
         self.condition = condition  # Function that returns True if transition is allowed
         self.action = action  # Function to execute during transition
+
+
+def completion_matches_owner(current_requester, requesting_node):
+    """Guard completion transitions against stale or foreign action results.
+
+    A completion is valid only while the state still belongs to the requester
+    that is completing it.  This prevents a late animation/voice callback from
+    returning a newer safety or user session to IDLE.
+    """
+    return bool(requesting_node) and current_requester == requesting_node

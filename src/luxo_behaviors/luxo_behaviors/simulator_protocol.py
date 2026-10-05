@@ -4,6 +4,7 @@ import math
 import re
 
 from luxo_behaviors.roarm_m3_kinematics import M3_JOINT_LIMITS, M3_JOINT_NAMES
+from luxo_behaviors.animation_capabilities import ANIMATION_NAMES
 
 
 TOUCH_SENSORS = {"head_top", "head_left", "head_bottom", "head_right"}
@@ -21,14 +22,6 @@ MANUAL_JOINT_LIMITS = {
     "L1_to_L2": (-1.570796, 1.570796),
     "L2_to_L3": (-0.78539815, 3.1415926),
     "L3_to_L4": (-2.3561942, 2.3561942),
-}
-ANIMATION_NAMES = {
-    "folded_wiggle", "bouncy_wiggle", "sleepy_melt", "nod", "shake", "close", "stop",
-    "gentle_sway", "curious_exploration", "breathing", "attentive_listening", "playful_bob",
-    "scanning_watch", "settling_adjust", "dreamy_drift", "neck_stretch", "sleep",
-    "yawning_stretch", "shoulder_shimmy", "look_around_casual", "contented_sigh",
-    "head_bobbing", "tail_wag", "pondering", "excited", "sad", "playful", "startled",
-    "curious", "think", "stretch", "dance", "idle",
 }
 LIGHT_COLORS = {"red", "orange", "yellow", "green", "cyan", "blue", "purple", "white"}
 MAX_COMMAND_CHARS = 2000

@@ -20,7 +20,7 @@ playback are created. It executes:
 - Silent synthetic multichannel audio through the shared direction estimator, a
   granted `VOICE_FOLLOWING` state and observed base-angle movement; quiet timeout
   restores IDLE. A collision-priority state must reject subsequent voice motion.
-- With `--all-animations`, every one of 33 actual registered plugins executes its
+- With `--all-animations`, every one of 38 actual registered plugins executes its
   complete trajectory at supported 2x speed, returning successful terminal result
   and feedback. Every observed joint remains finite and within the URDF limits.
 

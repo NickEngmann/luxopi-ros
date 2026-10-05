@@ -9,7 +9,9 @@ from rclpy.node import Node
 from std_msgs.msg import String
 from luxo_interfaces.action import PlayAnimation
 from luxo_interfaces.srv import RequestStateTransition
-from luxo_behaviors.sim_interaction_rules import parse_petting_event
+from luxo_behaviors.sim_interaction_rules import (
+    VoiceCueLifecycle, parse_petting_event,
+)
 
 
 PETTING_ANIMATION = "folded_wiggle"
@@ -28,6 +30,14 @@ class SimInteractionAdapter(Node):
         self.voice_status = "idle"
         self.voice_session_owned = False
         self.voice_transition_pending = False
+        self.voice_idle_pending = False
+        self.voice_generation = 0
+        self.voice_cues = VoiceCueLifecycle()
+        self.current_animation = ""
+        self.primary_animation_active = False
+        self.cue_active = False
+        self.cue_generation = None
+        self.cue_goal_handle = None
         self.petting_active = False
         self.petting_transition_pending = False
         self.petting_session_owned = False
@@ -42,6 +52,10 @@ class SimInteractionAdapter(Node):
         self.animation_client = ActionClient(self, PlayAnimation, "play_animation")
         self.create_subscription(String, "/luxo/current_state", self._state_cb, 10)
         self.create_subscription(String, "/voice/status", self._voice_status_cb, 10)
+        self.create_subscription(String, "/voice/transcript", self._transcript_cb, 10)
+        self.create_subscription(
+            String, "/roarm/current_animation", self._animation_cb, 10
+        )
         self.create_subscription(
             String, "/collision/petting_events", self._petting_cb, 10
         )
@@ -68,35 +82,84 @@ class SimInteractionAdapter(Node):
             return
         self.voice_status = status
         if status in ACTIVE_VOICE_STATUSES:
+            self.voice_generation = self.voice_cues.status(status)
             self._request_voice_state()
         elif status == "idle":
+            self.voice_generation = self.voice_cues.status(status)
             self._finish_voice_state()
         self._publish_status()
 
     def _request_voice_state(self):
-        if self.current_state == "USER_CONTROL" or self.voice_transition_pending:
+        if (self.current_state == "USER_CONTROL" and not self.voice_idle_pending):
+            return
+        if self.voice_transition_pending:
             return
         if self.current_state in SAFETY_STATES:
             return
         self.voice_transition_pending = True
+        generation = self.voice_generation
         self._request_state(
             "USER_CONTROL", "user_control", 80, False,
-            self._voice_transition_result,
+            lambda accepted, message: self._voice_transition_result(
+                generation, accepted, message
+            ),
         )
 
-    def _voice_transition_result(self, accepted, message):
+    def _voice_transition_result(self, generation, accepted, message):
         self.voice_transition_pending = False
+        if not self.voice_cues.is_current(generation):
+            # A short voice request can finish before the USER_CONTROL grant
+            # arrives. If that stale grant was applied and no newer session
+            # owns the state, immediately complete only our own state.
+            if (accepted and self.voice_status == "idle"
+                    and self.current_state == "USER_CONTROL"):
+                self._request_state(
+                    "IDLE", "user_control", 80, True,
+                    lambda *_: None,
+                )
+            return
         self.voice_session_owned = accepted
+        self.voice_idle_pending = False
         if not accepted:
             self.last_error = f"USER_CONTROL request denied: {message}"
 
     def _finish_voice_state(self):
-        if self.current_state == "USER_CONTROL" and self.voice_session_owned:
-            self._request_state("IDLE", "user_control", 80, True, self._voice_idle_result)
+        if (self.current_state == "USER_CONTROL" and self.voice_session_owned
+                and not self.voice_idle_pending and not self.primary_animation_active):
+            self.voice_idle_pending = True
+            generation = self.voice_generation
+            self._request_state(
+                "IDLE", "user_control", 80, True,
+                lambda accepted, message: self._voice_idle_result(
+                    generation, accepted, message
+                ),
+            )
 
-    def _voice_idle_result(self, accepted, message):
+    def _voice_idle_result(self, generation, accepted, message):
+        if generation != self.voice_generation:
+            return
+        self.voice_idle_pending = False
+        if accepted:
+            self.voice_session_owned = False
         if not accepted:
             self.last_error = f"voice completion was denied: {message}"
+
+    def _transcript_cb(self, message):
+        if message.data.strip():
+            self.voice_cues.transcript()
+
+    def _animation_cb(self, message):
+        self.current_animation = message.data.strip()
+        if self.current_animation and self.current_animation not in {
+                "listening", "acknowledge", "thinking", "speaking", "settle"}:
+            self.primary_animation_active = True
+            self.voice_cues.suppress()
+            self.cue_active = False
+            self.cue_goal_handle = None
+        elif not self.current_animation:
+            self.primary_animation_active = False
+            if self.voice_status == "idle":
+                self._finish_voice_state()
 
     def _petting_cb(self, message):
         try:
@@ -214,13 +277,66 @@ class SimInteractionAdapter(Node):
             self._request_voice_state()
         elif self.voice_status == "idle":
             self._finish_voice_state()
+        self._tick_voice_cues()
         self._publish_status()
+
+    def _tick_voice_cues(self):
+        if (self.cue_active or self.current_animation
+                or not self.animation_client.server_is_ready()):
+            return
+        cue = self.voice_cues.pop()
+        if cue is None:
+            return
+        if ((cue == "settle" and self.current_state != "IDLE")
+                or (cue != "settle" and self.current_state != "USER_CONTROL")):
+            # Keep the cue pending until the state owner accepts USER_CONTROL.
+            self.voice_cues._pending.insert(0, cue)
+            return
+        goal = PlayAnimation.Goal()
+        goal.animation_name = cue
+        goal.speed_multiplier = 1.0
+        goal.allow_interruption = False
+        goal.use_hardware_feedback = False
+        generation = self.voice_generation
+        self.cue_active = True
+        self.cue_generation = generation
+        self.animation_client.send_goal_async(goal).add_done_callback(
+            lambda future: self._cue_goal_response(generation, cue, future)
+        )
+
+    def _cue_goal_response(self, generation, cue, future):
+        try:
+            handle = future.result()
+            if not handle.accepted:
+                self.cue_active = False
+                self.last_error = f"visual cue {cue} was rejected"
+                return
+            self.cue_goal_handle = handle
+            handle.get_result_async().add_done_callback(
+                lambda result: self._cue_goal_result(generation, cue, result)
+            )
+        except Exception as exc:
+            self.cue_active = False
+            self.last_error = f"visual cue {cue} failed: {exc}"
+
+    def _cue_goal_result(self, generation, cue, future):
+        try:
+            wrapped = future.result()
+            if not wrapped.result.success:
+                self.last_error = f"visual cue {cue} ended: {wrapped.result.message}"
+        except Exception as exc:
+            self.last_error = f"visual cue {cue} result failed: {exc}"
+        # A prior session's cue completion can only clear its own bookkeeping.
+        if generation == self.cue_generation:
+            self.cue_active = False
+            self.cue_goal_handle = None
 
     def _publish_status(self):
         self.status_publisher.publish(String(data=json.dumps({
             "state": self.current_state,
             "voice_status": self.voice_status,
             "voice_session_owned": self.voice_session_owned,
+            "primary_animation_active": self.primary_animation_active,
             "petting_active": self.petting_active,
             "petting_animation_active": self.petting_animation_active,
             "error": self.last_error,

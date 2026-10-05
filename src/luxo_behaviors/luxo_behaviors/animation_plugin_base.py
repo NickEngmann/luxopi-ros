@@ -7,6 +7,7 @@ Each animation should inherit from this base class and implement the required me
 from abc import ABC, abstractmethod
 from typing import List, Tuple, Optional, Dict
 import random
+from luxo_behaviors.animation_plan import validate_animation_plan
 
 
 class AnimationPlugin(ABC):
@@ -41,7 +42,7 @@ class AnimationPlugin(ABC):
         
         Returns:
             Tuple of (keyframes, durations) where:
-            - keyframes: List of joint positions [base, shoulder, elbow, wrist, hand]
+            - keyframes: List of [base, shoulder, elbow, wrist, roll, acceleration]
             - durations: List of durations in seconds for each transition
         """
         pass
@@ -83,41 +84,15 @@ class AnimationPlugin(ABC):
             True if valid, False otherwise
         """
         try:
-            keyframes, durations = self.get_keyframes()
-            
-            # Check that we have keyframes
-            if not keyframes or not durations:
-                self.node.get_logger().error(f"Animation '{self.name}' has no keyframes or durations")
-                return False
-            
-            # Check that keyframes and durations match
-            if len(keyframes) != len(durations):
-                self.node.get_logger().error(
-                    f"Animation '{self.name}' has mismatched keyframes ({len(keyframes)}) "
-                    f"and durations ({len(durations)})"
-                )
-                return False
-            
-            # Check that all keyframes have 5 joint values and one possible acceleration value
-            for i, keyframe in enumerate(keyframes):
-                if len(keyframe) > 7:
-                    self.node.get_logger().error(
-                        f"Animation '{self.name}' keyframe {i} has {len(keyframe)} positions, expected 5->6"
-                    )
-                    return False
-            
-            # Check that all durations are positive
-            for i, duration in enumerate(durations):
-                if duration <= 0:
-                    self.node.get_logger().error(
-                        f"Animation '{self.name}' duration {i} is not positive: {duration}"
-                    )
-                    return False
-            
+            validate_animation_plan(
+                *self.get_keyframes(), keyframe_names=self.get_keyframe_names()
+            )
             return True
-            
-        except Exception as e:
-            self.node.get_logger().error(f"Error validating animation '{self.name}': {e}")
+        except (TypeError, ValueError) as exc:
+            if self.node is not None:
+                self.node.get_logger().error(
+                    f"Invalid animation plan '{self.name}': {exc}"
+                )
             return False
     
     def get_metadata(self) -> Dict:

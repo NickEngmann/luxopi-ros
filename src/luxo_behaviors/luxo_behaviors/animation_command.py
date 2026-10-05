@@ -18,9 +18,6 @@ from luxo_behaviors.joint_motion import (
     format_target_positions,
 )
 import threading
-import importlib
-import inspect
-import pkgutil
 from typing import Dict, List, Optional
 
 # Import the base plugin class
@@ -31,6 +28,8 @@ from luxo_behaviors.shared_utils import StateUtils
 from luxo_behaviors.motion_control import AnimationGoalTracker, scaled_duration
 from luxo_behaviors.sim_interaction_rules import animation_state_for
 from luxo_behaviors.joint_profiles import ROARM_M3_NAMES, ROARM_M3_LIMITS, animation_pose_for_profile
+from luxo_behaviors.animation_capabilities import load_animation_plugins
+from luxo_behaviors.animation_plan import validate_animation_plan
 
 
 
@@ -195,7 +194,7 @@ class AnimationCommandActionServer(Node):
         )
 
         # Track if animation was preempted by collision
-        self.collision_preempted = False
+        self.collision_preempted = "danger" in self.collision_status
         self.animation_preemption_time = self.get_clock().now()
 
         # Track animation type for state machine
@@ -328,47 +327,17 @@ class AnimationCommandActionServer(Node):
 
         # Check if this is a danger status while we have an active goal
         if "danger" in self.collision_status and self._goal_handle and self._goal_handle.is_active:
-            # Check if interruption is allowed
-            goal = self._goal_handle.request
-            if goal.allow_interruption:
-                self.get_logger().warn(f"Collision danger detected during animation: {self.collision_status}")
-                self.collision_preempted = True
+            self.get_logger().warn(f"Collision danger detected during animation: {self.collision_status}")
+            # Safety interruption is independent of whether the goal may be
+            # replaced by another ordinary animation (visual cues opt out of
+            # ordinary preemption but must still yield to collision handling).
+            self.collision_preempted = True
 
     def _load_animation_plugins(self) -> Dict[str, AnimationPlugin]:
-        """Dynamically load all animation plugins."""
-        plugins = {}
-
-        # Try to import animation plugin modules
-        plugin_modules = [
-            'luxo_behaviors.animation_plugins.emotion_animations',
-            'luxo_behaviors.animation_plugins.action_animations',
-            'luxo_behaviors.animation_plugins.response_animations',
-            'luxo_behaviors.animation_plugins.idle_animations',
-            'luxo_behaviors.animation_plugins.petting_animations'
-        ]
-
-        for module_name in plugin_modules:
-            try:
-                module = importlib.import_module(module_name)
-
-                # Find all classes that inherit from AnimationPlugin
-                for name, obj in inspect.getmembers(module, inspect.isclass):
-                    if issubclass(obj, AnimationPlugin) and obj != AnimationPlugin:
-                        # Create instance of the plugin
-                        plugin_instance = obj(self)
-
-                        # Validate the plugin
-                        if plugin_instance.validate_keyframes():
-                            plugins[plugin_instance.name] = plugin_instance
-                            self.get_logger().debug(f"Loaded animation plugin: {plugin_instance.name}")
-                        else:
-                            self.get_logger().error(f"Failed to validate animation plugin: {name}")
-
-            except ImportError as e:
-                self.get_logger().warn(f"Could not import plugin module {module_name}: {e}")
-            except Exception as e:
-                self.get_logger().error(f"Error loading plugins from {module_name}: {e}")
-
+        """Load the canonical, ROS-independent catalog after strict plan validation."""
+        plugins = load_animation_plugins(self)
+        for name in plugins:
+            self.get_logger().debug(f"Loaded animation capability: {name}")
         return plugins
 
     def goal_callback(self, goal_request):
@@ -384,6 +353,15 @@ class AnimationCommandActionServer(Node):
         if not self._can_start_animation():
             self.get_logger().warn(f'Cannot start animation in current state: {self.get_current_state().name}')
             return GoalResponse.REJECT
+
+        # Non-interrupting behavior cues are best-effort presentation. They
+        # never displace a real action; interruptible commands can still
+        # replace a cue through this same action arbiter.
+        with self._goal_lock:
+            if (self._goal_handle is not None and self._goal_handle.is_active
+                    and not goal_request.allow_interruption):
+                self.get_logger().debug('Ignoring a non-interrupting cue while an action is active')
+                return GoalResponse.REJECT
 
         # Accept the goal
         return GoalResponse.ACCEPT
@@ -451,7 +429,8 @@ class AnimationCommandActionServer(Node):
         cancel_event = self._goal_tracker.event_for(goal_handle)
 
         # Reset collision preemption flag
-        self.collision_preempted = False
+        self.collision_preempted = "danger" in self.collision_status
+        state_transition_owned = False
 
         try:
             goal = goal_handle.request
@@ -502,6 +481,7 @@ class AnimationCommandActionServer(Node):
                     result.final_positions = list(self.current_positions)
                     goal_handle.abort()
                     return result
+                state_transition_owned = True
 
             # Get the animation plugin
             plugin = self.animation_plugins[animation_name]
@@ -511,7 +491,9 @@ class AnimationCommandActionServer(Node):
                 self.request_hardware_position()
 
             # Get keyframes and durations
-            keyframes, durations = plugin.get_keyframes()
+            keyframes, durations = validate_animation_plan(
+                *plugin.get_keyframes(), keyframe_names=plugin.get_keyframe_names()
+            )
             keyframe_names = plugin.get_keyframe_names()
 
             # Adjust keyframes to use current base position
@@ -552,13 +534,15 @@ class AnimationCommandActionServer(Node):
                     break
 
                 # Check if we've been preempted by collision
-                if self.collision_preempted and goal.allow_interruption:
+                if self.collision_preempted:
                     final_state = "preempted"
                     self.get_logger().warn("Animation preempted by collision system")
                     break
 
                 # Add noise to keyframe
-                noisy_keyframe = plugin.add_noise_to_position(keyframe)
+                # Plans are reproducible; per-frame random noise is excluded
+                # from the motor path.
+                noisy_keyframe = keyframe
 
                 # Use actual collision status
                 collision_status = self.collision_status
@@ -617,8 +601,13 @@ class AnimationCommandActionServer(Node):
             actual_duration = time.time() - start_time
 
             # Transition to IDLE state after animation completes
-            self.request_state_transition(LuxoState.IDLE, priority=30, completion=True)
-            self.get_logger().info(f"Animation {final_state} - requesting transition to IDLE")
+            if state_transition_owned:
+                self.request_state_transition(
+                    LuxoState.IDLE, priority=30, completion=True
+                )
+                self.get_logger().info(
+                    f"Animation {final_state} - requesting owned-state completion"
+                )
 
             # Create result
             result = PlayAnimation.Result()

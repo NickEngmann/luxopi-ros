@@ -1,6 +1,6 @@
 # Feature retention and evidence matrix
 
-The machine-readable companion `feature-coverage.json` inventories 33 actual animation plugins, 12 states, and 27 mapped DFRobot command IDs. `python3 scripts/check_feature_contract.py` rejects renamed/removed or otherwise changed inventory until reviewed. `resource/voice_command.md` describes the vendor recognition catalog; parking, QR, line tracking and other catalog entries do not imply an implemented LuxoPI behavior.
+The machine-readable companion `feature-coverage.json` inventories 38 actual animation plugins, 12 states, and 27 mapped DFRobot command IDs. `python3 scripts/check_feature_contract.py` rejects renamed/removed or otherwise changed inventory until reviewed. `resource/voice_command.md` describes the vendor recognition catalog; parking, QR, line tracking and other catalog entries do not imply an implemented LuxoPI behavior.
 
 `python3 -m pytest tests/test_feature_contract.py -q` executes every registered animation plugin to generate a finite six-value trajectory with matching positive durations, and executes real lamp and gesture callbacks against a recorded output sink. All 47 cases pass. Animation generation does not prove ROS action completion, joint-following, collision cancellation or physical mechanics. Lamp sink calls prove consumer execution but do not establish electrical brightness.
 

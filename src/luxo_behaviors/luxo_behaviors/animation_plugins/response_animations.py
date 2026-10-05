@@ -173,3 +173,132 @@ class StopAnimation(AnimationPlugin):
         durations = [0.71, 0.58, 1.3]  # Scaled for safety but still relatively quick
         
         return keyframes, durations
+
+
+class ListeningAnimation(AnimationPlugin):
+    """Small, quiet acknowledgement that a user has the robot's attention."""
+
+    @property
+    def name(self) -> str:
+        return "listening"
+
+    @property
+    def description(self) -> str:
+        return "Lift into a calm attentive pose"
+
+    def get_category(self) -> str:
+        return "response"
+
+    def get_keyframe_names(self) -> Optional[List[str]]:
+        return ["Rest", "Attend", "Settle into listening"]
+
+    def get_keyframes(self) -> Tuple[List[List[float]], List[float]]:
+        return [
+            [0.0, -0.65, 1.2, 1.0, -1.5, 10.0],
+            [0.0, -0.56, 1.08, 1.26, -1.4, 11.0],
+            [0.0, -0.62, 1.16, 1.12, -1.5, 10.0],
+        ], [0.45, 0.4, 0.45]
+
+
+class AcknowledgeAnimation(AnimationPlugin):
+    """Brief single nod confirming receipt of a spoken command."""
+
+    @property
+    def name(self) -> str:
+        return "acknowledge"
+
+    @property
+    def description(self) -> str:
+        return "A short nod to acknowledge a command"
+
+    def get_category(self) -> str:
+        return "response"
+
+    def get_keyframe_names(self) -> Optional[List[str]]:
+        return ["Ready", "Nod", "Return"]
+
+    def get_keyframes(self) -> Tuple[List[List[float]], List[float]]:
+        return [
+            [0.0, -0.65, 1.2, 1.0, -1.5, 11.0],
+            [0.0, -0.48, 0.98, 1.22, -1.5, 13.0],
+            [0.0, -0.65, 1.2, 1.0, -1.5, 11.0],
+        ], [0.4, 0.45, 0.5]
+
+
+class ThinkingCueAnimation(AnimationPlugin):
+    """Brief, recognizable pause while the assistant processes a request."""
+
+    @property
+    def name(self) -> str:
+        return "thinking"
+
+    @property
+    def description(self) -> str:
+        return "A measured look-up while working on a request"
+
+    def get_category(self) -> str:
+        return "response"
+
+    def get_keyframe_names(self) -> Optional[List[str]]:
+        return ["Neutral", "Consider", "Hold the thought"]
+
+    def get_keyframes(self) -> Tuple[List[List[float]], List[float]]:
+        return [
+            [0.0, -0.65, 1.2, 1.0, -1.5, 10.0],
+            [0.0, -0.88, 0.95, 1.45, -1.2, 11.0],
+            [0.0, -0.82, 1.02, 1.38, -1.4, 10.0],
+        ], [0.5, 0.5, 0.4]
+
+
+class SpeakingCueAnimation(AnimationPlugin):
+    """Subtle movement cue that the robot is delivering a response."""
+
+    @property
+    def name(self) -> str:
+        return "speaking"
+
+    @property
+    def description(self) -> str:
+        return "A small conversational sway while responding"
+
+    def get_category(self) -> str:
+        return "response"
+
+    def get_keyframe_names(self) -> Optional[List[str]]:
+        return ["Compose", "Speak", "Ease back"]
+
+    def get_keyframes(self) -> Tuple[List[List[float]], List[float]]:
+        return [
+            [0.0, -0.65, 1.2, 1.0, -1.5, 10.0],
+            [0.06, -0.58, 1.14, 1.12, -1.35, 11.0],
+            [0.0, -0.64, 1.18, 1.02, -1.5, 10.0],
+        ], [0.45, 0.5, 0.45]
+
+
+class SettleAnimation(AnimationPlugin):
+    """Return gently to the familiar idle pose after a voice session."""
+
+    @property
+    def name(self) -> str:
+        return "settle"
+
+    @property
+    def description(self) -> str:
+        return "A calm transition back to idle"
+
+    def get_category(self) -> str:
+        return "response"
+
+    @property
+    def preserve_base_position(self) -> bool:
+        return False
+
+    def get_keyframe_names(self) -> Optional[List[str]]:
+        return ["Release", "Balance", "Home"]
+
+    def get_keyframes(self) -> Tuple[List[List[float]], List[float]]:
+        return [
+            [0.0, -0.76, 1.26, 1.24, -1.5, 9.0],
+            [0.0, -0.7, 1.22, 1.12, -1.5, 9.0],
+            [0.0, -0.65, 1.2, 1.0, -1.5, 9.0],
+        ], [0.45, 0.55, 0.65]

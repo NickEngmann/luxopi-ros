@@ -34,7 +34,7 @@ def test_normalize_valid_simulator_inputs(event, expected):
 
 
 def test_registered_animation_catalog_is_thirty_three_and_accepts_safe_speed():
-    assert len(ANIMATION_NAMES) == 33
+    assert len(ANIMATION_NAMES) == 38
     assert normalize_event({"type": "animation", "name": "dance", "speed": 1.25}) == {
         "type": "animation",
         "name": "dance",
