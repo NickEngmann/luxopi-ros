@@ -19,3 +19,9 @@ same process restored HTTP 200 with a 0.025s state age, without a container
 restart. Evidence: `/tmp/luxopi-latest-restart-e2e.json` on the development host.
 The complete offline suite also passed 443 tests with one skip. This check
 validates simulator monitoring and recovery, not physical robot recovery.
+
+The same owned default graph also passed actual critical-node termination on
+2026-10-05: its state manager received SIGTERM inside Docker, Compose restarted
+the container once, and all 11 expected nodes returned healthy in 3.301 seconds.
+Evidence: `/tmp/luxopi-final-critical-restart.json`. Afterward the default service
+was recreated from the corrected dashboard-backend image; no hardware was used.
