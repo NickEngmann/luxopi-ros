@@ -13,12 +13,14 @@ from luxo_behaviors.joint_motion import URDF_JOINT_LIMITS
 
 def main():
     rclpy.init();node=Node('sensor_scenarios')
-    observed=dict(states=[],petting=[],animations=[],joints=[],gestures=[],front=[],left=[],right=[],motion=[])
+    observed=dict(states=[],petting=[],animations=[],joints=[],joint_names=[],gestures=[],front=[],left=[],right=[],motion=[])
     for message,topic,key in [(String,'/luxo/current_state','states'),(String,'/collision/petting_events','petting'),
         (String,'/roarm/current_animation','animations'),(String,'/gestures','gestures'),
         (Bool,'/head_collision_warning','front'),(Bool,'/left_collision_warning','left'),(Bool,'/right_collision_warning','right')]:
         node.create_subscription(message,topic,lambda msg,key=key:observed[key].append(msg.data),100)
-    node.create_subscription(JointState,'/joint_states',lambda msg:observed['joints'].append(list(msg.position)),100)
+    def joint_callback(msg):
+        observed['joints'].append(list(msg.position));observed['joint_names']=list(msg.name)
+    node.create_subscription(JointState,'/joint_states',joint_callback,100)
     node.create_subscription(String,'/sim/motion_status',lambda msg:observed['motion'].append(json.loads(msg.data)),100)
     touch={side:node.create_publisher(UInt8,'/touch_sensors/head_'+side,10) for side in ('top','left','bottom','right')}
     distance=node.create_publisher(Float32,'/i2c/vl53_left/distance',10)
@@ -65,7 +67,11 @@ def main():
             report('raw_touch_'+side+'_collision',output=output,classified=True)
         transition('USER_CONTROL',priority=80)
         start=len(observed['joints'])
-        manual.publish(JointState(name=list(URDF_JOINT_LIMITS),position=[.25,-.2,.1,.15]))
+        names=observed['joint_names']
+        desired=list(observed['joints'][-1])
+        assert len(names)==len(desired) and len(names) in (4,6),names
+        desired[:4]=[.25,-.2,.1,.15]
+        manual.publish(JointState(name=names,position=desired))
         wait(lambda:observed['motion'] and observed['motion'][-1].get('manual_override'))
         wait(lambda:max(abs(a-b) for a,b in zip(observed['joints'][start],observed['joints'][-1]))>.03)
         report('manual_input_actual_motion',state='USER_CONTROL',joint_frames=len(observed['joints'])-start)

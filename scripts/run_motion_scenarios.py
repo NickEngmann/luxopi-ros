@@ -19,6 +19,8 @@ from std_msgs.msg import Bool, Float32, String
 from luxo_interfaces.action import PlayAnimation
 from luxo_interfaces.srv import RequestStateTransition
 from luxo_behaviors.joint_motion import URDF_JOINT_LIMITS
+from luxo_behaviors.joint_profiles import ROARM_M3_LIMITS
+ALL_JOINT_LIMITS = {**URDF_JOINT_LIMITS, **ROARM_M3_LIMITS}
 
 
 class Scenarios:
@@ -39,11 +41,15 @@ class Scenarios:
     def position(self, msg, output):
         if len(msg.name) != len(msg.position):
             self.errors.append('JointState names and positions differ')
+        if len(set(msg.name)) != len(msg.name):
+            self.errors.append('Duplicate joint names')
         for name,value in zip(msg.name,msg.position):
+            if name not in ALL_JOINT_LIMITS:
+                self.errors.append('Unknown joint '+name)
             if not math.isfinite(value):
                 self.errors.append('Nonfinite joint '+name)
-            if name in URDF_JOINT_LIMITS:
-                lower,upper=URDF_JOINT_LIMITS[name]
+            if name in ALL_JOINT_LIMITS:
+                lower,upper=ALL_JOINT_LIMITS[name]
                 if not lower-1e-6<=value<=upper+1e-6:
                     self.errors.append('Joint outside URDF limits '+name)
         output.append((time.monotonic(),tuple(msg.position[:len(msg.name)])))
