@@ -34,6 +34,10 @@ def main():
     assert not host.get('Devices') and host['NetworkMode'] != 'host'
     assert host['RestartPolicy']['Name'] == 'unless-stopped'
     assert 'ROS_DOMAIN_ID=73' in config['Env'] and 'ROS_LOCALHOST_ONLY=1' in config['Env']
+    mapped_ports = before['NetworkSettings']['Ports'].get('8080/tcp') or []
+    assert str(urllib.parse.urlparse(args.url).port or 80) in {
+        item['HostPort'] for item in mapped_ports
+    }, 'Health endpoint must refer to the selected container'
     with urllib.request.urlopen(args.url + '/healthz', timeout=5) as response:
         assert response.status == 200
     # Search and signal only inside this container's PID namespace. Executables
