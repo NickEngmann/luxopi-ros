@@ -60,6 +60,7 @@ class SimMotionController(Node):
         self.reactive_avoidance = ReactiveAvoidance(limits=self.joint_limits)
         self._sensor_status_seen = set()
         self._sensor_status_at = {}
+        self._sensor_status_payload = {}
         self._warning_started_at = {}
         self.avoidance_mode = "clear"
         self.avoidance_directions = []
@@ -115,11 +116,27 @@ class SimMotionController(Node):
     def _collision_callback(self, direction):
         def receive(message):
             was_active = any(self.collision_active.values())
+            was_direction_active = self.collision_active[direction]
             self.collision_active[direction] = bool(message.data)
-            if message.data:
-                self._warning_started_at[direction] = time.monotonic()
+            if message.data and not was_direction_active:
+                now = time.monotonic()
+                self._warning_started_at[direction] = now
+                last_status = self._sensor_status_payload.get(direction)
+                status_is_active_and_fresh = (
+                    last_status is not None
+                    and last_status["active"]
+                    and now - self._sensor_status_at.get(direction, float("-inf"))
+                    <= self.reactive_avoidance.stale_after
+                )
+                if not status_is_active_and_fresh:
+                    # Bool warns immediately, but cannot set severity. Latch an
+                    # unknown warning hold until the next atomic record arrives.
+                    self.reactive_avoidance.update_sensor(
+                        direction, True, now, severity="warning", valid=False
+                    )
             else:
-                self._warning_started_at.pop(direction, None)
+                if not message.data:
+                    self._warning_started_at.pop(direction, None)
             active = any(self.collision_active.values())
             if active and not was_active and self.current_state not in {
                 "INITIALIZING", "COLLISION_AVOIDING", "ESCAPE_MODE", "ERROR", "SHUTDOWN"
@@ -159,15 +176,17 @@ class SimMotionController(Node):
         try:
             payload = json.loads(message.data)
             direction = payload["direction"]
+            now = time.monotonic()
             self.reactive_avoidance.update_sensor(
                 direction,
                 payload["active"],
-                time.monotonic(),
+                now,
                 severity=payload["severity"],
                 valid=payload["valid"],
             )
             self._sensor_status_seen.add(direction)
-            self._sensor_status_at[direction] = time.monotonic()
+            self._sensor_status_at[direction] = now
+            self._sensor_status_payload[direction] = payload
         except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
             self.get_logger().warning(f"Rejected malformed collision sensor status: {exc}")
 
@@ -258,29 +277,13 @@ class SimMotionController(Node):
         if (self.feedback_received_at is not None
                 and now - self.feedback_received_at <= 0.5):
             current = list(self.measured_positions)
-        warning_unobserved = [
-            direction for direction, active in self.collision_active.items()
-            if active and (
-                direction not in self._sensor_status_seen
-                or self._sensor_status_at.get(direction, float("-inf"))
-                < self._warning_started_at.get(direction, float("inf"))
-            )
-        ]
-        if warning_unobserved:
-            avoidance = {
-                "target": current,
-                "mode": "hold_unknown",
-                "hazards": warning_unobserved,
-                "stale": warning_unobserved,
-            }
-        else:
-            avoidance = self.reactive_avoidance.adjust_target(
-                current,
-                target,
-                self.joint_names,
-                now=now,
-                target_received_at=self.target_received_at,
-            )
+        avoidance = self.reactive_avoidance.adjust_target(
+            current,
+            target,
+            self.joint_names,
+            now=now,
+            target_received_at=self.target_received_at,
+        )
         self.avoidance_mode = avoidance["mode"]
         self.avoidance_directions = avoidance["hazards"]
 
