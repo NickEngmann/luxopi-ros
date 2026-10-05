@@ -17,11 +17,13 @@ def main():
         raise SystemExit('Only local isolated simulator HTTP endpoints are supported')
     def snapshot():
         with urllib.request.urlopen(args.url+'/api/state',timeout=5) as response:return json.load(response)
-    def normalized(text):return re.sub(r'[^a-z0-9 ]','',text.lower()).strip()
+    def normalized(text):
+        text=re.sub(r'\b50\s*%', 'fifty percent', text.lower())
+        return re.sub(r'[^a-z0-9 ]','',text).strip()
     results=[];error=None;started=datetime.datetime.now(datetime.UTC).isoformat()
     try:
         baseline=snapshot();assert baseline.get('audio_upload'),'Saved-audio profile is disabled'
-        scenarios=[('dance','Please dance.'),('lamp','Turn the lamp blue.'),('brightness','Set brightness to fifty percent.'),('question','Why do plants need water?')]
+        scenarios=[('dance','Please dance.'),('lamp','Turn the lamp blue.'),('brightness','Please set brightness to fifty percent.'),('question','Why do plants need water?')]
         for name,expected in scenarios:
             deadline=time.monotonic()+45
             while snapshot().get('state')!='IDLE' or snapshot().get('animation'):
@@ -51,7 +53,7 @@ def main():
                 light=state.get('sensors',{}).get('light_state',{})
                 lamp=lamp or (name=='lamp' and light.get('rgbw')==[0,0,255,0]) or (name=='brightness' and light.get('brightness')==.5)
                 consumer=(animation and motion) if name=='dance' else lamp if name in ('lamp','brightness') else True
-                if transcript and response_text and consumer and state.get('status')=='idle' and (name!='dance' or not state.get('animation')):break
+                if transcript and response_text and consumer and state.get('status')=='idle' and state.get('state')=='IDLE' and (name!='dance' or not state.get('animation')):break
                 time.sleep(.1)
             assert transcript and response_text,dict(name=name,last=samples[-1])
             if name=='dance':assert animation and motion,'Actual dance/action motion was not observed'
