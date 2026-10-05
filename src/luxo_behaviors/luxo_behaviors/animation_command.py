@@ -649,6 +649,9 @@ class AnimationCommandActionServer(Node):
             self.movement_source = "animation"
             self.last_movement_source_change = self.get_clock().now()
             self.is_animating = True  # Set animation flag
+            if continuous_plan is not None:
+                self.current_animation_name = animation_name
+                self.current_animation_publisher.publish(String(data=animation_name))
 
             # Execute animation with progress feedback
             total_duration = sum(adjusted_durations)
