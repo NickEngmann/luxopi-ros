@@ -38,7 +38,8 @@ def joint_profile(profile):
     raise ValueError(f"unsupported joint profile: {profile}")
 
 
-def animation_pose_for_profile(positions, profile, *, gripper_position=0.0):
+def animation_pose_for_profile(positions, profile, *, gripper_position=0.0,
+                               enforce_animation_roll=True):
     """Map internal [base, shoulder, elbow, wrist, roll, accel] to pose axes.
 
     Acceleration is actuator metadata, never a JointState position. The M3
@@ -55,8 +56,8 @@ def animation_pose_for_profile(positions, profile, *, gripper_position=0.0):
         pose.append(float(gripper_position))
         if not math.isfinite(pose[-1]):
             raise ValueError("gripper position must be finite")
-        roll = min(ANIMATION_ROLL_LIMIT[1], max(ANIMATION_ROLL_LIMIT[0], pose[4]))
-        pose[4] = roll
+        if enforce_animation_roll:
+            pose[4] = min(ANIMATION_ROLL_LIMIT[1], max(ANIMATION_ROLL_LIMIT[0], pose[4]))
     else:
         pose = pose[:len(names)]
     return names, clamp_joint_positions(names, pose, limits)

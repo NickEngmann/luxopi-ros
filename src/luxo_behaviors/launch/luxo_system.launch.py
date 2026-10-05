@@ -111,6 +111,10 @@ def generate_launch_description():
         'joint_profile', default_value='urdf4',
         description='Simulation joint profile: checked-in four-axis urdf4 or canonical six-axis roarm_m3'
     )
+    declare_continuous_timing = DeclareLaunchArgument(
+        'continuous_animation_timing', default_value='false',
+        description='Experimental waypoint-preserving bounded simulation trajectories',
+    )
     declare_simulation_backend = DeclareLaunchArgument(
         'simulation_backend', default_value='kinematic',
         description='Simulation motion transport: kinematic or mujoco'
@@ -654,6 +658,8 @@ def generate_launch_description():
             {'joint_profile': LaunchConfiguration('joint_profile')},
             {'enable_collision_warning_inputs': True},
             {'enable_feasible_retiming': True},
+            {'enable_continuous_retiming': ParameterValue(
+                LaunchConfiguration('continuous_animation_timing'), value_type=bool)},
             {'max_joint_velocity': 0.5},
             {'max_joint_acceleration': 1.0},
         ],
@@ -740,6 +746,7 @@ def generate_launch_description():
         declare_simulator_port,
         declare_simulator_audio_directory,
         declare_joint_profile,
+        declare_continuous_timing,
         declare_simulation_backend,
         declare_robot_description_file,
         declare_verbose,

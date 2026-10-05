@@ -34,6 +34,7 @@ from luxo_behaviors.joint_profiles import ROARM_M3_NAMES, ROARM_M3_LIMITS, anima
 from luxo_behaviors.animation_capabilities import load_animation_plugins
 from luxo_behaviors.animation_plan import validate_animation_plan
 from luxo_behaviors.trajectory_timing import retime_cubic_plan
+from luxo_behaviors.continuous_trajectory import ContinuousTrajectory
 from luxo_behaviors.joint_profiles import pose_to_animation_positions, joint_profile
 import math
 
@@ -54,14 +55,21 @@ class AnimationCommandActionServer(Node):
         self.joint_profile = str(self.get_parameter('joint_profile').value).lower()
         self.current_gripper_position = 0.0
         self.declare_parameter('enable_feasible_retiming', False)
+        self.declare_parameter('enable_continuous_retiming', False)
         self.declare_parameter('max_joint_velocity', 0.5)
         self.declare_parameter('max_joint_acceleration', 1.0)
         self.enable_feasible_retiming = bool(self.get_parameter('enable_feasible_retiming').value)
+        self.enable_continuous_retiming = bool(self.get_parameter('enable_continuous_retiming').value)
+        if self.enable_continuous_retiming and not self.enable_feasible_retiming:
+            raise ValueError('Continuous timing requires bounded simulation feedback')
         self.max_joint_velocity = float(self.get_parameter('max_joint_velocity').value)
         self.max_joint_acceleration = float(self.get_parameter('max_joint_acceleration').value)
         if self.enable_feasible_retiming and self.use_hardware_joint_names:
             raise ValueError('Feasible retiming requires calibrated simulation feedback')
         self._sim_feedback = None
+        self._sim_motion_status = None
+        if self.enable_feasible_retiming:
+            self.create_subscription(String, '/sim/motion_status', self.sim_motion_status_callback, 10)
 
         # Parameter to control which topic to publish to (hardware vs simulation)
         self.declare_parameter('publish_target_topic', False)
@@ -604,6 +612,7 @@ class AnimationCommandActionServer(Node):
                     self.current_positions, keyframes
                 )
 
+            continuous_plan = None
             if self.enable_feasible_retiming:
                 if self._sim_feedback is None or time.monotonic() - self._sim_feedback[0] > .5:
                     raise RuntimeError('Fresh joint feedback is required before an animation')
@@ -618,12 +627,17 @@ class AnimationCommandActionServer(Node):
                     bounded[:axes] = mapped[:axes]
                     bounded_frames.append(bounded)
                 keyframes = bounded_frames
-                adjusted_durations = retime_cubic_plan(
+                planner = ContinuousTrajectory if self.enable_continuous_retiming else retime_cubic_plan
+                timed = planner(
                     self.current_positions, keyframes, durations,
                     speed_multiplier=speed_multiplier,
                     max_velocity=self.max_joint_velocity,
                     max_acceleration=self.max_joint_acceleration, axes=axes)
-                durations = adjusted_durations
+                if self.enable_continuous_retiming:
+                    continuous_plan = timed
+                    durations = timed.durations
+                else:
+                    durations = timed
                 speed_multiplier = 1.0  # Already applied exactly once before retiming.
                 self.target_positions = list(self.current_positions)
 
@@ -696,14 +710,14 @@ class AnimationCommandActionServer(Node):
                 )
 
                 # Move to position
-                completed = self.move_to_position(
-                    noisy_keyframe,
-                    duration,
-                    easing=True,
-                    animation_name=animation_name,
-                    cancel_event=cancel_event,
-                    target_intent_id=goal_intent_id,
-                )
+                if continuous_plan is not None:
+                    completed = self.follow_continuous_stage(
+                        continuous_plan, i, cancel_event, goal_intent_id)
+                else:
+                    completed = self.move_to_position(
+                        noisy_keyframe, duration, easing=True,
+                        animation_name=animation_name, cancel_event=cancel_event,
+                        target_intent_id=goal_intent_id)
 
                 if not completed:
                     final_state = "canceled" if goal_handle.is_cancel_requested else "preempted"
@@ -928,6 +942,11 @@ class AnimationCommandActionServer(Node):
         while time.monotonic() < deadline:
             if (cancel_event is not None and cancel_event.is_set()) or self.collision_preempted:
                 return False
+            safety = getattr(self, '_sim_motion_status', None)
+            if (safety is not None and time.monotonic() - safety[0] <= .3
+                    and safety[1].startswith('hold_')):
+                self.get_logger().warning('Safety hold requires a new animation plan')
+                return False
             sample = self._sim_feedback
             now = time.monotonic()
             settled = (sample is not None and now - sample[0] <= .3
@@ -946,6 +965,15 @@ class AnimationCommandActionServer(Node):
             self.get_logger().warning('Adjusted course requires a new animation plan')
             return False
         raise RuntimeError('Actual joint feedback did not settle at the animation keyframe')
+
+    def sim_motion_status_callback(self, message):
+        try:
+            payload = json.loads(message.data)
+            mode = payload['avoidance_mode']
+            if isinstance(mode, str):
+                self._sim_motion_status = (time.monotonic(), mode)
+        except (KeyError, TypeError, ValueError):
+            return
 
     def publish_joint_states_target(self):
         """Publish target joint states."""
@@ -982,6 +1010,7 @@ class AnimationCommandActionServer(Node):
                 _, joint_positions = animation_pose_for_profile(
                     self.target_positions, self.joint_profile,
                     gripper_position=self.current_gripper_position,
+                    enforce_animation_roll=not self.enable_feasible_retiming,
                 )
             else:
                 joint_positions = format_target_positions(
@@ -1032,6 +1061,24 @@ class AnimationCommandActionServer(Node):
             return 4 * t * t * t
         else:
             return 1 - pow(-2 * t + 2, 3) / 2
+
+    def follow_continuous_stage(self, plan, index, cancel_event, intent_id):
+        """Stream one bounded stage, preserving velocity through interior poses."""
+        started = time.monotonic()
+        duration = plan.durations[index]
+        self._target_intent_id = intent_id
+        while True:
+            if cancel_event.is_set() or self.collision_preempted:
+                return False
+            progress = min(1.0, (time.monotonic() - started) / duration)
+            self.target_positions = plan.segment(index, progress)
+            self.publish_joint_states_target()
+            if progress >= 1.0:
+                break
+            time.sleep(.01)
+        if index == len(plan.frames)-1:
+            return self._wait_for_simulated_pose(self.target_positions, cancel_event)
+        return True
 
     def move_to_position(
         self, positions, duration=1.0, easing=True, animation_name=None,

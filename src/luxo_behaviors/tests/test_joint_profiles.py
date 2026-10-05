@@ -62,3 +62,15 @@ def test_pose_to_animation_rejects_unknown_or_duplicate_joint_names():
         pose_to_animation_positions(("base", "base"), [0.0, 0.0])
     with pytest.raises(ValueError, match="supported profile"):
         pose_to_animation_positions(("base",), [0.0])
+
+
+def test_simulated_approach_from_measured_roll_does_not_jump_to_recipe_bound():
+    from luxo_behaviors.joint_profiles import animation_pose_for_profile
+    pose = [0, 0, 0, 0, -.1, 10]
+    _, recipe = animation_pose_for_profile(pose, 'roarm_m3')
+    _, approach = animation_pose_for_profile(pose, 'roarm_m3', enforce_animation_roll=False)
+    assert recipe[4] == -.5
+    assert approach[4] == -.1
+    _, bounded = animation_pose_for_profile([0, 0, 0, 0, 50, 10], 'roarm_m3',
+                                           enforce_animation_roll=False)
+    assert bounded[4] == 3.1416

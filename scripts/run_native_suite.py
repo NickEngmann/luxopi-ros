@@ -15,6 +15,7 @@ digest=hashlib.sha256()
 for file in files:digest.update(str(file.relative_to(base)).encode());digest.update(file.read_bytes())
 report=dict(started_at=datetime.datetime.now(datetime.UTC).isoformat(),runtime_commit=os.environ.get('LUXOPI_RUNTIME_COMMIT','unknown'),source_sha256=digest.hexdigest(),feasible_retiming=args.feasible_retiming,full_animation_playlist=not args.core_motion,suites=[],output_directory=str(out))
 SUITES = [('run_motion_scenarios.py',['--all-animations','--output',str(out/'motion.json')]),('run_state_scenarios.py',[]),('run_lighting_scenarios.py',[]),('run_vision_scenarios.py',[]),('run_sensor_scenarios.py',[]),('run_voice_motion_scenarios.py',[]),('run_voice_cue_scenarios.py',[]),('run_watchdog_scenarios.py',[]),('run_avoidance_scenarios.py',['--output',str(out/'avoidance.json')])]
+report['continuous_retiming'] = os.environ.get('LUXOPI_CONTINUOUS_ANIMATION_TIMING', 'false').lower() == 'true'
 if args.core_motion:
     SUITES[0][1].remove('--all-animations')
 if args.feasible_retiming:
@@ -25,6 +26,7 @@ if args.resume_report:
     previous=json.loads(args.resume_report.read_text())
     assert previous.get('full_animation_playlist',True)==report['full_animation_playlist'],'Motion coverage changed; run full suite'
     assert previous.get('feasible_retiming',False)==report['feasible_retiming'],'Retiming mode changed; run full suite'
+    assert previous.get('continuous_retiming',False)==report['continuous_retiming'],'Trajectory mode changed; run full suite'
     assert previous['source_sha256']==report['source_sha256'],'Production source changed; run the full suite'
     for old in previous['suites']:
         if not old['passed']: break

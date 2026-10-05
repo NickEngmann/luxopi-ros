@@ -64,3 +64,13 @@ def test_warning_adjustment_requires_replan_instead_of_fault():
                           get_logger=lambda: SimpleNamespace(warning=lambda _: None),
                           _sim_feedback=(0.0, target[:5]+[.6], [0]*6))
     assert not ns['_wait_for_simulated_pose'](obj, target, None)
+
+
+@pytest.mark.parametrize('mode', ['hold_stale', 'hold_replan', 'hold_imminent', 'hold_blocked'])
+def test_expected_safety_hold_interrupts_without_actuator_error(mode):
+    ns, _ = methods()
+    obj = SimpleNamespace(joint_profile='roarm_m3', current_gripper_position=0,
+                          collision_preempted=False, _sim_feedback=None,
+                          _sim_motion_status=(1.0, mode),
+                          get_logger=lambda: SimpleNamespace(warning=lambda _: None))
+    assert ns['_wait_for_simulated_pose'](obj, [.2, .3, .4, .5, -.7, 10], None) is False
