@@ -61,6 +61,17 @@ def test_actual_m3_feedback_generates_front_and_side_raw_samples_and_stales_out(
         state = JointState()
         state.name = list(ROARM_M3_NAMES)
         state.position = [0.0] * len(ROARM_M3_NAMES)
+        sensor.joint_callback(state)
+        valid_feedback_at = sensor.last_joint_feedback_at
+        malformed = JointState()
+        malformed.name = list(ROARM_M3_NAMES)
+        malformed.position = [0.0] * len(ROARM_M3_NAMES)
+        malformed.position[1] = 1.7  # outside the vendor shoulder limit + tolerance
+        sensor.joint_callback(malformed)
+        assert sensor.last_joint_feedback == list(state.position)
+        assert sensor.last_joint_feedback_at == valid_feedback_at
+        sensor.last_joint_feedback = None
+        sensor.last_joint_feedback_at = 0.0
         start = time.monotonic()
         last_send = 0.0
         while time.monotonic() - start < 1.2:
@@ -74,7 +85,12 @@ def test_actual_m3_feedback_generates_front_and_side_raw_samples_and_stales_out(
         assert front[-1] > 15  # two consecutive samples activate front collision
         assert len(left) >= 2 and left[-1] == pytest.approx(80.0)
         assert len(right) >= 2 and right[-1] == pytest.approx(80.0)
-        assert all(len(samples) >= 2 and set(samples) == {0} for samples in contacts.values())
+        assert all(len(samples) >= 2 and set(samples) == {0} for samples in contacts.values()), {
+            "received": contacts,
+            "publisher_matches": {name: publisher.get_subscription_count()
+                                  for name, publisher in sensor.contact_pubs.items()},
+            "feedback_age": time.monotonic() - sensor.last_joint_feedback_at,
+        }
         assert {sample['direction'] for sample in statuses if sample['valid']} == {'front', 'left', 'right'}
         assert all(not sample['fsr_contact_latched'] for sample in statuses)
         before_stale = len(front)

@@ -37,7 +37,8 @@ file. Do not enable the periodic fixture during tests that inject raw sensor sam
 Coordinates are metres in the M3 URDF world frame. Box dimensions are
 half-extents. Scenes are limited to 32 named primitives with dimensions and
 positions bounded to five metres. Rays are normalized and clipped to each
-mount's configured `max_range_m`.
+mount's configured `max_range_m`, which is limited to 1.2 m so synthetic side
+readings remain within the collision adapter's accepted range.
 
 Mounts can be changed with `sensor_mounts_json`, a JSON object with exactly
 `front`, `left`, and `right` entries. Each entry specifies a vendor M3 link
@@ -69,3 +70,9 @@ avoidance consume the data. The fixture is useful for verifying the
 sensor-to-behavior path and course correction; obstacle primitives affect rays
 only, not MuJoCo contact physics. It is not evidence of real-world sensor
 range, extrinsics, contact physics, or safe physical collision avoidance.
+
+Joint feedback must contain the exact six vendor joint names, finite values,
+and positions within the vendor URDF limits plus 0.02 rad tolerance. Rejected
+frames do not refresh the fixture's feedback timeout. The focused node test
+checks front/side classification, explicit fresh FSR-clear samples, invalid
+feedback rejection, and stale-input expiry in an isolated ROS container.

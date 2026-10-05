@@ -14,7 +14,7 @@ from rclpy.node import Node
 from sensor_msgs.msg import JointState
 from std_msgs.msg import Float32, Int16, String, UInt8
 
-from luxo_behaviors.joint_profiles import ROARM_M3_NAMES
+from luxo_behaviors.joint_profiles import ROARM_M3_LIMITS, ROARM_M3_NAMES
 from luxo_behaviors.mujoco_runtime import build_m3_model
 from luxo_behaviors.sim_world_geometry import raycast_fixture, transform_mount, validate_obstacles
 
@@ -28,6 +28,7 @@ DEFAULT_MOUNTS = {
     "left": {"frame": "gripper_link", "offset_m": [0.0, 0.02, 0.02], "direction": [0.0, -1.0, 0.0], "max_range_m": 0.80},
     "right": {"frame": "gripper_link", "offset_m": [0.0, -0.02, 0.02], "direction": [0.0, 1.0, 0.0], "max_range_m": 0.80},
 }
+JOINT_FEEDBACK_LIMIT_TOLERANCE = 0.02
 
 
 def validate_mounts(mounts):
@@ -52,8 +53,8 @@ def validate_mounts(mounts):
         if magnitude <= 1e-12 or magnitude > 5.0:
             raise ValueError(f"{direction} mount direction must be non-zero and bounded")
         max_range = float(mount.get("max_range_m"))
-        if not math.isfinite(max_range) or not 0.01 <= max_range <= 5.0:
-            raise ValueError(f"{direction} max_range_m must be within 0.01..5 m")
+        if not math.isfinite(max_range) or not 0.01 <= max_range <= 1.2:
+            raise ValueError(f"{direction} max_range_m must be within 0.01..1.2 m")
         validated[direction] = {
             "frame": frame,
             "offset_m": offset,
@@ -106,8 +107,6 @@ class SimWorldSensors(Node):
         }
         if any(body_id < 0 for body_id in self.body_ids.values()):
             raise ValueError("one or more synthetic sensor mount links are absent from the M3 model")
-        self.geom_groups = np.zeros(self.model.ngeom, dtype=np.uint8)
-        self.geom_ids = np.zeros(1, dtype=np.int32)
         self.last_joint_feedback = None
         self.last_joint_feedback_at = 0.0
 
@@ -137,6 +136,12 @@ class SimWorldSensors(Node):
         by_name = dict(zip(message.name, message.position))
         values = [float(by_name[name]) for name in ROARM_M3_NAMES]
         if not all(math.isfinite(value) for value in values):
+            return
+        if any(
+            value < ROARM_M3_LIMITS[name][0] - JOINT_FEEDBACK_LIMIT_TOLERANCE
+            or value > ROARM_M3_LIMITS[name][1] + JOINT_FEEDBACK_LIMIT_TOLERANCE
+            for name, value in zip(ROARM_M3_NAMES, values)
+        ):
             return
         self.data.qpos[self.qpos_addresses] = values
         self.mujoco.mj_forward(self.model, self.data)
