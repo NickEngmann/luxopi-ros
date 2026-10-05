@@ -1,0 +1,17 @@
+services:
+  simulator:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.simulator
+    init: true
+    environment:
+      ROS_DOMAIN_ID: "73"
+      ROS_LOCALHOST_ONLY: "1"
+    ports:
+      - "127.0.0.1:8080:8080"
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/api/state', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    stop_grace_period: 20s

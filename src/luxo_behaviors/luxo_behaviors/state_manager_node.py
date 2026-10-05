@@ -568,6 +568,8 @@ class StateManagerNode(Node):
             if msg.data.startswith("color_temp:"):
                 temp_str = msg.data.split(":")[1]
                 color_temp = float(temp_str)
+                if not 0.0 <= color_temp <= 1.0:
+                    raise ValueError("Color temperature must be finite and between zero and one")
                 
                 # Calculate RGB values based on color temperature
                 # 0.0 = cool (more blue), 1.0 = warm (more red/yellow)
@@ -593,6 +595,7 @@ class StateManagerNode(Node):
                 if self._lights_enabled and self._neopixel_controller:
                     # Only apply if we're currently showing white/default colors
                     if not hasattr(self, '_color_mode') or self._color_mode is None:
+                        self._neopixel_last_visual_state = None
                         self._update_neopixel_for_state(self._current_state)
                         
                 self.get_logger().info(f"Color temperature set to {color_temp:.1%} (RGBW: {r}, {g}, {b}, {w})")

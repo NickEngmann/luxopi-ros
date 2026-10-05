@@ -1,0 +1,17 @@
+FROM ros:jazzy-ros-base
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3-colcon-common-extensions python3-pytest python3-numpy python3-requests python3-psutil \
+    ros-jazzy-robot-state-publisher ros-jazzy-joint-state-publisher \
+    ros-jazzy-xacro ros-jazzy-cv-bridge ros-jazzy-diagnostic-msgs \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /workspace
+COPY src ./src
+COPY roarm_ws_em1/src ./roarm_ws_em1/src
+COPY scripts ./scripts
+COPY tests ./tests
+RUN . /opt/ros/jazzy/setup.sh && colcon build --base-paths src roarm_ws_em1/src \
+    --packages-select luxo_interfaces roarm luxo_behaviors
+COPY docker/simulator-entrypoint.sh /simulator-entrypoint.sh
+ENV ROS_DOMAIN_ID=73 ROS_LOCALHOST_ONLY=1
+EXPOSE 8080
+ENTRYPOINT ["/simulator-entrypoint.sh"]
