@@ -40,7 +40,7 @@ def main():
         for _ in range(20):
             distance.publish(Float32(data=1.2));emotion.publish(String(data='sad'));spin(.25)
         wait(lambda:'EMOTION_REACTING' in observed['states'] and 'sad' in observed['animations'])
-        assert 'sad' in observed['emotions'] and 1.2 in observed['distances'] and True in observed['presence']
+        assert 'sad' in observed['emotions'] and any(abs(d-1.2)<1e-5 for d in observed['distances']) and True in observed['presence'], {k:v[-10:] for k,v in observed.items() if k!='joints'}
         poses=observed['joints'][baseline:]
         assert len(poses)>10
         assert max(max(abs(a-b) for a,b in zip(poses[0],pose)) for pose in poses)>.03,'No reaction joint motion'
