@@ -40,10 +40,16 @@ class SimInteractionAdapter(Node):
         self.cue_goal_handle = None
         self.petting_active = False
         self.petting_transition_pending = False
+        self.petting_transition_generation = None
         self.petting_session_owned = False
+        self.petting_idle_pending = False
         self.last_petting_event = None
         self.petting_goal_handle = None
+        self.petting_goal_generation = None
+        self.petting_goal_pending = False
         self.petting_animation_active = False
+        self.petting_generation = 0
+        self.petting_cancel_requested = False
         self.last_error = ""
 
         self.state_client = self.create_client(
@@ -69,8 +75,19 @@ class SimInteractionAdapter(Node):
         previous = self.current_state
         self.current_state = next_state
         if (previous == "PETTING" and next_state != "PETTING"
-                and self.petting_animation_active and self.petting_goal_handle):
-            self.petting_goal_handle.cancel_goal_async()
+                and (self.petting_active or self.petting_animation_active)):
+            self._stop_petting_session()
+        if next_state == "IDLE" and self.petting_active:
+            # A prior completion request can race a fresh touch. Reacquire
+            # PETTING after the state owner publishes the completed transition.
+            self._request_petting_state()
+        elif next_state == "PETTING":
+            if self.petting_active:
+                self._start_petting_animation()
+            else:
+                # The touch may have ended while the asynchronous state grant
+                # was in flight. Complete our just-granted ownership promptly.
+                self._finish_petting_if_ready()
         if next_state == "IDLE" and self.voice_status == "idle":
             self.voice_session_owned = False
 
@@ -175,12 +192,24 @@ class SimInteractionAdapter(Node):
             self._publish_status()
             return
         self.last_petting_event = time.monotonic()
-        self.petting_active = action == "petting_started"
-        if self.petting_active:
+        if action == "petting_started":
+            if not self.petting_active:
+                self.petting_generation += 1
+            self.petting_active = True
             self._request_petting_state()
         else:
+            self._stop_petting_session()
             self._finish_petting_if_ready()
         self._publish_status()
+
+    def _stop_petting_session(self):
+        if self.petting_active:
+            self.petting_active = False
+            self.petting_generation += 1
+        if self.petting_animation_active:
+            self.petting_cancel_requested = True
+            if self.petting_goal_handle is not None:
+                self.petting_goal_handle.cancel_goal_async()
 
     def _request_petting_state(self):
         if self.current_state in SAFETY_STATES or self.petting_transition_pending:
@@ -189,65 +218,124 @@ class SimInteractionAdapter(Node):
             self._start_petting_animation()
             return
         self.petting_transition_pending = True
+        generation = self.petting_generation
+        self.petting_transition_generation = generation
         self._request_state(
-            "PETTING", "petting", 60, False, self._petting_transition_result
+            "PETTING", "petting", 60, False,
+            lambda accepted, message: self._petting_transition_result(
+                generation, accepted, message
+            ),
         )
 
-    def _petting_transition_result(self, accepted, message):
+    def _petting_transition_result(self, generation, accepted, message):
         self.petting_transition_pending = False
         self.petting_session_owned = accepted
         if accepted:
-            self._start_petting_animation()
-        else:
+            if self.petting_active:
+                self._start_petting_animation()
+            else:
+                self._finish_petting_if_ready()
+        elif self.petting_active and generation == self.petting_generation:
             self.last_error = f"PETTING request denied: {message}"
 
     def _start_petting_animation(self):
-        if self.petting_animation_active or not self.animation_client.server_is_ready():
+        if (not self.petting_active or self.current_state != "PETTING"
+                or self.petting_animation_active
+                or not self.animation_client.server_is_ready()):
             return
         goal = PlayAnimation.Goal()
         goal.animation_name = PETTING_ANIMATION
         goal.speed_multiplier = 1.0
         goal.allow_interruption = True
         goal.use_hardware_feedback = False
+        generation = self.petting_generation
+        self.petting_goal_pending = True
+        self.petting_goal_generation = generation
+        self.petting_cancel_requested = False
         self.petting_animation_active = True
         self.animation_client.send_goal_async(goal).add_done_callback(
-            self._petting_goal_response
+            lambda future: self._petting_goal_response(generation, future)
         )
 
-    def _petting_goal_response(self, future):
+    def _petting_goal_response(self, generation, future):
         try:
             handle = future.result()
             if not handle.accepted:
-                self.petting_animation_active = False
-                self.last_error = "petting animation goal rejected"
+                self._finish_petting_goal(generation)
+                if generation == self.petting_generation and self.petting_active:
+                    self.last_error = "petting animation goal rejected"
                 self._finish_petting_if_ready()
                 return
-            self.petting_goal_handle = handle
-            handle.get_result_async().add_done_callback(self._petting_goal_result)
+            if (generation != self.petting_generation or not self.petting_active
+                    or self.petting_cancel_requested):
+                handle.cancel_goal_async()
+            else:
+                self.petting_goal_handle = handle
+            handle.get_result_async().add_done_callback(
+                lambda result: self._petting_goal_result(generation, result)
+            )
         except Exception as exc:
-            self.petting_animation_active = False
-            self.last_error = f"petting action failed: {exc}"
+            self._finish_petting_goal(generation)
+            if generation == self.petting_generation and self.petting_active:
+                self.last_error = f"petting action failed: {exc}"
             self._finish_petting_if_ready()
 
-    def _petting_goal_result(self, future):
+    def _petting_goal_result(self, generation, future):
         try:
-            result = future.result().result
-            if not result.success:
+            wrapped = future.result()
+            result = wrapped.result
+            canceled = getattr(wrapped, "status", None) == 5
+            expected_cancel = (
+                self.petting_cancel_requested
+                or generation != self.petting_generation
+                or not self.petting_active
+            )
+            if (not result.success and not canceled and not expected_cancel
+                    and generation == self.petting_generation
+                    and self.petting_active):
                 self.last_error = f"petting animation failed: {result.message}"
         except Exception as exc:
-            self.last_error = f"petting result failed: {exc}"
-        self.petting_animation_active = False
-        self.petting_goal_handle = None
+            if generation == self.petting_generation and self.petting_active:
+                self.last_error = f"petting result failed: {exc}"
+        was_current = generation == self.petting_goal_generation
+        self._finish_petting_goal(generation)
+        if was_current and self.petting_active:
+            self._start_petting_animation()
         self._finish_petting_if_ready()
+
+    def _finish_petting_goal(self, generation):
+        if generation != self.petting_goal_generation:
+            return False
+        self.petting_goal_handle = None
+        self.petting_goal_pending = False
+        self.petting_animation_active = False
+        self.petting_goal_generation = None
+        self.petting_cancel_requested = False
+        return True
 
     def _finish_petting_if_ready(self):
         if (self.petting_active or self.petting_animation_active
-                or self.petting_transition_pending):
+                or self.petting_goal_pending or self.petting_transition_pending):
             return
-        if self.current_state == "PETTING" and self.petting_session_owned:
-            self._request_state("IDLE", "petting", 60, True, self._petting_idle_result)
+        if (self.current_state == "PETTING" and self.petting_session_owned
+                and not self.petting_idle_pending):
+            self.petting_idle_pending = True
+            generation = self.petting_generation
+            self._request_state(
+                "IDLE", "petting", 60, True,
+                lambda accepted, message: self._petting_idle_result(
+                    generation, accepted, message
+                ),
+            )
 
-    def _petting_idle_result(self, accepted, message):
+    def _petting_idle_result(self, generation, accepted, message):
+        self.petting_idle_pending = False
+        if generation != self.petting_generation:
+            if accepted and self.petting_active and self.current_state != "PETTING":
+                self._request_petting_state()
+            elif self.petting_active:
+                self._start_petting_animation()
+            return
         if accepted:
             self.petting_session_owned = False
         else:
@@ -277,7 +365,7 @@ class SimInteractionAdapter(Node):
     def _tick(self):
         if (self.petting_active and self.last_petting_event is not None
                 and time.monotonic() - self.last_petting_event > self.petting_timeout):
-            self.petting_active = False
+            self._stop_petting_session()
             self._finish_petting_if_ready()
         if self.voice_status in ACTIVE_VOICE_STATUSES:
             self._request_voice_state()
