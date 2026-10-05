@@ -52,7 +52,9 @@ scripts/simulator.sh --mode physics build
 scripts/simulator.sh --mode full up -d --build
 ```
 
-The supplied GGUF and Moonshine model directories must already exist in the AI checkout. All speech tests use supplied WAV files silently; this profile mounts no live audio devices.
+The supplied GGUF, Moonshine model directories, and `voices/en_US-amy-low.onnx` with its JSON configuration must already exist in the AI checkout. All speech tests use supplied WAV files silently; this profile mounts no live audio devices.
+
+An isolated combined-profile check on 2026-10-05 returned an actual LFM answer to “Why do plants need light?” in 1.019 seconds. A separate JSONL request with `synthesize: true` generated a real Piper WAV (16 kHz, 1.792 seconds) without playback. These are host functional checks, not CM4 latency estimates. Ordinary dashboard requests currently show text and speaking previews; they do not automatically request a synthesized WAV. The combined profile has not yet completed the full browser and supplied-audio regression suite.
 
 Verified on 2026-10-04: clean container build of all three ROS packages; HTTP command acceptance with recognized text and reply visible in dashboard state; four native motion/safety scenarios; ten native lamp scenarios. The lamp test exposed and verified a fix for stale color-temperature rendering. These checks do not replace full browser automation, all-animation timing, M3 physics or real hardware validation.
 
