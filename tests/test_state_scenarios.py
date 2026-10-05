@@ -150,3 +150,18 @@ def test_animation_shortcut_cannot_override_collision_or_escape():
     assert not manager.request_state_transition(state.IDLE, 'animation_command', 30)
     manager.request_state_transition(state.ESCAPE_MODE, 'behavior_coordinator', 100)
     assert not manager.request_state_transition(state.IDLE, 'animation_command', 50)
+
+
+def test_runtime_errors_latch_until_explicit_recovery():
+    manager, state = make_manager()
+    for current in state:
+        if current in (state.ERROR, state.SHUTDOWN):
+            continue
+        assert manager.request_state_transition(current, 'runtime', 50, force=True)
+        assert manager.request_state_transition(state.ERROR, 'runtime', 100)
+        assert manager.current_state == state.ERROR
+        assert not manager.request_state_transition(state.IDLE, 'runtime', 100, is_completion=True)
+        assert manager.current_state == state.ERROR
+        assert manager.request_state_transition(state.IDLE, 'recovery', 100)
+    assert manager.request_state_transition(state.SHUTDOWN, 'shutdown', 100)
+    assert not manager.request_state_transition(state.IDLE, 'shutdown', 100, is_completion=True)

@@ -846,6 +846,11 @@ class StateManagerNode(Node):
         self.add_transition(LuxoState.ERROR, LuxoState.INITIALIZING)
         self.add_transition(LuxoState.ERROR, LuxoState.SHUTDOWN)
         
+        # A runtime failure must be able to latch ERROR during any live behavior.
+        for state in LuxoState:
+            if state not in (LuxoState.ERROR, LuxoState.SHUTDOWN, LuxoState.INITIALIZING):
+                self.add_transition(state, LuxoState.ERROR)
+
         # To SHUTDOWN from any state
         for state in LuxoState:
             if state != LuxoState.SHUTDOWN:

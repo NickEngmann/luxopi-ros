@@ -47,13 +47,14 @@ class StateTransitionPolicy:
     def __init__(self, priorities, *, idle_state=LuxoState.IDLE,
                  error_state=LuxoState.ERROR, initial_state=LuxoState.INITIALIZING,
                  collision_state=LuxoState.COLLISION_AVOIDING,
-                 escape_state=LuxoState.ESCAPE_MODE):
+                 escape_state=LuxoState.ESCAPE_MODE, shutdown_state=LuxoState.SHUTDOWN):
         self.priorities = dict(priorities)
         self.idle_state = idle_state
         self.error_state = error_state
         self.initial_state = initial_state
         self.collision_state = collision_state
         self.escape_state = escape_state
+        self.shutdown_state = shutdown_state
 
     def decide(self, *, current_state, current_requester, current_priority,
                requested_state, requesting_node, priority=None, force=False,
@@ -67,6 +68,8 @@ class StateTransitionPolicy:
         completing_state = current_state
         restored_requester = None
         if completion:
+            if current_state in (self.error_state, self.shutdown_state):
+                return {"accepted": False, "reason": "terminal_state_requires_explicit_recovery"}
             if not completion_matches_owner(current_requester, requesting_node):
                 return {"accepted": False, "reason": "completion_owner_mismatch"}
             interrupted_states = interrupted_states or {}
@@ -80,6 +83,7 @@ class StateTransitionPolicy:
         interrupted = (
             not completion
             and current_state != requested_state
+            and requested_state not in (self.error_state, self.shutdown_state)
             and current_state not in (self.idle_state, self.initial_state)
             and effective_priority > current_priority
         )
