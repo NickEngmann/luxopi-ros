@@ -102,15 +102,11 @@ source install/setup.bash
 
 ### 5. Set Permissions
 ```bash
-# Serial port access
-sudo chmod 777 /dev/ttyAMA0
-
-# Add user to dialout group for serial access
-sudo usermod -aG dialout $USER
-```
+# Add your user to dialout for serial access; log in again afterward.
+sudo usermod -aG dialout "$USER"
 
 # Camera access (if using OAK-D)
-sudo usermod -aG plugdev $USER
+sudo usermod -aG plugdev "$USER"
 sudo udevadm control --reload-rules && sudo udevadm trigger
 ```
 
@@ -131,25 +127,30 @@ ros2 launch luxo_behaviors luxo_system.launch.py
 In simulation mode the browser control panel is enabled by default at
 `http://localhost:8080` (`enable_simulator_dashboard:=false` disables it). The
 panel injects bounded synthetic voice, direction, touch, gesture, proximity,
-distance, vision, and collision inputs and displays the live state, response,
-joint positions, and sensor outputs. Run the container with a loopback-only
-port mapping such as `-p 127.0.0.1:8080:8080` when opening it from the host.
+distance, vision, and collision inputs and displays live recognized text,
+response text, state, joint positions, and sensor outputs. The Compose helper
+binds `0.0.0.0:8080` for tailnet access; use a loopback-only port override when
+accessing it exclusively through an SSH tunnel.
 
-Simulation publishes one rate-limited `/joint_states` stream from the shared
-animation target topic and the checked-in four-joint URDF. It provides ROS joint
-states and TF, not Gazebo physics or contact simulation: the URDF currently has
-visual meshes without collision or inertial data. Do not treat simulated
-collisions as physical stopping-distance evidence. Live microphones and the OAK
-camera are hardware-only launch paths; simulation voice direction enters through
-`/sim/audio_direction` and uses the same estimator as the live direction node.
-The text-only speech bridge defaults to a deterministic simulation backend and
-does not play audio. Hardware speech is opt-in with `enable_speech_bridge:=true`
-and `speech_backend:=local` plus a configured JSON argv service command.
-The simulation also runs the ROS-only collision classifier against injected
-sensor topics (`enable_sim_sensors:=false` disables it); no I2C or camera
-drivers are started in simulation. Collision warnings and safety FSM states
-hold simulated motion output. This is a software integration check, not a
-physical collision-response or stopping-distance validation.
+The default simulation uses the vendor six-axis M3 description and a single
+rate-limited `/joint_states` stream. Its kinematic backend does not simulate
+contact forces. The optional MuJoCo profile includes vendor inertias and
+collision geometry; its virtual sensor fixture is separately opt-in and feeds
+the real collision classifier. Neither profile establishes physical stopping
+distances or sensor placement accuracy before robot calibration.
+
+Live microphone and OAK camera capture are hardware-only launch paths. Synthetic
+microphone frames exercise the shared direction estimator, and supplied WAV
+uploads in the optional audio/full profiles exercise actual local speech models
+without recording or playing audio. The default text conversation backend is
+explicitly simulated. The full profile also creates real Piper response WAVs
+and shows a silent speaking preview; it does not send sound to any speaker.
+
+Simulation starts the ROS-only collision classifier without I2C drivers.
+Fresh sensor warnings can redirect a target; danger, invalid required coverage,
+and stale coverage hold motion. Fresh clear evidence and a new user intent are
+required to resume after a safety hold. See the linked sensor and motion docs
+for coverage ownership, thresholds, and evidence limits.
 
 ### Full System with All Features
 ```bash
