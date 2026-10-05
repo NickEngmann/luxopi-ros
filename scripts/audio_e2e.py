@@ -59,6 +59,9 @@ def main():
             if name=='dance':assert animation and motion,'Actual dance/action motion was not observed'
             if name in ('lamp','brightness'):assert lamp,'Actual lamp sink did not update'
             assert samples[-1].get('status')=='idle','Speech did not complete'
+            assert samples[-1].get('state')=='IDLE', 'Conversation/action ownership did not release'
+            if name=='dance':
+                assert not samples[-1].get('animation'), 'Dance action did not complete'
             item=dict(scenario=name,passed=True,accepted=accepted,transcript=transcript,response=response_text,elapsed_seconds=round(time.monotonic()-first,3),animation_observed=animation,joint_movement=motion,lamp_observed=lamp,statuses=sorted({s.get('status','') for s in samples}),final_state=samples[-1].get('state'))
             results.append(item);print(json.dumps(item),flush=True)
     except Exception as exc:error=str(exc);raise
