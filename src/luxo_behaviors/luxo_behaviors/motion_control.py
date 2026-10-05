@@ -51,3 +51,11 @@ class AnimationGoalTracker:
             if self._active_goal is goal_handle:
                 self._active_goal = None
 
+
+
+def scaled_duration(duration, speed_multiplier):
+    """Convert a nominal keyframe duration to wall time, exactly once."""
+    speed = float(speed_multiplier)
+    if not 0.1 <= speed <= 2.0:
+        speed = 1.0
+    return max(0.0, float(duration)) / speed

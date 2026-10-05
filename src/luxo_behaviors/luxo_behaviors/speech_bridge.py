@@ -1,13 +1,14 @@
 """ROS adapter for local speech results and silent conversation simulation."""
 
 import json
+import math
 import queue
 import threading
 
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, DurabilityPolicy
-from std_msgs.msg import String
+from std_msgs.msg import String, Bool
 
 from luxo_behaviors.conversation_transport import ConversationClient, SimulatedConversation, LocalEventReceiver
 
@@ -40,6 +41,10 @@ class SpeechBridge(Node):
             String, "/voice/status", QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL),
         )
         self.animations = self.create_publisher(String, "/roarm/animation_command", 10)
+        self.light_control = self.create_publisher(Bool, "/luxo/light_control", 10)
+        self.brightness_control = self.create_publisher(String, "/luxo/brightness_control", 10)
+        self.color_control = self.create_publisher(String, "/luxo/color_control", 10)
+        self.color_temp_control = self.create_publisher(String, "/luxo/color_temp_control", 10)
         self.subscription = self.create_subscription(String, "/voice/command", self.command, 10)
         self._pending = queue.Queue(maxsize=1)
         self._stopping = threading.Event()
@@ -65,16 +70,39 @@ class SpeechBridge(Node):
                 if not event or self._stopping.is_set():
                     continue
                 kind = event.get("event")
+                if not isinstance(kind, str):
+                    continue
                 text = event.get("text")
                 if kind in {"transcript", "response"} and isinstance(text, str) and len(text) <= 2000:
                     publisher = self.transcripts if kind == "transcript" else self.responses
                     publisher.publish(String(data=text))
-                elif kind == "status" and event.get("status") in {"idle", "listening", "thinking", "speaking", "error"}:
+                elif kind == "status" and isinstance(event.get("status"), str) and event["status"] in {"idle", "listening", "thinking", "speaking", "error"}:
                     self._publish_status(event["status"])
-                elif kind == "animation" and event.get("animation") in SimulatedConversation.ANIMATIONS:
+                elif kind == "animation" and isinstance(event.get("animation"), str) and event["animation"] in SimulatedConversation.ANIMATIONS:
                     self.animations.publish(String(data=event["animation"]))
+                elif kind == "intent":
+                    self._dispatch_intent(event.get("intent"))
             except OSError:
                 break  # Receiver was closed during shutdown.
+
+    def _dispatch_intent(self, intent):
+        if not isinstance(intent, dict):
+            return False
+        kind, value = intent.get("kind"), intent.get("value")
+        if not isinstance(kind, str):
+            return False
+        if kind == "animation" and isinstance(value, str) and value in SimulatedConversation.ANIMATIONS:
+            self.animations.publish(String(data=value))
+        elif kind == "light" and type(value) is bool:
+            self.light_control.publish(Bool(data=value))
+        elif kind == "color" and isinstance(value, str) and value in {"red", "orange", "yellow", "green", "cyan", "blue", "purple", "white"}:
+            self.color_control.publish(String(data=f"color:{value}"))
+        elif kind in {"brightness", "color_temp"} and type(value) in {int, float} and math.isfinite(value) and 0 <= value <= 1:
+            publisher = self.brightness_control if kind == "brightness" else self.color_temp_control
+            publisher.publish(String(data=f"{kind}:{value}"))
+        else:
+            return False
+        return True
 
     def command(self, message):
         text = message.data.strip()
@@ -104,7 +132,9 @@ class SpeechBridge(Node):
                 if self._stopping.is_set():
                     break
                 animation = result.get("animation")
-                if animation in SimulatedConversation.ANIMATIONS:
+                if "intent" in result and result["intent"] is not None:
+                    self._dispatch_intent(result["intent"])
+                elif animation in SimulatedConversation.ANIMATIONS:
                     self.animations.publish(String(data=animation))
                 self.responses.publish(String(data=result["response"]))
                 self._publish_status("speaking")

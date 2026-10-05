@@ -1,6 +1,6 @@
 import pytest
 
-from luxo_behaviors.animation_command import scaled_duration
+from luxo_behaviors.motion_control import scaled_duration
 
 
 @pytest.mark.parametrize(

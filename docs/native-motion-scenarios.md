@@ -33,3 +33,9 @@ producers or duplicate joint-state publishers.
 The script has been syntax-checked; actual native ROS execution remains pending
 until the integrated simulator launch is ready. Physical motor braking, actual
 microphone accuracy and acoustic speech recognition are outside this suite.
+
+## Integration checkpoint (2026-10-04)
+
+The hardware-free suite now passes 203 tests using `PYTHON=python3.12 bash scripts/test_offline.sh`. Animation duration scaling is shared through a ROS-independent helper and applied once. Local speech bridge intents include validated lamp controls; the standalone speech scenario runner checks transcript, response, status and animation publications without audio playback.
+
+The earlier 37-scenario native animation run exposed a double speed multiplier; that has been corrected, but final native timing and browser E2E reruns are still pending. The current visual/kinematic model is the legacy four-axis RoArm model, not a validated six-axis M3 physics model. Direction estimation fixtures exercise the shared GCC-PHAT estimator, but do not establish physical microphone-array accuracy. No physical robot is attached.

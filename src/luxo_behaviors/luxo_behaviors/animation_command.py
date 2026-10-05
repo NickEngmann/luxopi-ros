@@ -27,15 +27,8 @@ from luxo_behaviors.animation_plugin_base import AnimationPlugin
 # Import state machine classes and utilities
 from luxo_behaviors.state_machine import LuxoState
 from luxo_behaviors.shared_utils import StateUtils
-from luxo_behaviors.motion_control import AnimationGoalTracker
+from luxo_behaviors.motion_control import AnimationGoalTracker, scaled_duration
 
-
-def scaled_duration(duration, speed_multiplier):
-    """Convert a nominal keyframe duration to wall time, exactly once."""
-    speed = float(speed_multiplier)
-    if not 0.1 <= speed <= 2.0:
-        speed = 1.0
-    return max(0.0, float(duration)) / speed
 
 
 class AnimationCommandActionServer(Node):
