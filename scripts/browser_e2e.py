@@ -228,6 +228,7 @@ def main():
                     readiness_body = readiness.json()
                     assert not readiness_body['healthy']
                     assert 'state_not_ready' in readiness_body['health']['reasons']
+                    page.wait_for_function("state=>document.querySelector('#graphHealthDetail').textContent.includes(state)", arg=state_name)
                     record('faulted_state_reports_unready', state=state_name,
                            health_status=readiness.status,
                            reasons=readiness_body['health']['reasons'])
@@ -279,15 +280,27 @@ def main():
             page.locator('#resetIdle').click()
             wait(lambda s: s['state'] == 'IDLE', timeout=10)
 
-            # Capture all form values in one event turn, avoiding a polling race.
+            # User edits must survive several real polling turns before Send.
             page.evaluate('''() => {
-                document.querySelector('#brightnessRange').value = '0.22';
-                document.querySelector('#lightColor').value = 'blue';
-                document.querySelector('#lightsEnabled').checked = true;
-                document.querySelector('#sendLights').click();
+                for (const [id,value] of [['brightnessRange','0.22'],['colorTempRange','0.7']]) {
+                    const field=document.getElementById(id);field.value=value;
+                    field.dispatchEvent(new Event('input',{bubbles:true}));
+                }
+                const checkbox=document.getElementById('lightsEnabled');checkbox.checked=false;
+                checkbox.dispatchEvent(new Event('change',{bubbles:true}));
+                document.getElementById('lightColor').value='blue';
             }''')
+            page.wait_for_timeout(700)
+            assert abs(float(page.locator('#brightnessRange').input_value())-.22)<.001
+            assert abs(float(page.locator('#colorTempRange').input_value())-.7)<.001
+            assert not page.locator('#lightsEnabled').is_checked()
+            record('lighting_drafts_survive_live_polling')
+            page.locator('#lightsEnabled').check()
+            page.locator('#sendLights').click()
             snapshot = wait(lambda s: abs(s['sensors'].get('light_state', {}).get('brightness', -1) - .22) < .001
-                            and s['sensors']['light_state']['rgbw'] == [0, 0, 255, 0])
+                            and s['sensors']['light_state']['rgbw'] == [0, 0, 255, 0]
+                            and s['sensors']['light_state'].get('color_temperature') == .7)
+            page.wait_for_function("Object.values(lightingDrafts).every(d=>!d.edited&&!d.pending)")
             record('lamp_controls_to_consumer', light=snapshot['sensors']['light_state'])
 
             page.locator('#animationNameSelect').select_option('dance')
