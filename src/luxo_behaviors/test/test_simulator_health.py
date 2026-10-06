@@ -3,12 +3,17 @@ import pytest
 from luxo_behaviors.simulator_protocol import (
     REQUIRED_GRAPH_COMPONENTS,
     summarize_simulator_health,
+    valid_joint_feedback,
+    MANUAL_JOINT_LIMITS,
 )
 
 
 def healthy_snapshot():
     return {
         "graph_nodes": list(REQUIRED_GRAPH_COMPONENTS),
+        "state": "IDLE",
+        "joint_names": list(MANUAL_JOINT_LIMITS),
+        "positions": [0.0] * 4,
         "_state_received_monotonic": 9.8,
         "_joints_received_monotonic": 9.9,
     }
@@ -48,3 +53,38 @@ def test_physics_health_requires_actual_feedback_engine():
     assert summarize_simulator_health(snapshot, 10)['missing_required'] == ['mujoco_simulator']
     snapshot['graph_nodes'].append('mujoco_simulator')
     assert summarize_simulator_health(snapshot, 10)['healthy']
+
+
+@pytest.mark.parametrize("state", ["ERROR", "SHUTDOWN", "INITIALIZING", "bogus", None])
+def test_fresh_faulted_or_unready_state_is_not_healthy(state):
+    snapshot = healthy_snapshot()
+    snapshot["state"] = state
+    health = summarize_simulator_health(snapshot, 10.0)
+    assert not health["healthy"]
+    assert "state_not_ready" in health["reasons"]
+
+
+@pytest.mark.parametrize("positions", [[0.0], [0.0, 0.0, float("nan"), 0.0],
+                                       [0.0, float("inf"), 0.0, 0.0],
+                                       [100.0, 0.0, 0.0, 0.0],
+                                       [False, 0.0, 0.0, 0.0]])
+def test_malformed_feedback_does_not_report_healthy(positions):
+    snapshot = healthy_snapshot()
+    snapshot["positions"] = positions
+    health = summarize_simulator_health(snapshot, 10.0)
+    assert not health["healthy"]
+    assert "invalid_joint_feedback" in health["reasons"]
+
+
+def test_rejected_feedback_remains_unhealthy_until_valid_feedback_arrives():
+    snapshot = healthy_snapshot()
+    snapshot["_joint_feedback_valid"] = False
+    assert not summarize_simulator_health(snapshot, 10.0)["healthy"]
+    snapshot["_joint_feedback_valid"] = True
+    assert summarize_simulator_health(snapshot, 10.0)["healthy"]
+
+
+def test_joint_feedback_rejects_duplicate_names_and_accepts_reordered_complete_pose():
+    names = list(MANUAL_JOINT_LIMITS)
+    assert not valid_joint_feedback([names[0]] * 4, [0.0] * 4)
+    assert valid_joint_feedback(list(reversed(names)), [0.0] * 4)

@@ -39,6 +39,29 @@ REQUIRED_GRAPH_COMPONENTS = (
 )
 
 
+def valid_joint_feedback(names, positions):
+    """Require complete, finite feedback for one supported robot description."""
+    if not isinstance(names, (list, tuple)) or not isinstance(positions, (list, tuple)):
+        return False
+    if len(names) != len(positions) or any(not isinstance(name, str) for name in names):
+        return False
+    if len(set(names)) != len(names):
+        return False
+    if set(names) == set(M3_JOINT_NAMES):
+        limits = M3_JOINT_LIMITS
+    elif set(names) == set(MANUAL_JOINT_LIMITS):
+        limits = MANUAL_JOINT_LIMITS
+    else:
+        return False
+    for name, value in zip(names, positions):
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+            return False
+        lower, upper = limits[name]
+        if not lower - 0.02 <= value <= upper + 0.02:
+            return False
+    return True
+
+
 def summarize_simulator_health(snapshot, now_monotonic):
     """Return liveness and graph health using monotonic receipt timestamps."""
     present = set(snapshot.get("graph_nodes", []))
@@ -53,8 +76,24 @@ def summarize_simulator_health(snapshot, now_monotonic):
     missing = [name for name, found in components.items() if not found]
     state_fresh = state_age is not None and state_age <= HEALTH_STALE_SECONDS
     joints_fresh = joints_age is not None and joints_age <= HEALTH_STALE_SECONDS
+    state = snapshot.get("state")
+    state_ready = state in STATE_NAMES - {"INITIALIZING", "ERROR", "SHUTDOWN"}
+    joints_valid = bool(snapshot.get("_joint_feedback_valid", True)) and valid_joint_feedback(
+        snapshot.get("joint_names", []), snapshot.get("positions", []))
+    reasons = (["missing_components"] if missing else [])
+    if not state_fresh:
+        reasons.append("stale_state")
+    if not joints_fresh:
+        reasons.append("stale_joint_feedback")
+    if not state_ready:
+        reasons.append("state_not_ready")
+    if not joints_valid:
+        reasons.append("invalid_joint_feedback")
     return {
-        "healthy": not missing and state_fresh and joints_fresh,
+        "healthy": not reasons,
+        "reasons": reasons,
+        "state_ready": state_ready,
+        "joint_feedback_valid": joints_valid,
         "node_count": len(present),
         "nodes": sorted(present),
         "components": components,

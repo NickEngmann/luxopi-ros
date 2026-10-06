@@ -24,6 +24,7 @@ from luxo_behaviors.simulator_protocol import (
     ANIMATION_NAMES,
     normalize_event,
     summarize_simulator_health,
+    valid_joint_feedback,
 )
 from luxo_behaviors.roarm_m3_kinematics import M3_JOINT_LIMITS, M3_JOINT_NAMES
 
@@ -318,6 +319,7 @@ class SimulatorDashboard(Node):
             result["health"] = summarize_simulator_health(result, time.monotonic())
             result.pop("_state_received_monotonic", None)
             result.pop("_joints_received_monotonic", None)
+            result.pop("_joint_feedback_valid", None)
             result["audio_upload"] = self._audio_upload_enabled
             result["animation_names"] = sorted(ANIMATION_NAMES)
             if joint_names == set(M3_JOINT_NAMES):
@@ -362,7 +364,11 @@ class SimulatorDashboard(Node):
         self._update(animation=msg.data)
 
     def _joint_cb(self, msg):
+        if not valid_joint_feedback(list(msg.name), list(msg.position)):
+            self._update(_joint_feedback_valid=False)
+            return
         self._update(
+            _joint_feedback_valid=True,
             joint_names=list(msg.name),
             positions=list(msg.position),
             _joints_received_monotonic=time.monotonic(),
