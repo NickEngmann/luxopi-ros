@@ -816,7 +816,9 @@ class StateManagerNode(Node):
         self.add_transition(LuxoState.ESCAPE_MODE, LuxoState.COLLISION_AVOIDING)
         self.add_transition(LuxoState.ESCAPE_MODE, LuxoState.PETTING)
         
-        # From RETURNING_HOME
+        # From RETURNING_HOME: recovery movement must remain interruptible by safety.
+        self.add_transition(LuxoState.RETURNING_HOME, LuxoState.COLLISION_AVOIDING)
+        self.add_transition(LuxoState.RETURNING_HOME, LuxoState.ESCAPE_MODE)
         self.add_transition(LuxoState.RETURNING_HOME, LuxoState.IDLE)
         self.add_transition(LuxoState.RETURNING_HOME, LuxoState.ANIMATING)
         self.add_transition(LuxoState.RETURNING_HOME, LuxoState.PETTING)

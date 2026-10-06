@@ -214,3 +214,24 @@ def test_background_idle_cannot_clear_runtime_fault():
     assert not manager.request_state_transition(state.IDLE, 'voice_session', 80)
     assert manager.current_state == state.ERROR
     assert manager.request_state_transition(state.IDLE, 'maintenance', 100)
+
+
+def test_home_safety_interrupt_and_old_lease_release_cannot_resume_home():
+    manager, state = make_manager()
+    assert manager.request_state_transition(state.IDLE, 'idle', 0)
+    assert manager.request_state_transition(state.RETURNING_HOME, 'home_return:old', 50)
+    assert manager.request_state_transition(state.COLLISION_AVOIDING, 'behavior_coordinator', 100)
+    assert manager.request_state_transition(state.IDLE, 'home_return:old', 50, is_completion=True)
+    assert manager.current_state == state.COLLISION_AVOIDING
+    assert manager.request_state_transition(state.IDLE, 'behavior_coordinator', 100, is_completion=True)
+    assert manager.current_state == state.IDLE
+    assert manager.request_state_transition(state.RETURNING_HOME, 'home_return:new', 50)
+    assert not manager.request_state_transition(state.IDLE, 'home_return:old', 50, is_completion=True)
+    assert manager.current_state == state.RETURNING_HOME
+
+
+def test_escape_can_interrupt_a_home_move():
+    manager, state = make_manager()
+    assert manager.request_state_transition(state.IDLE, 'idle', 0)
+    assert manager.request_state_transition(state.RETURNING_HOME, 'home_return:old', 50)
+    assert manager.request_state_transition(state.ESCAPE_MODE, 'behavior_coordinator', 100)
