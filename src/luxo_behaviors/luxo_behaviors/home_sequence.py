@@ -22,7 +22,8 @@ class HomeSequence:
             gripper_position=gripper)[1] for pose in HOME_STAGE_POSES]
         self.started = now
         self.timeout = timeout
-        self.stage = 0
+        self.stage = (1 if max(abs(a-b) for a,b in zip(current, self.targets[1])) <= 0.03
+                      else 0)
         self.settled_since = None
         self.status = 'running'
         self.reason = ''

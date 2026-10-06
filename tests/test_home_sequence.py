@@ -53,3 +53,12 @@ def test_home_rejects_incomplete_or_nonfinite_start_feedback(current):
 
 def test_initializing_is_a_motion_hold_state():
     assert motion_is_frozen('INITIALIZING', ())
+
+
+def test_already_home_does_not_unnecessarily_raise_the_shoulder_again():
+    current = [0.2, -0.85, 1.3, 1.4, -1.5, 0.7]
+    plan = HomeSequence('roarm_m3', current, 0)
+    assert plan.stage == 1
+    assert plan.target == current
+    plan.advance(current, [0]*6, 0)
+    assert plan.advance(current, [0]*6, .11) == 'completed'
