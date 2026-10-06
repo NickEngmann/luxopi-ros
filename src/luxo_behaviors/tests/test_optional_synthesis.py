@@ -45,7 +45,9 @@ def test_wav_header_controls_silent_speaking_preview_with_bounded_fallback(tmp_p
 
 
 @pytest.mark.parametrize('audio',[False,True])
-def test_actual_bridge_worker_passes_flag_and_uses_generated_wav_duration(tmp_path,audio):
+@pytest.mark.parametrize('early',[False,True])
+@pytest.mark.parametrize('shutdown',[False,True])
+def test_actual_bridge_worker_passes_flag_and_uses_generated_wav_duration(tmp_path,audio,early,shutdown):
     source=Path(__file__).resolve().parents[1]/'luxo_behaviors/speech_bridge.py'
     tree=ast.parse(source.read_text())
     method=next(m for c in tree.body if isinstance(c,ast.ClassDef) for m in c.body if isinstance(m,ast.FunctionDef) and m.name=='_run')
@@ -53,19 +55,24 @@ def test_actual_bridge_worker_passes_flag_and_uses_generated_wav_duration(tmp_pa
                    speaking_preview_duration=speaking_preview_duration,remove_audio=lambda *a:None)
     exec(compile(ast.Module(body=[method],type_ignores=[]),str(source),'exec'),namespace)
     path=tmp_path/'response.wav';wav(path,1.75)
-    calls=[];waits=[];statuses=[]
+    calls=[];waits=[];statuses=[];published=[]
     class Stop:
         stopped=False
         def is_set(self):return self.stopped
         def wait(self,duration):waits.append(duration);self.stopped=True
-    def request(value,*,synthesize=False):
-        calls.append((value,synthesize));return dict(text='dance',response='ready',audio_path=str(path))
+    def request(value,*,synthesize=False,on_transcript=None):
+        calls.append((value,synthesize))
+        if shutdown:bridge._stopping.stopped=True
+        if early and on_transcript is not None:on_transcript('dance')
+        return dict(text='dance',response='ready',audio_path=str(path))
     pending=queue.Queue();pending.put({'audio_file':'test.wav'} if audio else {'text':'dance'})
     bridge=SimpleNamespace(client=SimpleNamespace(request=request,request_audio=request),
         synthesize_speech=True,_stopping=Stop(),_pending=pending,_busy=SimpleNamespace(clear=lambda:None),
         audio_directory=str(tmp_path),_publish_status=statuses.append,
         get_parameter=lambda name:SimpleNamespace(value=1.),
-        responses=SimpleNamespace(publish=lambda m:None),transcripts=SimpleNamespace(publish=lambda m:None))
+        responses=SimpleNamespace(publish=lambda m:None),transcripts=SimpleNamespace(publish=lambda m:published.append(m.data)))
     namespace['_run'](bridge)
     assert calls==[('test.wav' if audio else 'dance',True)]
-    assert waits==[1.75] and statuses==['thinking','speaking']
+    assert waits==([] if shutdown else [1.75])
+    assert statuses==(['thinking'] if shutdown else ['thinking','speaking'])
+    assert published==(['dance'] if audio and not shutdown else [])

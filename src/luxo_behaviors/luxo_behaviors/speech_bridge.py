@@ -163,8 +163,15 @@ class SpeechBridge(Node):
             try:
                 self._publish_status("thinking")
                 if "audio_file" in request:
-                    result = self.client.request_audio(request["audio_file"], synthesize=self.synthesize_speech)
-                    self.transcripts.publish(String(data=result["text"]))
+                    early_transcript=[]
+                    def publish_transcript(text):
+                        if not self._stopping.is_set():
+                            self.transcripts.publish(String(data=text))
+                            early_transcript.append(text)
+                    result = self.client.request_audio(request["audio_file"], synthesize=self.synthesize_speech,
+                                                       on_transcript=publish_transcript)
+                    if not early_transcript and not self._stopping.is_set():
+                        self.transcripts.publish(String(data=result["text"]))
                 else:
                     result = self.client.request(request["text"], synthesize=self.synthesize_speech)
                 if self._stopping.is_set():

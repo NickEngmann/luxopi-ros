@@ -12,6 +12,10 @@ import time
 import uuid
 
 
+class ConversationRequestError(RuntimeError):
+    """A healthy service rejected one transaction; keep its models loaded."""
+
+
 class ConversationClient:
     """Own one reusable subprocess; a timeout tears down its stale transaction."""
 
@@ -68,11 +72,11 @@ class ConversationClient:
             raise ValueError("text must contain 1–2000 characters")
         return self._request({"text": text, **({"synthesize": True} if synthesize else {})})
 
-    def request_audio(self, name, *, synthesize=False):
+    def request_audio(self, name, *, synthesize=False, on_transcript=None):
         from luxo_behaviors.audio_input import validate_audio_name
-        return self._request({"audio_file": validate_audio_name(name), **({"synthesize": True} if synthesize else {})})
+        return self._request({"audio_file": validate_audio_name(name), **({"synthesize": True} if synthesize else {})}, on_transcript=on_transcript)
 
-    def _request(self, payload):
+    def _request(self, payload, *, on_transcript=None):
         with self._lock:
             self._start()
             process = self._process
@@ -81,6 +85,7 @@ class ConversationClient:
                 process.stdin.write(json.dumps({"id": request_id, **payload}) + "\n")
                 process.stdin.flush()
                 deadline = time.monotonic() + self.timeout
+                progress_count = 0
                 while time.monotonic() < deadline:
                     try:
                         result = self._results.get(timeout=min(0.1, max(0.001, deadline - time.monotonic())))
@@ -90,12 +95,24 @@ class ConversationClient:
                         continue
                     if result.get("id") != request_id:
                         continue
+                    if result.get("event") == "transcript":
+                        progress_count += 1
+                        text=result.get("text")
+                        if progress_count > 8 or not isinstance(text,str) or not text.strip() or len(text)>2000:
+                            raise RuntimeError("Invalid or excessive transcript progress")
+                        if on_transcript is not None:on_transcript(text)
+                        continue
                     if result.get("error"):
-                        raise RuntimeError(result["error"])
+                        message=str(result["error"])[:2000]
+                        if result.get("recoverable") is True and result.get("error_type")=="request_error":
+                            raise ConversationRequestError(message)
+                        raise RuntimeError(message)
                     if not isinstance(result.get("response"), str):
                         raise RuntimeError("Service returned no response text")
                     return result
                 raise TimeoutError("Local conversation service timed out")
+            except ConversationRequestError:
+                raise
             except (BrokenPipeError, OSError, RuntimeError, TimeoutError, ValueError):
                 self.close()
                 raise

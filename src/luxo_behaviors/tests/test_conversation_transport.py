@@ -90,8 +90,82 @@ for line in sys.stdin:
     def reaped_or_zombie():
         try:
             return stat_path.read_text().split(")", 1)[1].split()[0] == "Z"
-        except FileNotFoundError:
+        except (FileNotFoundError,ProcessLookupError):
             return True  # Successful reap can race with the preceding /proc lookup.
     while not reaped_or_zombie() and time.monotonic() < deadline:
         time.sleep(0.01)
     assert reaped_or_zombie()
+
+
+def test_progress_and_final_in_one_write_are_correlated_and_both_consumed():
+    child='''
+import json,sys
+for line in sys.stdin:
+ r=json.loads(line)
+ events=[{'id':'stale','event':'transcript','text':'wrong'},
+         {'id':r['id'],'event':'transcript','text':'Please dance'},
+         {'id':r['id'],'response':'ready','text':'Please dance'}]
+ sys.stdout.write(''.join(json.dumps(e)+'\\n' for e in events));sys.stdout.flush()
+'''
+    client=ConversationClient([sys.executable,'-u','-c',child],timeout=2)
+    seen=[]
+    try:
+        result=client.request_audio('a'*32+'.wav',on_transcript=seen.append)
+        assert seen==['Please dance'] and result['response']=='ready'
+    finally:client.close()
+
+
+def test_recoverable_request_error_preserves_warm_child_for_following_command():
+    from luxo_behaviors.conversation_transport import ConversationRequestError
+    child='''
+import json,sys,os
+for line in sys.stdin:
+ r=json.loads(line)
+ if r['text']=='bad':result={'error':'bad utterance','error_type':'request_error','recoverable':True}
+ else:result={'response':'ready','pid':os.getpid()}
+ print(json.dumps({'id':r['id'],**result}),flush=True)
+'''
+    client=ConversationClient([sys.executable,'-u','-c',child],timeout=2)
+    try:
+        first=client.request('good')
+        with pytest.raises(ConversationRequestError):client.request('bad')
+        assert client.request('good')['pid']==first['pid']
+    finally:client.close()
+
+
+def test_progress_never_extends_transaction_deadline_and_timeout_restarts_child():
+    child='''
+import json,sys,time,os
+for line in sys.stdin:
+ r=json.loads(line)
+ if r['text']=='hang':
+  for i in range(8):
+   print(json.dumps({'id':r['id'],'event':'transcript','text':'partial'}),flush=True);time.sleep(.05)
+  time.sleep(30)
+ print(json.dumps({'id':r['id'],'response':'ready','pid':os.getpid()}),flush=True)
+'''
+    client=ConversationClient([sys.executable,'-u','-c',child],timeout=.3)
+    try:
+        first=client.request('good')
+        start=time.monotonic()
+        with pytest.raises(TimeoutError):client.request('hang')
+        assert time.monotonic()-start<1 and client._process is None
+        assert client.request('good')['pid']!=first['pid']
+    finally:client.close()
+
+
+def test_excess_progress_is_protocol_failure_and_restarts_owned_service():
+    child='''
+import json,sys,os
+for line in sys.stdin:
+ r=json.loads(line)
+ if r['text']=='flood':
+  for i in range(9):print(json.dumps({'id':r['id'],'event':'transcript','text':'partial'}),flush=True)
+ print(json.dumps({'id':r['id'],'response':'ready','pid':os.getpid()}),flush=True)
+'''
+    client=ConversationClient([sys.executable,'-u','-c',child],timeout=2)
+    try:
+        first=client.request('good')
+        with pytest.raises(RuntimeError,match='excessive'):client.request('flood')
+        assert client._process is None and client.request('good')['pid']!=first['pid']
+    finally:client.close()
