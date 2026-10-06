@@ -43,11 +43,16 @@ def main():
                 assert response.status==202;accepted=json.load(response)
             samples=[];first=time.monotonic();deadline=first+90
             transcript=None;response_text=None;motion=False;animation=False;lamp=False
+            first_transcript_seconds=None;first_response_seconds=None
             while time.monotonic()<deadline:
                 state=snapshot();samples.append(state)
                 for value in state.get('positions',[]):assert math.isfinite(value)
-                if normalized(state.get('transcript',''))==normalized(expected):transcript=state['transcript']
-                if transcript and state.get('response') and state['response']!=previous_response:response_text=state['response']
+                if normalized(state.get('transcript',''))==normalized(expected):
+                    transcript=state['transcript']
+                    if first_transcript_seconds is None:first_transcript_seconds=time.monotonic()-first
+                if transcript and state.get('response') and state['response']!=previous_response:
+                    response_text=state['response']
+                    if first_response_seconds is None:first_response_seconds=time.monotonic()-first
                 animation=animation or state.get('animation')=='dance'
                 motion=motion or bool(positions and len(positions)==len(state.get('positions',[])) and max(abs(a-b) for a,b in zip(positions,state['positions']))>.02)
                 light=state.get('sensors',{}).get('light_state',{})
@@ -62,10 +67,10 @@ def main():
             assert samples[-1].get('state')=='IDLE', 'Conversation/action ownership did not release'
             if name=='dance':
                 assert not samples[-1].get('animation'), 'Dance action did not complete'
-            item=dict(scenario=name,passed=True,accepted=accepted,transcript=transcript,response=response_text,elapsed_seconds=round(time.monotonic()-first,3),animation_observed=animation,joint_movement=motion,lamp_observed=lamp,statuses=sorted({s.get('status','') for s in samples}),final_state=samples[-1].get('state'))
+            item=dict(scenario=name,passed=True,accepted=accepted,transcript=transcript,response=response_text,elapsed_seconds=round(time.monotonic()-first,3),first_transcript_seconds=round(first_transcript_seconds,3),first_response_seconds=round(first_response_seconds,3),animation_observed=animation,joint_movement=motion,lamp_observed=lamp,statuses=sorted({s.get('status','') for s in samples}),final_state=samples[-1].get('state'))
             results.append(item);print(json.dumps(item),flush=True)
     except Exception as exc:error=str(exc);raise
     finally:
-        args.output.write_text(json.dumps(dict(started_at=started,ended_at=datetime.datetime.now(datetime.UTC).isoformat(),results=results,error=error,scope='Synthetic Piper fixtures through actual local models and ROS consumers; silent, not accuracy or hardware latency'),indent=2))
+        args.output.write_text(json.dumps(dict(started_at=started,ended_at=datetime.datetime.now(datetime.UTC).isoformat(),results=results,error=error,scope='Synthetic Piper fixtures through actual local models and ROS consumers; silent; event timings observed by HTTP polling, not pure model latency, accuracy or hardware latency'),indent=2))
 
 if __name__=='__main__':main()
