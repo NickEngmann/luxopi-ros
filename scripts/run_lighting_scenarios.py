@@ -51,8 +51,12 @@ def main():
             check('color_'+color,'color',String(data='color:'+color),lambda s,rgb=rgb:s['rgbw']==rgb)
         check('lamp_off','light',Bool(data=False),lambda s:not s['enabled'] and s['effect']=='off')
         check('lamp_on_again','light',Bool(data=True),lambda s:s['enabled'] and s['effect']!='off')
-        check('default_white','color',String(data='color:white'),lambda s:s['rgbw']==[255,255,255,100])
+        # Explicitly seed the stored white before checking `color:white`:
+        # prior browser/control suites may have changed the retained color temp.
+        check('set_neutral_color_temperature','temperature',String(data='color_temp:0.5'),lambda s:s['rgbw']==[255,255,255,50])
+        check('white_uses_stored_neutral_temperature','color',String(data='color:white'),lambda s:s['rgbw']==[255,255,255,50])
         check('warm_color_temperature','temperature',String(data='color_temp:1'),lambda s:s['rgbw']==[255,200,150,150])
+        check('white_uses_stored_warm_temperature','color',String(data='color:white'),lambda s:s['rgbw']==[255,200,150,150])
         check('neutral_color_temperature','temperature',String(data='color_temp:0.5'),lambda s:s['rgbw']==[255,255,255,50])
         check('restore_brightness','brightness',String(data='brightness:0.5'),lambda s:s['brightness']==.5)
     finally:
