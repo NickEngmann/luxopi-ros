@@ -3,27 +3,47 @@
 
 import unittest
 import sys
-import math
-import unittest.mock as mock
+import importlib.util
+from pathlib import Path
+import types
+from unittest.mock import patch
 
-# Mock ROS2 imports to avoid dependency issues
-sys.modules['rclpy'] = mock.MagicMock()
-sys.modules['rclpy.node'] = mock.MagicMock()
-sys.modules['std_msgs'] = mock.MagicMock()
-sys.modules['std_msgs.msg'] = mock.MagicMock()
-sys.modules['sensor_msgs'] = mock.MagicMock()
-sys.modules['sensor_msgs.msg'] = mock.MagicMock()
-sys.modules['luxo_interfaces'] = mock.MagicMock()
-sys.modules['luxo_interfaces.msg'] = mock.MagicMock()
-sys.modules['luxo_interfaces.srv'] = mock.MagicMock()
-sys.modules['geometry_msgs'] = mock.MagicMock()
-sys.modules['geometry_msgs.msg'] = mock.MagicMock()
-sys.modules['nav_msgs'] = mock.MagicMock()
-sys.modules['nav_msgs.msg'] = mock.MagicMock()
 
-sys.path.insert(0, 'src/luxo_behaviors')
+def load_animation_utils():
+    """Load the pure helpers with temporary message stubs, without poisoning ROS imports."""
+    package_root = Path(__file__).resolve().parents[1]
+    source = package_root / "luxo_behaviors" / "shared_utils.py"
 
-from luxo_behaviors.shared_utils import AnimationUtils
+    std_msgs = types.ModuleType("std_msgs")
+    std_msgs_msg = types.ModuleType("std_msgs.msg")
+    std_msgs_msg.String = type("String", (), {})
+    std_msgs.msg = std_msgs_msg
+    sensor_msgs = types.ModuleType("sensor_msgs")
+    sensor_msgs_msg = types.ModuleType("sensor_msgs.msg")
+    sensor_msgs_msg.JointState = type("JointState", (), {})
+    sensor_msgs.msg = sensor_msgs_msg
+
+    spec = importlib.util.spec_from_file_location(
+        "_animation_utils_test_shared_utils", source
+    )
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"cannot load utility module from {source}")
+    module = importlib.util.module_from_spec(spec)
+    try:
+        with patch.dict(sys.modules, {
+            "std_msgs": std_msgs,
+            "std_msgs.msg": std_msgs_msg,
+            "sensor_msgs": sensor_msgs,
+            "sensor_msgs.msg": sensor_msgs_msg,
+        }):
+            sys.modules[spec.name] = module
+            spec.loader.exec_module(module)
+    finally:
+        sys.modules.pop(spec.name, None)
+    return module.AnimationUtils
+
+
+AnimationUtils = load_animation_utils()
 
 
 class TestAnimationUtils(unittest.TestCase):
