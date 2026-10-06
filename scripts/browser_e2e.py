@@ -15,6 +15,13 @@ from urllib.parse import urlsplit
 from playwright.sync_api import sync_playwright
 
 
+def matching_conversation_reply(snapshot, command, expected_replies, previous_response):
+    """A new transcript alone is insufficient: the response may be from an old turn."""
+    return (snapshot.get('transcript') == command
+            and snapshot.get('response') in expected_replies
+            and snapshot.get('response') != previous_response)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--url', default='http://127.0.0.1:8080')
@@ -177,12 +184,19 @@ def main():
                        target=target, observed=snapshot['positions'][0])
                 page.locator('#resetIdle').click()
                 wait(lambda s: s['state'] == 'IDLE', timeout=10)
-            page.locator('#commandInput').fill('Please nod')
+            previous_response = state()['response']
+            # Choose another bounded command if a prior run already left the
+            # same reply, so this test requires an observable new response.
+            animation = 'stretch' if previous_response in {"I'll nod for you.", 'Simulator heard: Please nod'} else 'nod'
+            command_text = 'Please ' + animation
+            expected_replies = {f"I'll {animation} for you.", 'Simulator heard: ' + command_text}
+            page.locator('#commandInput').fill(command_text)
             page.locator('#commandForm button').click()
-            snapshot = wait(lambda s: s['transcript'] == 'Please nod' and bool(s['response']))
-            page.wait_for_function('document.querySelector("#transcript").textContent === "Please nod"')
-            page.wait_for_function('document.querySelector("#response").textContent !== "No response yet."')
-            record('conversation_text_and_reply', transcript=snapshot['transcript'], response=snapshot['response'])
+            snapshot = wait(lambda s: matching_conversation_reply(s, command_text, expected_replies, previous_response))
+            page.wait_for_function('(text) => document.querySelector("#transcript").textContent === text', arg=command_text)
+            page.wait_for_function('(reply) => document.querySelector("#response").textContent === reply', arg=snapshot['response'])
+            record('conversation_text_and_reply', transcript=snapshot['transcript'], response=snapshot['response'],
+                   previous_response=previous_response, matched_command=animation)
             # Animation commands are retimed to the simulated actuator limits;
             # the full nod gesture takes about a minute at those bounds.
             wait(lambda s: s['status'] == 'idle' and s['state'] == 'IDLE', timeout=90)
