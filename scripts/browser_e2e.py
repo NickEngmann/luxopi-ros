@@ -75,8 +75,8 @@ def main():
                 window.__luxoSensorTimer = null;
                 await (window.__luxoSensorPending || Promise.resolve());
             }''')
-        def start_sensor_heartbeat(include_front=True):
-            page.evaluate('''(includeFront) => {
+        def start_sensor_heartbeat(include_front=True, front_value=0):
+            page.evaluate('''([includeFront, frontValue]) => {
                 const events = [
                     {type:'distance', side:'left', metres:1.0},
                     {type:'distance', side:'right', metres:1.0},
@@ -84,7 +84,7 @@ def main():
                     {type:'touch', sensor:'head_left', value:0},
                     {type:'touch', sensor:'head_right', value:0},
                 ];
-                if (includeFront) events.push({type:'proximity', value:0});
+                if (includeFront) events.push({type:'proximity', value:frontValue});
                 const publish = () => {
                     window.__luxoSensorPending = Promise.all(events.map(event => fetch('/api/events', {
                         method:'POST', headers:{'Content-Type':'application/json'},
@@ -98,7 +98,7 @@ def main():
                 window.__luxoSensorError = '';
                 window.__luxoSensorTimer = setInterval(publish, 150);
                 publish();
-            }''', include_front)
+            }''', [include_front, front_value])
         try:
             # The dashboard polls ROS state continuously, so waiting for a
             # network-idle window can never be a reliable page-load condition.
@@ -312,6 +312,11 @@ def main():
             page.wait_for_timeout(200)
             page.evaluate("document.querySelector('#proximityRange').value = '80'")
             page.locator('#sendProximity').click()
+            # APDS confirmation needs distinct fresh samples, like a real
+            # periodic sensor. Keep danger evidence fresh through braking
+            # and browser rendering instead of depending on one cached sample.
+            stop_sensor_heartbeat()
+            start_sensor_heartbeat(front_value=80)
             snapshot = wait(lambda s: s['sensors'].get('front_severity') == 'danger'
                             and s['motion'].get('motion_frozen'))
             motion_status = snapshot.get('motion') or snapshot['sensors'].get('motion_status', snapshot.get('motion_status', {}))
@@ -327,6 +332,8 @@ def main():
             ui_avoidance = page.locator('#motionAvoidance').inner_text()
             assert 'hold_' in ui_avoidance or 'adjust' in ui_avoidance, ui_avoidance
             record('raw_sensor_collision_to_motion_hold', state=snapshot['state'], motion=snapshot['motion'])
+            stop_sensor_heartbeat()
+            start_sensor_heartbeat(include_front=False)
             page.evaluate("document.querySelector('#proximityRange').value = '0'")
             page.locator('#sendProximity').click()
             # Motion requires fresh range and matching FSR coverage in all
