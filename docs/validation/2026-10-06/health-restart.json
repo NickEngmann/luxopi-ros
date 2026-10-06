@@ -1,0 +1,48 @@
+{
+  "started_at": "2026-10-06T03:36:40.994348+00:00",
+  "terminated_container_pid": 32,
+  "previous_started_at": "2026-10-06T03:26:02.907065749Z",
+  "previous_restart_count": 0,
+  "passed": true,
+  "restart_count": 1,
+  "recovered_started_at": "2026-10-06T03:36:42.081071645Z",
+  "health": {
+    "healthy": true,
+    "health": {
+      "healthy": true,
+      "reasons": [],
+      "state_ready": true,
+      "joint_feedback_valid": true,
+      "node_count": 11,
+      "nodes": [
+        "animation_command",
+        "collision_node",
+        "robot_state_publisher",
+        "sim_camera_interaction",
+        "sim_direction_node",
+        "sim_interaction_adapter",
+        "sim_motion_controller",
+        "simulator_dashboard",
+        "speech_bridge",
+        "state_manager",
+        "watchdog"
+      ],
+      "components": {
+        "state_manager": true,
+        "animation_command": true,
+        "sim_motion_controller": true,
+        "sim_direction_node": true,
+        "speech_bridge": true,
+        "robot_state_publisher": true,
+        "simulator_dashboard": true
+      },
+      "missing_required": [],
+      "state_age_seconds": 0.02845031302422285,
+      "joint_state_age_seconds": 0.012008930090814829,
+      "state_fresh": true,
+      "joint_state_fresh": true,
+      "stale_after_seconds": 3.0
+    }
+  },
+  "elapsed_seconds": 17.241
+}

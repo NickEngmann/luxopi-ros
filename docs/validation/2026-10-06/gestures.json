@@ -1,0 +1,19 @@
+{
+  "source_commit": "55b4dea1207764a794ac222e84d18672a6a50f68",
+  "date": "2026-10-06",
+  "environment": {
+    "container": "luxopi-sensor-e2e",
+    "network": "none",
+    "ros_domain_id": 73,
+    "ros_localhost_only": true,
+    "backend": "kinematic",
+    "profile": "roarm_m3"
+  },
+  "all_four_passed": true,
+  "results": [
+    {"gesture": "left", "animation": "look_around_casual", "joint_delta_max_rad": 2.0, "joint_frames": 2937, "terminal": "completed", "fsm": "IDLE", "gesture_passthrough": true},
+    {"gesture": "right", "animation": "curious_exploration", "joint_delta_max_rad": 0.75, "joint_frames": 4115, "terminal": "completed", "fsm": "IDLE", "gesture_passthrough": true},
+    {"gesture": "up", "animation": "neck_stretch", "joint_delta_max_rad": 0.75, "joint_frames": 3477, "terminal": "completed", "fsm": "IDLE", "gesture_passthrough": true},
+    {"gesture": "down", "animation": "nod", "joint_delta_max_rad": 1.0, "joint_frames": 2764, "terminal": "completed", "fsm": "IDLE", "gesture_passthrough": true}
+  ]
+}

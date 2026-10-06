@@ -1,0 +1,429 @@
+{
+  "results": [
+    {
+      "scenario": "render_and_graph",
+      "passed": true,
+      "nodes": 11,
+      "model": "Waveshare M3 \u00b7 all six live joint values \u00b7 kinematic only",
+      "animations": 38,
+      "joint_names": [
+        "base_link_to_link1",
+        "link1_to_link2",
+        "link2_to_link3",
+        "link3_to_link4",
+        "link4_to_link5",
+        "link5_to_gripper_link"
+      ],
+      "health_status": 200,
+      "simulation_backend": "kinematic",
+      "engine_caption": "Kinematic preview \u00b7 live ROS joint states",
+      "loaded_m3_meshes": [
+        "base_link.stl",
+        "gripper_link.stl",
+        "link1.stl",
+        "link2.stl",
+        "link3.stl",
+        "link4.stl",
+        "link5.stl"
+      ]
+    },
+    {
+      "scenario": "both_robot_views",
+      "passed": true
+    },
+    {
+      "scenario": "initial_fresh_intent_releases_prior_hold",
+      "passed": true,
+      "joint": "base_link_to_link1",
+      "target": 0.6376281377741477,
+      "observed": 0.6187607114256615
+    },
+    {
+      "scenario": "conversation_text_and_reply",
+      "passed": true,
+      "transcript": "Please stretch",
+      "response": "Simulator heard: Please stretch",
+      "previous_response": "Simulator heard: Please nod",
+      "matched_command": "stretch"
+    },
+    {
+      "scenario": "forced_fsm_state_response",
+      "passed": true,
+      "requested": "ANIMATING",
+      "current": "ANIMATING",
+      "message": "Transition to ANIMATING granted"
+    },
+    {
+      "scenario": "forced_fsm_state_response",
+      "passed": true,
+      "requested": "VOICE_FOLLOWING",
+      "current": "VOICE_FOLLOWING",
+      "message": "Transition to VOICE_FOLLOWING granted"
+    },
+    {
+      "scenario": "forced_fsm_state_response",
+      "passed": true,
+      "requested": "COLLISION_AVOIDING",
+      "current": "COLLISION_AVOIDING",
+      "message": "Transition to COLLISION_AVOIDING granted"
+    },
+    {
+      "scenario": "forced_fsm_state_response",
+      "passed": true,
+      "requested": "RETURNING_HOME",
+      "current": "RETURNING_HOME",
+      "message": "Transition to RETURNING_HOME granted"
+    },
+    {
+      "scenario": "forced_fsm_state_response",
+      "passed": true,
+      "requested": "ESCAPE_MODE",
+      "current": "ESCAPE_MODE",
+      "message": "Transition to ESCAPE_MODE granted"
+    },
+    {
+      "scenario": "forced_fsm_state_response",
+      "passed": true,
+      "requested": "USER_CONTROL",
+      "current": "USER_CONTROL",
+      "message": "Transition to USER_CONTROL granted"
+    },
+    {
+      "scenario": "forced_fsm_state_response",
+      "passed": true,
+      "requested": "EMOTION_REACTING",
+      "current": "EMOTION_REACTING",
+      "message": "Transition to EMOTION_REACTING granted"
+    },
+    {
+      "scenario": "forced_fsm_state_response",
+      "passed": true,
+      "requested": "PETTING",
+      "current": "PETTING",
+      "message": "Transition to PETTING granted"
+    },
+    {
+      "scenario": "forced_fsm_state_response",
+      "passed": true,
+      "requested": "ERROR",
+      "current": "ERROR",
+      "message": "Transition to ERROR granted"
+    },
+    {
+      "scenario": "faulted_state_reports_unready",
+      "passed": true,
+      "state": "ERROR",
+      "health_status": 503,
+      "reasons": [
+        "state_not_ready"
+      ]
+    },
+    {
+      "scenario": "forced_fsm_state_response",
+      "passed": true,
+      "requested": "INITIALIZING",
+      "current": "INITIALIZING",
+      "message": "Transition to INITIALIZING granted"
+    },
+    {
+      "scenario": "faulted_state_reports_unready",
+      "passed": true,
+      "state": "INITIALIZING",
+      "health_status": 503,
+      "reasons": [
+        "state_not_ready"
+      ]
+    },
+    {
+      "scenario": "forced_fsm_state_response",
+      "passed": true,
+      "requested": "SHUTDOWN",
+      "current": "SHUTDOWN",
+      "message": "Transition to SHUTDOWN granted"
+    },
+    {
+      "scenario": "faulted_state_reports_unready",
+      "passed": true,
+      "state": "SHUTDOWN",
+      "health_status": 503,
+      "reasons": [
+        "state_not_ready"
+      ]
+    },
+    {
+      "scenario": "forced_fsm_state_response",
+      "passed": true,
+      "requested": "IDLE",
+      "current": "IDLE",
+      "message": "Transition to IDLE granted"
+    },
+    {
+      "scenario": "manual_profile_pose_to_joint_feedback",
+      "passed": true,
+      "joint": "base_link_to_link1",
+      "target": 0.7584,
+      "observed": 0.7392090046691764,
+      "joint_names": [
+        "base_link_to_link1",
+        "link1_to_link2",
+        "link2_to_link3",
+        "link3_to_link4",
+        "link4_to_link5",
+        "link5_to_gripper_link"
+      ]
+    },
+    {
+      "scenario": "legacy_view_tracks_m3_joint_feedback",
+      "passed": true,
+      "joint": "base_link_to_link1",
+      "target": 0.8392090046691764,
+      "observed": 0.8059069551730678
+    },
+    {
+      "scenario": "lamp_controls_to_consumer",
+      "passed": true,
+      "light": {
+        "simulated": true,
+        "pixel_count": 60,
+        "brightness": 0.22,
+        "rgbw": [
+          0,
+          0,
+          255,
+          0
+        ],
+        "effect": "solid",
+        "parameters": {},
+        "revision": 145,
+        "enabled": true,
+        "state": "IDLE"
+      }
+    },
+    {
+      "scenario": "action_moves_and_cancels",
+      "passed": true,
+      "result": {
+        "success": false,
+        "message": "Animation dance canceled",
+        "duration": 7.544638633728027,
+        "state": "canceled"
+      }
+    },
+    {
+      "scenario": "actual_direction_estimator",
+      "passed": true,
+      "evidence": {
+        "requested_mic_angle": 90,
+        "measured_mic_angle": 89.95854916612012,
+        "robot_angle": -97.92895439923973,
+        "channels": 6,
+        "sample_rate": 16000,
+        "method": "shared GCC-PHAT on delayed PCM",
+        "noise": 0.02
+      }
+    },
+    {
+      "scenario": "raw_sensor_collision_to_motion_hold",
+      "passed": true,
+      "state": "COLLISION_AVOIDING",
+      "motion": {
+        "state": "COLLISION_AVOIDING",
+        "exclusive_motion_owner": "",
+        "home_stage": null,
+        "home_status": "",
+        "home_reason": "",
+        "collision_active": true,
+        "collision_directions": [
+          "front"
+        ],
+        "avoidance_mode": "hold_imminent",
+        "avoidance_directions": [
+          "front"
+        ],
+        "voice_override": false,
+        "manual_override": false,
+        "manual_target_rejected": "",
+        "motion_hold_requested": true,
+        "motion_frozen": true,
+        "positions": [
+          0.4879630091173398,
+          -0.29919795205980815,
+          0.5024542333432267,
+          0.5996257099123834,
+          -1.7944779749777402,
+          0
+        ],
+        "target": [
+          0.4879630091173398,
+          -0.29919795205980815,
+          0.5024542333432267,
+          0.5996257099123834,
+          -1.7944779749777402,
+          0
+        ]
+      }
+    },
+    {
+      "scenario": "collision_clear_waits_for_fresh_intent",
+      "passed": true,
+      "motion": {
+        "state": "IDLE",
+        "exclusive_motion_owner": "",
+        "home_stage": null,
+        "home_status": "",
+        "home_reason": "",
+        "collision_active": false,
+        "collision_directions": [],
+        "avoidance_mode": "hold_replan",
+        "avoidance_directions": [],
+        "voice_override": false,
+        "manual_override": false,
+        "manual_target_rejected": "",
+        "motion_hold_requested": true,
+        "motion_frozen": true,
+        "positions": [
+          0.4879630091173398,
+          -0.29919795205980815,
+          0.5024542333432267,
+          0.5996257099123834,
+          -1.7944779749777402,
+          0
+        ],
+        "target": [
+          0.4879630091173398,
+          -0.29919795205980815,
+          0.5024542333432267,
+          0.5996257099123834,
+          -1.7944779749777402,
+          0
+        ]
+      }
+    },
+    {
+      "scenario": "fresh_manual_intent_releases_replan_hold",
+      "passed": true,
+      "joint": "base_link_to_link1",
+      "target": 0.6079630091173398,
+      "observed": 0.5890878958717184,
+      "motion": {
+        "state": "USER_CONTROL",
+        "exclusive_motion_owner": "",
+        "home_stage": null,
+        "home_status": "",
+        "home_reason": "",
+        "collision_active": false,
+        "collision_directions": [],
+        "avoidance_mode": "clear",
+        "avoidance_directions": [],
+        "voice_override": false,
+        "manual_override": true,
+        "manual_target_rejected": "",
+        "motion_hold_requested": false,
+        "motion_frozen": false,
+        "positions": [
+          0.5890878958717184,
+          -0.1791735893596738,
+          0.622478596043361,
+          0.4890841057567794,
+          -1.6744536122776057,
+          0
+        ],
+        "target": [
+          0.6084,
+          -0.0208,
+          0.89,
+          0.4492,
+          -1.0716,
+          0
+        ]
+      }
+    },
+    {
+      "scenario": "collision_quiet_recovery",
+      "passed": true,
+      "motion": {
+        "state": "IDLE",
+        "exclusive_motion_owner": "",
+        "home_stage": null,
+        "home_status": "",
+        "home_reason": "",
+        "collision_active": false,
+        "collision_directions": [],
+        "avoidance_mode": "clear",
+        "avoidance_directions": [],
+        "voice_override": false,
+        "manual_override": false,
+        "manual_target_rejected": "",
+        "motion_hold_requested": false,
+        "motion_frozen": false,
+        "positions": [
+          0.6084,
+          -0.0208,
+          0.8900018918686774,
+          0.4492,
+          -1.126340013034247,
+          0
+        ],
+        "target": [
+          0.6084,
+          -0.0208,
+          0.8900018918686774,
+          0.4492,
+          -1.1750210448515772,
+          0
+        ]
+      }
+    },
+    {
+      "scenario": "invalid_requests_rejected",
+      "passed": true
+    },
+    {
+      "scenario": "no_browser_errors",
+      "passed": true,
+      "console_errors": 0,
+      "canceled_hidden_model_mesh_requests": 7
+    },
+    {
+      "scenario": "health_stale_fault_test_skipped",
+      "passed": true,
+      "reason": "pass --pause-state-manager-pid for simulator process"
+    }
+  ],
+  "error": null,
+  "page_errors": [],
+  "console_errors": [],
+  "failed_requests": [],
+  "canceled_hidden_model_mesh_requests": [
+    {
+      "url": "http://127.0.0.1:8098/assets/roarm/L1.stl",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "url": "http://127.0.0.1:8098/assets/roarm/L3.stl",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "url": "http://127.0.0.1:8098/assets/roarm/L4.stl",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "url": "http://127.0.0.1:8098/assets/roarm_m3/link1.stl",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "url": "http://127.0.0.1:8098/assets/roarm_m3/link3.stl",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "url": "http://127.0.0.1:8098/assets/roarm_m3/link4.stl",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "url": "http://127.0.0.1:8098/assets/roarm_m3/link5.stl",
+      "failure": "net::ERR_ABORTED"
+    }
+  ],
+  "elapsed_seconds": 85.51577008399181,
+  "url": "http://127.0.0.1:8098"
+}

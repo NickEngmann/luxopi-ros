@@ -1,0 +1,89 @@
+{
+  "started_at": "2026-10-06T03:38:24.606570+00:00",
+  "runtime_commit": "unknown",
+  "source_sha256": "3fa237efa2ea61752de1826acf0bc1408d8883efff76a486512d585adf2ac8b7",
+  "feasible_retiming": true,
+  "full_animation_playlist": true,
+  "suites": [
+    {
+      "script": "run_motion_scenarios.py",
+      "passed": true,
+      "exit_code": 0,
+      "duration_seconds": 1030.763,
+      "log": "/tmp/luxopi-final-20261006T031856Z/run_motion_scenarios.py.log",
+      "reused_from": "/tmp/luxopi-final-20261006T033739Z/summary.json"
+    },
+    {
+      "script": "run_state_scenarios.py",
+      "passed": true,
+      "exit_code": 0,
+      "duration_seconds": 2.076,
+      "log": "/tmp/luxopi-final-20261006T031856Z/run_state_scenarios.py.log",
+      "reused_from": "/tmp/luxopi-final-20261006T033739Z/summary.json"
+    },
+    {
+      "script": "run_lighting_scenarios.py",
+      "passed": true,
+      "exit_code": 0,
+      "duration_seconds": 3.672,
+      "log": "/tmp/luxopi-final-20261006T033824Z/run_lighting_scenarios.py.log"
+    },
+    {
+      "script": "run_vision_scenarios.py",
+      "passed": true,
+      "exit_code": 0,
+      "duration_seconds": 31.814,
+      "log": "/tmp/luxopi-final-20261006T033824Z/run_vision_scenarios.py.log"
+    },
+    {
+      "script": "run_sensor_scenarios.py",
+      "passed": true,
+      "exit_code": 0,
+      "duration_seconds": 13.414,
+      "log": "/tmp/luxopi-final-20261006T033824Z/run_sensor_scenarios.py.log"
+    },
+    {
+      "script": "run_voice_motion_scenarios.py",
+      "passed": true,
+      "exit_code": 0,
+      "duration_seconds": 31.512,
+      "log": "/tmp/luxopi-final-20261006T033824Z/run_voice_motion_scenarios.py.log"
+    },
+    {
+      "script": "run_voice_cue_scenarios.py",
+      "passed": true,
+      "exit_code": 0,
+      "duration_seconds": 58.541,
+      "log": "/tmp/luxopi-final-20261006T033824Z/run_voice_cue_scenarios.py.log"
+    },
+    {
+      "script": "run_watchdog_scenarios.py",
+      "passed": true,
+      "exit_code": 0,
+      "duration_seconds": 14.496,
+      "log": "/tmp/luxopi-final-20261006T033824Z/run_watchdog_scenarios.py.log"
+    },
+    {
+      "script": "run_avoidance_scenarios.py",
+      "passed": true,
+      "exit_code": 0,
+      "duration_seconds": 24.236,
+      "log": "/tmp/luxopi-final-20261006T033824Z/run_avoidance_scenarios.py.log"
+    }
+  ],
+  "output_directory": "/tmp/luxopi-final-20261006T033824Z",
+  "continuous_retiming": true,
+  "runner_sha256": {
+    "run_motion_scenarios.py": "3545ce7fb2cb9bc7ee082871a7461d574d06cc8ca23deaa4dee0402c2ee568f5",
+    "run_state_scenarios.py": "9d48beadbf094a82f9af501b8c2578039a46b5b5c16ae04a87f3d37bada7b134",
+    "run_lighting_scenarios.py": "f1f873105bbfcc9a7cf617870bc309319af26009a60eeb461d26a4a2fbcc31b9",
+    "run_vision_scenarios.py": "ed0a55a32c154f013c983c6960d3b97160e17a39f26ceef4269699a9edb063f7",
+    "run_sensor_scenarios.py": "8bd7549ef465f3f1e20dff0c32ffa888b16163b8b3d8f5fe8b9c856d9e152f63",
+    "run_voice_motion_scenarios.py": "e06b2c2c814964b750d44ae3c13c4e6f9c97d5295499e9eec321451608acc987",
+    "run_voice_cue_scenarios.py": "022c8559b35fbcf23f3d6ec6ea6969675d307ad994d23d780e12fe6311d5a887",
+    "run_watchdog_scenarios.py": "eed123b3872649dacddbfc68ad4d7c55cfff680bc855a504ccd6f12599648386",
+    "run_avoidance_scenarios.py": "46b2d70ba6d0c3e1d8512f0ff56e3a7650fcdbdb8fb9b5db5e32ee3ffd2f766b"
+  },
+  "resumed_from": "/tmp/luxopi-final-20261006T033739Z/summary.json",
+  "ended_at": "2026-10-06T03:41:22.294712+00:00"
+}
