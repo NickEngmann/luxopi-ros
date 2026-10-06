@@ -161,10 +161,14 @@ def main():
 
             # The limiter fails closed without fresh sensor coverage. Maintain
             # clear synthetic ranges/FSRs while testing bounded motion.
+            # Wait for the controller's clear dwell too: a command sent
+            # before that boundary is intentionally too old to release hold.
             start_sensor_heartbeat()
             snapshot = wait(lambda s: s['sensors'].get('front_severity') == 'safe'
                             and s['sensors'].get('left_severity') == 'safe'
-                            and s['sensors'].get('right_severity') == 'safe', timeout=5)
+                            and s['sensors'].get('right_severity') == 'safe'
+                            and s['motion'].get('avoidance_mode') in ('clear', 'hold_replan')
+                            and not s['motion'].get('avoidance_directions'), timeout=5)
             if snapshot['motion'].get('motion_frozen') or snapshot['motion'].get('avoidance_mode') == 'hold_replan':
                 joint_name = snapshot['joint_names'][0]
                 current = snapshot['positions'][0]
