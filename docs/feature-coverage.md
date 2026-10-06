@@ -13,6 +13,7 @@ The machine-readable companion `feature-coverage.json` inventories 38 actual ani
 | touch_petting | passed: raw top touch→PETTING→folded_wiggle action475joint frames and releaseIDLE; all3side/bottom outputs | unvalidated |
 | gestures | passed: all four injected APDS swipes route to their mapped real animation actions, produce measured six-axis joint motion, complete, and return the FSM to `IDLE` | unvalidated |
 | vision_emotion | passed: injected detection→shared sad policy→EMOTION_REACTING→real sad action259joint frames; neural inference not tested | unvalidated |
+| vision_collision_preemption | passed: actual sad action moved 0.0314 rad, raw APDS danger caused COLLISION_AVOIDING and canceled status6, safe clear reached IDLE/hold_replan with 0rad stale-goal drift; neural inference not tested | unvalidated |
 | vision_person_distance | passed:1.2m detection output, explicit person loss and3s stale expiry; no neural inference claim | unvalidated |
 | lamp_on_off | passed: actual virtual lamp off/on telemetry | unvalidated |
 | brightness | passed: actual virtual brightness0.25→0.5 | unvalidated |
