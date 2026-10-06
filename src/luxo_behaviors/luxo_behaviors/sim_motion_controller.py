@@ -3,12 +3,14 @@
 import math
 import json
 import time
+from collections import deque
 
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import JointState
 from std_msgs.msg import Bool, Float32, String
 from luxo_interfaces.srv import RequestStateTransition
+from luxo_interfaces.msg import StateInfo
 
 from luxo_behaviors.joint_motion import JointMotionLimiter, ordered_joint_target, clamp_joint_positions
 from luxo_behaviors.joint_profiles import joint_profile
@@ -79,6 +81,8 @@ class SimMotionController(Node):
         self.current_state = "INITIALIZING"
         self.collision_active = {"front": False, "left": False, "right": False}
         self.home_sequence = None
+        self.home_owner = None
+        self.retired_home_owners = deque(maxlen=128)
         self.home_received_at = None
         self.home_completion_pending = False
         self.home_warning_started = None
@@ -104,6 +108,9 @@ class SimMotionController(Node):
         )
         self.state_sub = self.create_subscription(
             String, "/luxo/current_state", self.state_callback, 10
+        )
+        self.state_info_sub = self.create_subscription(
+            StateInfo, "/luxo/state_info", self.state_info_callback, 10
         )
         self.sensor_status_sub = self.create_subscription(
             String, "/collision/sensor_status", self.sensor_status_callback, 10
@@ -231,21 +238,37 @@ class SimMotionController(Node):
         if next_state != "USER_CONTROL":
             self.manual_target = None
         if next_state != self.current_state:
-            if (self.current_state == "RETURNING_HOME"
+            if (self.current_state in {"RETURNING_HOME", "USER_CONTROL"}
                     or motion_is_frozen(self.current_state, ())):
                 self.animation_target = list(self.measured_positions if not self.publish_feedback
                                              else self.limiter.positions)
                 self.blocked_animation_intent_id = (self.animation_intent_id
                                                     or self.blocked_animation_intent_id)
+                if self.home_sequence is not None:
+                    self.home_sequence.interrupt('state_replaced')
+                    if self.home_owner:
+                        self.retired_home_owners.append(self.home_owner)
+                    # Release the suspended home lease too, so clearing a
+                    # collision cannot restore and automatically restart it.
+                    self._complete_home()
                 self.home_sequence = None
-            if next_state == "RETURNING_HOME":
-                current = list(self.measured_positions if not self.publish_feedback
-                               else self.limiter.positions)
-                self.home_received_at = time.monotonic()
-                self.home_sequence = HomeSequence(self.profile, current, self.home_received_at)
-                self.home_completion_pending = False
-                self.home_warning_started = None
+                self.home_owner = None
         self.current_state = next_state
+
+    def state_info_callback(self, message):
+        if message.current_state != self.current_state or self.current_state != "RETURNING_HOME":
+            return
+        owner = message.requested_by
+        if not (owner == 'home_return' or owner.startswith('home_return:')):
+            return  # A forced FSM test state alone is not an executable home request.
+        if owner == self.home_owner or owner in self.retired_home_owners:
+            return
+        current = list(self.measured_positions if not self.publish_feedback else self.limiter.positions)
+        self.home_received_at = time.monotonic()
+        self.home_sequence = HomeSequence(self.profile, current, self.home_received_at)
+        self.home_owner = owner
+        self.home_completion_pending = False
+        self.home_warning_started = None
 
     def manual_target_callback(self, message):
         """Accept bounded manual poses only while the FSM grants user control."""
@@ -306,12 +329,12 @@ class SimMotionController(Node):
         future.add_done_callback(report_result)
 
     def _complete_home(self):
-        if self.home_completion_pending or not self.states.service_is_ready():
+        if self.home_completion_pending or not self.home_owner or not self.states.service_is_ready():
             return
         self.home_completion_pending = True
         request = RequestStateTransition.Request()
         request.requested_state = "IDLE"
-        request.requesting_node = "home_return"
+        request.requesting_node = self.home_owner
         request.priority = 50
         request.force = False
         request.completion = True
@@ -332,6 +355,8 @@ class SimMotionController(Node):
 
         target = list(self.animation_target)
         home = self.home_sequence if self.current_state == "RETURNING_HOME" else None
+        if self.current_state == "RETURNING_HOME" and home is None:
+            target = list(self.measured_positions if not self.publish_feedback else self.limiter.positions)
         if home is not None:
             target = home.target if home.status == 'running' else list(
                 self.measured_positions if not self.publish_feedback else self.limiter.positions)
@@ -409,7 +434,7 @@ class SimMotionController(Node):
         status = String()
         status.data = json.dumps({
             "state": self.current_state,
-            "exclusive_motion_owner": "returning_home" if home is not None else "",
+            "exclusive_motion_owner": "returning_home" if self.current_state == "RETURNING_HOME" else "",
             "home_stage": home.stage + 1 if home is not None else None,
             "home_status": home.status if home is not None else "",
             "home_reason": home.reason if home is not None else "",

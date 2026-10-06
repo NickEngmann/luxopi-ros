@@ -1,6 +1,7 @@
 """Run actual motion-owner methods with the real limiter and simulated clocks."""
 import ast
 import json
+from collections import deque
 from pathlib import Path
 from types import SimpleNamespace
 import pytest
@@ -16,7 +17,7 @@ def make_controller():
     tree = ast.parse(source.read_text())
     klass = next(n for n in tree.body if isinstance(n, ast.ClassDef))
     methods = [n for n in klass.body if isinstance(n, ast.FunctionDef)
-               and n.name in {'state_callback', 'target_callback', 'publish_step'}]
+               and n.name in {'state_callback', 'state_info_callback', 'target_callback', 'publish_step'}]
     now = [0.0]
     def joint_message():
         return SimpleNamespace(header=SimpleNamespace(stamp=None))
@@ -31,7 +32,7 @@ def make_controller():
         animation_target=[0]*6, animation_intent_id='old-goal',
         animation_target_received_at=0.0, blocked_animation_intent_id=None,
         publish_feedback=True, measured_positions=[0]*6, measured_velocities=[0]*6,
-        feedback_received_at=None, home_sequence=None, home_received_at=None,
+        feedback_received_at=None, home_sequence=None, home_owner=None, retired_home_owners=deque(maxlen=128), home_received_at=None,
         home_completion_pending=False, home_warning_started=None, voice_active=False,
         voice_direction=None, last_tick=0.0, collision_active=dict(front=False,left=False,right=False),
         manual_target_rejected='', reactive_avoidance=ReactiveAvoidance(limits=limits),
@@ -41,13 +42,14 @@ def make_controller():
     commands, statuses, completed = [], [], []
     node.joint_pub=SimpleNamespace(publish=commands.append)
     node.motion_status=SimpleNamespace(publish=lambda m: statuses.append(json.loads(m.data)))
-    node._complete_home=lambda: completed.append(node.home_sequence.status)
+    node._complete_home=lambda: completed.append(node.home_sequence.status) if node.home_sequence else None
     return node, namespace, now, commands, statuses, completed
 
 
 def test_home_runs_both_stages_through_limiter_and_blocks_old_goal_on_exit():
     node, methods, now, commands, statuses, completed = make_controller()
     methods['state_callback'](node, SimpleNamespace(data='RETURNING_HOME'))
+    methods['state_info_callback'](node, SimpleNamespace(current_state='RETURNING_HOME', requested_by='home_return:test'))
     for index in range(1, 1501):
         now[0]=index*0.02
         methods['publish_step'](node)
@@ -70,6 +72,7 @@ def test_home_runs_both_stages_through_limiter_and_blocks_old_goal_on_exit():
 def test_sensor_hold_ends_home_without_resuming_an_obsolete_target():
     node, methods, now, commands, statuses, completed = make_controller()
     methods['state_callback'](node, SimpleNamespace(data='RETURNING_HOME'))
+    methods['state_info_callback'](node, SimpleNamespace(current_state='RETURNING_HOME', requested_by='home_return:test'))
     node.reactive_avoidance.update_sensor('left', True, now[0], severity='danger', valid=True)
     now[0]=.02
     methods['publish_step'](node)
@@ -81,6 +84,7 @@ def test_sensor_hold_ends_home_without_resuming_an_obsolete_target():
 def test_early_state_exit_discards_home_and_preserves_current_pose():
     node, methods, now, commands, statuses, completed = make_controller()
     methods['state_callback'](node, SimpleNamespace(data='RETURNING_HOME'))
+    methods['state_info_callback'](node, SimpleNamespace(current_state='RETURNING_HOME', requested_by='home_return:test'))
     methods['state_callback'](node, SimpleNamespace(data='USER_CONTROL'))
     assert node.home_sequence is None
     assert node.animation_target == node.limiter.positions
@@ -96,3 +100,28 @@ def test_emergency_state_recovery_does_not_replay_old_animation():
     methods['state_callback'](node, SimpleNamespace(data='IDLE'))
     methods['target_callback'](node, old)
     assert node.animation_target == [0]*6
+
+
+def test_safety_completion_cannot_restore_and_restart_retired_home():
+    node, methods, now, commands, statuses, completed = make_controller()
+    methods['state_callback'](node, SimpleNamespace(data='RETURNING_HOME'))
+    info = SimpleNamespace(current_state='RETURNING_HOME', requested_by='home_return:first')
+    methods['state_info_callback'](node, info)
+    methods['state_callback'](node, SimpleNamespace(data='COLLISION_AVOIDING'))
+    assert completed == ['interrupted']  # releases the suspended home lease
+    methods['state_callback'](node, SimpleNamespace(data='RETURNING_HOME'))
+    methods['state_info_callback'](node, info)
+    assert node.home_sequence is None
+    info.requested_by = 'home_return:new-intent'
+    methods['state_info_callback'](node, info)
+    assert node.home_sequence is not None
+
+
+def test_stale_home_completion_cannot_release_a_replacement_home_lease():
+    from luxo_behaviors.state_machine import StateTransitionPolicy, LuxoState
+    decision = StateTransitionPolicy({}).decide(
+        current_state=LuxoState.RETURNING_HOME, current_requester='home_return:new',
+        current_priority=50, requested_state=LuxoState.IDLE,
+        requesting_node='home_return:old', priority=50, completion=True)
+    assert not decision['accepted']
+    assert decision['reason'] == 'completion_owner_mismatch'

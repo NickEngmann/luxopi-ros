@@ -8,10 +8,11 @@ preserve the M3 gripper, settle at stage one for 0.5s, then settle at stage two.
 The final pose must be within 0.03 rad with velocity below 0.03 rad/s for 0.1s.
 A 30s feedback deadline ends an unreachable home plan normally.
 
-The dashboard starts this behavior with the dedicated `home_return` state owner;
+The dashboard starts this behavior with the unique `home_return:<UUID>` state owner;
 the controller completes only that owner's lease. Direct simulator state-service
-callers wanting automatic home completion must use that requester too. A foreign
-completion cannot release a replacement manual command. Explicit state reset,
+callers wanting automatic home completion must use a fresh requester beginning with `home_return:` too. The controller reads the authoritative `/luxo/state_info` owner before starting.
+A late completion cannot release a replacement home or manual command; retired
+home leases are held instead of restarted if a safety-state restoration arrives. Explicit state reset,
 contact/danger, invalid or missing required sensor coverage, stale physics feedback,
 and a warning retreat lasting 2s stop the old home plan. Fresh clear evidence
 cannot resurrect that plan; a new request is needed.
