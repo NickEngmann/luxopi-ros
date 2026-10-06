@@ -76,3 +76,11 @@ and positions within the vendor URDF limits plus 0.02 rad tolerance. Rejected
 frames do not refresh the fixture's feedback timeout. The focused node test
 checks front/side classification, explicit fresh FSR-clear samples, invalid
 feedback rejection, and stale-input expiry in an isolated ROS container.
+
+
+The dashboard's Front/Left/Right virtual-obstacle buttons now hold raw range
+readings through the standard sensor classifier while active, then send fresh
+clear samples briefly after release so the collision state can recover. Orange
+markers track the gripper and show which virtual sensor obstacle is active.
+This quick control is a sensor stimulus, not a MuJoCo physical obstacle; use the
+world-fixture option above when testing raycasts against configured geometry.

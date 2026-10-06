@@ -113,3 +113,14 @@ python3 scripts/browser_e2e.py --url http://127.0.0.1:8080
 The checks change simulator state and save a JSON report and screenshot beneath `/tmp` by default. Run them on a dedicated simulator session.
 
 Hardware Python utilities now use a separate `requirements-hardware.txt` with the v2 camera SDK pinned to 2.32.0.0. The actual v2 camera graph construction smoke test passed with that SDK on this arm64 host without opening a device. Simulation needs none of the optional camera/I2C/LED packages. The historical `INSTALL.sh` is not the simulator installation path.
+
+## Autonomous live motion
+
+The full MuJoCo profile turns on `sim_activity_driver` by default, so the model
+starts an idle animation after seven seconds at rest and rotates among the
+registered idle-animation library. Synthetic person/emotion events use the
+same simulated-camera topics and shared emotion reaction path. Configure the
+behavior with `LUXOPI_SIM_AUTONOMY`, `LUXOPI_SIM_IDLE_AFTER`,
+`LUXOPI_SIM_IDLE_INTERVAL`, and `LUXOPI_SIM_EMOTION_INTERVAL`; autonomy is off
+for the minimal and hardware launch profiles. See
+[the live activity E2E report](validation/2026-10-06/live-animation-e2e.json).

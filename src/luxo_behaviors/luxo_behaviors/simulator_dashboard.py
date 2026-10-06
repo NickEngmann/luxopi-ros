@@ -83,6 +83,8 @@ class SimulatorDashboard(Node):
         self._manual_generation = 0
         self._manual_granted = False
         self._manual_deadline = 0.0
+        self._simulated_obstacles = {side: False for side in ("front", "left", "right")}
+        self._obstacle_samples_until = 0.0
         self._lock = threading.Lock()
         self._snapshot = {
             "simulation_backend": str(self.get_parameter("simulation_backend").value),
@@ -121,14 +123,6 @@ class SimulatorDashboard(Node):
                 side: self.create_publisher(Float32, f"/i2c/vl53_{side}/distance", 10)
                 for side in ("left", "right")
             },
-            "collision": {
-                "front": self.create_publisher(Bool, "/head_collision_warning", 10),
-                "left": self.create_publisher(Bool, "/left_collision_warning", 10),
-                "right": self.create_publisher(Bool, "/right_collision_warning", 10),
-            },
-            "collision_status": self.create_publisher(
-                String, "/collision_status_for_animation", 10
-            ),
             "vision": self.create_publisher(String, "/sim/camera/emotion", 10),
             "person_distance": self.create_publisher(
                 Float32, "/sim/camera/person_distance", 10
@@ -172,6 +166,7 @@ class SimulatorDashboard(Node):
         )
 
         self._drain_timer = self.create_timer(0.02, self._drain_events)
+        self._obstacle_timer = self.create_timer(0.1, self._publish_simulated_obstacle_samples)
         self._graph_timer = self.create_timer(1.0, self._refresh_graph)
         self._httpd = self._create_server(host, port)
         self._http_thread = threading.Thread(
@@ -533,6 +528,25 @@ class SimulatorDashboard(Node):
                 self.get_logger().error(f"simulator event failed ({event.get('type')}): {exc}")
                 self._sensor_update(last_event_error=str(exc))
 
+    def _publish_simulated_obstacle_samples(self):
+        """Publish held virtual ranges through the physical sensor classifier."""
+        now = time.monotonic()
+        if not any(self._simulated_obstacles.values()) and now > self._obstacle_samples_until:
+            return
+        active = self._simulated_obstacles
+        self._event_publishers["proximity"].publish(
+            Int16(data=22 if active["front"] else 0)
+        )
+        for side in ("left", "right"):
+            self._event_publishers["distance"][side].publish(
+                Float32(data=10.0 if active[side] else 100.0)
+            )
+        # The geometric obstacle control does not represent physical contact.
+        # Keep the classifier's three corresponding FSR coverage inputs fresh
+        # and explicitly clear while the optical sensor reports the obstacle.
+        for sensor in ("head_bottom", "head_left", "head_right"):
+            self._event_publishers["touch"][sensor].publish(UInt8(data=0))
+
     def _save_audio(self, body):
         from luxo_behaviors.audio_input import save_audio
 
@@ -639,9 +653,11 @@ class SimulatorDashboard(Node):
             publisher.publish(Float32(data=centimetres))
             self._sensor_update(**{f"{event['side']}_distance": event["metres"]})
         elif kind == "collision":
-            self._event_publishers[kind][event["side"]].publish(Bool(data=event["active"]))
-            state = "blocked" if event["active"] else "safe"
-            self._event_publishers["collision_status"].publish(String(data=state))
+            # Publish synthetic raw range samples, not a warning-only Bool:
+            # the latter has no valid sensor coverage/severity for safe motion.
+            self._simulated_obstacles[event["side"]] = event["active"]
+            self._obstacle_samples_until = time.monotonic() + (0.0 if event["active"] else 1.5)
+            self._sensor_update(simulated_obstacles=dict(self._simulated_obstacles))
             self._sensor_update(**{f"{event['side']}_collision": event["active"]})
         elif kind == "vision":
             for output, value in camera_input_publications(event):

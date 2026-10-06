@@ -102,6 +102,10 @@ def generate_launch_description():
         DeclareLaunchArgument("enable_voice", default_value="true"),
         DeclareLaunchArgument("enable_speech_bridge", default_value="true"),
         DeclareLaunchArgument("enable_sim_sensors", default_value="true"),
+        DeclareLaunchArgument("enable_sim_autonomy", default_value=EnvironmentVariable("LUXOPI_SIM_AUTONOMY", default_value="false")),
+        DeclareLaunchArgument("sim_idle_after", default_value=EnvironmentVariable("LUXOPI_SIM_IDLE_AFTER", default_value="7.0")),
+        DeclareLaunchArgument("sim_idle_interval", default_value=EnvironmentVariable("LUXOPI_SIM_IDLE_INTERVAL", default_value="20.0")),
+        DeclareLaunchArgument("sim_emotion_interval", default_value=EnvironmentVariable("LUXOPI_SIM_EMOTION_INTERVAL", default_value="75.0")),
         DeclareLaunchArgument("enable_world_sensor_fixture", default_value="false"),
         DeclareLaunchArgument(
             "required_sensor_directions",

@@ -98,12 +98,12 @@ def test_registered_animation_catalog_is_thirty_three_and_accepts_safe_speed():
     }
 
 
-def test_all_twelve_fsm_states_and_four_joint_manual_pose_are_supported():
+def test_fsm_internal_states_cannot_be_forced_through_manual_dashboard():
     assert len(STATE_NAMES) == 12
-    assert normalize_event({"type": "state_request", "state": "ERROR"}) == {
-        "type": "state_request",
-        "state": "ERROR",
-    }
+    assert normalize_event({"type": "state_request", "state": "IDLE"})["state"] == "IDLE"
+    for state in ("PETTING", "EMOTION_REACTING", "ANIMATING", "ERROR"):
+        with pytest.raises(ValueError, match="only be requested"):
+            normalize_event({"type": "state_request", "state": state})
     pose = {
         "base_to_L1": 0.1,
         "L1_to_L2": -0.2,

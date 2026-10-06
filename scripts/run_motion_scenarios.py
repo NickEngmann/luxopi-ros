@@ -53,8 +53,16 @@ class Scenarios:
                 self.errors.append('Nonfinite joint '+name)
             if name in ALL_JOINT_LIMITS:
                 lower,upper=ALL_JOINT_LIMITS[name]
-                if not lower-1e-6<=value<=upper+1e-6:
-                    self.errors.append('Joint outside URDF limits '+name)
+                # MuJoCo's contact solver can leave measured qpos a few
+                # milliradians beyond a hard stop; the production feedback
+                # validator explicitly allows 0.02 rad. Command targets remain
+                # strict so this tolerance only applies to physics feedback.
+                tolerance = 0.02 if output is self.joints else 1e-6
+                if not lower-tolerance<=value<=upper+tolerance:
+                    self.errors.append(
+                        f'Joint outside URDF limits {name}: {value:.9f} not in '
+                        f'[{lower:.6f}, {upper:.6f}] ± {tolerance:.6f}'
+                    )
         if output is self.joints: self.joint_names=list(msg.name)
         output.append((time.monotonic(),tuple(msg.position[:len(msg.name)])))
 

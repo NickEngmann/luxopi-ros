@@ -18,6 +18,7 @@ STATE_NAMES = {
     "ESCAPE_MODE", "USER_CONTROL", "EMOTION_REACTING", "PETTING", "ERROR",
     "INITIALIZING", "SHUTDOWN",
 }
+MANUAL_STATE_NAMES = {"IDLE", "USER_CONTROL", "RETURNING_HOME"}
 MANUAL_JOINT_LIMITS = {
     "base_to_L1": (-3.14, 3.14),
     "L1_to_L2": (-1.570796, 1.570796),
@@ -196,8 +197,8 @@ def normalize_event(payload):
 
     if kind == "state_request":
         state = payload.get("state")
-        if state not in STATE_NAMES:
-            raise ValueError("unknown Luxo state")
+        if state not in MANUAL_STATE_NAMES:
+            raise ValueError("state can only be requested through the dashboard for IDLE, USER_CONTROL, or RETURNING_HOME")
         return {"type": kind, "state": state}
 
     if kind == "manual_joint_target":

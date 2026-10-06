@@ -9,8 +9,12 @@ import json
 import os
 from pathlib import Path
 import signal
+import sys
 import time
 from urllib.parse import urlsplit
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src/luxo_behaviors'))
+from luxo_behaviors.roarm_m3_kinematics import compute_m3_fk
 
 from playwright.sync_api import sync_playwright
 
@@ -205,13 +209,9 @@ def main():
             # the full nod gesture takes about a minute at those bounds.
             wait(lambda s: s['status'] == 'idle' and s['state'] == 'IDLE', timeout=90)
 
-            # Force every FSM state through the dashboard's explicit simulator-only
-            # test control and verify the real state-service response.
-            for state_name in [
-                'ANIMATING', 'VOICE_FOLLOWING', 'COLLISION_AVOIDING',
-                'RETURNING_HOME', 'ESCAPE_MODE', 'USER_CONTROL', 'EMOTION_REACTING',
-                'PETTING', 'ERROR', 'INITIALIZING', 'SHUTDOWN', 'IDLE',
-            ]:
+            # Only externally meaningful recovery/manual states are selectable.
+            # Behavior-owned states must be entered by their actual interaction.
+            for state_name in ['RETURNING_HOME', 'USER_CONTROL', 'IDLE']:
                 page.locator('#stateSelect').select_option(state_name)
                 page.locator('#requestState').click()
                 snapshot = wait(lambda s, expected=state_name:
@@ -219,19 +219,8 @@ def main():
                                 timeout=10)
                 result = snapshot['sensors']['state_request_result']
                 assert result['success'], {'requested': state_name, 'response': result}
-                record('forced_fsm_state_response', requested=state_name,
+                record('manual_state_request', requested=state_name,
                        current=result.get('state'), message=result.get('message'))
-                if state_name in {'ERROR', 'INITIALIZING', 'SHUTDOWN'}:
-                    wait(lambda s, expected=state_name: s['state'] == expected, timeout=10)
-                    readiness = page.request.get(args.url + '/healthz')
-                    assert readiness.status == 503, readiness.text()
-                    readiness_body = readiness.json()
-                    assert not readiness_body['healthy']
-                    assert 'state_not_ready' in readiness_body['health']['reasons']
-                    page.wait_for_function("state=>document.querySelector('#graphHealthDetail').textContent.includes(state)", arg=state_name)
-                    record('faulted_state_reports_unready', state=state_name,
-                           health_status=readiness.status,
-                           reasons=readiness_body['health']['reasons'])
                 if state_name != 'IDLE':
                     page.locator('#resetIdle').click()
                     wait(lambda s: s['sensors'].get('state_request_result', {}).get('requested') == 'IDLE'
@@ -256,6 +245,22 @@ def main():
             record('manual_profile_pose_to_joint_feedback', joint=joint_name,
                    target=target, observed=snapshot['positions'][0], joint_names=snapshot['joint_names'])
             if len(snapshot['joint_names']) == 6:
+                # Compare the frame against the exact joint sample the 3D
+                # renderer consumed; the next physics sample may arrive while
+                # browser and API polling are on different intervals.
+                pose = page.evaluate('window.luxoJointPositions')
+                expected_frames = compute_m3_fk(pose)
+                frames = page.evaluate('window.luxoM3FramePositions()')
+                frame_expectations = expected_frames
+                for name, expected in frame_expectations.items():
+                    error = max(abs(actual - reference)
+                                for actual, reference in zip(frames[name], expected))
+                    assert error < 1e-4, {'frame': name, 'actual': frames[name],
+                                          'expected': expected, 'error_m': error,
+                                          'joints': pose}
+                record('vendor_gripper_and_hand_tcp_frame', frames=frames,
+                       expected=frame_expectations, tolerance_m=1e-4,
+                       joints=pose)
                 # The checked-in legacy view is still useful with a live M3
                 # graph. Its first four kinematic axes must follow the M3 names.
                 page.locator('#modelSelect').select_option('legacy')

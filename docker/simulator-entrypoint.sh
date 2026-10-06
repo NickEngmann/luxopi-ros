@@ -27,6 +27,10 @@ if [[ "$backend" == mujoco ]]; then
   [[ "$joint_profile" == roarm_m3 ]] || { echo "MuJoCo requires the roarm_m3 joint profile." >&2; exit 2; }
   launch_file=physics_simulator.launch.py
   optional_args+=("enable_world_sensor_fixture:=${LUXOPI_WORLD_SENSOR_FIXTURE:-false}")
+  optional_args+=("enable_sim_autonomy:=${LUXOPI_SIM_AUTONOMY:-false}")
+  optional_args+=("sim_idle_after:=${LUXOPI_SIM_IDLE_AFTER:-7.0}")
+  optional_args+=("sim_idle_interval:=${LUXOPI_SIM_IDLE_INTERVAL:-20.0}")
+  optional_args+=("sim_emotion_interval:=${LUXOPI_SIM_EMOTION_INTERVAL:-75.0}")
   [[ -z "${LUXOPI_WORLD_OBSTACLES_JSON:-}" ]] || optional_args+=("world_obstacles_json:=${LUXOPI_WORLD_OBSTACLES_JSON}")
   [[ -z "${LUXOPI_SENSOR_MOUNTS_JSON:-}" ]] || optional_args+=("sensor_mounts_json:=${LUXOPI_SENSOR_MOUNTS_JSON}")
 elif [[ "$backend" != kinematic ]]; then

@@ -109,6 +109,14 @@ def generate_launch_description():
         default_value=PythonExpression(["'true' if '", use_hardware, "' == 'false' else 'false'"]),
         description='Enable simulation-only voice session and touch/petting state consumers'
     )
+    declare_enable_sim_autonomy = DeclareLaunchArgument(
+        'enable_sim_autonomy', default_value='false',
+        description='Run autonomous idle animations and synthetic person/emotion cues in simulation'
+    )
+    declare_sim_idle_after = DeclareLaunchArgument('sim_idle_after', default_value='7.0')
+    declare_sim_idle_interval = DeclareLaunchArgument('sim_idle_interval', default_value='20.0')
+    declare_sim_emotion_interval = DeclareLaunchArgument('sim_emotion_interval', default_value='75.0')
+
     declare_simulator_host = DeclareLaunchArgument(
         'simulator_host', default_value='0.0.0.0', description='Browser simulator bind address'
     )
@@ -592,6 +600,22 @@ def generate_launch_description():
         ]))
     )
 
+    sim_activity_driver_node = Node(
+        package='luxo_behaviors',
+        executable='sim_activity_driver',
+        name='sim_activity_driver',
+        output='screen',
+        parameters=[{
+            'idle_after': LaunchConfiguration('sim_idle_after'),
+            'idle_interval': LaunchConfiguration('sim_idle_interval'),
+            'emotion_interval': LaunchConfiguration('sim_emotion_interval'),
+        }],
+        condition=IfCondition(PythonExpression([
+            "'", use_hardware, "' == 'false' and '",
+            LaunchConfiguration('enable_sim_autonomy'), "' == 'true'"
+        ]))
+    )
+
     sim_interaction_adapter_node = Node(
         package='luxo_behaviors',
         executable='sim_interaction_adapter',
@@ -759,6 +783,10 @@ def generate_launch_description():
         declare_enable_simulator_dashboard,
         declare_enable_sim_vision,
         declare_enable_sim_interactions,
+        declare_enable_sim_autonomy,
+        declare_sim_idle_after,
+        declare_sim_idle_interval,
+        declare_sim_emotion_interval,
         declare_simulator_host,
         declare_simulator_port,
         declare_simulator_audio_directory,
@@ -825,6 +853,7 @@ def generate_launch_description():
         sim_motion_controller_node,
         simulator_dashboard_node,
         sim_camera_interaction_node,
+        sim_activity_driver_node,
         sim_interaction_adapter_node,
         collision_detection_node,
         i2c_device_manager_node,

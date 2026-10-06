@@ -87,6 +87,8 @@ class SimMotionController(Node):
         self.home_completion_pending = False
         self.home_warning_started = None
         self.blocked_animation_intent_id = None
+        self.hold_target = None
+        self.hold_was_active = False
         self.last_tick = time.monotonic()
 
         self.target_sub = self.create_subscription(
@@ -394,11 +396,34 @@ class SimMotionController(Node):
         emergency_hold = motion_is_frozen(self.current_state, ())
         avoidance_hold = self.avoidance_mode.startswith("hold_")
         hold_requested = emergency_hold or avoidance_hold
+        if hold_requested and not self.hold_was_active:
+            self.hold_target = list(current)
+            if (self.publish_feedback and self.feedback_received_at is not None
+                    and now - self.feedback_received_at <= 0.5):
+                # Start the stop profile from the physical state. The command
+                # limiter can lag MuJoCo feedback during normal tracking; using
+                # its stale velocity here can accelerate the arm briefly in the
+                # wrong direction as a hold begins.
+                self.limiter.positions = list(current)
+                self.limiter.velocities = [
+                    max(-limit, min(limit, velocity))
+                    for velocity, limit in zip(
+                        self.measured_velocities, self.limiter.max_velocity
+                    )
+                ]
+        elif not hold_requested:
+            self.hold_target = None
+        self.hold_was_active = hold_requested
+        feedback_fresh = (self.publish_feedback and self.feedback_received_at is not None
+                          and now - self.feedback_received_at <= 0.5)
         safety_holds_motion = any(self.collision_active.values()) or bool(
             self.avoidance_directions
         )
-        if emergency_hold:
-            target = current
+        if hold_requested:
+            # Keep the first measured pose as a fixed stop target. Tracking the
+            # current measured pose every tick lets the target follow a moving
+            # arm and can add braking distance under physics feedback.
+            target = list(self.hold_target or current)
         else:
             target = avoidance["target"]
 
@@ -431,6 +456,21 @@ class SimMotionController(Node):
         message.position = positions
         message.velocity = list(self.limiter.velocities)
         self.joint_pub.publish(message)
+        if feedback_fresh:
+            # A low measured velocity alone can be a transient zero crossing
+            # while the servo is still chasing its target. Require the
+            # measured body, command trajectory, and limiter to have all
+            # settled before exposing a frozen status.
+            motion_frozen = hold_requested and (
+                all(abs(value) < 1e-3 for value in self.measured_velocities)
+                and all(abs(measured - commanded) < 2e-3
+                        for measured, commanded in zip(self.measured_positions, positions))
+                and all(abs(value) < 1e-3 for value in self.limiter.velocities)
+            )
+        else:
+            motion_frozen = hold_requested and all(
+                abs(velocity) < 1e-6 for velocity in self.limiter.velocities
+            )
         status = String()
         status.data = json.dumps({
             "state": self.current_state,
@@ -448,9 +488,7 @@ class SimMotionController(Node):
             "manual_override": bool(manual_override and not hold_requested),
             "manual_target_rejected": self.manual_target_rejected,
             "motion_hold_requested": hold_requested,
-            "motion_frozen": hold_requested and all(
-                abs(velocity) < 1e-6 for velocity in self.limiter.velocities
-            ),
+            "motion_frozen": motion_frozen,
             "positions": positions,
             "target": target,
         })

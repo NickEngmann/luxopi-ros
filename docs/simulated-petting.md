@@ -14,8 +14,9 @@ range topics remain obstacle sensors, separate from all touch events.
 
 The simulator also provides two explicit, simulation-only petting pads:
 `/sim/petting_zones/top_front` and `/sim/petting_zones/antenna` (`Bool`). The
-dashboard's Top/front and Antenna/hand-gripper buttons press and release these
-inputs. `sim_interaction_adapter` aggregates them with the current `head_top`
+dashboard's Top/front and Antenna/hand-gripper buttons latch on click and release
+on the next click, so an ordinary click holds the simulated pad long enough for
+the animation to run. Touch controls follow the same click-to-latch behavior. `sim_interaction_adapter` aggregates them with the current `head_top`
 petting event and sends them through the same PETTING state and
 `folded_wiggle` action lifecycle. If multiple pads are held, releasing one does
 not stop the session until the final pad releases. These simulation inputs do
@@ -79,3 +80,17 @@ each moved the six-axis model and returned it to `IDLE`; the three side/bottom
 contacts remained collision-only. See
 [petting-zones-mujoco-e2e.json](validation/2026-10-06/petting-zones-mujoco-e2e.json).
 The report validates the named simulation controls, not physical pad placement.
+
+
+## Live idle activity
+
+The full MuJoCo simulator enables `sim_activity_driver` by default. After a
+quiet interval it requests a registered idle animation through the same
+`play_animation` action and bounded motion controller used by hardware. It
+occasionally emits a short synthetic person/emotion observation through
+`/sim/camera/*`, which the shared vision-reaction policy turns into an emotion
+animation. The dashboard state and joint telemetry therefore change while the
+simulator is unattended. Disable with `LUXOPI_SIM_AUTONOMY=false`; tune timing
+with `LUXOPI_SIM_IDLE_AFTER`, `LUXOPI_SIM_IDLE_INTERVAL`, and
+`LUXOPI_SIM_EMOTION_INTERVAL`. The synthetic person cues validate behavior flow,
+not camera perception accuracy.

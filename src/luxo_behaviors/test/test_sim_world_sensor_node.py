@@ -103,10 +103,16 @@ def test_actual_m3_feedback_generates_front_and_side_raw_samples_and_stales_out(
         ]
         assert any(sample['active'] and sample['severity'] == 'danger'
                    for sample in front_obstacle_samples), json.dumps(front_obstacle_samples)
+        # Wait through the feedback TTL and one publication interval before
+        # asserting that queued sensor samples have drained. Under load, the
+        # final ROS JointState can arrive after the test publisher stops.
+        stale_deadline = sensor.last_joint_feedback_at + sensor.feedback_timeout + 0.1
+        while time.monotonic() < stale_deadline:
+            executor.spin_once(timeout_sec=0.005)
         before_stale = len(front)
         contact_counts = {name: len(samples) for name, samples in contacts.items()}
         stale_start = time.monotonic()
-        while time.monotonic() - stale_start < 0.15:
+        while time.monotonic() - stale_start < 0.2:
             executor.spin_once(timeout_sec=0.005)
         assert len(front) == before_stale  # old joint pose cannot fake a live sensor
         assert {name: len(samples) for name, samples in contacts.items()} == contact_counts
