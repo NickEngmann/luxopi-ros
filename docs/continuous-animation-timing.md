@@ -44,3 +44,23 @@ preemption, raw sensors, watchdog and avoidance. The final report was copied to
 `/tmp/luxopi-continuous-final/summary.json`. Browser validation of this optional
 mode and the newer safety changes remains separate. The continuous mode remains
 opt-in.
+
+## Completed current regression scopes
+
+A frozen `123025b` probe passed all nine native suites on 2026-10-06 UTC,
+including all 38 full animation actions with endpoint-settling checks. The
+motion portion took 1030.763s. Report:
+`/tmp/luxopi-continuous-full-final-20261006T033824Z/summary.json`.
+Production SHA256:
+`3fa237efa2ea61752de1826acf0bc1408d8883efff76a486512d585adf2ac8b7`.
+The failed lamp run assumed an untouched default color temperature; explicit
+white selection and temperature setup corrected that test. Resumption reused
+only the verified identical-source/runner passing motion and state prefix.
+
+A separate probe using the later `8e8ba06` lifecycle fixes passed all nine core
+suites in continuous mode, source SHA256
+`0d2010c269222458f40200f304c8d0e3b173a0d1a0a9d366b9af8378f1d03f2c`.
+Report: `/tmp/luxopi-continuous-latest-native-final/summary.json`. This later
+run covers four core motion cases and the new ownership behavior; it must not
+be represented as rerunning the full 38-plugin playlist on that source.
+The continuous mode remains opt-in, with hardware timing unchanged.
