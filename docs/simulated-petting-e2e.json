@@ -1,0 +1,79 @@
+{
+  "started_at": "2026-10-06T14:26:42.402102+00:00",
+  "runtime_commit": "689ae57",
+  "cases": [
+    {
+      "name": "petting_zone_press_release",
+      "passed": true,
+      "zone": "head_top",
+      "active_animation": "folded_wiggle",
+      "state_after": "IDLE",
+      "maximum_joint_displacement_rad": 0.0163
+    },
+    {
+      "name": "petting_zone_press_release",
+      "passed": true,
+      "zone": "top_front",
+      "active_animation": "folded_wiggle",
+      "state_after": "IDLE",
+      "maximum_joint_displacement_rad": 0.0163
+    },
+    {
+      "name": "petting_zone_press_release",
+      "passed": true,
+      "zone": "antenna",
+      "active_animation": "folded_wiggle",
+      "state_after": "IDLE",
+      "maximum_joint_displacement_rad": 0.0207
+    },
+    {
+      "name": "contact_pad_remains_collision_only",
+      "passed": true,
+      "sensor": "head_left",
+      "direction": "right",
+      "petting_event_count": 0,
+      "state_after": "IDLE"
+    },
+    {
+      "name": "contact_pad_remains_collision_only",
+      "passed": true,
+      "sensor": "head_right",
+      "direction": "left",
+      "petting_event_count": 0,
+      "state_after": "IDLE"
+    },
+    {
+      "name": "contact_pad_remains_collision_only",
+      "passed": true,
+      "sensor": "head_bottom",
+      "direction": "front",
+      "petting_event_count": 0,
+      "state_after": "IDLE"
+    },
+    {
+      "name": "overlapping_petting_zones_release_independently",
+      "passed": true,
+      "remaining": "antenna",
+      "state_after": "IDLE"
+    },
+    {
+      "name": "absent_person_clears_mood_and_dashboard_output",
+      "passed": true,
+      "person_present": false,
+      "emotion_output": null,
+      "distance_output": null,
+      "state_after": "IDLE"
+    }
+  ],
+  "passed": true,
+  "ended_at": "2026-10-06T14:27:02.505052+00:00",
+  "test_environment": {
+    "container": "luxopi-sensor-e2e",
+    "ros_domain_id": 73,
+    "ros_localhost_only": true,
+    "simulation_backend": "kinematic",
+    "joint_profile": "roarm_m3",
+    "dashboard": "http://127.0.0.1:8091",
+    "graph_health": "healthy"
+  }
+}
