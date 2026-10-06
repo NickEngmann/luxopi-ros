@@ -190,6 +190,20 @@ class SpeechBridge(Node):
                 if not self._stopping.is_set():
                     self._publish_status("idle")
 
+    def _discard_pending_audio(self):
+        # An accepted upload may still be queued when shutdown stops the worker.
+        # Running transactions clean up in _run; drain only undequeued requests.
+        while True:
+            try:
+                request=self._pending.get_nowait()
+            except queue.Empty:
+                break
+            if "audio_file" in request:
+                try:
+                    remove_audio(request["audio_file"],self.audio_directory)
+                except OSError as exc:
+                    self.get_logger().warning(f"Queued audio cleanup failed: {exc}")
+
     def destroy_node(self):
         self._stopping.set()
         if self._event_receiver:
@@ -197,6 +211,7 @@ class SpeechBridge(Node):
             self._event_worker.join(timeout=1)
         self.client.close()
         self._worker.join(timeout=3)
+        self._discard_pending_audio()
         return super().destroy_node()
 
 
