@@ -997,6 +997,13 @@
     "saved_audio_cases": 4,
     "full_browser_report": "/tmp/luxopi-final-full-browser.json",
     "full_browser_cases": 30,
-    "scope": "hardware-free, silent, no physical latency or perception reliability estimate"
+    "scope": "hardware-free, silent, no physical latency or perception reliability estimate",
+    "main_browser_report": "/tmp/luxopi-final-main-browser.json",
+    "main_browser_cases": 31,
+    "paused_health_report": "/tmp/luxopi-final-paused-health.json",
+    "critical_restart_report": "/tmp/luxopi-final-critical-restart.json",
+    "critical_recovery_seconds": 17.241,
+    "offline_tests_passed": 484,
+    "offline_tests_skipped": 1
   }
 }

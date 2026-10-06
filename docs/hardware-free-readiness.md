@@ -33,3 +33,20 @@ measurements. Synthetic world obstacles affect sensor rays, not MuJoCo contact
 geometry. Model construction or successful synthetic speech fixtures do not
 establish real-world perception accuracy. No physical devices or audible audio
 were used for these development checks.
+
+## Current verification
+
+The latest corrected default runtime passed nine native suites, 31 Chromium
+browser checks, stale-heartbeat pause/resume, and critical-node recovery
+(17.241s in this loaded host run). The full local speech/MuJoCo profile passed
+four saved-audio cases, four measured home cases and 30 browser checks.
+Offline ROS tests passed 484 cases with one optional dependency skip; the AI
+suite passed 72 cases with two explicitly optional runtime skips. The actual
+Moonshine and Piper paths were separately exercised in silent model tests.
+Five focused world-sensor tests ran inside an isolated ROS/MuJoCo container,
+including an actual obstacle-to-danger-classifier assertion.
+
+Reports and exact source scopes are listed in `feature-coverage.json`. Tailscale
+HTTP reachability from Crucible and launching the helper from `/tmp` were
+verified. Browser checks require a fresh matching command reply, so a retained
+answer from an earlier turn cannot satisfy the conversation assertion.
