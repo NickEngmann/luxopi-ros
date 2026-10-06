@@ -93,6 +93,12 @@ def test_actual_m3_feedback_generates_front_and_side_raw_samples_and_stales_out(
         }
         assert {sample['direction'] for sample in statuses if sample['valid']} == {'front', 'left', 'right'}
         assert all(not sample['fsr_contact_latched'] for sample in statuses)
+        front_obstacle_samples = [
+            sample for sample in statuses
+            if sample['direction'] == 'front' and sample['valid']
+        ]
+        assert any(sample['active'] and sample['severity'] == 'danger'
+                   for sample in front_obstacle_samples), front_obstacle_samples
         before_stale = len(front)
         contact_counts = {name: len(samples) for name, samples in contacts.items()}
         stale_start = time.monotonic()

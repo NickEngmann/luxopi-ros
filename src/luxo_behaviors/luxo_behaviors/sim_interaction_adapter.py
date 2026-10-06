@@ -12,6 +12,10 @@ from luxo_interfaces.srv import RequestStateTransition
 from luxo_behaviors.sim_interaction_rules import (
     VoiceCueLifecycle, parse_petting_event, should_cancel_stale_settle,
 )
+from luxo_behaviors.sim_gesture_rules import (
+    GESTURE_ANIMATIONS, GESTURE_COOLDOWN_SECONDS, gesture_block_reason,
+    normalize_gesture,
+)
 
 
 PETTING_ANIMATION = "folded_wiggle"
@@ -51,6 +55,16 @@ class SimInteractionAdapter(Node):
         self.petting_generation = 0
         self.petting_cancel_requested = False
         self.last_error = ""
+        self.last_gesture = ""
+        self.gesture_animation = ""
+        self.gesture_status = "idle"
+        self.gesture_error = ""
+        self.gesture_last_ignored = ""
+        self.gesture_last_started_at = 0.0
+        self.gesture_generation = 0
+        self.gesture_goal_handle = None
+        self.gesture_goal_pending = False
+        self.gesture_animation_active = False
 
         self.state_client = self.create_client(
             RequestStateTransition, "/luxo/request_state_transition"
@@ -65,6 +79,7 @@ class SimInteractionAdapter(Node):
         self.create_subscription(
             String, "/collision/petting_events", self._petting_cb, 10
         )
+        self.create_subscription(String, "/gestures", self._gesture_cb, 10)
         self.status_publisher = self.create_publisher(
             String, "/sim/interaction_status", 10
         )
@@ -74,6 +89,8 @@ class SimInteractionAdapter(Node):
         next_state = message.data.upper()
         previous = self.current_state
         self.current_state = next_state
+        if next_state in SAFETY_STATES and self.gesture_animation_active:
+            self._cancel_gesture_animation(f"state:{next_state.lower()}")
         if (previous == "PETTING" and next_state != "PETTING"
                 and (self.petting_active or self.petting_animation_active)):
             self._stop_petting_session()
@@ -97,6 +114,8 @@ class SimInteractionAdapter(Node):
             self.last_error = f"ignored unknown voice status: {status[:80]}"
             self._publish_status()
             return
+        if status in ACTIVE_VOICE_STATUSES and self.gesture_animation_active:
+            self._cancel_gesture_animation("voice_session")
         new_voice_session = status in ACTIVE_VOICE_STATUSES and not self.voice_cues.active
         if (should_cancel_stale_settle(new_voice_session, self.current_animation)
                 and self.cue_goal_handle is not None):
@@ -201,6 +220,104 @@ class SimInteractionAdapter(Node):
             self._stop_petting_session()
             self._finish_petting_if_ready()
         self._publish_status()
+
+    def _gesture_cb(self, message):
+        gesture = normalize_gesture(message.data)
+        if gesture is None:
+            self.gesture_last_ignored = f"unknown:{str(message.data)[:40]}"
+            self._publish_status()
+            return
+        self.last_gesture = gesture
+        now = time.monotonic()
+        reason = gesture_block_reason(
+            state=self.current_state,
+            voice_status=self.voice_status,
+            primary_animation_active=self.primary_animation_active,
+            cue_active=self.cue_active,
+            petting_active=self.petting_active,
+            gesture_active=self.gesture_animation_active or self.gesture_goal_pending,
+            last_started_at=self.gesture_last_started_at,
+            now=now,
+        )
+        if reason:
+            self.gesture_last_ignored = f"{gesture}:{reason}"
+            self._publish_status()
+            return
+        if not self.animation_client.server_is_ready():
+            self.gesture_status = "unavailable"
+            self.gesture_error = "play_animation action server unavailable"
+            self._publish_status()
+            return
+
+        animation = GESTURE_ANIMATIONS[gesture]
+        goal = PlayAnimation.Goal()
+        goal.animation_name = animation
+        goal.speed_multiplier = 1.5
+        goal.allow_interruption = False
+        goal.use_hardware_feedback = False
+        self.gesture_generation += 1
+        generation = self.gesture_generation
+        self.gesture_animation = animation
+        self.gesture_status = "pending"
+        self.gesture_error = ""
+        self.gesture_last_ignored = ""
+        self.gesture_last_started_at = now
+        self.gesture_goal_pending = True
+        self.gesture_animation_active = True
+        self.animation_client.send_goal_async(goal).add_done_callback(
+            lambda future: self._gesture_goal_response(generation, future)
+        )
+        self._publish_status()
+
+    def _gesture_goal_response(self, generation, future):
+        try:
+            handle = future.result()
+        except Exception as exc:
+            self._finish_gesture_goal(generation, "failed", str(exc))
+            return
+        if not handle.accepted:
+            self._finish_gesture_goal(generation, "rejected", "gesture animation goal rejected")
+            return
+        if generation != self.gesture_generation or not self.gesture_animation_active:
+            handle.cancel_goal_async()
+            return
+        self.gesture_goal_pending = False
+        self.gesture_goal_handle = handle
+        handle.get_result_async().add_done_callback(
+            lambda result: self._gesture_goal_result(generation, result)
+        )
+        self._publish_status()
+
+    def _gesture_goal_result(self, generation, future):
+        try:
+            wrapped = future.result()
+            result = wrapped.result
+            status = "completed" if result.success else str(result.final_state or "failed")
+            error = "" if result.success else str(result.message)
+        except Exception as exc:
+            status, error = "failed", str(exc)
+        self._finish_gesture_goal(generation, status, error)
+
+    def _finish_gesture_goal(self, generation, status, error):
+        if generation != self.gesture_generation:
+            return
+        self.gesture_goal_handle = None
+        self.gesture_goal_pending = False
+        self.gesture_animation_active = False
+        self.gesture_status = status
+        self.gesture_error = error
+        self._publish_status()
+
+    def _cancel_gesture_animation(self, reason):
+        self.gesture_generation += 1
+        handle = self.gesture_goal_handle
+        self.gesture_goal_handle = None
+        self.gesture_goal_pending = False
+        self.gesture_animation_active = False
+        self.gesture_status = "preempted"
+        self.gesture_error = reason
+        if handle is not None:
+            handle.cancel_goal_async()
 
     def _stop_petting_session(self):
         if self.petting_active:
@@ -436,6 +553,11 @@ class SimInteractionAdapter(Node):
             "primary_animation_active": self.primary_animation_active,
             "petting_active": self.petting_active,
             "petting_animation_active": self.petting_animation_active,
+            "gesture": self.last_gesture,
+            "gesture_animation": self.gesture_animation,
+            "gesture_status": self.gesture_status,
+            "gesture_error": self.gesture_error,
+            "gesture_last_ignored": self.gesture_last_ignored,
             "error": self.last_error,
         })))
 

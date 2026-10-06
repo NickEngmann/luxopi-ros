@@ -11,7 +11,7 @@ The machine-readable companion `feature-coverage.json` inventories 38 actual ani
 | voice_conversation | passed: supplied-WAV HTTP→actual Moonshine tiny→boundedintent/localLFM→transcript/response/motion/lamp;4functional fixtures returnIDLE | unvalidated |
 | collision | passed: raw distance classifier causes COLLISION_AVOIDING,20 actualjoint hold frames, restores USER_CONTROL | unvalidated |
 | touch_petting | passed: raw top touch→PETTING→folded_wiggle action475joint frames and releaseIDLE; all3side/bottom outputs | unvalidated |
-| gestures | passed: left/right/up/down actual /gestures passthrough; no movement consumer exists | unvalidated |
+| gestures | passed: injected `up` reaches `/gestures`, routes to `neck_stretch`, executes through the real animation action and returns to `IDLE`; 0.75 rad observed joint motion in 69.58 s | unvalidated |
 | vision_emotion | passed: injected detection→shared sad policy→EMOTION_REACTING→real sad action259joint frames; neural inference not tested | unvalidated |
 | vision_person_distance | passed:1.2m detection output, explicit person loss and3s stale expiry; no neural inference claim | unvalidated |
 | lamp_on_off | passed: actual virtual lamp off/on telemetry | unvalidated |
