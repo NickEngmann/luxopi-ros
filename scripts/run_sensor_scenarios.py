@@ -103,11 +103,16 @@ def main():
         manual.publish(JointState(name=names,position=replan))
         wait(lambda:max(abs(a-b) for a,b in zip(held_after_clear,observed['joints'][-1]))>.01)
         report('raw_distance_collision_motion_hold_and_recovery',held_joint_frames=len(poses),restored_state=observed['states'][-1])
-        transition('IDLE')
+        # Passthrough is independent of the new reaction consumer. Keep user
+        # control leased here so this raw-input suite does not leave a gesture
+        # animation running into the next sequential voice suite.
+        transition('USER_CONTROL', priority=80)
         for value in ('left','right','up','down'):
             gesture.publish(String(data=value));spin(.1)
         wait(lambda:all(value in observed['gestures'] for value in ('left','right','up','down')),timeout=5)
-        report('gesture_actual_passthrough',gestures=observed['gestures'],motion_mapping='not implemented, no claim')
+        report('gesture_actual_passthrough',gestures=observed['gestures'],
+               motion_mapping='guarded during USER_CONTROL; action consumer validated separately')
+        transition('IDLE')
     finally:
         set_touch('top',0)
         node.destroy_node();rclpy.shutdown()
