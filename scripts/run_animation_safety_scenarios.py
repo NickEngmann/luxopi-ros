@@ -45,6 +45,7 @@ def main():
         "feedback": None,
         "feedback_changes": [],
         "hold_events": [],
+        "adjust_started": None,
     }
     evidence = {
         "started_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
@@ -61,6 +62,9 @@ def main():
 
     def receive_motion(msg):
         payload = json.loads(msg.data)
+        previous_mode = data["motion"].get("avoidance_mode")
+        if payload.get("avoidance_mode") == "adjust" and previous_mode != "adjust":
+            data["adjust_started"] = time.monotonic()
         if payload.get("avoidance_mode", "").startswith("hold_"):
             data["hold_events"].append({"mode": payload["avoidance_mode"], "at": time.monotonic()})
         data["motion"] = payload
@@ -180,7 +184,13 @@ def main():
             f"safety grace restarted inside the same goal: "
             f"hold-to-terminal was {terminal_at - hold_started:.3f}s"
         )
+        wait(lambda: data["state"] == "IDLE", timeout=3.0,
+             description=f"{description} owned-state release to IDLE")
+        assert data["state"] != "ERROR", f"{description} entered ERROR during state release"
         return status, terminal_at - hold_started, data["state"]
+
+    def current_base():
+        return data["joints"].position[base_index]
 
     try:
         assert actions.wait_for_server(timeout_sec=10), "PlayAnimation action server unavailable"
@@ -200,15 +210,48 @@ def main():
         raw["hazard_side"] = "left" if (3.1416 - base) >= (base + 3.1416) else "right"
         evidence["retreat_side"] = raw["hazard_side"]
 
-        # This launch has no globally required directions, so each fault first
-        # latches a real warning; invalid/stale coverage must not clear it.
+        # First hold an animation in the warning-retreat mode. It must keep
+        # moving away from the sensor, then finish cleanly at the 2s budget.
         wait(lambda: data["state"] == "IDLE", description="IDLE before invalid-data goal")
         handle, result = start_goal()
         wait(lambda: data["state"] == "ANIMATING", description="animation start")
         wait(lambda: data["motion"].get("avoidance_mode") == "clear",
              description="fresh animation intent clears prior replan hold")
         wait(lambda: data["feedback"] is not None and data["feedback"]["keyframe"] >= 3,
-             timeout=30.0, description="same-goal short stages before invalid sample")
+             timeout=30.0, description="same-goal short stages before warning")
+        stage_count = data["feedback"]["keyframe"]
+        retreat_sign = 1 if raw["hazard_side"] == "left" else -1
+        latch_left_warning()
+        adjust_started = data["adjust_started"]
+        base_at_warning = current_base()
+        wait(lambda: (current_base() - base_at_warning) * retreat_sign > .005,
+             timeout=1.0, description="actual base feedback retreats from warning")
+        assert not result.done(), "warning prematurely terminated animation before its 2s budget"
+        wait(result.done, timeout=3.0, description="bounded 2s warning action termination")
+        warning_finished = time.monotonic()
+        warning_elapsed = warning_finished - adjust_started
+        warning_status = result.result().status
+        assert warning_status in (5, 6), f"warning budget produced action status {warning_status}"
+        assert 1.8 <= warning_elapsed <= 2.8, f"warning window was {warning_elapsed:.3f}s"
+        wait(lambda: data["state"] == "IDLE", timeout=3.0,
+             description="warning action owned-state release to IDLE")
+        assert data["state"] != "ERROR", "warning retirement entered ERROR"
+        record("warning_retreat_is_visible_then_expires_cleanly",
+               action_status=warning_status, warning_elapsed_seconds=warning_elapsed,
+               retreat_axis=data["joints"].name[base_index], retreat_sign=retreat_sign,
+               same_goal_keyframes=stage_count)
+
+        # Active warning followed by fresh invalid data must fail closed too.
+        raw["range_cm"][raw["hazard_side"]] = 100.0
+        wait(lambda: data["motion"].get("avoidance_mode") == "hold_replan",
+             timeout=5.0, description="warning clear dwell completes")
+        handle, result = start_goal()
+        wait(lambda: data["state"] == "ANIMATING", description="fresh-invalid animation start")
+        wait(lambda: data["motion"].get("avoidance_mode") == "clear",
+             description="fresh intent releases warning replan hold")
+        wait(lambda: data["feedback"] is not None and data["feedback"]["keyframe"] >= 3,
+             timeout=30.0, description="same-goal stages before invalid sample")
+        stage_count = data["feedback"]["keyframe"]
         latch_left_warning()
         holds_before = len(data["hold_events"])
         hazard_side = raw["hazard_side"]
@@ -221,7 +264,7 @@ def main():
         record("fresh_invalid_coverage_ends_goal_without_error",
                action_status=status, hold_to_terminal_seconds=latency,
                state_after=state_after,
-               same_goal_keyframes=data["feedback"]["keyframe"],
+               same_goal_keyframes=stage_count,
                invalid_sensor=data["sensors"][hazard_side])
 
         # Restore fresh clear coverage; the next goal's new UUID is the required
@@ -238,6 +281,7 @@ def main():
              description="new animation intent clears replan hold")
         wait(lambda: data["feedback"] is not None and data["feedback"]["keyframe"] >= 3,
              timeout=30.0, description="same-goal stages before sensor dropout")
+        stage_count = data["feedback"]["keyframe"]
         latch_left_warning()
         holds_before = len(data["hold_events"])
         # Keep front/right and all FSR clear reports fresh, but let left range
@@ -250,7 +294,7 @@ def main():
         record("stale_range_coverage_ends_goal_without_error",
                action_status=status, hold_to_terminal_seconds=latency,
                state_after=state_after,
-               same_goal_keyframes=data["feedback"]["keyframe"],
+               same_goal_keyframes=stage_count,
                range_sensor=data["sensors"][hazard_side])
         evidence["grace_contract"] = {
             "grace_seconds": 0.15,
