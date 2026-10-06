@@ -40,6 +40,6 @@ exec ros2 launch luxo_behaviors "$launch_file" \
   "speech_backend:=${LUXOPI_SPEECH_BACKEND:-simulation}" \
   "speech_service_command:=${LUXOPI_SPEECH_COMMAND:-[]}" \
   "joint_profile:=$joint_profile" \
-  "continuous_animation_timing:=${LUXOPI_CONTINUOUS_ANIMATION_TIMING:-false}" \
+  "continuous_animation_timing:=${LUXOPI_CONTINUOUS_ANIMATION_TIMING:-true}" \
   "${optional_args[@]}" \
   enable_simulator_dashboard:=true simulator_host:=0.0.0.0 simulator_port:=8080

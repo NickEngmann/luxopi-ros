@@ -29,6 +29,18 @@ Coverage must be advanced only from actual observed consumer output: an accepted
 
 Native simulator scenarios run only with `ROS_DOMAIN_ID=73 ROS_LOCALHOST_ONLY=1`, using a controlled graph. The motion and dashboard suites are separate from this manifest. The matrix now records the completed native baseline; subsequent new capabilities require another native run.
 
+## Simulator motion timing default
+
+The kinematic and MuJoCo simulator launch paths now default to continuous
+feasible timing, which preserves authored waypoints while enforcing the
+configured 0.5 rad/s and 1 rad/s² limits and waits for final measured settlement.
+Set `LUXOPI_CONTINUOUS_ANIMATION_TIMING=false` to select the explicit
+stopped-waypoint comparison mode. The hardware animation launch does not receive
+simulation retiming parameters and its timing remains unchanged. The full
+38-animation kinematic and MuJoCo results, planner timing, and limitations are
+recorded in `feature-coverage.json` under `continuous_timing_default` and in
+`continuous-animation-timing.md`.
+
 Unvalidated physical features include microphone wiring/acoustic VAD accuracy, actual motor torque adaptation, real stopping distance, LEDs/speaker electronics, camera stereo calibration and vendor neural-network inference. Delayed-array direction fixtures exercise the shared estimator, but room acoustics and real source locations are not established.
 
 Native environment check: the feature, direction, collision-fault and state

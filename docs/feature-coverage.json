@@ -1018,5 +1018,23 @@
     "motion_duration_seconds": 1030.763,
     "scope": "complete actions with measured endpoint settling in kinematic simulation; before later home/gesture/cue lifecycle changes",
     "resumption": "only identical-source and identical-runner passing motion/state prefix reused; lamp setup fixed and remaining seven suites rerun"
+  },
+  "continuous_timing_default": {
+    "date": "2026-10-06 UTC",
+    "default_scope": "kinematic and MuJoCo simulation only",
+    "hardware_timing_changed": false,
+    "simulation_opt_out": "LUXOPI_CONTINUOUS_ANIMATION_TIMING=false",
+    "validation_basis": "continuous_full_playlist_checkpoint plus physics full-playlist report",
+    "kinematic_report": "/tmp/luxopi-continuous-full-final-20261006T033824Z/summary.json",
+    "physics_report": "/tmp/luxopi-continuous-playlist-fixed.json",
+    "animation_plugins": 38,
+    "waypoints": 458,
+    "continuous_planner_mean_ms": 0.434,
+    "continuous_planner_max_ms": 0.946,
+    "continuous_full_playlist_seconds": 1030.763,
+    "physics_continuous_seconds": 977.88,
+    "physics_stopped_waypoint_seconds": 1855.74,
+    "configuration_checks": "Launch default resolves true for simulation and false for hardware; Compose and entrypoint preserve explicit false opt-out",
+    "scope_note": "Simulation evidence only; hardware animation timing and parameters remain unchanged."
   }
 }

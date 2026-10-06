@@ -13,6 +13,7 @@ from launch_ros.actions import Node
 from launch.conditions import IfCondition
 from launch_ros.parameter_descriptions import ParameterValue
 import luxo_behaviors
+from luxo_behaviors.launch_options import continuous_timing_default
 
 
 def generate_launch_description():
@@ -117,7 +118,11 @@ def generate_launch_description():
         DeclareLaunchArgument("enable_sim_vision", default_value="true"),
         DeclareLaunchArgument("enable_gestures", default_value="true"),
         DeclareLaunchArgument("joint_profile", default_value="roarm_m3"),
-        DeclareLaunchArgument("continuous_animation_timing", default_value="false"),
+        DeclareLaunchArgument(
+            "continuous_animation_timing",
+            default_value=continuous_timing_default(LaunchConfiguration("use_hardware")),
+            description="Use settled continuous bounded trajectories; hardware stays on its independent path",
+        ),
         DeclareLaunchArgument("enable_simulator_dashboard", default_value="true"),
         DeclareLaunchArgument("simulator_host", default_value="0.0.0.0"),
         DeclareLaunchArgument("simulator_port", default_value="8080"),

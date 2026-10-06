@@ -11,7 +11,9 @@ The completed software paths include all 38 animation plugins, all 12 states,
 control, two-stage measured home return, direction-driven movement and quiet
 return, lamp feedback, camera-behavior fixtures, swipe-driven actions, petting,
 and sensor-driven retreat/hold/replan. A missing or invalid sensor observation
-cannot clear a hazard. Continuous animation timing remains opt-in.
+cannot clear a hazard. Simulator profiles now default to continuous feasible
+trajectories and measured endpoint settlement; `LUXOPI_CONTINUOUS_ANIMATION_TIMING=false`
+selects the stopped-waypoint mode. Hardware motion timing remains unchanged.
 
 Recent end-to-end checks exposed two lifecycle defects: safety could stop home
 motion without entering the collision state, and releasing a voice session

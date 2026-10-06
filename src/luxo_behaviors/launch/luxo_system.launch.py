@@ -8,6 +8,7 @@ from launch.substitutions import LaunchConfiguration, PathJoinSubstitution, Pyth
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 from launch_ros.substitutions import FindPackageShare
+from luxo_behaviors.launch_options import continuous_timing_default
 
 
 def _simulator_dashboard_parameters():
@@ -123,8 +124,11 @@ def generate_launch_description():
         description='Simulation joint profile: checked-in four-axis urdf4 or canonical six-axis roarm_m3'
     )
     declare_continuous_timing = DeclareLaunchArgument(
-        'continuous_animation_timing', default_value='false',
-        description='Experimental waypoint-preserving bounded simulation trajectories',
+        'continuous_animation_timing', default_value=continuous_timing_default(use_hardware),
+        description=(
+            'Use settled continuous bounded trajectories in simulation; false selects '
+            'stopped-waypoint timing. Hardware animations do not use this option.'
+        ),
     )
     declare_simulation_backend = DeclareLaunchArgument(
         'simulation_backend', default_value='kinematic',
