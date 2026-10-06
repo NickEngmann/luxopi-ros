@@ -167,7 +167,8 @@ class SimInteractionAdapter(Node):
 
     def _finish_voice_state(self):
         if (self.current_state == "USER_CONTROL" and self.voice_session_owned
-                and not self.voice_idle_pending and not self.primary_animation_active):
+                and not self.voice_idle_pending and not self.primary_animation_active
+                and not self.cue_active):
             self.voice_idle_pending = True
             generation = self.voice_generation
             self._request_state(
