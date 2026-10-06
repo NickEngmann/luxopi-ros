@@ -40,6 +40,9 @@ jobs:
         run: |
           container_id=$(scripts/simulator.sh ps -q simulator)
           python scripts/home_e2e.py --container "$container_id"
+      - name: APDS gesture to completed motion
+        run: |
+          scripts/simulator.sh exec -T simulator bash -c 'source /opt/ros/jazzy/setup.bash && source /workspace/install/setup.bash && python3 scripts/run_gesture_motion_scenarios.py' > /tmp/luxopi-gesture-motion.log
       - name: Stale-heartbeat and critical-node recovery
         run: |
           container_id=$(scripts/simulator.sh ps -q simulator)
@@ -57,7 +60,7 @@ jobs:
               case "$report_path" in /tmp/luxopi-final-*) docker cp "$container_id:$report_path" artifacts/ ;; esac
             done < artifacts/report-paths.txt
           fi
-          for artifact in /tmp/luxopi-browser-e2e.json /tmp/luxopi-simulator-dashboard.png /tmp/luxopi-restart-e2e.json /tmp/luxopi-paused-health.json /tmp/luxopi-home-e2e.json; do
+          for artifact in /tmp/luxopi-browser-e2e.json /tmp/luxopi-simulator-dashboard.png /tmp/luxopi-restart-e2e.json /tmp/luxopi-paused-health.json /tmp/luxopi-home-e2e.json /tmp/luxopi-gesture-motion.log; do
             if [ -f "$artifact" ]; then cp "$artifact" artifacts/; fi
           done
       - uses: actions/upload-artifact@v7.0.1
