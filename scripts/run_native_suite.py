@@ -2,7 +2,7 @@
 """Sequential real ROS suite; exclusively owns simulator inputs while running."""
 import argparse
 import datetime,hashlib,json,os,pathlib,subprocess,time
-from native_suite_policy import motion_suite_timeout_seconds
+from native_suite_policy import execute_with_timeout, motion_suite_timeout_seconds
 if os.environ.get('ROS_DOMAIN_ID') != '73' or os.environ.get('ROS_LOCALHOST_ONLY') != '1':
     raise SystemExit('Requires ROS_DOMAIN_ID=73 ROS_LOCALHOST_ONLY=1')
 parser=argparse.ArgumentParser(description=__doc__)
@@ -39,26 +39,18 @@ if args.resume_report:
 for script,script_args in SUITES[prefix:]:
     started=time.monotonic();target=out/(script+'.log');command=['python3',str(base/'scripts'/script),*script_args]
     print('START '+script,flush=True)
-    timed_out=False
     timeout = motion_suite_timeout_seconds(
         full_animation_playlist=not args.core_motion,
         feasible_retiming=args.feasible_retiming,
         continuous_retiming=report['continuous_retiming'],
     ) if script=='run_motion_scenarios.py' else 500
-    with target.open('w') as log:
-        try:
-            result=subprocess.run(command,stdout=log,stderr=subprocess.STDOUT,timeout=timeout)
-            exit_code=result.returncode
-        except subprocess.TimeoutExpired:
-            timed_out=True
-            exit_code=124
-            log.write(f'\nNATIVE SUITE TIMED OUT after {timeout} seconds.\n')
+    exit_code,timed_out=execute_with_timeout(command,target,timeout)
     entry=dict(script=script,passed=exit_code==0,exit_code=exit_code,duration_seconds=round(time.monotonic()-started,3),log=str(target))
     if timed_out:
         entry['timed_out_after_seconds']=timeout
     report['suites'].append(entry);print(json.dumps(entry),flush=True)
     report['ended_at']=datetime.datetime.now(datetime.UTC).isoformat();(out/'summary.json').write_text(json.dumps(report,indent=2))
-    if result.returncode:print(target.read_text()[-5000:],flush=True);break
+    if exit_code:print(target.read_text()[-5000:],flush=True);break
 print('REPORT '+str(out),flush=True)
 
 raise SystemExit(0 if len(report['suites']) == len(SUITES) and all(s['passed'] for s in report['suites']) else 1)
