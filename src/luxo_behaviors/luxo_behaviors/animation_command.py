@@ -974,6 +974,10 @@ class AnimationCommandActionServer(Node):
         try:
             payload = json.loads(message.data)
             mode = payload['avoidance_mode']
+            if payload.get('exclusive_motion_owner') == 'returning_home':
+                mode = 'hold_home_owned'
+            elif payload.get('motion_hold_requested') and not str(mode).startswith('hold_'):
+                mode = 'hold_state'
             if isinstance(mode, str):
                 now = time.monotonic()
                 previous = getattr(self, '_sim_motion_status', None)

@@ -7,7 +7,7 @@ from types import SimpleNamespace
 from luxo_behaviors.joint_profiles import URDF4_NAMES, joint_profile
 from luxo_behaviors.joint_motion import ordered_joint_target
 from luxo_behaviors.reactive_avoidance import ReactiveAvoidance
-from luxo_behaviors.sim_motion_rules import validate_manual_pose
+from luxo_behaviors.sim_motion_rules import validate_manual_pose, motion_is_frozen
 
 
 CONTROLLER = pathlib.Path(__file__).resolve().parents[1] / (
@@ -36,6 +36,7 @@ def make_node(now):
         "ReactiveAvoidance": FakePolicy,
         "ordered_joint_target": ordered_joint_target,
         "validate_manual_pose": validate_manual_pose,
+        "motion_is_frozen": motion_is_frozen,
     }
     exec(compile(ast.Module(body=[cls], type_ignores=[]), str(CONTROLLER), "exec"), namespace)
     node = namespace["SimMotionController"].__new__(namespace["SimMotionController"])
@@ -50,6 +51,7 @@ def make_node(now):
     node.joint_names = list(URDF4_NAMES)
     node.profile = "urdf4"
     node.animation_target = [0.0] * len(URDF4_NAMES)
+    node.blocked_animation_intent_id = None
     node.animation_intent_id = None
     node.animation_target_received_at = None
     node.get_logger = lambda: SimpleNamespace(warning=lambda *_args: None)

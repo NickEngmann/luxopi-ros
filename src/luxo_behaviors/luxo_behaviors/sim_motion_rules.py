@@ -6,7 +6,7 @@ from luxo_behaviors.joint_motion import clamp_joint_positions, ordered_joint_tar
 from luxo_behaviors.joint_profiles import joint_profile
 
 
-MOTION_HOLD_STATES = {"ESCAPE_MODE", "ERROR", "SHUTDOWN"}
+MOTION_HOLD_STATES = {"INITIALIZING", "ESCAPE_MODE", "ERROR", "SHUTDOWN"}
 
 
 def motion_is_frozen(state, collision_active):

@@ -481,7 +481,8 @@ class SimulatorDashboard(Node):
         if kind == "state_request":
             request = RequestStateTransition.Request()
             request.requested_state = event["state"]
-            request.requesting_node = "simulator_dashboard"
+            request.requesting_node = ("home_return" if event["state"] == "RETURNING_HOME"
+                                       else "simulator_dashboard")
             request.priority = 50
             request.force = True
             request.completion = False

@@ -4,6 +4,7 @@
 import random
 import time
 import math
+from luxo_behaviors.home_sequence import HOME_STAGE_POSES
 import threading
 import rclpy
 from rclpy.action import ActionClient
@@ -141,8 +142,8 @@ class BehaviorCoordinator(PettingBehavior, IdleBehavior, VoiceBehavior, Collisio
         self.last_proactive_check = self.node.get_clock().now()
         
         # Two-stage home position sequence
-        self.home_position_1 = [0.5, 0.5, 1.3, 1.4, -1.5]  # Initial home position
-        self.home_position_2 = [0.5, -0.85, 1.3, 1.4, -1.5]  # Final home position
+        self.home_position_1 = list(HOME_STAGE_POSES[0])  # Initial home position
+        self.home_position_2 = list(HOME_STAGE_POSES[1])  # Final home position
         self.home_position_tolerance = 0.2  # Tolerance to determine if we're at a position
         self.home_position_stage = 1  # Track which stage of the home sequence we're in
         self.home_position_stage_change_time = self.node.get_clock().now()  # When we switched home position stages

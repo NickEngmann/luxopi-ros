@@ -18,6 +18,7 @@ from luxo_behaviors.sim_motion_rules import (
     validate_feedback,
 )
 from luxo_behaviors.reactive_avoidance import ReactiveAvoidance
+from luxo_behaviors.home_sequence import HomeSequence
 
 
 VOICE_FOLLOW_STATES = {"IDLE", "VOICE_FOLLOWING", "ANIMATING", "PETTING", "EMOTION_REACTING"}
@@ -77,6 +78,11 @@ class SimMotionController(Node):
         self.voice_active = False
         self.current_state = "INITIALIZING"
         self.collision_active = {"front": False, "left": False, "right": False}
+        self.home_sequence = None
+        self.home_received_at = None
+        self.home_completion_pending = False
+        self.home_warning_started = None
+        self.blocked_animation_intent_id = None
         self.last_tick = time.monotonic()
 
         self.target_sub = self.create_subscription(
@@ -159,6 +165,17 @@ class SimMotionController(Node):
         except (TypeError, ValueError) as exc:
             self.get_logger().warning(f"Rejected invalid simulated joint target: {exc}")
             return
+        intent = str(getattr(message.header, "frame_id", "") or "")
+        intent = intent or self.animation_intent_id or "legacy-unknown-intent"
+        if self.current_state == "RETURNING_HOME" or motion_is_frozen(self.current_state, ()):
+            # A home plan owns the command writer. Retain the ignored old intent
+            # so its heartbeat cannot resurrect after home completion.
+            self.blocked_animation_intent_id = intent or self.animation_intent_id
+            return
+        if self.blocked_animation_intent_id and intent == self.blocked_animation_intent_id:
+            return
+        if intent and intent != self.blocked_animation_intent_id:
+            self.blocked_animation_intent_id = None
         # Commit only after all fields pass validation; a bad message must not
         # poison the timer's next limiter step.
         self.animation_target = candidate
@@ -213,6 +230,21 @@ class SimMotionController(Node):
         next_state = message.data.upper()
         if next_state != "USER_CONTROL":
             self.manual_target = None
+        if next_state != self.current_state:
+            if (self.current_state == "RETURNING_HOME"
+                    or motion_is_frozen(self.current_state, ())):
+                self.animation_target = list(self.measured_positions if not self.publish_feedback
+                                             else self.limiter.positions)
+                self.blocked_animation_intent_id = (self.animation_intent_id
+                                                    or self.blocked_animation_intent_id)
+                self.home_sequence = None
+            if next_state == "RETURNING_HOME":
+                current = list(self.measured_positions if not self.publish_feedback
+                               else self.limiter.positions)
+                self.home_received_at = time.monotonic()
+                self.home_sequence = HomeSequence(self.profile, current, self.home_received_at)
+                self.home_completion_pending = False
+                self.home_warning_started = None
         self.current_state = next_state
 
     def manual_target_callback(self, message):
@@ -273,18 +305,42 @@ class SimMotionController(Node):
 
         future.add_done_callback(report_result)
 
+    def _complete_home(self):
+        if self.home_completion_pending or not self.states.service_is_ready():
+            return
+        self.home_completion_pending = True
+        request = RequestStateTransition.Request()
+        request.requested_state = "IDLE"
+        request.requesting_node = "home_return"
+        request.priority = 50
+        request.force = False
+        request.completion = True
+        future = self.states.call_async(request)
+        def report(result):
+            try:
+                response = result.result()
+                if not response.success:
+                    self.get_logger().warning(f"Home completion declined: {response.message}")
+            except Exception as exc:
+                self.get_logger().warning(f"Home completion failed: {exc}")
+        future.add_done_callback(report)
+
     def publish_step(self):
         now = time.monotonic()
         dt = min(0.1, max(0.001, now - self.last_tick))
         self.last_tick = now
 
         target = list(self.animation_target)
+        home = self.home_sequence if self.current_state == "RETURNING_HOME" else None
+        if home is not None:
+            target = home.target if home.status == 'running' else list(
+                self.measured_positions if not self.publish_feedback else self.limiter.positions)
         manual_override = self.current_state == "USER_CONTROL" and self.manual_target is not None
         if manual_override:
             target = list(self.manual_target)
             target_received_at = self.manual_target_received_at
         else:
-            target_received_at = self.animation_target_received_at
+            target_received_at = self.home_received_at if home is not None else self.animation_target_received_at
         may_follow = (
             self.voice_active
             and self.voice_direction is not None
@@ -321,6 +377,28 @@ class SimMotionController(Node):
         else:
             target = avoidance["target"]
 
+        if home is not None:
+            feedback_fresh = self.publish_feedback or (self.feedback_received_at is not None
+                                                       and now - self.feedback_received_at <= 0.3)
+            if self.avoidance_mode == 'adjust':
+                self.home_warning_started = (now if self.home_warning_started is None
+                                             else self.home_warning_started)
+                if now - self.home_warning_started >= 2.0:
+                    home.interrupt('warning_requires_replan')
+            else:
+                self.home_warning_started = None
+            if avoidance_hold:
+                home.interrupt(self.avoidance_mode)
+            elif not feedback_fresh:
+                home.interrupt('stale_physics_feedback')
+                target = current
+            velocities = list(self.limiter.velocities if self.publish_feedback else self.measured_velocities)
+            outcome = home.advance(current, velocities, now, fresh=feedback_fresh)
+            if outcome != 'running':
+                target = current
+                self.animation_target = list(current)
+                self._complete_home()
+
         positions = self.limiter.step(target, dt)
         message = JointState()
         message.header.stamp = self.get_clock().now().to_msg()
@@ -331,6 +409,10 @@ class SimMotionController(Node):
         status = String()
         status.data = json.dumps({
             "state": self.current_state,
+            "exclusive_motion_owner": "returning_home" if home is not None else "",
+            "home_stage": home.stage + 1 if home is not None else None,
+            "home_status": home.status if home is not None else "",
+            "home_reason": home.reason if home is not None else "",
             "collision_active": any(self.collision_active.values()),
             "collision_directions": [
                 direction for direction, active in self.collision_active.items() if active
