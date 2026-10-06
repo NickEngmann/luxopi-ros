@@ -440,7 +440,7 @@
       "consumer": "collision_node passthrough /gestures; simulation-only sim_interaction_adapter routes swipes to bounded PlayAnimation actions",
       "offline_evidence": "tests/test_feature_contract.py",
       "offline_scope": "actual passthrough callback",
-      "ros_scope": "passed: isolated ROS graph injected up through /i2c/apds9960/gesture, collision_node /gestures passthrough, sim_interaction_adapter neck_stretch action, 0.75 rad observed joint motion, action completed and FSM returned IDLE in 69.58 s; physical sensors and mapping unvalidated",
+      "ros_scope": "passed on isolated network-none domain-73 graph: left→look_around_casual (2.0 rad), right→curious_exploration (0.75 rad), up→neck_stretch (0.75 rad), down→nod (1.0 rad); each traversed /i2c/apds9960/gesture→collision_node /gestures→sim_interaction_adapter PlayAnimation, produced measured six-axis joint motion, completed, and returned FSM IDLE; physical sensors and mapping unvalidated",
       "physical": "unvalidated"
     },
     {
