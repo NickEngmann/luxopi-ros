@@ -25,5 +25,15 @@ hold, and emergency-state recovery cannot replay an old animation target.
 
 Offline tests execute the actual controller methods with the real joint limiter,
 checking both stages, sensor interruption, replacement control and old-goal
-rejection. Native ROS/physics validation is pending. These tests do not establish
+rejection. Four HTTP end-to-end cases also passed on both the native ROS
+kinematic graph and the MuJoCo graph: measured two-stage settling, contact
+interruption without automatic replay, a fresh home request, and replacement
+manual ownership surviving an old completion. Reports are retained locally in
+`/tmp/luxopi-home-native.json` and `/tmp/luxopi-final-full-home.json`.
+
+The first native run exposed a missing RETURNING_HOME safety transition.
+The state machine now permits collision avoidance and escape to interrupt home;
+its ownership tests verify clearing the interruption cannot restore the retired
+home lease. The failed report was preserved before the corrected run.
+These tests do not establish
 that the recipe avoids every real obstacle or calibrate physical sensor placement.

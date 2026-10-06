@@ -501,8 +501,8 @@
       "id": "manual_interaction",
       "input": "hardware feedback / dynamic-adaptation motor torque",
       "consumer": "dynamic adaptation",
-      "offline_evidence": "motion suite pending",
-      "offline_scope": "physical UART/torque feature; simulator equivalent pending",
+      "offline_evidence": "tests/test_dashboard_manual_handoff.py and tests/test_sim_motion_controller.py",
+      "offline_scope": "bounded manual joint control and lease replacement; physical UART/torque unvalidated",
       "ros_scope": "passed: USER_CONTROL manual joint target produces actual controller motion; torque/UART unvalidated",
       "physical": "unvalidated"
     },
