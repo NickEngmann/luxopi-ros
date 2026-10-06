@@ -53,6 +53,8 @@ def main():
         check('lamp_on_again','light',Bool(data=True),lambda s:s['enabled'] and s['effect']!='off')
         # Explicitly seed the stored white before checking `color:white`:
         # prior browser/control suites may have changed the retained color temp.
+        check('return_to_stored_white','color',String(data='color:white'),
+              lambda s:len(s['rgbw'])==4 and s['rgbw'][:3]==[255,255,255])
         check('set_neutral_color_temperature','temperature',String(data='color_temp:0.5'),lambda s:s['rgbw']==[255,255,255,50])
         check('white_uses_stored_neutral_temperature','color',String(data='color:white'),lambda s:s['rgbw']==[255,255,255,50])
         check('warm_color_temperature','temperature',String(data='color_temp:1'),lambda s:s['rgbw']==[255,200,150,150])
