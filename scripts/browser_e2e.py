@@ -203,6 +203,16 @@ def main():
                 assert result['success'], {'requested': state_name, 'response': result}
                 record('forced_fsm_state_response', requested=state_name,
                        current=result.get('state'), message=result.get('message'))
+                if state_name in {'ERROR', 'INITIALIZING', 'SHUTDOWN'}:
+                    wait(lambda s, expected=state_name: s['state'] == expected, timeout=10)
+                    readiness = page.request.get(args.url + '/healthz')
+                    assert readiness.status == 503, readiness.text()
+                    readiness_body = readiness.json()
+                    assert not readiness_body['healthy']
+                    assert 'state_not_ready' in readiness_body['health']['reasons']
+                    record('faulted_state_reports_unready', state=state_name,
+                           health_status=readiness.status,
+                           reasons=readiness_body['health']['reasons'])
                 if state_name != 'IDLE':
                     page.locator('#resetIdle').click()
                     wait(lambda s: s['sensors'].get('state_request_result', {}).get('requested') == 'IDLE'
