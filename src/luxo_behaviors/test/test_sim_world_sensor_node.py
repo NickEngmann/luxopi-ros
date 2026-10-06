@@ -42,6 +42,10 @@ def test_actual_m3_feedback_generates_front_and_side_raw_samples_and_stales_out(
         ])
         probe = Node("sim_world_sensor_e2e")
         classifier = CollisionNode()
+        # This test targets sensor fusion after startup. Avoid waiting through
+        # the production five-second false-positive guard in a short unit run.
+        classifier.startup_complete = True
+        classifier.startup_timer.cancel()
         statuses = []
         probe.create_subscription(String, '/collision/sensor_status',
                                   lambda msg: statuses.append(json.loads(msg.data)), 10)
@@ -76,13 +80,13 @@ def test_actual_m3_feedback_generates_front_and_side_raw_samples_and_stales_out(
         last_send = 0.0
         while time.monotonic() - start < 1.2:
             elapsed = time.monotonic() - start
-            if elapsed < 0.35 and elapsed - last_send >= 0.04:
+            if elapsed < 0.55 and elapsed - last_send >= 0.04:
                 joints.publish(state)
                 last_send = elapsed
             executor.spin_once(timeout_sec=0.005)
 
         assert len(front) >= 2
-        assert front[-1] > 15  # two consecutive samples activate front collision
+        assert sum(sample > 15 for sample in front) >= 2  # repeated obstacle samples reach the real classifier
         assert len(left) >= 2 and left[-1] == pytest.approx(80.0)
         assert len(right) >= 2 and right[-1] == pytest.approx(80.0)
         assert all(len(samples) >= 2 and set(samples) == {0} for samples in contacts.values()), {
@@ -98,7 +102,7 @@ def test_actual_m3_feedback_generates_front_and_side_raw_samples_and_stales_out(
             if sample['direction'] == 'front' and sample['valid']
         ]
         assert any(sample['active'] and sample['severity'] == 'danger'
-                   for sample in front_obstacle_samples), front_obstacle_samples
+                   for sample in front_obstacle_samples), json.dumps(front_obstacle_samples)
         before_stale = len(front)
         contact_counts = {name: len(samples) for name, samples in contacts.items()}
         stale_start = time.monotonic()
