@@ -30,7 +30,6 @@ class SimCameraInteraction(VisionReactionMixin,Node):
         self.recent_emotions=deque(maxlen=3);self.emotion_buffer=deque(maxlen=60);self.emotion_buffer_start_time=now
         self.detected_emotion=None;self.person_distance=None;self.person_present=False;self.last_detection=None
         self._animation_action_client=ActionClient(self,PlayAnimation,'play_animation')
-        self.animation_trigger_publisher=self.create_publisher(String,'/animation_trigger_source',10)
         self.emotion_publisher=self.create_publisher(String,'/camera/emotion',10)
         self.distance_publisher=self.create_publisher(Float32,'/camera/person_distance',10)
         self.person_publisher=self.create_publisher(Bool,'/camera/person_present',10)

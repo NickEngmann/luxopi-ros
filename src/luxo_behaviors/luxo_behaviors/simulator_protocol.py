@@ -28,6 +28,7 @@ LIGHT_COLORS = {"red", "orange", "yellow", "green", "cyan", "blue", "purple", "w
 MAX_COMMAND_CHARS = 2000
 MAX_EVENT_BYTES = 4096
 MAX_AUDIO_BYTES = 8 * 1024 * 1024
+MAX_VISION_IMAGE_BYTES = 8 * 1024 * 1024
 HEALTH_STALE_SECONDS = 3.0
 REQUIRED_GRAPH_COMPONENTS = (
     "state_manager",
@@ -72,6 +73,44 @@ def camera_input_publications(event):
         ("emotion", event["emotion"]),
         ("distance", event["metres"]),
     )
+
+
+def normalize_vision_result(result):
+    """Reduce model output to a bounded, validated ROS event; RGB has no range."""
+    if not isinstance(result, dict):
+        raise ValueError("vision result must be an object")
+    present = _boolean(result.get("person_present"), "person_present")
+    if result.get("distance_meters") is not None:
+        raise ValueError("RGB vision cannot supply metric distance")
+    faces = result.get("faces")
+    if not isinstance(faces, list) or len(faces) > 200:
+        raise ValueError("vision faces must be a bounded list")
+    if not present:
+        if faces:
+            raise ValueError("absent-person result cannot include faces")
+        return {"type": "vision_inference", "person_present": False,
+                "emotion": None, "face_count": 0}
+    if not faces:
+        raise ValueError("present-person result must include a face")
+
+    candidates = []
+    for face in faces:
+        if not isinstance(face, dict) or face.get("emotion") not in EMOTIONS:
+            raise ValueError("vision face has an unknown emotion")
+        confidence = _number(face.get("confidence"), "face confidence")
+        emotion_confidence = _number(face.get("emotion_confidence"), "emotion confidence")
+        if not 0 <= confidence <= 1 or not 0 <= emotion_confidence <= 1:
+            raise ValueError("vision confidence must be between 0 and 1")
+        candidates.append((confidence, face["emotion"], emotion_confidence))
+    face_confidence, emotion, emotion_confidence = max(candidates, key=lambda item: item[0])
+    return {
+        "type": "vision_inference",
+        "person_present": True,
+        "emotion": emotion,
+        "face_count": len(faces),
+        "face_confidence": face_confidence,
+        "emotion_confidence": emotion_confidence,
+    }
 
 
 def summarize_simulator_health(snapshot, now_monotonic):

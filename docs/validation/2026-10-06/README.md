@@ -21,3 +21,12 @@ Home and gesture reports observe actual joint feedback and completed action or
 state transitions. Speech fixtures use real local models but do not measure
 human recognition accuracy. None of these files establishes physical sensor
 calibration, safe real-world stopping distance, or CM4/Hailo latency.
+
+The final MuJoCo checks also include the real image-upload→OpenVINO→ROS emotion
+reaction flow (`vision-browser-e2e.json`) and eight touch/petting/collision
+scenarios (`petting-zones-mujoco-e2e.json`). The positive face image entered
+`EMOTION_REACTING` with 0.0285 rad maximum joint displacement in 3.111 seconds;
+the blank image cleared mood to IDLE. Each simulated head-top, top-front, and
+antenna/hand-gripper pad moved the model and returned to IDLE. The latter two
+remain simulation compatibility pads; the report does not establish real pad
+placement or wiring.

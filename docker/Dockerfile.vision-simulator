@@ -1,0 +1,12 @@
+# Optional CPU-only image inference service for the full simulator profile.
+# OpenVINO and its models do not enter the default simulator image.
+FROM luxopi/speech-simulator:local
+USER root
+RUN python3 -m venv /opt/vision
+COPY --from=ai requirements-vision.txt /tmp/requirements-vision.txt
+RUN /opt/vision/bin/pip install --no-cache-dir -r /tmp/requirements-vision.txt \
+    && rm -f /tmp/requirements-vision.txt
+WORKDIR /opt/luxopi-ai
+COPY --from=ai vision_reference.py vision_reference_server.py ./
+WORKDIR /workspace
+ENTRYPOINT []

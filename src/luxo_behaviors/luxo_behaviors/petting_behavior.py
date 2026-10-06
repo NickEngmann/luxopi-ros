@@ -151,6 +151,7 @@ class PettingBehavior:
             goal.speed_multiplier = random.uniform(0.9, 1.1)  # Slower, more gentle movements
             goal.allow_interruption = False  # Don't allow interruption of petting animations
             goal.use_hardware_feedback = False
+            goal.trigger_source = "petting"
             
             self.node.get_logger().info(f"Triggering petting animation: {selected_animation}")
             

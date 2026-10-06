@@ -23,11 +23,10 @@ class Harness(VisionReactionMixin):
         self.emotion_buffer_start_time=Stamp(0);self.emotion_buffer=deque(maxlen=60)
         self.last_emotion='neutral';self.recent_emotions=deque(maxlen=3)
         self.data_lock=threading.Lock();self.emotion_to_animation=EMOTION_ANIMATIONS
-        self.sent=[];self.triggers=[]
+        self.sent=[]
     def get_clock(self):return SimpleNamespace(now=lambda:Stamp(self.now))
     def get_logger(self):return SimpleNamespace(info=lambda *a:None,debug=lambda *a:None)
-    def _notify_animation_trigger(self,source):self.triggers.append(source)
-    def _send_animation_goal(self,name,speed,emotion):self.sent.append((name,speed,emotion))
+    def _send_animation_goal(self,name,speed,emotion):self.sent.append((name,speed,emotion,'emotion'))
     def detect(self,emotion,distance=1):
         self.emotion_buffer.append((emotion,distance,Stamp(self.now)))
 
@@ -37,7 +36,7 @@ def test_shared_buffer_dominance_triggers_registered_emotion_action(emotion):
     for _ in range(3):h.detect(emotion)
     h.process_emotion_buffer()
     assert h.sent and h.sent[0][0] in EMOTION_ANIMATIONS[emotion]
-    assert h.triggers==['emotion'] and h.last_emotion==emotion
+    assert h.sent[0][3]=='emotion' and h.last_emotion==emotion
     assert h.sent[0][1]==pytest.approx(1.34)
     assert not h.emotion_buffer
 

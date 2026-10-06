@@ -5,7 +5,8 @@ import math
 import pytest
 
 from luxo_behaviors.simulator_protocol import (
-    ANIMATION_NAMES, STATE_NAMES, camera_input_publications, normalize_event,
+    ANIMATION_NAMES, STATE_NAMES, camera_input_publications,
+    normalize_event, normalize_vision_result,
 )
 from luxo_behaviors.roarm_m3_kinematics import M3_JOINT_NAMES
 
@@ -50,6 +51,42 @@ def test_camera_absence_does_not_get_overridden_by_emotion_or_distance_inputs():
     assert camera_input_publications(present) == (
         ("person_present", True), ("emotion", "happy"), ("distance", 1.2),
     )
+
+
+def test_image_inference_result_selects_best_face_without_inventing_distance():
+    result = normalize_vision_result({
+        "person_present": True,
+        "distance_meters": None,
+        "faces": [
+            {"confidence": 0.6, "emotion_confidence": 0.9, "emotion": "sad"},
+            {"confidence": 0.95, "emotion_confidence": 0.7, "emotion": "happy"},
+        ],
+    })
+
+    assert result == {
+        "type": "vision_inference", "person_present": True, "emotion": "happy",
+        "face_count": 2, "face_confidence": 0.95, "emotion_confidence": 0.7,
+    }
+
+
+def test_image_inference_absence_clears_person_without_emotion_or_distance():
+    assert normalize_vision_result({
+        "person_present": False, "distance_meters": None, "faces": [],
+    }) == {
+        "type": "vision_inference", "person_present": False,
+        "emotion": None, "face_count": 0,
+    }
+
+
+@pytest.mark.parametrize("result", [
+    {"person_present": True, "distance_meters": 1.2, "faces": []},
+    {"person_present": True, "distance_meters": None, "faces": [{"emotion": "unknown", "confidence": 0.9, "emotion_confidence": 0.8}]},
+    {"person_present": True, "distance_meters": None, "faces": [{"emotion": "happy", "confidence": float("nan"), "emotion_confidence": 0.8}]},
+    {"person_present": False, "distance_meters": None, "faces": [{"emotion": "happy", "confidence": 0.9, "emotion_confidence": 0.8}]},
+])
+def test_invalid_or_metric_image_vision_results_are_rejected(result):
+    with pytest.raises(ValueError):
+        normalize_vision_result(result)
 
 
 def test_registered_animation_catalog_is_thirty_three_and_accepts_safe_speed():

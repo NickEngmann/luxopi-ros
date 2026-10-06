@@ -3,6 +3,7 @@ string animation_name      # Name of animation to play (e.g., "excited", "sad", 
 float32 speed_multiplier   # Speed control: 0.1-2.0 (default: 1.0)
 bool allow_interruption    # Allow collision system to interrupt/modify animation
 bool use_hardware_feedback # Use hardware position feedback for smoother transitions
+string trigger_source      # Origin such as emotion, petting, voice, or command
 ---
 # Result definition
 bool success               # Whether animation completed successfully

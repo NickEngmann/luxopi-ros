@@ -69,3 +69,13 @@ entered and cleared collision state with the configured side mapping;
 overlapping simulated pads released independently; and person absence left
 emotion and distance outputs empty without starting an emotion animation. The
 graph health endpoint was healthy during this run.
+
+## Current MuJoCo end-to-end result
+
+The full simulator plus the optional pixel-inference service passed the same
+eight petting, touch-collision, overlap-release, and camera-loss scenarios on
+2026-10-06. The head-top, top-front, and antenna/hand-gripper simulation pads
+each moved the six-axis model and returned it to `IDLE`; the three side/bottom
+contacts remained collision-only. See
+[petting-zones-mujoco-e2e.json](validation/2026-10-06/petting-zones-mujoco-e2e.json).
+The report validates the named simulation controls, not physical pad placement.

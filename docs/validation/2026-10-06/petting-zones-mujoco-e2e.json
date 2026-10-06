@@ -1,0 +1,70 @@
+{
+  "started_at": "2026-10-06T14:55:09.386127+00:00",
+  "runtime_commit": "unknown",
+  "cases": [
+    {
+      "name": "petting_zone_press_release",
+      "passed": true,
+      "zone": "head_top",
+      "active_animation": "folded_wiggle",
+      "state_after": "IDLE",
+      "maximum_joint_displacement_rad": 0.0193
+    },
+    {
+      "name": "petting_zone_press_release",
+      "passed": true,
+      "zone": "top_front",
+      "active_animation": "folded_wiggle",
+      "state_after": "IDLE",
+      "maximum_joint_displacement_rad": 0.018
+    },
+    {
+      "name": "petting_zone_press_release",
+      "passed": true,
+      "zone": "antenna",
+      "active_animation": "folded_wiggle",
+      "state_after": "IDLE",
+      "maximum_joint_displacement_rad": 0.0153
+    },
+    {
+      "name": "contact_pad_remains_collision_only",
+      "passed": true,
+      "sensor": "head_left",
+      "direction": "right",
+      "petting_event_count": 0,
+      "state_after": "IDLE"
+    },
+    {
+      "name": "contact_pad_remains_collision_only",
+      "passed": true,
+      "sensor": "head_right",
+      "direction": "left",
+      "petting_event_count": 0,
+      "state_after": "IDLE"
+    },
+    {
+      "name": "contact_pad_remains_collision_only",
+      "passed": true,
+      "sensor": "head_bottom",
+      "direction": "front",
+      "petting_event_count": 0,
+      "state_after": "IDLE"
+    },
+    {
+      "name": "overlapping_petting_zones_release_independently",
+      "passed": true,
+      "remaining": "antenna",
+      "state_after": "IDLE"
+    },
+    {
+      "name": "absent_person_clears_mood_and_dashboard_output",
+      "passed": true,
+      "person_present": false,
+      "emotion_output": null,
+      "distance_output": null,
+      "state_after": "IDLE"
+    }
+  ],
+  "passed": true,
+  "ended_at": "2026-10-06T14:55:24.013949+00:00"
+}

@@ -21,6 +21,9 @@ case "$mode" in
       [[ -d "$ai_candidate" ]] || { echo 'Set LUXOPI_AI_CHECKOUT to the luxopi-ai checkout.' >&2; exit 2; }
       export LUXOPI_AI_CHECKOUT="$ai_candidate"
     fi
+    if [[ "$mode" == full ]]; then
+      export LUXOPI_VISION_MODEL_ROOT="${LUXOPI_VISION_MODEL_ROOT:-${HOME}/.cache/luxopi-vision/omz-2023.0}"
+    fi
     compose_args+=(-f "$checkout_dir/compose.speech-simulator.yml")
     if [[ "$mode" != speech ]]; then compose_args+=(-f "$checkout_dir/compose.audio-simulator.yml"); fi
     if [[ "$mode" == full ]]; then compose_args+=(-f "$checkout_dir/compose.full-simulator.yml"); fi

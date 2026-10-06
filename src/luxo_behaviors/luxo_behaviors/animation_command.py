@@ -469,7 +469,7 @@ class AnimationCommandActionServer(Node):
 
         return self.is_in_state(*allowed_states)
 
-    def _determine_animation_state(self, animation_name: str) -> LuxoState:
+    def _determine_animation_state(self, animation_name: str, trigger_source: str = "") -> LuxoState:
         """Determine which state to transition to based on animation type."""
         # Get the plugin to check its category
         plugin = self.animation_plugins.get(animation_name)
@@ -479,7 +479,7 @@ class AnimationCommandActionServer(Node):
         # Check animation category
         category = plugin.get_category()
 
-        return animation_state_for(category, self.animation_trigger_source)
+        return animation_state_for(category, trigger_source or self.animation_trigger_source)
 
     def handle_accepted_callback(self, goal_handle):
         """Start executing an accepted goal."""
@@ -575,7 +575,9 @@ class AnimationCommandActionServer(Node):
             # triggered during that session run inside it; they must not try a
             # lower-priority ANIMATING transition and then move after denial.
             if self.get_current_state() != LuxoState.USER_CONTROL:
-                target_state = self._determine_animation_state(animation_name)
+                target_state = self._determine_animation_state(
+                    animation_name, getattr(goal, "trigger_source", "")
+                )
                 if not self._request_transition_and_wait(target_state, priority=50):
                     result = PlayAnimation.Result()
                     result.success = False
@@ -1241,12 +1243,6 @@ class AnimationCommandActionServer(Node):
             self.movement_source_publisher.publish(msg)
         except Exception as e:
             self.get_logger().error(f"Error publishing movement source: {e}")
-
-    def set_animation_trigger_source(self, source: str):
-        """Set the trigger source for animations (used by camera_interaction)."""
-        self.animation_trigger_source = source
-        self.get_logger().debug(f"Animation trigger source set to: {source}")
-
 
 def main(args=None):
     rclpy.init(args=args)

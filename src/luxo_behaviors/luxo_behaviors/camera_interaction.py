@@ -69,9 +69,6 @@ class CameraInteraction(VisionReactionMixin, Node):
         self.distance_publisher = self.create_publisher(Float32, '/camera/person_distance', 10)
         self.person_publisher = self.create_publisher(Bool, '/camera/person_present', 10)
         
-        # Publisher for notifying animation command about emotion trigger
-        self.animation_trigger_publisher = self.create_publisher(String, '/animation_trigger_source', 10)
-        
         # Create action client for animation control
         self._animation_action_client = ActionClient(
             self,

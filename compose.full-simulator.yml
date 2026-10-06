@@ -10,6 +10,7 @@ services:
       LUXOPI_WORLD_SENSOR_FIXTURE: "${LUXOPI_WORLD_SENSOR_FIXTURE:-false}"
       LUXOPI_WORLD_OBSTACLES_JSON: "${LUXOPI_WORLD_OBSTACLES_JSON:-}"
       LUXOPI_SENSOR_MOUNTS_JSON: "${LUXOPI_SENSOR_MOUNTS_JSON:-}"
+      LUXOPI_VISION_URL: http://vision:8765/analyze
       LUXOPI_PIPER_MODEL: /voices/en_US-amy-low.onnx
       LUXOPI_SYNTHESIZE_SPEECH: "true"
       LUXOPI_SPEECH_COMMAND: '["/opt/speech/bin/python", "/opt/luxopi-ai/local_conversation.py", "--backend", "llm", "--asr-model", "/models/moonshine/tiny", "--audio-directory", "/tmp/luxopi-sim-audio", "--wav-directory", "/tmp/luxopi-sim-tts"]'
@@ -18,3 +19,38 @@ services:
         source: ${LUXOPI_AI_CHECKOUT}/voices
         target: /voices
         read_only: true
+
+  # Optional actual-pixel inference. The service is private to the Compose
+  # network and is only started with --profile vision. Its model cache lives on
+  # the host and is mounted read-only; uploaded images stay in memory.
+  vision:
+    image: luxopi/vision-simulator:local
+    profiles: [vision]
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.vision-simulator
+      additional_contexts:
+        ai: ${LUXOPI_AI_CHECKOUT:?Set LUXOPI_AI_CHECKOUT to the luxopi-ai checkout}
+    command:
+      - /opt/vision/bin/python
+      - /opt/luxopi-ai/vision_reference_server.py
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8765"
+      - --model-root
+      - /models/vision
+    volumes:
+      - type: bind
+        source: ${LUXOPI_VISION_MODEL_ROOT:-/home/ubuntu/.cache/luxopi-vision/omz-2023.0}
+        target: /models/vision
+        read_only: true
+    healthcheck:
+      test:
+        - CMD
+        - /opt/vision/bin/python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8765/healthz', timeout=2).read()"
+      interval: 15s
+      timeout: 3s
+      retries: 3

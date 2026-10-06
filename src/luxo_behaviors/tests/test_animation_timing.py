@@ -26,3 +26,8 @@ def test_petting_animation_keeps_petting_as_state_owner():
     assert animation_state_for("petting") is LuxoState.PETTING
     assert animation_state_for("idle") is LuxoState.ANIMATING
     assert animation_state_for("idle", "emotion") is LuxoState.EMOTION_REACTING
+
+
+@pytest.mark.parametrize("category", ["action", "emotion", "idle", "petting"])
+def test_emotion_trigger_owns_emotion_reacting_state(category):
+    assert animation_state_for(category, "emotion") is LuxoState.EMOTION_REACTING

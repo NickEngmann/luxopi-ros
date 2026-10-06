@@ -4,10 +4,13 @@ import json
 import queue
 import threading
 import time
+import os
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 
 import rclpy
 from ament_index_python.packages import get_package_share_directory
@@ -22,8 +25,10 @@ from luxo_behaviors.simulator_protocol import (
     MANUAL_JOINT_LIMITS,
     MAX_AUDIO_BYTES,
     MAX_EVENT_BYTES,
+    MAX_VISION_IMAGE_BYTES,
     ANIMATION_NAMES,
     normalize_event,
+    normalize_vision_result,
     summarize_simulator_health,
     valid_joint_feedback,
     camera_input_publications,
@@ -48,7 +53,7 @@ STATE_AURAS = {
 
 
 class SimulatorDashboard(Node):
-    """Small bounded HTTP/ROS bridge; it has no camera, audio, or serial path."""
+    """Bounded HTTP/ROS bridge with optional private image inference forwarding."""
 
     def __init__(self):
         super().__init__("simulator_dashboard")
@@ -60,6 +65,7 @@ class SimulatorDashboard(Node):
         port = int(self.get_parameter("port").value)
         self._audio_directory = str(self.get_parameter("audio_directory").value).strip()
         self._audio_upload_enabled = bool(self._audio_directory)
+        self._vision_url = os.environ.get("LUXOPI_VISION_URL", "").strip()
         if not 1 <= port <= 65535:
             raise ValueError("port must be in the range 1..65535")
 
@@ -256,6 +262,9 @@ class SimulatorDashboard(Node):
                 if request_path == "/api/audio":
                     self._post_audio()
                     return
+                if request_path == "/api/vision":
+                    self._post_vision()
+                    return
                 if request_path != "/api/events":
                     self._reply(404, json.dumps({"error": "not found"}))
                     return
@@ -274,6 +283,47 @@ class SimulatorDashboard(Node):
                     self._reply(429, json.dumps({"error": "simulator event queue is full"}))
                     return
                 self._reply(202, json.dumps({"accepted": True}))
+
+            def _post_vision(self):
+                if not node._vision_url:
+                    self._reply(503, json.dumps({"error": "local vision inference is not configured"}))
+                    return
+                content_type = self.headers.get("Content-Type", "").split(";", 1)[0].strip().lower()
+                if content_type not in {"image/jpeg", "image/png"}:
+                    self._reply(415, json.dumps({"error": "Content-Type must be image/jpeg or image/png"}))
+                    return
+                try:
+                    length = int(self.headers.get("Content-Length", "0"))
+                except ValueError:
+                    length = 0
+                if length <= 0 or length > MAX_VISION_IMAGE_BYTES:
+                    self._reply(413, json.dumps({"error": "image must be between 1 byte and 8 MiB"}))
+                    return
+                body = self.rfile.read(length)
+                if len(body) != length:
+                    self._reply(400, json.dumps({"error": "incomplete image upload"}))
+                    return
+                request = Request(node._vision_url, data=body,
+                                  headers={"Content-Type": content_type}, method="POST")
+                try:
+                    with urlopen(request, timeout=45.0) as response:
+                        result = json.loads(response.read(256 * 1024).decode("utf-8"))
+                    event = normalize_vision_result(result)
+                except HTTPError as exc:
+                    self._reply(502, json.dumps({"error": f"vision service returned HTTP {exc.code}"}))
+                    return
+                except (URLError, TimeoutError, OSError):
+                    self._reply(503, json.dumps({"error": "local vision service is unavailable"}))
+                    return
+                except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
+                    self._reply(502, json.dumps({"error": f"invalid vision result: {exc}"}))
+                    return
+                try:
+                    node._events.put_nowait(event)
+                except queue.Full:
+                    self._reply(429, json.dumps({"error": "simulator event queue is full"}))
+                    return
+                self._reply(202, json.dumps({"accepted": True, "vision": event}))
 
             def _post_audio(self):
                 if not node._audio_upload_enabled:
@@ -606,6 +656,20 @@ class SimulatorDashboard(Node):
                 emotion=event["emotion"],
                 person_distance=event["metres"],
             ))
+        elif kind == "vision_inference":
+            self._event_publishers["person_present"].publish(
+                Bool(data=event["person_present"])
+            )
+            if event["person_present"]:
+                self._event_publishers["vision"].publish(String(data=event["emotion"]))
+            self._sensor_update(
+                vision_inference={
+                    "person_present": event["person_present"],
+                    "emotion": event["emotion"],
+                    "face_count": event["face_count"],
+                    "distance_meters": None,
+                }
+            )
         elif kind == "light_control":
             self._event_publishers[kind].publish(Bool(data=event["enabled"]))
             self._sensor_update(light_control_requested=event["enabled"])

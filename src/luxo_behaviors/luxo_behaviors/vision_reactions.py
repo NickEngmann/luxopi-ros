@@ -187,21 +187,8 @@ class VisionReactionMixin:
                 self.get_logger().info("Cancelling previous emotion-triggered animation")
                 self._active_goal_handle.cancel_goal_async()
             
-            # Notify animation command that this is an emotion trigger
-            self._notify_animation_trigger('emotion')
-            
             # Send animation goal using action system
             self._send_animation_goal(animation, speed_modifier, emotion)
-    
-    def _notify_animation_trigger(self, source: str):
-        """Notify the animation command server about the trigger source."""
-        try:
-            from std_msgs.msg import String
-            msg = String()
-            msg.data = source
-            self.animation_trigger_publisher.publish(msg)
-        except Exception as e:
-            self.get_logger().error(f"Error publishing animation trigger source: {e}")
     
     def _send_animation_goal(self, animation_name, speed_multiplier, trigger_emotion):
         """Send an animation goal to the action server"""
@@ -216,6 +203,7 @@ class VisionReactionMixin:
         goal_msg.speed_multiplier = speed_multiplier
         goal_msg.allow_interruption = True  # Emotions can be interrupted
         goal_msg.use_hardware_feedback = False
+        goal_msg.trigger_source = "emotion"
         
         self.get_logger().info(
             f"Sending emotion-triggered animation: {animation_name} "
