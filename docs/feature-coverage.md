@@ -120,7 +120,8 @@ new-intent replanning, and a running dance action that changed yaw course under
 warning before aborting on danger. Exact hashes and host report are recorded in
 `feature-coverage.json`. This is simulator feedback evidence, not physical
 stopping-distance or collision-free path certification. The new nine-suite
-aggregate/full retimed playlist remains pending.
+aggregate/full retimed playlist was pending at this checkpoint; later results
+are recorded below with their own source hashes.
 
 ## Retimed nine-suite consumer checkpoint
 
@@ -172,3 +173,20 @@ retreat remained feasible. Host evidence: `/tmp/luxopi-animation-safety.json`.
 This action-level check complements, but does not replace, the offline regression
 that repeats 40 short same-goal stage checks and proves the 150 ms grace is not
 restarted per stage. No physical hardware or audio playback was used.
+
+## Latest lifecycle regression
+
+On 2026-10-06 UTC, production `8e8ba06` passed all nine native core suites
+with feasible timing. The source SHA256 is
+`0d2010c269222458f40200f304c8d0e3b173a0d1a0a9d366b9af8378f1d03f2c`;
+report: `/tmp/luxopi-latest-native-final/summary.json`. This run covers four
+motion core cases, not another complete animation playlist. It includes the
+corrected voice-cue release and home safety state transitions.
+
+Four measured home cases passed on both the native kinematic and MuJoCo
+graphs. The rebuilt full profile passed four actual Moonshine/LFM/Piper saved-
+audio cases and 30 browser scenarios, including a fresh command-specific reply
+and operational-state readiness faults. There were no browser page, console or
+failed-request errors. See the latest machine-readable evidence entry for paths.
+The original home/voice regression failures were preserved locally. These
+functional fixtures are not real-room speech accuracy or hardware measurements.
