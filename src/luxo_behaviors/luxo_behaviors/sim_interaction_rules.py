@@ -3,6 +3,48 @@
 from luxo_behaviors.state_machine import LuxoState
 
 
+SIM_PETTING_ZONES = frozenset({"top_front", "antenna"})
+
+
+class PettingSessionSources:
+    """Aggregate independent physical-top and simulation-only petting contacts."""
+
+    def __init__(self):
+        self._sources = set()
+
+    @property
+    def active(self):
+        return bool(self._sources)
+
+    @property
+    def active_sources(self):
+        return tuple(sorted(self._sources))
+
+    @property
+    def active_simulated_zones(self):
+        return tuple(sorted(self._sources & SIM_PETTING_ZONES))
+
+    def set_head_top(self, active):
+        return self._set("head_top", active)
+
+    def set_zone(self, zone, active):
+        if zone not in SIM_PETTING_ZONES:
+            raise ValueError("unknown simulated petting zone")
+        return self._set(zone, active)
+
+    def _set(self, source, active):
+        was_active = self.active
+        if active:
+            self._sources.add(source)
+        else:
+            self._sources.discard(source)
+        if not was_active and self.active:
+            return "started"
+        if was_active and not self.active:
+            return "stopped"
+        return None
+
+
 VOICE_CUE_FOR_STATUS = {
     "listening": "listening",
     "thinking": "thinking",

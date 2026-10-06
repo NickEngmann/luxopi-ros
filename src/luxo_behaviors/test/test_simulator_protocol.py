@@ -4,7 +4,9 @@ import math
 
 import pytest
 
-from luxo_behaviors.simulator_protocol import ANIMATION_NAMES, STATE_NAMES, normalize_event
+from luxo_behaviors.simulator_protocol import (
+    ANIMATION_NAMES, STATE_NAMES, camera_input_publications, normalize_event,
+)
 from luxo_behaviors.roarm_m3_kinematics import M3_JOINT_NAMES
 
 
@@ -17,6 +19,10 @@ from luxo_behaviors.roarm_m3_kinematics import M3_JOINT_NAMES
          {"type": "audio_direction", "degrees": 359.0}),
         ({"type": "touch", "sensor": "head_top", "value": 180},
          {"type": "touch", "sensor": "head_top", "value": 180}),
+        ({"type": "petting_zone", "zone": "top_front", "active": True},
+         {"type": "petting_zone", "zone": "top_front", "active": True}),
+        ({"type": "petting_zone", "zone": "antenna", "active": False},
+         {"type": "petting_zone", "zone": "antenna", "active": False}),
         ({"type": "gesture", "gesture": "left"},
          {"type": "gesture", "gesture": "left"}),
         ({"type": "proximity", "value": 255},
@@ -31,6 +37,19 @@ from luxo_behaviors.roarm_m3_kinematics import M3_JOINT_NAMES
 )
 def test_normalize_valid_simulator_inputs(event, expected):
     assert normalize_event(event) == expected
+
+
+def test_camera_absence_does_not_get_overridden_by_emotion_or_distance_inputs():
+    absent = normalize_event({
+        "type": "vision", "person_present": False, "emotion": "happy", "metres": 1.2,
+    })
+    assert camera_input_publications(absent) == (("person_present", False),)
+    present = normalize_event({
+        "type": "vision", "person_present": True, "emotion": "happy", "metres": 1.2,
+    })
+    assert camera_input_publications(present) == (
+        ("person_present", True), ("emotion", "happy"), ("distance", 1.2),
+    )
 
 
 def test_registered_animation_catalog_is_thirty_three_and_accepts_safe_speed():
@@ -112,6 +131,8 @@ def test_animation_and_light_controls_reject_invalid_values(event):
         {"type": "audio_direction", "degrees": 360},
         {"type": "touch", "sensor": "../../topic", "value": 180},
         {"type": "touch", "sensor": "head_left", "value": True},
+        {"type": "petting_zone", "zone": "head_left", "active": True},
+        {"type": "petting_zone", "zone": "antenna", "active": "yes"},
         {"type": "gesture", "gesture": "wave_ros_command"},
         {"type": "proximity", "value": -1},
         {"type": "distance", "side": "front", "metres": 1},

@@ -6,11 +6,12 @@ import time
 import rclpy
 from rclpy.action import ActionClient
 from rclpy.node import Node
-from std_msgs.msg import String
+from std_msgs.msg import Bool, String
 from luxo_interfaces.action import PlayAnimation
 from luxo_interfaces.srv import RequestStateTransition
 from luxo_behaviors.sim_interaction_rules import (
-    VoiceCueLifecycle, parse_petting_event, should_cancel_stale_settle,
+    PettingSessionSources, SIM_PETTING_ZONES, VoiceCueLifecycle,
+    parse_petting_event, should_cancel_stale_settle,
 )
 from luxo_behaviors.sim_gesture_rules import (
     GESTURE_ANIMATIONS, GESTURE_COOLDOWN_SECONDS, gesture_block_reason,
@@ -54,6 +55,7 @@ class SimInteractionAdapter(Node):
         self.petting_animation_active = False
         self.petting_generation = 0
         self.petting_cancel_requested = False
+        self.petting_sources = PettingSessionSources()
         self.last_error = ""
         self.last_gesture = ""
         self.gesture_animation = ""
@@ -79,6 +81,13 @@ class SimInteractionAdapter(Node):
         self.create_subscription(
             String, "/collision/petting_events", self._petting_cb, 10
         )
+        self._petting_zone_subscriptions = [
+            self.create_subscription(
+                Bool, f"/sim/petting_zones/{zone}",
+                lambda message, zone=zone: self._petting_zone_cb(zone, message), 10,
+            )
+            for zone in sorted(SIM_PETTING_ZONES)
+        ]
         self.create_subscription(String, "/gestures", self._gesture_cb, 10)
         self.status_publisher = self.create_publisher(
             String, "/sim/interaction_status", 10
@@ -98,6 +107,15 @@ class SimInteractionAdapter(Node):
             # A prior completion request can race a fresh touch. Reacquire
             # PETTING after the state owner publishes the completed transition.
             self._request_petting_state()
+        elif next_state != "PETTING" and not self.petting_active:
+            # The animation action may complete its owned PETTING lease as it
+            # acknowledges cancellation. Drop our stale ownership and any
+            # corresponding rejected duplicate completion once state telemetry
+            # confirms the robot has already left PETTING.
+            self.petting_session_owned = False
+            if (self.last_error.startswith("petting completion was denied:")
+                    and next_state == "IDLE"):
+                self.last_error = ""
         elif next_state == "PETTING":
             if self.petting_active:
                 self._start_petting_animation()
@@ -211,8 +229,21 @@ class SimInteractionAdapter(Node):
             self.last_error = str(exc)
             self._publish_status()
             return
+        self.petting_sources.set_head_top(action == "petting_started")
+        self._apply_petting_sources()
+
+    def _petting_zone_cb(self, zone, message):
+        try:
+            self.petting_sources.set_zone(zone, bool(message.data))
+        except ValueError as exc:
+            self.last_error = str(exc)
+            self._publish_status()
+            return
+        self._apply_petting_sources()
+
+    def _apply_petting_sources(self):
         self.last_petting_event = time.monotonic()
-        if action == "petting_started":
+        if self.petting_sources.active:
             if not self.petting_active:
                 self.petting_generation += 1
             self.petting_active = True
@@ -454,7 +485,10 @@ class SimInteractionAdapter(Node):
             elif self.petting_active:
                 self._start_petting_animation()
             return
-        if accepted:
+        if accepted or self.current_state != "PETTING":
+            # The animation action may own completion when cancellation and
+            # touch release race. A denied petting completion is benign once
+            # the state topic confirms another owner already left PETTING.
             self.petting_session_owned = False
         else:
             self.last_error = f"petting completion was denied: {message}"
@@ -553,6 +587,8 @@ class SimInteractionAdapter(Node):
             "voice_session_owned": self.voice_session_owned,
             "primary_animation_active": self.primary_animation_active,
             "petting_active": self.petting_active,
+            "petting_sources": list(self.petting_sources.active_sources),
+            "petting_zones": list(self.petting_sources.active_simulated_zones),
             "petting_animation_active": self.petting_animation_active,
             "gesture": self.last_gesture,
             "gesture_animation": self.gesture_animation,

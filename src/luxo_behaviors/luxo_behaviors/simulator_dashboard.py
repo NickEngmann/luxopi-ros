@@ -26,6 +26,7 @@ from luxo_behaviors.simulator_protocol import (
     normalize_event,
     summarize_simulator_health,
     valid_joint_feedback,
+    camera_input_publications,
 )
 from luxo_behaviors.roarm_m3_kinematics import M3_JOINT_LIMITS, M3_JOINT_NAMES
 
@@ -103,6 +104,10 @@ class SimulatorDashboard(Node):
             "touch": {
                 name: self.create_publisher(UInt8, f"/touch_sensors/{name}", 10)
                 for name in ("head_top", "head_left", "head_bottom", "head_right")
+            },
+            "petting_zone": {
+                zone: self.create_publisher(Bool, f"/sim/petting_zones/{zone}", 10)
+                for zone in ("top_front", "antenna")
             },
             "gesture": self.create_publisher(String, "/i2c/apds9960/gesture", 10),
             "proximity": self.create_publisher(Int16, "/i2c/apds9960/proximity", 10),
@@ -438,7 +443,10 @@ class SimulatorDashboard(Node):
         self._sensor_update(person_distance=float(msg.data))
 
     def _person_present_cb(self, msg):
-        self._sensor_update(person_present=bool(msg.data))
+        if msg.data:
+            self._sensor_update(person_present=True)
+        else:
+            self._sensor_update(person_present=False, emotion=None, person_distance=None)
 
     def _light_state_cb(self, msg):
         try:
@@ -451,7 +459,10 @@ class SimulatorDashboard(Node):
         try:
             state = json.loads(msg.data)
             if isinstance(state, dict):
-                self._sensor_update(interaction_status=state)
+                self._sensor_update(
+                    interaction_status=state,
+                    petting_zones=state.get("petting_zones", []),
+                )
         except (TypeError, json.JSONDecodeError):
             self._sensor_update(interaction_status={"error": "invalid interaction telemetry"})
 
@@ -555,6 +566,11 @@ class SimulatorDashboard(Node):
         elif kind == "touch":
             self._event_publishers[kind][event["sensor"]].publish(UInt8(data=event["value"]))
             self._sensor_update(**{event["sensor"]: event["value"]})
+        elif kind == "petting_zone":
+            self._event_publishers[kind][event["zone"]].publish(Bool(data=event["active"]))
+            self._sensor_update(
+                petting_zone_requested={"zone": event["zone"], "active": event["active"]}
+            )
         elif kind == "gesture":
             self._event_publishers[kind].publish(String(data=event["gesture"]))
             self._sensor_update(gesture=event["gesture"])
@@ -578,14 +594,18 @@ class SimulatorDashboard(Node):
             self._event_publishers["collision_status"].publish(String(data=state))
             self._sensor_update(**{f"{event['side']}_collision": event["active"]})
         elif kind == "vision":
-            self._event_publishers["person_present"].publish(Bool(data=event["person_present"]))
-            self._event_publishers["vision"].publish(String(data=event["emotion"]))
-            self._event_publishers["person_distance"].publish(Float32(data=event["metres"]))
-            self._sensor_update(
+            for output, value in camera_input_publications(event):
+                if output == "person_present":
+                    self._event_publishers[output].publish(Bool(data=value))
+                elif output == "emotion":
+                    self._event_publishers["vision"].publish(String(data=value))
+                else:
+                    self._event_publishers["person_distance"].publish(Float32(data=value))
+            self._sensor_update(vision_request=dict(
                 person_present=event["person_present"],
                 emotion=event["emotion"],
                 person_distance=event["metres"],
-            )
+            ))
         elif kind == "light_control":
             self._event_publishers[kind].publish(Bool(data=event["enabled"]))
             self._sensor_update(light_control_requested=event["enabled"])

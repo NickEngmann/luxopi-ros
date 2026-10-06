@@ -5,6 +5,7 @@ import re
 
 from luxo_behaviors.roarm_m3_kinematics import M3_JOINT_LIMITS, M3_JOINT_NAMES
 from luxo_behaviors.animation_capabilities import ANIMATION_NAMES
+from luxo_behaviors.sim_interaction_rules import SIM_PETTING_ZONES
 
 
 TOUCH_SENSORS = {"head_top", "head_left", "head_bottom", "head_right"}
@@ -60,6 +61,17 @@ def valid_joint_feedback(names, positions):
         if not lower - 0.02 <= value <= upper + 0.02:
             return False
     return True
+
+
+def camera_input_publications(event):
+    """Do not synthesize emotion/distance after an explicit absent-person event."""
+    if not event["person_present"]:
+        return (("person_present", False),)
+    return (
+        ("person_present", True),
+        ("emotion", event["emotion"]),
+        ("distance", event["metres"]),
+    )
 
 
 def summarize_simulator_health(snapshot, now_monotonic):
@@ -200,6 +212,13 @@ def normalize_event(payload):
         if not 0 <= value <= 255:
             raise ValueError("touch value must be between 0 and 255")
         return {"type": kind, "sensor": sensor, "value": value}
+
+    if kind == "petting_zone":
+        zone = payload.get("zone")
+        if zone not in SIM_PETTING_ZONES:
+            raise ValueError("unknown simulated petting zone")
+        return {"type": kind, "zone": zone,
+                "active": _boolean(payload.get("active"), "active")}
 
     if kind == "gesture":
         gesture = payload.get("gesture")
