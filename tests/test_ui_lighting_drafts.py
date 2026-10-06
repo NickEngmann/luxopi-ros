@@ -12,6 +12,7 @@ const assert=require('assert');const elements={};const $=id=>elements[id]||(elem
 let resolveRequest;const send=event=>new Promise(resolve=>{if(event.type==='brightness')resolveRequest=resolve;else resolve(true)});
 """+logic+"""
 (async()=>{
+ syncLighting('color_temperature',null);assert.equal($('colorTempRange').value,'0.5');
  syncLighting('brightness',.5);$('brightnessRange').value='.8';editLighting('brightness');syncLighting('brightness',.5);
  assert.equal($('brightnessRange').value,'.8');
  const submitted=submitLighting();syncLighting('brightness',.5);assert.equal($('brightnessRange').value,'.8');
@@ -22,6 +23,7 @@ let resolveRequest;const send=event=>new Promise(resolve=>{if(event.type==='brig
  syncLighting('brightness',.3);assert.equal($('brightnessRange').value,.3);
  $('lightsEnabled').checked=false;editLighting('enabled');syncLighting('enabled',true);assert.equal($('lightsEnabled').checked,false);
  $('colorTempRange').value='.2';editLighting('color_temperature');syncLighting('color_temperature',.6);assert.equal($('colorTempRange').value,'.2');
+ const temp=submitLighting();resolveRequest(true);await temp;syncLighting('color_temperature',null);assert(lightingDrafts.color_temperature.pending);syncLighting('color_temperature',.2);assert.equal(lightingDrafts.color_temperature.pending,null);assert.equal(lightingDrafts.color_temperature.edited,false);
  const detail=healthDetail({healthy:false,reasons:['state_not_ready'],state_fresh:true,joint_state_fresh:true},'ERROR');
  assert(detail.includes('ERROR is not ready'));assert(!detail.includes('stale'));
 })().catch(error=>{console.error(error);process.exitCode=1});

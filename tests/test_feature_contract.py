@@ -94,6 +94,7 @@ def test_color_temperature_actual_callback(temperature,expected):
     node,_=make_manager()
     node.color_temp_control_callback(SimpleNamespace(data='color_temp:'+str(temperature)))
     assert node._default_white_color==expected
+    assert node._color_temperature==temperature
 
 
 def test_brightness_on_off_consumer_lifecycle():

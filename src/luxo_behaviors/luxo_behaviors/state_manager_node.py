@@ -97,6 +97,7 @@ class StateManagerNode(Node):
         self._current_animation_duration = None
         
         # Color and brightness state
+        self._color_temperature = None  # Legacy white has no equivalent temperature setting.
         self._default_white_color = (255, 255, 255, 100)  # Default neutral white RGBW
         self._color_mode = None  # Track if we're in a specific color mode
         
@@ -388,7 +389,8 @@ class StateManagerNode(Node):
             self.state_publisher.publish(state_msg)
             if self.simulated_lighting and self._neopixel_controller:
                 snapshot = self._neopixel_controller.snapshot()
-                snapshot.update(enabled=self._lights_enabled, state=self._current_state.name)
+                snapshot.update(enabled=self._lights_enabled, state=self._current_state.name,
+                                color_temperature=self._color_temperature)
                 self.light_state_publisher.publish(String(data=json.dumps(snapshot)))
             
             # Detailed state info using custom message
@@ -561,6 +563,7 @@ class StateManagerNode(Node):
                 
                 # Store the temperature-based white color
                 self._default_white_color = (r, g, b, w)
+                self._color_temperature = color_temp
                 
                 # If lights are on and not in a specific color mode, apply the new temperature
                 if self._lights_enabled and self._neopixel_controller:

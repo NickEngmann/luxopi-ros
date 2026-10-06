@@ -82,3 +82,18 @@ def test_white_temperature_reapplies_even_when_state_is_unchanged():
     node._neopixel_last_visual_state=state.IDLE
     node.color_temp_control_callback(SimpleNamespace(data='color_temp:1'))
     assert node._neopixel_controller.snapshot()['rgbw']==[255,200,150,150]
+
+
+def test_temperature_telemetry_unconfigured_then_valid_and_invalid_preserves():
+    node,_=virtual_manager()
+    assert node._color_temperature is None and node._default_white_color==(255,255,255,100)
+    output=[]
+    node.light_state_publisher=SimpleNamespace(publish=lambda msg:output.append(json.loads(msg.data)))
+    node.publish_state();assert output[-1]['color_temperature'] is None
+    node.color_temp_control_callback(SimpleNamespace(data='color_temp:0.2'))
+    node.publish_state();assert output[-1]['color_temperature']==.2
+    color=node._default_white_color
+    for value in ('nan','inf','-1','2','invalid'):
+        node.color_temp_control_callback(SimpleNamespace(data='color_temp:'+value))
+        node.publish_state()
+        assert output[-1]['color_temperature']==.2 and node._default_white_color==color
