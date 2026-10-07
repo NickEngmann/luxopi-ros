@@ -1,11 +1,13 @@
 """Local browser control panel for a ROS-only Luxo simulation."""
 
 import json
+import re
 import queue
 import threading
 import time
 import os
 import uuid
+from collections import OrderedDict, deque
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
@@ -16,6 +18,7 @@ import rclpy
 from ament_index_python.packages import get_package_share_directory
 from rclpy.action import ActionClient
 from rclpy.node import Node
+from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile
 from luxo_interfaces.action import PlayAnimation
 from sensor_msgs.msg import JointState
 from std_msgs.msg import Bool, Float32, Int16, String, UInt8
@@ -32,6 +35,8 @@ from luxo_behaviors.simulator_protocol import (
     summarize_simulator_health,
     valid_joint_feedback,
     camera_input_publications,
+    event_fingerprint,
+    prune_expired_request_ids,
 )
 from luxo_behaviors.roarm_m3_kinematics import M3_JOINT_LIMITS, M3_JOINT_NAMES
 
@@ -60,19 +65,28 @@ class SimulatorDashboard(Node):
         self.declare_parameter("host", "0.0.0.0")
         self.declare_parameter("port", 8080)
         self.declare_parameter("audio_directory", "")
+        self.declare_parameter("tts_directory", "")
         self.declare_parameter("simulation_backend", "kinematic")
         host = self.get_parameter("host").value
         port = int(self.get_parameter("port").value)
         self._audio_directory = str(self.get_parameter("audio_directory").value).strip()
+        self._tts_directory = str(self.get_parameter("tts_directory").value).strip()
         self._audio_upload_enabled = bool(self._audio_directory)
         self._vision_url = os.environ.get("LUXOPI_VISION_URL", "").strip()
         if not 1 <= port <= 65535:
             raise ValueError("port must be in the range 1..65535")
 
         self._events = queue.Queue(maxsize=64)
+        self._event_ingress_lock = threading.Lock()
+        self._event_request_ids = OrderedDict()
+        self._event_audit = deque(maxlen=100)
+        self._event_ingress_counts = {"accepted": 0, "duplicates": 0, "rejected": 0, "queue_full": 0}
         self._mesh_dir = Path(get_package_share_directory("roarm")) / "meshes"
         self._animation_client = ActionClient(self, PlayAnimation, "play_animation")
         self._active_animation_goal = None
+        self._animation_generation = 0
+        self._animation_goal_pending = False
+        self._cancel_animation_when_accepted = False
         self._state_client = self.create_client(
             RequestStateTransition, "/luxo/request_state_transition"
         )
@@ -84,6 +98,8 @@ class SimulatorDashboard(Node):
         self._manual_granted = False
         self._manual_deadline = 0.0
         self._simulated_obstacles = {side: False for side in ("front", "left", "right")}
+        self._simulated_sensor_faults = {side: False for side in ("front", "left", "right")}
+        self._world_sensor_faults_pub = self.create_publisher(String, "/sim/sensor_faults", 10)
         self._obstacle_samples_until = 0.0
         self._lock = threading.Lock()
         self._snapshot = {
@@ -93,13 +109,16 @@ class SimulatorDashboard(Node):
             "status": "idle",
             "transcript": "",
             "response": "",
+            "audio_response": "",
             "joint_names": [],
             "positions": [],
             "direction": None,
             "direction_evidence": {},
             "voice_active": False,
             "motion": {},
-            "sensors": {},
+            "physics": {},
+            "simulation_speed": 1.0,
+            "sensors": {"simulator_autonomy_enabled": False},
             "graph_nodes": [],
         }
 
@@ -109,6 +128,8 @@ class SimulatorDashboard(Node):
             "voice_command": self.create_publisher(String, "/voice/command", 10),
             "audio_file": self.create_publisher(String, "/voice/audio_file", 10),
             "audio_direction": self.create_publisher(Float32, "/sim/audio_direction", 10),
+            "simulation_speed": self.create_publisher(Float32, "/sim/time_scale", 10),
+            "simulator_autonomy": self.create_publisher(Bool, "/sim/autonomy_enabled", 10),
             "touch": {
                 name: self.create_publisher(UInt8, f"/touch_sensors/{name}", 10)
                 for name in ("head_top", "head_left", "head_bottom", "head_right")
@@ -134,17 +155,32 @@ class SimulatorDashboard(Node):
             "brightness": self.create_publisher(String, "/luxo/brightness_control", 10),
             "color_temperature": self.create_publisher(String, "/luxo/color_temp_control", 10),
             "light_color": self.create_publisher(String, "/luxo/color_control", 10),
+            "environment_obstacles": self.create_publisher(
+                String, "/sim/environment_obstacles", 10
+            ),
         }
 
         self.create_subscription(String, "/luxo/current_state", self._state_cb, 10)
         self.create_subscription(String, "/roarm/current_animation", self._animation_cb, 10)
         self.create_subscription(JointState, "/joint_states", self._joint_cb, 10)
         self.create_subscription(String, "/sim/motion_status", self._motion_status_cb, 10)
+        self.create_subscription(String, "/sim/physics_status", self._physics_status_cb, 10)
         self.create_subscription(String, "/voice/transcript", self._transcript_cb, 10)
         self.create_subscription(String, "/voice/response", self._response_cb, 10)
+        self.create_subscription(String, "/voice/audio_response", self._audio_response_cb, 10)
         self.create_subscription(String, "/voice/status", self._status_cb, 10)
         self.create_subscription(Float32, "/voice/follow_direction", self._direction_cb, 10)
         self.create_subscription(Bool, "/voice/active", self._active_cb, 10)
+        self.create_subscription(
+            Bool,
+            "/sim/autonomy_status",
+            self._autonomy_status_cb,
+            QoSProfile(
+                history=HistoryPolicy.KEEP_LAST,
+                depth=1,
+                durability=DurabilityPolicy.TRANSIENT_LOCAL,
+            ),
+        )
         self.create_subscription(
             String, "/sim/direction_evidence", self._direction_evidence_cb, 10
         )
@@ -196,7 +232,9 @@ class SimulatorDashboard(Node):
 
             def do_GET(self):
                 path = urlparse(self.path).path
-                if path == "/healthz":
+                if path.startswith("/api/audio-response/"):
+                    self._get_audio_response(path.rsplit("/", 1)[-1])
+                elif path == "/healthz":
                     snapshot = node.get_snapshot()
                     health = snapshot["health"]
                     code = 200 if health["healthy"] else 503
@@ -229,11 +267,17 @@ class SimulatorDashboard(Node):
                         "roarm_m3/link5.stl",
                         "roarm_m3/gripper_link.stl",
                     }
+                    prop_mesh_files = {
+                        f"simulator_props/{name}.stl"
+                        for name in ("crate", "wedge", "can", "cone", "rock")
+                    }
                     if relative in vendor_files:
                         target = (Path(__file__).with_name("assets") / relative).resolve()
                     elif relative in mesh_files:
                         target = (node._mesh_dir / Path(relative).name).resolve()
                     elif relative in m3_mesh_files:
+                        target = (Path(__file__).with_name("assets") / relative).resolve()
+                    elif relative in prop_mesh_files:
                         target = (Path(__file__).with_name("assets") / relative).resolve()
                     else:
                         self._reply(404, "Not found", "text/plain; charset=utf-8")
@@ -249,6 +293,13 @@ class SimulatorDashboard(Node):
                     self._reply_bytes(200, target.read_bytes(), content_type)
                 elif path == "/api/state":
                     self._reply(200, json.dumps(node.get_snapshot()))
+                elif path == "/api/diagnostics":
+                    snapshot = node.get_snapshot()
+                    self._reply(200, json.dumps({
+                        "healthy": snapshot["health"]["healthy"],
+                        "health": snapshot["health"],
+                        "event_ingress": snapshot["event_ingress"],
+                    }))
                 else:
                     self._reply(404, json.dumps({"error": "not found"}))
 
@@ -270,14 +321,46 @@ class SimulatorDashboard(Node):
                     raw = self.rfile.read(length)
                     event = normalize_event(json.loads(raw.decode("utf-8")))
                 except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
+                    node._record_ingress("rejected", "invalid", detail=str(exc))
                     self._reply(400, json.dumps({"error": str(exc)}))
                     return
-                try:
-                    node._events.put_nowait(event)
-                except queue.Full:
-                    self._reply(429, json.dumps({"error": "simulator event queue is full"}))
-                    return
-                self._reply(202, json.dumps({"accepted": True}))
+                event_id = event.get("request_id")
+                fingerprint = event_fingerprint(event) if event_id else None
+                with node._event_ingress_lock:
+                    node._prune_request_ids_locked()
+                    if event_id in node._event_request_ids:
+                        previous = node._event_request_ids[event_id][0]
+                        if previous != fingerprint:
+                            node._event_ingress_counts["rejected"] += 1
+                            node._record_ingress_locked(
+                                "rejected", event["type"], event_id,
+                                detail="request_id reused with different event",
+                            )
+                            self._reply(409, json.dumps({"error": "request_id was already used for a different event", "event_id": event_id}))
+                            return
+                        node._event_ingress_counts["duplicates"] += 1
+                        node._record_ingress_locked("duplicate", event["type"], event_id)
+                        self._reply(202, json.dumps({"accepted": True, "duplicate": True, "event_id": event_id}))
+                        return
+                    try:
+                        node._events.put_nowait(event)
+                    except queue.Full:
+                        node._event_ingress_counts["queue_full"] += 1
+                        node._event_ingress_counts["rejected"] += 1
+                        node._record_ingress_locked("rejected", event["type"], event_id, detail="queue_full")
+                        self._reply(429, json.dumps({"error": "simulator event queue is full"}))
+                        return
+                    if event_id:
+                        node._event_request_ids[event_id] = (fingerprint, time.monotonic())
+                        node._event_request_ids.move_to_end(event_id)
+                        while len(node._event_request_ids) > 1024:
+                            node._event_request_ids.popitem(last=False)
+                    node._event_ingress_counts["accepted"] += 1
+                    node._record_ingress_locked("accepted", event["type"], event_id)
+                response = {"accepted": True}
+                if event_id:
+                    response["event_id"] = event_id
+                self._reply(202, json.dumps(response))
 
             def _post_vision(self):
                 if not node._vision_url:
@@ -359,6 +442,17 @@ class SimulatorDashboard(Node):
                     return
                 self._reply(202, json.dumps({"accepted": True, "name": name}))
 
+            def _get_audio_response(self, name):
+                if not node._tts_directory or not re.fullmatch(r"reply-[0-9a-f]{32}\.wav", name):
+                    self._reply(404, json.dumps({"error": "audio response not found"}))
+                    return
+                target = (Path(node._tts_directory) / name).resolve()
+                if (target.parent != Path(node._tts_directory).resolve()
+                        or not target.is_file() or target.stat().st_size > 16 * 1024 * 1024):
+                    self._reply(404, json.dumps({"error": "audio response not found"}))
+                    return
+                self._reply_bytes(200, target.read_bytes(), "audio/wav")
+
         return ThreadingHTTPServer((host, port), Handler)
 
     def get_snapshot(self):
@@ -372,6 +466,14 @@ class SimulatorDashboard(Node):
             result.pop("_joints_received_monotonic", None)
             result.pop("_joint_feedback_valid", None)
             result["audio_upload"] = self._audio_upload_enabled
+            with self._event_ingress_lock:
+                result["event_ingress"] = {
+                    **self._event_ingress_counts,
+                    "queue_depth": self._events.qsize(),
+                    "queue_capacity": self._events.maxsize,
+                    "request_id_cache_size": len(self._event_request_ids),
+                    "recent": list(self._event_audit),
+                }
             result["animation_names"] = sorted(ANIMATION_NAMES)
             if joint_names == set(M3_JOINT_NAMES):
                 limits = M3_JOINT_LIMITS
@@ -383,6 +485,26 @@ class SimulatorDashboard(Node):
                 name: list(bounds) for name, bounds in limits.items()
             }
             return result
+
+    def _record_ingress(self, outcome, kind, event_id=None, detail=None):
+        with self._event_ingress_lock:
+            if outcome == "rejected":
+                self._event_ingress_counts["rejected"] += 1
+            self._record_ingress_locked(outcome, kind, event_id, detail)
+
+    def _record_ingress_locked(self, outcome, kind, event_id=None, detail=None):
+        entry = {"at_monotonic": round(time.monotonic(), 3), "outcome": outcome, "type": kind}
+        if event_id:
+            entry["request_id"] = event_id
+        if detail:
+            entry["detail"] = str(detail)[:160]
+        self._event_audit.append(entry)
+
+    def _prune_request_ids_locked(self):
+        # Ordered insertion is enough for bounded replay protection. Old IDs
+        # age out after one hour even if the cache never reaches its size cap.
+        # Store timestamps alongside hashes without exposing them in snapshots.
+        prune_expired_request_ids(self._event_request_ids, time.monotonic())
 
     def _refresh_graph(self):
         try:
@@ -431,6 +553,10 @@ class SimulatorDashboard(Node):
     def _response_cb(self, msg):
         self._update(response=msg.data)
 
+    def _audio_response_cb(self, msg):
+        if re.fullmatch(r"reply-[0-9a-f]{32}\.wav", msg.data):
+            self._update(audio_response=msg.data)
+
     def _status_cb(self, msg):
         self._update(status=msg.data)
 
@@ -440,12 +566,24 @@ class SimulatorDashboard(Node):
     def _active_cb(self, msg):
         self._update(voice_active=bool(msg.data))
 
+    def _autonomy_status_cb(self, msg):
+        self._sensor_update(simulator_autonomy_enabled=bool(msg.data))
+
     def _motion_status_cb(self, msg):
         try:
             data = json.loads(msg.data)
         except json.JSONDecodeError:
             data = {"error": "motion status was not valid JSON"}
         self._update(motion=data)
+
+    def _physics_status_cb(self, msg):
+        try:
+            data = json.loads(msg.data)
+            if not isinstance(data, dict) or data.get("backend") != "mujoco":
+                return
+        except (TypeError, json.JSONDecodeError):
+            data = {"error": "physics status was not valid JSON"}
+        self._update(physics=data)
 
     def _direction_evidence_cb(self, msg):
         try:
@@ -531,16 +669,20 @@ class SimulatorDashboard(Node):
     def _publish_simulated_obstacle_samples(self):
         """Publish held virtual ranges through the physical sensor classifier."""
         now = time.monotonic()
-        if not any(self._simulated_obstacles.values()) and now > self._obstacle_samples_until:
+        if (not any(self._simulated_obstacles.values())
+                and not any(self._simulated_sensor_faults.values())
+                and now > self._obstacle_samples_until):
             return
         active = self._simulated_obstacles
-        self._event_publishers["proximity"].publish(
-            Int16(data=22 if active["front"] else 0)
-        )
-        for side in ("left", "right"):
-            self._event_publishers["distance"][side].publish(
-                Float32(data=10.0 if active[side] else 100.0)
+        if not self._simulated_sensor_faults["front"]:
+            self._event_publishers["proximity"].publish(
+                Int16(data=22 if active["front"] else 0)
             )
+        for side in ("left", "right"):
+            if not self._simulated_sensor_faults[side]:
+                self._event_publishers["distance"][side].publish(
+                    Float32(data=10.0 if active[side] else 100.0)
+                )
         # The geometric obstacle control does not represent physical contact.
         # Keep the classifier's three corresponding FSR coverage inputs fresh
         # and explicitly clear while the optical sensor reports the obstacle.
@@ -601,21 +743,38 @@ class SimulatorDashboard(Node):
             goal.speed_multiplier = event["speed"]
             goal.allow_interruption = True
             goal.use_hardware_feedback = False
+            self._animation_generation += 1
+            generation = self._animation_generation
+            self._animation_goal_pending = True
+            self._cancel_animation_when_accepted = False
             self._sensor_update(
                 animation_request=event["name"],
                 animation_speed=event["speed"],
                 animation_error="",
                 animation_cancel_result=None,
+                animation_result=None,
             )
             self._active_animation_goal = None
             self._animation_client.send_goal_async(goal).add_done_callback(
-                self._animation_goal_response
+                lambda future: self._animation_goal_response(future, generation)
             )
         elif kind == "cancel_animation":
             handle = self._active_animation_goal
             if handle is not None and handle.accepted:
-                handle.cancel_goal_async().add_done_callback(self._animation_cancel_response)
+                generation = self._animation_generation
+                handle.cancel_goal_async().add_done_callback(
+                    lambda future: self._animation_cancel_response(future, generation)
+                )
                 self._sensor_update(animation_cancel_requested=True)
+            elif self._animation_goal_pending:
+                # Action goal acceptance is asynchronous. Remember a cancel
+                # pressed during that window and apply it as soon as ROS
+                # returns the accepted goal handle.
+                self._cancel_animation_when_accepted = True
+                self._sensor_update(
+                    animation_cancel_requested=True,
+                    animation_cancel_result=None,
+                )
             else:
                 self._sensor_update(animation_cancel_requested=False)
         elif kind == "voice_command":
@@ -627,6 +786,12 @@ class SimulatorDashboard(Node):
         elif kind == "audio_direction":
             self._event_publishers[kind].publish(Float32(data=event["degrees"]))
             self._sensor_update(requested_mic_direction=event["degrees"])
+        elif kind == "simulation_speed":
+            self._event_publishers[kind].publish(Float32(data=event["scale"]))
+            self._update(simulation_speed=event["scale"])
+            self._sensor_update(simulation_speed=event["scale"])
+        elif kind == "simulator_autonomy":
+            self._event_publishers[kind].publish(Bool(data=event["enabled"]))
         elif kind == "touch":
             self._event_publishers[kind][event["sensor"]].publish(UInt8(data=event["value"]))
             self._sensor_update(**{event["sensor"]: event["value"]})
@@ -657,8 +822,18 @@ class SimulatorDashboard(Node):
             # the latter has no valid sensor coverage/severity for safe motion.
             self._simulated_obstacles[event["side"]] = event["active"]
             self._obstacle_samples_until = time.monotonic() + (0.0 if event["active"] else 1.5)
+            self._event_publishers["environment_obstacles"].publish(
+                String(data=json.dumps(self._simulated_obstacles, separators=(",", ":")))
+            )
             self._sensor_update(simulated_obstacles=dict(self._simulated_obstacles))
             self._sensor_update(**{f"{event['side']}_collision": event["active"]})
+        elif kind == "sensor_fault":
+            self._simulated_sensor_faults[event["side"]] = event["active"]
+            self._obstacle_samples_until = time.monotonic() + 1.5
+            self._world_sensor_faults_pub.publish(
+                String(data=json.dumps(self._simulated_sensor_faults, separators=(",", ":")))
+            )
+            self._sensor_update(simulated_sensor_faults=dict(self._simulated_sensor_faults))
         elif kind == "vision":
             for output, value in camera_input_publications(event):
                 if output == "person_present":
@@ -699,56 +874,77 @@ class SimulatorDashboard(Node):
             self._event_publishers[kind].publish(String(data=f"color:{event['color']}"))
             self._sensor_update(light_color_requested=event["color"])
 
-    def _animation_goal_response(self, future):
+    def _sensor_snapshot(self, key):
+        with self._lock:
+            return self._snapshot["sensors"].get(key)
+
+    def _animation_goal_response(self, future, generation):
         try:
             handle = future.result()
         except Exception as exc:
-            self._sensor_update(animation_error=f"animation goal failed: {exc}")
+            if generation == self._animation_generation:
+                self._animation_goal_pending = False
+                self._sensor_update(animation_error=f"animation goal failed: {exc}")
             return
+        if generation != self._animation_generation:
+            if handle.accepted:
+                handle.cancel_goal_async()
+            return
+        self._animation_goal_pending = False
         if not handle.accepted:
             self._sensor_update(animation_error="animation goal rejected")
+            self._sensor_update(animation_cancel_requested=False)
+            self._cancel_animation_when_accepted = False
             return
         self._active_animation_goal = handle
         self._sensor_update(animation_cancel_requested=False, animation_error="")
         handle.get_result_async().add_done_callback(
-            lambda result_future: self._animation_result(result_future, handle)
+            lambda result_future: self._animation_result(result_future, handle, generation)
         )
+        if self._cancel_animation_when_accepted:
+            self._cancel_animation_when_accepted = False
+            handle.cancel_goal_async().add_done_callback(
+                lambda cancel_future: self._animation_cancel_response(
+                    cancel_future, generation
+                )
+            )
+            self._sensor_update(animation_cancel_requested=True)
 
-    def _animation_cancel_response(self, future):
+    def _animation_cancel_response(self, future, generation):
         try:
             response = future.result()
             accepted = bool(response.goals_canceling)
-            self._sensor_update(
-                animation_cancel_result={
-                    "accepted": accepted,
-                    "message": "cancel accepted" if accepted else "goal was not active",
-                },
-                animation_cancel_requested=False,
-            )
+            result = {
+                "accepted": accepted,
+                "message": "cancel accepted" if accepted else "goal was not active",
+            }
         except Exception as exc:
+            result = {"accepted": False, "message": str(exc)}
+        if generation == self._animation_generation:
             self._sensor_update(
-                animation_cancel_result={"accepted": False, "message": str(exc)},
+                animation_cancel_result=result,
                 animation_cancel_requested=False,
             )
 
-    def _animation_result(self, future, handle):
+    def _animation_result(self, future, handle, generation):
         try:
             wrapped = future.result()
             result = wrapped.result
-            self._sensor_update(
-                animation_result={
+            if generation == self._animation_generation:
+                self._sensor_update(animation_result={
                     "success": bool(result.success),
                     "message": result.message,
                     "duration": float(result.actual_duration),
                     "state": result.final_state,
-                },
-                animation_cancel_requested=False,
-            )
+                }, animation_cancel_requested=False)
         except Exception as exc:
-            self._sensor_update(animation_error=f"animation result failed: {exc}")
+            if generation == self._animation_generation:
+                self._sensor_update(animation_error=f"animation result failed: {exc}")
         finally:
             if self._active_animation_goal is handle:
                 self._active_animation_goal = None
+                if generation == self._animation_generation:
+                    self._sensor_update(animation_cancel_requested=False)
 
     def _state_request_done(self, future, requested_state):
         try:

@@ -5,6 +5,7 @@ Requires optional Playwright and installed Chromium. Run against a dedicated
 simulator graph: tests intentionally change lamp/sensor/animation state.
 """
 import argparse
+import ast
 import json
 import os
 from pathlib import Path
@@ -24,6 +25,21 @@ def matching_conversation_reply(snapshot, command, expected_replies, previous_re
     return (snapshot.get('transcript') == command
             and snapshot.get('response') in expected_replies
             and snapshot.get('response') != previous_response)
+
+
+def idle_animation_names():
+    """Read the driver list without importing ROS-only shared utilities."""
+    source = Path(__file__).resolve().parents[1] / 'src/luxo_behaviors/luxo_behaviors/shared_utils.py'
+    module = ast.parse(source.read_text())
+    for item in module.body:
+        if isinstance(item, ast.ClassDef) and item.name == 'IdleAnimationConfig':
+            for statement in item.body:
+                if isinstance(statement, ast.Assign) and any(
+                    isinstance(target, ast.Name) and target.id == 'DEFAULT_IDLE_ANIMATIONS'
+                    for target in statement.targets
+                ):
+                    return set(ast.literal_eval(statement.value))
+    raise AssertionError('IdleAnimationConfig.DEFAULT_IDLE_ANIMATIONS is missing')
 
 
 def main():
@@ -108,6 +124,26 @@ def main():
             # network-idle window can never be a reliable page-load condition.
             page.goto(args.url, wait_until='domcontentloaded')
             page.wait_for_function('document.querySelector("#connectionText").textContent.includes("ROS API")')
+            startup_snapshot = wait(lambda s:s.get('health',{}).get('healthy'), timeout=15)
+            # Dedicated E2E simulators may intentionally start with synthetic
+            # autonomy disabled. Enable it explicitly below instead of making
+            # the dashboard's initial status a hidden runner prerequisite.
+            autonomy_at_join = startup_snapshot.get('sensors',{}).get('simulator_autonomy_enabled')
+            record('autonomy_status_on_initial_join', enabled=autonomy_at_join)
+            if autonomy_at_join is not True:
+                response = page.request.post(args.url + '/api/events',
+                                             data={'type':'simulator_autonomy', 'enabled':True})
+                assert response.status == 202, response.text()
+                startup_snapshot = wait(lambda s:s.get('sensors',{}).get('simulator_autonomy_enabled') is True)
+                record('autonomy_can_be_enabled_from_initially_paused_simulator')
+            # Freeze autonomous motion while checking projected hover targets
+            # and isolated stimuli. The dedicated idle-driver check restarts it.
+            response = page.request.post(args.url + '/api/events',
+                                         data={'type': 'simulator_autonomy', 'enabled': False})
+            assert response.status == 202, response.text()
+            wait(lambda s:s.get('sensors',{}).get('simulator_autonomy_enabled') is False)
+            page.request.post(args.url + '/api/events', data={'type': 'cancel_animation'})
+            page.request.post(args.url + '/api/events', data={'type': 'state_request', 'state': 'IDLE'})
             page.wait_for_function('''() => {
                 const text = document.querySelector('#modelStatus').textContent;
                 return text.includes('kinematic') || text.includes('dynamics');
@@ -122,7 +158,7 @@ def main():
             snapshot = wait(lambda s: bool(s.get('health', {}).get('components')), timeout=30)
             if snapshot['state'] != 'IDLE':
                 page.locator('#resetIdle').click()
-                snapshot = wait(lambda s: s['state'] == 'IDLE', timeout=10)
+            snapshot = wait(lambda s: s['state'] == 'IDLE' and not s.get('animation'), timeout=20)
             assert all(snapshot['health']['components'].values()), snapshot['health']
             backend = snapshot.get('simulation_backend', 'kinematic')
             assert backend in {'kinematic', 'mujoco'}, backend
@@ -145,8 +181,19 @@ def main():
             animation_count = len(snapshot.get('animation_names', []))
             assert animation_count > 0
             assert page.locator('#animationNameSelect option').count() == animation_count
+            expected_states = {
+                'INITIALIZING', 'IDLE', 'ANIMATING', 'VOICE_FOLLOWING',
+                'COLLISION_AVOIDING', 'RETURNING_HOME', 'ESCAPE_MODE',
+                'USER_CONTROL', 'EMOTION_REACTING', 'PETTING', 'ERROR', 'SHUTDOWN',
+            }
+            visible_states = set(page.locator('#stateSelect option').all_text_contents())
+            assert visible_states == expected_states, {
+                'expected_states': sorted(expected_states),
+                'visible_states': sorted(visible_states),
+            }
             record('render_and_graph', nodes=snapshot['health']['node_count'],
                    model=page.locator('#modelStatus').inner_text(), animations=animation_count,
+                   selectable_states=sorted(visible_states),
                    joint_names=snapshot['joint_names'], health_status=health_response.status,
                    simulation_backend=backend, engine_caption=page.locator('#engineCaption').inner_text(),
                    loaded_m3_meshes=sorted(path.rsplit('/', 1)[-1] for path in required_m3_meshes))
@@ -162,6 +209,66 @@ def main():
             page.locator('#view3d').click()
             assert page.locator('#robotCanvas3D').is_visible()
             record('both_robot_views')
+
+            # Hover the distal modeled link and require the exact URDF frame
+            # plus the sensor-placement caveat in the live browser tooltip.
+            hover_point = page.evaluate('(name) => window.luxoPartScreenPoint(name)', 'base_link')
+            assert hover_point, 'M3 base link mesh did not expose a hover target'
+            tooltip = ''
+            hover_deadline = time.monotonic() + 5
+            while time.monotonic() < hover_deadline and not tooltip:
+                hover_point = page.evaluate('(name) => window.luxoPartScreenPoint(name)', 'base_link')
+                page.mouse.move(hover_point['x'], hover_point['y'])
+                page.wait_for_timeout(80)
+                if page.locator('#partTooltip').evaluate('(el) => getComputedStyle(el).display') == 'block':
+                    tooltip = page.locator('#partTooltip').inner_text()
+            assert tooltip, 'hovering a visible robot mesh did not show its frame tooltip'
+            hovered_frame = tooltip.splitlines()[0]
+            assert hovered_frame in {'base_link', 'link1', 'link2', 'link3', 'link4', 'link5', 'gripper_link'}, tooltip
+            assert 'physical sensor mount' in tooltip, tooltip
+            record('hover_identifies_model_frame', frame=hovered_frame, tooltip=tooltip)
+
+            # Check the added physical layout locators and ensure state-manager
+            # RGBW/effect telemetry lights the modeled 60- and 16-pixel rings.
+            visual_summary = page.evaluate('window.luxoVisualSummary()')
+            assert visual_summary['ring60_pixels'] == 60
+            assert visual_summary['ring16_pixels'] == 16
+            assert set(visual_summary['sensors']) == {'left', 'right', 'rear', 'hand_tcp'}
+            assert 'Luxonis' in visual_summary['camera']
+            hover_expectations = {
+                'left': 'Left-facing collision sensor',
+                'right': 'Right-facing collision sensor',
+                'rear': 'Rear-facing collision sensor',
+                'hand_tcp': 'Collision sensor at the end of the hand TCP',
+                'camera': 'OAK-D Lite',
+                'ring60': '60-pixel ring placement guide',
+                'ring16': '16-pixel ring placement guide',
+            }
+            for part, label in hover_expectations.items():
+                part_tooltip = ''
+                last_point = None
+                hover_deadline = time.monotonic() + 3
+                while time.monotonic() < hover_deadline and label not in part_tooltip:
+                    point = page.evaluate('(name) => window.luxoSensorScreenPoint(name)', part) \
+                        if part in visual_summary['sensors'] else page.evaluate(
+                            '(name) => window.luxoVisualPartScreenPoint(name)', part)
+                    last_point = point
+                    assert point and 0 <= point['x'] <= page.viewport_size['width'] \
+                        and 0 <= point['y'] <= page.viewport_size['height'], part
+                    page.mouse.move(point['x'], point['y'])
+                    page.wait_for_timeout(35)
+                    part_tooltip = page.locator('#partTooltip').inner_text()
+                assert label in part_tooltip, f'{part} hover label mismatch: {part_tooltip}; target={last_point}'
+                record('hover_identifies_' + part, tooltip=part_tooltip)
+            page.evaluate("window.luxoSetLightStateForTest({enabled:true,brightness:0.5,rgbw:[0,100,255,0],effect:'solid'})")
+            lit = page.evaluate('window.luxoVisualSummary()')
+            assert lit['ring60_lit'] == 60 and lit['ring16_lit'] == 16, lit
+            page.evaluate("window.luxoSetLightStateForTest({enabled:false,effect:'off',rgbw:[0,0,0,0]})")
+            dark = page.evaluate('window.luxoVisualSummary()')
+            assert dark['ring60_lit'] == 0 and dark['ring16_lit'] == 0, dark
+            record('hand_sensors_camera_and_led_rings', sensors=sorted(visual_summary['sensors']),
+                   ring_pixels=[visual_summary['ring60_pixels'], visual_summary['ring16_pixels']],
+                   state_manager_lighting='solid on/off rendered in both rings')
 
             # The limiter fails closed without fresh sensor coverage. Maintain
             # clear synthetic ranges/FSRs while testing bounded motion.
@@ -207,7 +314,9 @@ def main():
                    previous_response=previous_response, matched_command=animation)
             # Animation commands are retimed to the simulated actuator limits;
             # the full nod gesture takes about a minute at those bounds.
-            wait(lambda s: s['status'] == 'idle' and s['state'] == 'IDLE', timeout=90)
+            snapshot = wait(lambda s: s['status'] == 'idle' and s['state'] == 'IDLE', timeout=90)
+            record('conversation_animation_returns_to_idle', state=snapshot['state'],
+                   animation=snapshot.get('animation', ''))
 
             # Only externally meaningful recovery/manual states are selectable.
             # Behavior-owned states must be entered by their actual interaction.
@@ -306,7 +415,13 @@ def main():
                             and s['sensors']['light_state']['rgbw'] == [0, 0, 255, 0]
                             and s['sensors']['light_state'].get('color_temperature') == .7)
             page.wait_for_function("Object.values(lightingDrafts).every(d=>!d.edited&&!d.pending)")
+            page.wait_for_function("window.luxoVisualSummary().ring60_color === '#0000ff' && window.luxoVisualSummary().ring16_color === '#0000ff'")
+            rendered_light = page.evaluate('window.luxoVisualSummary()')
+            assert rendered_light['ring60_lit'] == 60 and rendered_light['ring16_lit'] == 16, rendered_light
             record('lamp_controls_to_consumer', light=snapshot['sensors']['light_state'])
+            record('live_led_telemetry_updates_both_rendered_rings',
+                   ring60_color=rendered_light['ring60_color'], ring16_color=rendered_light['ring16_color'],
+                   lit_pixels=[rendered_light['ring60_lit'], rendered_light['ring16_lit']])
 
             page.locator('#animationNameSelect').select_option('dance')
             page.evaluate("document.querySelector('#animationSpeed').value = '2'")
@@ -315,9 +430,24 @@ def main():
             before = snapshot['positions']
             snapshot = wait(lambda s: any(abs(a-b) > .001 for a,b in zip(s['positions'], before)))
             page.locator('#cancelAnimation').click()
-            snapshot = wait(lambda s: s['sensors'].get('animation_result', {}).get('state') == 'canceled')
+            snapshot = wait(lambda s: (s['sensors'].get('animation_result') or {}).get('state') == 'canceled')
             record('action_moves_and_cancels', result=snapshot['sensors']['animation_result'])
             wait(lambda s: s['state'] == 'IDLE')
+
+            # Pair the explicit cancellation scenario with a no-cancel action:
+            # it must publish moving joint feedback, finish successfully, and
+            # return to IDLE on its own.
+            page.locator('#animationNameSelect').select_option('acknowledge')
+            page.locator('#animationSpeed').evaluate("el => {el.value='2';el.dispatchEvent(new Event('input',{bubbles:true}))}")
+            page.locator('#runAnimation').click()
+            snapshot = wait(lambda s: s['state'] == 'ANIMATING'
+                            and s['sensors'].get('animation_request') == 'acknowledge')
+            before_complete = snapshot['positions']
+            snapshot = wait(lambda s: (s['sensors'].get('animation_result') or {}).get('state') == 'completed', timeout=90)
+            assert any(abs(a-b) > .001 for a, b in zip(snapshot['positions'], before_complete)), snapshot
+            snapshot = wait(lambda s: s['state'] == 'IDLE' and not s.get('animation'), timeout=10)
+            record('action_completes_without_external_cancellation',
+                   result=snapshot['sensors'].get('animation_result'), state=snapshot['state'])
 
             page.locator('[data-direction="90"]').click()
             page.locator('#sendDirection').click()
@@ -330,6 +460,9 @@ def main():
 
             # Raw proximity input must reach the collision classifier, not just echo in the UI.
             stop_sensor_heartbeat()
+            response = page.request.post(args.url + '/api/events',
+                                         data={'type': 'sensor_fault', 'side': 'front', 'active': True})
+            assert response.status == 202, response.text()
             start_sensor_heartbeat(include_front=False)
             page.wait_for_timeout(200)
             page.evaluate("document.querySelector('#proximityRange').value = '80'")
@@ -375,9 +508,13 @@ def main():
                     response = page.request.post(args.url + '/api/events', data=event)
                     assert response.status == 202, response.text()
                 page.wait_for_timeout(80)
+            # Preserve fresh front coverage while the UI obtains USER_CONTROL
+            # and submits the new intent; otherwise this test's deliberate
+            # front-ray fault correctly reasserts hold_stale after 0.5 seconds.
+            start_sensor_heartbeat()
             snapshot = wait(lambda s: s['motion'].get('motion_frozen')
                             and s['motion'].get('avoidance_mode') == 'hold_replan'
-                            and s['state'] == 'IDLE'
+                            and s['state'] in ('IDLE', 'USER_CONTROL')
                             and all(s['sensors'].get(key) == 'safe'
                                     for key in ('front_severity', 'left_severity', 'right_severity')),
                             timeout=20)
@@ -401,11 +538,118 @@ def main():
                             and s['motion'].get('avoidance_mode') == 'clear', timeout=20)
             record('fresh_manual_intent_releases_replan_hold', joint=joint_name,
                    target=target, observed=snapshot['positions'][0], motion=snapshot['motion'])
+            response = page.request.post(args.url + '/api/events',
+                                         data={'type': 'sensor_fault', 'side': 'front', 'active': False})
+            assert response.status == 202, response.text()
             page.locator('#resetIdle').click()
             snapshot = wait(lambda s: s['state'] == 'IDLE', timeout=10)
             stop_sensor_heartbeat()
             start_sensor_heartbeat()
             record('collision_quiet_recovery', motion=snapshot['motion'])
+
+            # Exercise APDS threshold behavior without the browser's periodic
+            # sensor heartbeat masking the event path. Pause only the geometric front
+            # source while these direct APDS controls are under test; otherwise
+            # its no-obstacle 0 samples correctly replace the injected values.
+            stop_sensor_heartbeat()
+            response = page.request.post(args.url + '/api/events',
+                                         data={'type': 'sensor_fault', 'side': 'front', 'active': True})
+            assert response.status == 202, response.text()
+            wait(lambda s: s['sensors'].get('simulated_sensor_faults', {}).get('front') is True,
+                 timeout=3)
+            # Flush any high sample retained by a previous interrupted run
+            # after the geometric source has been paused.
+            for _ in range(2):
+                response = page.request.post(args.url + '/api/events', data={'type': 'proximity', 'value': 0})
+                assert response.status == 202, response.text()
+            wait(lambda s: s['sensors'].get('front_severity') == 'safe', timeout=3)
+            page.evaluate("document.querySelector('#proximityRange').value = '80'")
+            page.locator('#sendProximity').click()
+            page.wait_for_timeout(100)
+            page.locator('#sendProximity').click()
+            snapshot = wait(lambda s: s['sensors'].get('front_severity') in ('warning', 'danger')
+                            and s['state'] == 'COLLISION_AVOIDING', timeout=5)
+            record('apds_debounce_then_collision_hold',
+                   samples_sent=2,
+                   second_sample_value=snapshot['sensors'].get('proximity'),
+                   severity=snapshot['sensors'].get('front_severity'), state=snapshot['state'])
+            page.evaluate("document.querySelector('#proximityRange').value = '0'")
+            page.locator('#sendProximity').click()
+            start_sensor_heartbeat()
+            snapshot = wait(lambda s: s['state'] == 'IDLE'
+                            and s['sensors'].get('front_severity') == 'safe', timeout=15)
+            response = page.request.post(args.url + '/api/events',
+                                         data={'type': 'sensor_fault', 'side': 'front', 'active': False})
+            assert response.status == 202, response.text()
+            record('apds_event_clears_with_fresh_safe_samples')
+
+            # Inject one person/emotion event from the same visible controls.
+            # SimCameraInteraction must buffer it, request the real action,
+            # move the model, and complete back to IDLE.
+            page.locator('#personPresent').check()
+            page.locator('#emotion').select_option('happy')
+            positions_before_emotion = snapshot['positions']
+            page.locator('#sendVision').click()
+            snapshot = wait(lambda s: s['sensors'].get('emotion') == 'happy'
+                            and s['sensors'].get('person_present') is True, timeout=8)
+            snapshot = wait(lambda s: s['state'] in ('EMOTION_REACTING', 'ANIMATING')
+                            and s.get('animation') in {'excited', 'playful', 'dance'}, timeout=20)
+            emotion_animation = snapshot['animation']
+            snapshot = wait(lambda s: s.get('animation') == emotion_animation
+                            and any(abs(a-b) > .001 for a, b in zip(
+                                s['positions'], positions_before_emotion)), timeout=15)
+            record('emotion_event_triggers_real_animation_and_motion',
+                   emotion='happy', animation=emotion_animation,
+                   position_before=positions_before_emotion, position_during=snapshot['positions'])
+            snapshot = wait(lambda s: s['state'] == 'IDLE' and not s.get('animation'), timeout=90)
+            record('emotion_animation_completes_and_recovers_to_idle', state=snapshot['state'])
+
+            # The same dashboard obstacle control must attach a randomly
+            # selected checked-in STL to the modeled distal sensor frame.
+            stop_sensor_heartbeat()
+            page.locator('[data-side="front"]').click()
+            page.wait_for_function("window.luxoObstacleProps.front")
+            prop = page.evaluate('window.luxoObstacleProps.front')
+            assert prop in {'crate', 'wedge', 'can', 'cone', 'rock'}, prop
+            snapshot = wait(lambda s: s.get('physics', {}).get('virtual_obstacles', {}).get('front') is True,
+                            timeout=5)
+            collider_enabled_during_stimulus = snapshot['physics']['virtual_obstacles']['front']
+            page.locator('[data-side="front"]').click()
+            start_sensor_heartbeat()
+            snapshot = wait(lambda s: s['sensors'].get('front_severity') == 'safe'
+                            and s.get('physics', {}).get('virtual_obstacles', {}).get('front') is False,
+                            timeout=10)
+            record('random_stl_physics_obstacle', asset=prop, frame='simulated_obstacle_front',
+                   collider_enabled_during_stimulus=collider_enabled_during_stimulus,
+                   collider_released=not snapshot['physics']['virtual_obstacles']['front'])
+
+            # The physics profile must include the autonomous idle driver:
+            # after a quiet interval, it should launch a registered idle action
+            # and produce new joint feedback without any dashboard input.
+            stop_sensor_heartbeat()
+            for zone in ('antenna', 'top_front'):
+                response = page.request.post(args.url + '/api/events',
+                                             data={'type': 'petting_zone', 'zone': zone, 'active': False})
+                assert response.status == 202, response.text()
+            for sensor in ('head_bottom', 'head_left', 'head_right'):
+                response = page.request.post(args.url + '/api/events',
+                                             data={'type': 'touch', 'sensor': sensor, 'value': 0})
+                assert response.status == 202, response.text()
+            page.locator('#resetIdle').click()
+            snapshot = wait(lambda s: s['state'] == 'IDLE' and not s.get('animation'), timeout=12)
+            initial_positions = snapshot['positions']
+            idle_animations = idle_animation_names()
+            response = page.request.post(args.url + '/api/events',
+                                         data={'type': 'simulator_autonomy', 'enabled': True})
+            assert response.status == 202, response.text()
+            snapshot = wait(lambda s: s['state'] == 'ANIMATING'
+                            and s.get('animation') in idle_animations, timeout=35)
+            started_animation = snapshot['animation']
+            snapshot = wait(lambda s: s.get('animation') == started_animation
+                            and any(abs(a-b) > .001 for a, b in zip(s['positions'], initial_positions)),
+                            timeout=15)
+            record('autonomous_idle_animation_moves_robot', animation=started_animation,
+                   position_before=initial_positions, position_during=snapshot['positions'])
 
             response = page.request.post(args.url + '/api/events', data={'type': 'animation', 'name': 'unknown'})
             assert response.status == 400
@@ -462,6 +706,29 @@ def main():
         finally:
             try:
                 stop_sensor_heartbeat()
+            except Exception:
+                pass
+            # E2E may be interrupted between sensor stimuli; release latched
+            # virtual petting and return the simulator to a known idle state.
+            try:
+                for zone in ('antenna', 'top_front'):
+                    page.request.post(args.url + '/api/events',
+                                      data={'type': 'petting_zone', 'zone': zone, 'active': False},
+                                      timeout=3000)
+                for sensor in ('head_bottom', 'head_left', 'head_right'):
+                    page.request.post(args.url + '/api/events',
+                                      data={'type': 'touch', 'sensor': sensor, 'value': 0},
+                                      timeout=3000)
+                for side in ('front', 'left', 'right'):
+                    page.request.post(args.url + '/api/events',
+                                      data={'type': 'sensor_fault', 'side': side, 'active': False},
+                                      timeout=3000)
+                page.request.post(args.url + '/api/events', data={'type': 'proximity', 'value': 0},
+                                  timeout=3000)
+                page.request.post(args.url + '/api/events', data={'type': 'state_request', 'state': 'IDLE'},
+                                  timeout=3000)
+                page.request.post(args.url + '/api/events', data={'type': 'simulator_autonomy', 'enabled': True},
+                                  timeout=3000)
             except Exception:
                 pass
             Path(args.output).write_text(json.dumps({

@@ -8,8 +8,9 @@ Handles voice direction following and face detection variations.
 import random
 import time
 from typing import Optional, List, Tuple
-from std_msgs.msg import Float32, Bool
+from std_msgs.msg import Float32, Bool, String
 from luxo_behaviors.state_machine import LuxoState
+from luxo_behaviors.sim_motion_rules import normalize_direction_degrees, voice_state_request_allowed
 import numpy as np
 
 
@@ -57,6 +58,7 @@ class VoiceBehavior:
         self.voice_influence = 0.0
         self.target_voice_angle = None
         self.voice_active = False
+        self.animation_active = False
         
         # Voice variation tracking
         self.voice_on_target_start_time = None
@@ -91,6 +93,12 @@ class VoiceBehavior:
             self.voice_active_callback,
             10
         )
+        self.animation_status_sub = self.node.create_subscription(
+            String,
+            '/roarm/current_animation',
+            self.animation_status_callback,
+            10,
+        )
         
         self.node.get_logger().info(f"Voice following enabled: {self.voice_follow_enabled}")
     
@@ -99,13 +107,21 @@ class VoiceBehavior:
         if not self.voice_follow_enabled:
             return
         
-        # Extract voice direction
-        voice_direction = msg.data  # Angle in degrees
+        # Ignore corrupt array estimates instead of sending a nonfinite or
+        # multi-turn yaw into the motion command path.
+        try:
+            voice_direction = normalize_direction_degrees(msg.data)
+        except (TypeError, ValueError, OverflowError) as exc:
+            self.node.get_logger().warning(f"Ignoring invalid voice direction: {exc}")
+            return
         current_time = self.node.get_clock().now()
         
         # Request transition to VOICE_FOLLOWING state if not already there
         current_state = self._get_current_state()
-        if current_state != LuxoState.VOICE_FOLLOWING and not self.voice_following_state_requested:
+        if (not self.animation_active
+                and current_state != LuxoState.VOICE_FOLLOWING
+                and voice_state_request_allowed(current_state)
+                and not self.voice_following_state_requested):
             self.voice_following_previous_state = current_state
             self.voice_following_state_requested = True
             self._transition_to_voice_following_state()
@@ -223,6 +239,10 @@ class VoiceBehavior:
         
         # Reset completion timer since we received new voice input
         self.voice_completion_timer = current_time
+
+    def animation_status_callback(self, msg):
+        """Track accepted animation ownership before its FSM transition lands."""
+        self.animation_active = bool(msg.data.strip())
     
     def voice_active_callback(self, msg):
         """Handle voice activity status."""

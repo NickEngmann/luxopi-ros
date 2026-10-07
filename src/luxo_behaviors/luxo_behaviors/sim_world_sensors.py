@@ -96,6 +96,7 @@ class SimWorldSensors(Node):
             raise ValueError("M3 sensor fixture requires the vendor assets and generated URDF")
         self.obstacles = validate_obstacles(json.loads(str(self.get_parameter("obstacles_json").value)))
         self.mounts = validate_mounts(json.loads(str(self.get_parameter("sensor_mounts_json").value)))
+        self.sensor_faults = {direction: False for direction in ("front", "left", "right")}
         self.mujoco, self.model, self.joint_ids = build_m3_model(
             description_path.read_text(encoding="utf-8"), assets, timestep=0.002, effort_limit=3.0
         )
@@ -111,6 +112,7 @@ class SimWorldSensors(Node):
         self.last_joint_feedback_at = 0.0
 
         self.create_subscription(JointState, "/joint_states", self.joint_callback, 10)
+        self.create_subscription(String, "/sim/sensor_faults", self.sensor_fault_callback, 10)
         self.front_pub = self.create_publisher(Int16, "/i2c/apds9960/proximity", 10)
         self.left_pub = self.create_publisher(Float32, "/i2c/vl53_left/distance", 10)
         self.right_pub = self.create_publisher(Float32, "/i2c/vl53_right/distance", 10)
@@ -127,6 +129,17 @@ class SimWorldSensors(Node):
             f"Synthetic obstacle rays ready: {len(self.obstacles)} fixture(s), "
             "mount extrinsics and proximity scaling are uncalibrated simulation parameters"
         )
+
+    def sensor_fault_callback(self, message):
+        """Apply dashboard range dropouts at the synthetic sensor source."""
+        try:
+            faults = json.loads(message.data)
+            if (not isinstance(faults, dict) or set(faults) != set(self.sensor_faults)
+                    or any(not isinstance(value, bool) for value in faults.values())):
+                raise ValueError("expected front/left/right boolean fault map")
+            self.sensor_faults = dict(faults)
+        except (TypeError, ValueError, json.JSONDecodeError) as exc:
+            self.get_logger().warning(f"Ignoring invalid simulator sensor faults: {exc}")
 
     def joint_callback(self, message):
         if len(message.name) != len(ROARM_M3_NAMES) or len(message.position) != len(ROARM_M3_NAMES):
@@ -172,13 +185,16 @@ class SimWorldSensors(Node):
         front.data = max(0, min(255, round(255.0 * max(
             0.0, 1.0 - distances["front"] / self.front_proximity_range
         ))))
-        self.front_pub.publish(front)
+        if not self.sensor_faults["front"]:
+            self.front_pub.publish(front)
         left = Float32()
         left.data = float(distances["left"] * 100.0)
-        self.left_pub.publish(left)
+        if not self.sensor_faults["left"]:
+            self.left_pub.publish(left)
         right = Float32()
         right.data = float(distances["right"] * 100.0)
-        self.right_pub.publish(right)
+        if not self.sensor_faults["right"]:
+            self.right_pub.publish(right)
         for publisher in self.contact_pubs.values():
             publisher.publish(UInt8(data=0))
         status = String()
@@ -191,6 +207,7 @@ class SimWorldSensors(Node):
             "left_distance_cm": left.data,
             "right_distance_cm": right.data,
             "obstacle_names": [obstacle["name"] for obstacle in self.obstacles],
+            "sensor_faults": self.sensor_faults,
         }, separators=(",", ":"), allow_nan=False)
         self.status_pub.publish(status)
 

@@ -34,9 +34,13 @@ def make_controller():
         publish_feedback=True, measured_positions=[0]*6, measured_velocities=[0]*6,
         feedback_received_at=None, home_sequence=None, home_owner=None, retired_home_owners=deque(maxlen=128), home_received_at=None,
         home_completion_pending=False, home_warning_started=None, voice_active=False,
-        voice_direction=None, last_tick=0.0, collision_active=dict(front=False,left=False,right=False),
+        voice_direction=None, voice_direction_received_at=None,
+        voice_direction_max_age=2.0, voice_state_request_pending=False,
+        voice_inactive_since=None, voice_idle_request_at=None,
+        last_tick=0.0, collision_active=dict(front=False,left=False,right=False),
         manual_target_rejected='', reactive_avoidance=ReactiveAvoidance(limits=limits),
         limiter=JointMotionLimiter(names, limits=limits), avoidance_mode='clear',
+        hold_was_active=False, hold_target=None,
         avoidance_directions=[], get_clock=lambda: SimpleNamespace(now=lambda: SimpleNamespace(to_msg=lambda: 0)),
         get_logger=lambda: SimpleNamespace(warning=lambda *a: None))
     commands, statuses, completed = [], [], []

@@ -1,0 +1,2 @@
+# Optional only when Home Assistant command events are enabled.
+websockets>=13,<16

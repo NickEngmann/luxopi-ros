@@ -12,6 +12,8 @@ The modernized ROS Jazzy simulator runs the real behavior graph and defaults to 
 
 See [hardware-free readiness and commissioning](docs/hardware-free-readiness.md), [simulator launch and SSH access](docs/simulator-launch.md), [readiness health](docs/simulator-health.md), [measured home return](docs/simulated-home-return.md), [behavior ownership and future Home Assistant boundary](docs/behavior-architecture.md), and [feature evidence](docs/feature-coverage.md). The optional [MuJoCo physics and virtual sensor fixture](docs/virtual-obstacle-sensors.md) exercises the vendor inertias and end-effector sensor rays. All 38 animations are retained, including listening/thinking/speaking cues. Local speech-model overlays are optional; the default conversation backend is explicitly simulated. The physical installation instructions below describe the historical hardware path and are separate from the container simulator.
 
+Optional [Home Assistant, Music Assistant, and Sendspin adapters](docs/smart-home-integrations.md) are separately packaged and disabled by default.
+
 ## Table of Contents
 - [Overview](#overview)
 - [System Requirements](#system-requirements)

@@ -6,13 +6,14 @@ from types import SimpleNamespace
 import pytest
 from luxo_behaviors.joint_profiles import (joint_profile, pose_to_animation_positions,
                                            animation_pose_for_profile)
+from luxo_behaviors.state_machine import LuxoState
 
 
 def methods():
     tree = ast.parse(Path('src/luxo_behaviors/luxo_behaviors/animation_command.py').read_text())
     klass = next(n for n in tree.body if isinstance(n, ast.ClassDef))
     body = [n for n in klass.body if isinstance(n, ast.FunctionDef)
-            and n.name in {'sim_profile_feedback_callback', '_wait_for_simulated_pose',
+            and n.name in {'publish_joint_states_target', 'sim_profile_feedback_callback', '_wait_for_simulated_pose',
                            '_refresh_collision_status', 'sim_motion_status_callback',
                            '_safety_interrupt_reason'}]
     now = [1.0]
@@ -20,7 +21,10 @@ def methods():
                             sleep=lambda delta: now.__setitem__(0, now[0]+delta))
     ns = dict(time=clock, math=math, json=__import__('json'), joint_profile=joint_profile,
               pose_to_animation_positions=pose_to_animation_positions,
-              animation_pose_for_profile=animation_pose_for_profile)
+              animation_pose_for_profile=animation_pose_for_profile,
+              LuxoState=LuxoState,
+              JointState=lambda: SimpleNamespace(header=SimpleNamespace()),
+              format_target_positions=lambda *_args, **_kwargs: [0.0] * 4)
     exec(compile(ast.Module(body=body, type_ignores=[]), '<animation>', 'exec'), ns)
     return ns, now
 
@@ -141,3 +145,45 @@ def test_adjustment_timer_survives_repeated_status_publications():
     now[0] += .05
     ns['sim_motion_status_callback'](obj, SimpleNamespace(data='{"avoidance_mode":"adjust"}'))
     assert obj._sim_motion_status[2] == start
+
+
+def test_delayed_animation_idle_cleanup_does_not_override_new_state_owner():
+    ns, _ = methods()
+
+    class Stamp:
+        def __init__(self, seconds):
+            self.nanoseconds = int(seconds * 1e9)
+
+        def __sub__(self, other):
+            return SimpleNamespace(nanoseconds=self.nanoseconds - other.nanoseconds)
+
+        def to_msg(self):
+            return self.nanoseconds
+
+    now = Stamp(10.0)
+    requested = []
+    sources = []
+    obj = SimpleNamespace(
+        should_publish=True,
+        get_clock=lambda: SimpleNamespace(now=lambda: now),
+        is_animating=False,
+        movement_source='animation',
+        last_animation_end_time=Stamp(6.0),
+        publish_movement_source=lambda: sources.append(obj.movement_source),
+        get_current_state=lambda: LuxoState.USER_CONTROL,
+        request_state_transition=lambda state, **kwargs: requested.append((state, kwargs)),
+        joint_profile='urdf4',
+        use_hardware_joint_names=False,
+        joint_names=['base_to_L1', 'L1_to_L2', 'L2_to_L3', 'L3_to_L4'],
+        target_positions=[0.0] * 4,
+        current_gripper_position=0.0,
+        enforce_joint_limits=False,
+        publish_target=False,
+        joint_publisher=SimpleNamespace(publish=lambda _message: None),
+        get_logger=lambda: SimpleNamespace(debug=lambda *_args: None, error=lambda *_args: None),
+        _target_intent_id='test',
+    )
+    ns['publish_joint_states_target'](obj)
+    assert obj.movement_source == 'idle'
+    assert sources == ['idle']
+    assert requested == []

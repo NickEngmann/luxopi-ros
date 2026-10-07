@@ -10,6 +10,8 @@ COPY roarm_ws_em1/src ./roarm_ws_em1/src
 COPY scripts ./scripts
 COPY tests ./tests
 COPY docs ./docs
+COPY compose.simulator.yml ./compose.simulator.yml
+COPY docker/simulator-entrypoint.sh ./docker/simulator-entrypoint.sh
 RUN . /opt/ros/jazzy/setup.sh && colcon build --base-paths src roarm_ws_em1/src \
     --packages-select luxo_interfaces roarm luxo_behaviors
 COPY docker/simulator-entrypoint.sh /simulator-entrypoint.sh

@@ -1,0 +1,11 @@
+{
+  "passed": true,
+  "input_wav": "/tmp/marisol-bench/please_dance_padded.wav",
+  "response_audio_played": false,
+  "transcript": "Please dance.",
+  "response": "I'll dance for you.",
+  "audio_response": "reply-152d805305b447229b0ec6c87e19dbc5.wav",
+  "audio_bytes": 43052,
+  "status": "idle",
+  "elapsed_seconds": 6.309
+}

@@ -12,13 +12,25 @@ The Reachy work established useful boundaries: one owner for each state, one wri
 - The bounded motion controller is the sole command writer. In kinematic simulation it also publishes simulated joint feedback. In a physics backend, physics owns actual joint feedback; the controller sends bounded targets to that backend.
 - The dashboard subscribes to state, motion results, recognized command text, response text, and lamp feedback. Its health endpoint checks required nodes and freshness, rather than merely reporting that the HTTP server responds.
 
-## Future Home Assistant adapter
+The local speech service starts with the ROS bridge and signals readiness over
+its private stderr channel only after ASR, LLM, and optional TTS initialization.
+The bridge waits for that signal before considering the service warm, so the
+first voice command does not race model loading. The public JSONL request and
+response format remains unchanged.
 
-A future adapter should translate authenticated smart-home requests into the same validated behavior/action requests. It should expose capabilities and report accepted, running, completed, rejected, or cancelled results. It must not publish motor targets or force arbitrary state changes. The simulator's forced-state controls are a test interface, not a production integration API.
+## Optional Home Assistant adapter
+
+The opt-in [smart-home integration module](smart-home-integrations.md) reports
+coarse state and health, accepts allowlisted high-level HA events, and routes
+typed music requests through Music Assistant. It must not publish motor
+targets or force arbitrary state changes. The simulator's forced-state
+controls remain a test interface, not a production integration API.
 
 Home Assistant can own household entities and automations while Luxo continues to own its local motion, collision safety, sensors, and conversation session. Publish state transitions and coarse health to Home Assistant; keep high-rate joint telemetry and real-time control local. A lost connection must leave local safety and independent speech operation intact.
 
-No Home Assistant credentials, transport, or dependency are introduced by this architecture cleanup. Physical timing, torque, camera calibration, and microphone behavior still require the actual robot.
+The adapter stays disabled until configured with deployment credentials and
+validated against the chosen HA/MA instances. Physical timing, torque, camera
+calibration, and microphone behavior still require the actual robot.
 
 ## Sensor-driven course adjustment
 

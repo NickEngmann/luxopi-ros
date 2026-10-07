@@ -15,15 +15,18 @@ from luxo_interfaces.msg import StateInfo
 from luxo_behaviors.joint_motion import JointMotionLimiter, ordered_joint_target, clamp_joint_positions
 from luxo_behaviors.joint_profiles import joint_profile
 from luxo_behaviors.sim_motion_rules import (
+    inactive_voice_reconcile_due,
     motion_is_frozen,
+    nearest_cable_safe_angle,
+    normalize_direction_degrees,
     validate_manual_pose,
     validate_feedback,
+    voice_direction_is_fresh,
+    voice_overlay_allowed,
+    voice_state_request_allowed,
 )
 from luxo_behaviors.reactive_avoidance import ReactiveAvoidance
 from luxo_behaviors.home_sequence import HomeSequence
-
-
-VOICE_FOLLOW_STATES = {"IDLE", "VOICE_FOLLOWING", "ANIMATING", "PETTING", "EMOTION_REACTING"}
 
 
 class SimMotionController(Node):
@@ -43,6 +46,7 @@ class SimMotionController(Node):
         self.declare_parameter("max_joint_velocity", 0.5)
         self.declare_parameter("max_joint_acceleration", 1.0)
         self.declare_parameter("voice_follow_priority", 75)
+        self.declare_parameter("voice_direction_max_age", 2.0)
         self.declare_parameter("required_sensor_directions", "")
         self.publish_rate = float(self.get_parameter("publish_rate").value)
         self.profile = str(self.get_parameter("joint_profile").value)
@@ -50,6 +54,9 @@ class SimMotionController(Node):
         self.publish_feedback = bool(self.get_parameter("publish_joint_states").value)
         self.command_topic = str(self.get_parameter("command_topic").value)
         self.voice_priority = int(self.get_parameter("voice_follow_priority").value)
+        self.voice_direction_max_age = max(
+            0.0, float(self.get_parameter("voice_direction_max_age").value)
+        )
         self.limiter = JointMotionLimiter(
             self.joint_names,
             limits=self.joint_limits,
@@ -74,10 +81,16 @@ class SimMotionController(Node):
         self._warning_started_at = {}
         self.avoidance_mode = "clear"
         self.avoidance_directions = []
+        self.stale_sensor_directions = []
         self.manual_target = None
         self.manual_target_rejected = ""
         self.voice_direction = None
+        self.voice_direction_received_at = None
         self.voice_active = False
+        self.voice_state_request_pending = False
+        self.animation_active = False
+        self.voice_inactive_since = None
+        self.voice_idle_request_at = None
         self.current_state = "INITIALIZING"
         self.collision_active = {"front": False, "left": False, "right": False}
         self.home_sequence = None
@@ -114,6 +127,9 @@ class SimMotionController(Node):
         self.state_info_sub = self.create_subscription(
             StateInfo, "/luxo/state_info", self.state_info_callback, 10
         )
+        self.animation_status_sub = self.create_subscription(
+            String, "/roarm/current_animation", self.animation_status_callback, 10
+        )
         self.sensor_status_sub = self.create_subscription(
             String, "/collision/sensor_status", self.sensor_status_callback, 10
         )
@@ -137,36 +153,68 @@ class SimMotionController(Node):
 
     def _collision_callback(self, direction):
         def receive(message):
-            was_active = any(self.collision_active.values())
+            # The legacy Bool only represents the hard proximity threshold.
+            # Prefer a fresh atomic classifier record when available, because
+            # its warning band can be active before the Bool becomes true.
             was_direction_active = self.collision_active[direction]
-            self.collision_active[direction] = bool(message.data)
+            status = self._sensor_status_payload.get(direction)
+            status_is_fresh = (
+                status is not None
+                and time.monotonic() - self._sensor_status_at.get(direction, float("-inf"))
+                <= self.reactive_avoidance.stale_after
+                and status.get("valid") is True
+            )
+            hazard_active = bool(message.data)
+            if status_is_fresh:
+                if message.data and status.get("severity") == "safe":
+                    # The Bool carries no severity. If it contradicts a fresh
+                    # clear record, hold for an updated atomic record instead
+                    # of misclassifying a warning threshold as imminent danger.
+                    self.reactive_avoidance.update_sensor(
+                        direction, True, time.monotonic(), severity="warning", valid=False
+                    )
+                self._sync_collision_state(time.monotonic())
+            else:
+                self._set_collision_active(direction, hazard_active)
             if message.data and not was_direction_active:
                 now = time.monotonic()
-                self._warning_started_at[direction] = now
-                last_status = self._sensor_status_payload.get(direction)
-                status_is_active_and_fresh = (
-                    last_status is not None
-                    and last_status["active"]
-                    and now - self._sensor_status_at.get(direction, float("-inf"))
-                    <= self.reactive_avoidance.stale_after
-                )
-                if not status_is_active_and_fresh:
+                if not status_is_fresh:
                     # Bool warns immediately, but cannot set severity. Latch an
                     # unknown warning hold until the next atomic record arrives.
                     self.reactive_avoidance.update_sensor(
                         direction, True, now, severity="warning", valid=False
                     )
-            else:
-                if not message.data:
-                    self._warning_started_at.pop(direction, None)
-            active = any(self.collision_active.values())
-            if active and not was_active and self.current_state not in {
-                "INITIALIZING", "COLLISION_AVOIDING", "ESCAPE_MODE", "ERROR", "SHUTDOWN"
-            }:
-                self._request_state("COLLISION_AVOIDING", completion=False, safety=True)
-            elif was_active and not active and self.current_state == "COLLISION_AVOIDING":
-                self._request_state("IDLE", completion=True, safety=True)
+            if not hazard_active:
+                self._warning_started_at.pop(direction, None)
         return receive
+
+    def _set_collision_active(self, direction, active):
+        was_active = any(self.collision_active.values())
+        self.collision_active[direction] = bool(active)
+        is_active = any(self.collision_active.values())
+        if is_active and not was_active and self.current_state not in {
+            "INITIALIZING", "COLLISION_AVOIDING", "ESCAPE_MODE", "ERROR", "SHUTDOWN"
+        }:
+            self._request_state("COLLISION_AVOIDING", completion=False, safety=True)
+        elif was_active and not is_active and self.current_state == "COLLISION_AVOIDING":
+            self._request_state("IDLE", completion=True, safety=True)
+
+    def _sync_collision_state(self, now):
+        """Keep the FSM hazard lease aligned with the debounced sensor policy."""
+        hazards, stale, _ = self.reactive_avoidance.snapshot(now)
+        current = {
+            direction: direction in hazards or direction in stale
+            for direction in self.collision_active
+        }
+        was_active = any(self.collision_active.values())
+        self.collision_active = current
+        is_active = any(current.values())
+        if is_active and not was_active and self.current_state not in {
+            "INITIALIZING", "COLLISION_AVOIDING", "ESCAPE_MODE", "ERROR", "SHUTDOWN"
+        }:
+            self._request_state("COLLISION_AVOIDING", completion=False, safety=True)
+        elif was_active and not is_active and self.current_state == "COLLISION_AVOIDING":
+            self._request_state("IDLE", completion=True, safety=True)
 
     def target_callback(self, message):
         try:
@@ -227,16 +275,44 @@ class SimMotionController(Node):
             self._sensor_status_seen.add(direction)
             self._sensor_status_at[direction] = now
             self._sensor_status_payload[direction] = payload
+            if payload["valid"] is True:
+                self._sync_collision_state(now)
         except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
             self.get_logger().warning(f"Rejected malformed collision sensor status: {exc}")
 
     def direction_callback(self, message):
-        angle = float(message.data)
-        if math.isfinite(angle):
-            self.voice_direction = angle
+        try:
+            angle = normalize_direction_degrees(message.data)
+        except (TypeError, ValueError, OverflowError) as exc:
+            self.get_logger().warning(f"Ignoring invalid voice direction: {exc}")
+            return
+        self.voice_direction = angle
+        self.voice_direction_received_at = time.monotonic()
+        # /voice/active and /voice/follow_direction are independent topics;
+        # the direction can arrive just after the activity edge.
+        if (self.voice_active and not self.animation_active
+                and voice_state_request_allowed(self.current_state)):
+            self._request_voice_following()
+
+    def animation_status_callback(self, message):
+        # The action server announces its intent before asking the FSM for
+        # ANIMATING. Honor that short startup window too, so simultaneous DOA
+        # and animation requests cannot race for IDLE ownership.
+        self.animation_active = bool(message.data.strip())
 
     def state_callback(self, message):
         next_state = message.data.upper()
+        if next_state != "IDLE":
+            # The FSM observation closes the request lease; repeated DOA
+            # frames while its service call is in flight must not flood it.
+            self.voice_state_request_pending = False
+        if next_state == "VOICE_FOLLOWING" and not self.voice_active:
+            # Completion may arrive while COLLISION_AVOIDING is still active;
+            # releasing that lease can then restore an already-ended session.
+            self.voice_inactive_since = time.monotonic()
+        elif next_state != "VOICE_FOLLOWING":
+            self.voice_inactive_since = None
+            self.voice_idle_request_at = None
         if next_state != "USER_CONTROL":
             self.manual_target = None
         if next_state != self.current_state:
@@ -296,19 +372,44 @@ class SimMotionController(Node):
             return
         self.voice_active = active
         if active:
-            self._request_voice_following()
+            self.voice_inactive_since = None
+            self.voice_idle_request_at = None
+            if (not self.animation_active
+                    and voice_state_request_allowed(self.current_state)
+                    and voice_direction_is_fresh(
+                        self.voice_direction, self.voice_direction_received_at,
+                        time.monotonic(), max_age=self.voice_direction_max_age,
+                    )):
+                self._request_voice_following()
         elif self.current_state == "VOICE_FOLLOWING":
+            self.voice_inactive_since = time.monotonic()
+            self.voice_idle_request_at = self.voice_inactive_since
             self._request_completion()
+        if not active:
+            # Do not let a later activity edge reuse the prior speaker angle.
+            self.voice_direction = None
+            self.voice_direction_received_at = None
 
     def _request_voice_following(self):
-        self._request_state("VOICE_FOLLOWING", completion=False)
+        # An animation/petting/emotion owns the state machine while active.
+        # DOA remains a base-yaw overlay in those states and must not preempt
+        # the action merely because a voice activity edge arrived.
+        if (not self.animation_active
+                and voice_state_request_allowed(self.current_state)
+                and not self.voice_state_request_pending):
+            self.voice_state_request_pending = True
+            self._request_state(
+                "VOICE_FOLLOWING", completion=False, voice_request=True
+            )
 
     def _request_completion(self):
         self._request_state("IDLE", completion=True)
 
-    def _request_state(self, requested_state, completion, safety=False):
+    def _request_state(self, requested_state, completion, safety=False, voice_request=False):
         if not self.states.service_is_ready():
             self.get_logger().warning("State manager unavailable; voice motion remains gated")
+            if voice_request:
+                self.voice_state_request_pending = False
             return
         request = RequestStateTransition.Request()
         request.requested_state = requested_state
@@ -322,10 +423,14 @@ class SimMotionController(Node):
             try:
                 response = result_future.result()
                 if not response.success:
+                    if voice_request:
+                        self.voice_state_request_pending = False
                     self.get_logger().warning(
                         f"State transition to {requested_state} denied: {response.message}"
                     )
             except Exception as exc:
+                if voice_request:
+                    self.voice_state_request_pending = False
                 self.get_logger().error(f"State transition request failed: {exc}")
 
         future.add_done_callback(report_result)
@@ -352,6 +457,15 @@ class SimMotionController(Node):
 
     def publish_step(self):
         now = time.monotonic()
+        if self.current_state == "VOICE_FOLLOWING" and not self.voice_active:
+            if self.voice_inactive_since is None:
+                self.voice_inactive_since = now
+            if inactive_voice_reconcile_due(
+                self.current_state, self.voice_active, self.voice_inactive_since,
+                self.voice_idle_request_at, now,
+            ):
+                self.voice_idle_request_at = now
+                self._request_completion()
         dt = min(0.1, max(0.001, now - self.last_tick))
         self.last_tick = now
 
@@ -370,14 +484,18 @@ class SimMotionController(Node):
             target_received_at = self.home_received_at if home is not None else self.animation_target_received_at
         may_follow = (
             self.voice_active
-            and self.voice_direction is not None
-            and self.current_state == "VOICE_FOLLOWING"
-            and self.current_state in VOICE_FOLLOW_STATES
+            and voice_direction_is_fresh(
+                self.voice_direction, self.voice_direction_received_at, now,
+                max_age=self.voice_direction_max_age,
+            )
+            and voice_overlay_allowed(self.current_state)
         )
         if may_follow:
-            base = math.radians(self.voice_direction)
             lower, upper = self.joint_limits[self.joint_names[0]]
-            target[0] = min(upper, max(lower, base))
+            current_base = self.measured_positions[0] if self.publish_feedback else self.limiter.positions[0]
+            target[0] = nearest_cable_safe_angle(
+                current_base, math.radians(self.voice_direction), lower, upper
+            )
 
         current = list(self.limiter.positions)
         if (self.feedback_received_at is not None
@@ -392,6 +510,7 @@ class SimMotionController(Node):
         )
         self.avoidance_mode = avoidance["mode"]
         self.avoidance_directions = avoidance["hazards"]
+        self.stale_sensor_directions = avoidance["stale"]
 
         emergency_hold = motion_is_frozen(self.current_state, ())
         avoidance_hold = self.avoidance_mode.startswith("hold_")
@@ -484,6 +603,7 @@ class SimMotionController(Node):
             ],
             "avoidance_mode": self.avoidance_mode,
             "avoidance_directions": self.avoidance_directions,
+            "stale": self.stale_sensor_directions,
             "voice_override": bool(may_follow and not safety_holds_motion),
             "manual_override": bool(manual_override and not hold_requested),
             "manual_target_rejected": self.manual_target_rejected,

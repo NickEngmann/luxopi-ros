@@ -3,6 +3,8 @@
 import json
 import math
 import os
+from pathlib import Path
+import re
 import queue
 import threading
 
@@ -26,9 +28,11 @@ class SpeechBridge(Node):
         self.declare_parameter("preview_speaking_seconds", 1.0)
         self.declare_parameter("event_socket", "")
         self.declare_parameter("audio_directory", "")
+        self.declare_parameter("tts_directory", "")
         self.declare_parameter("synthesize_speech", os.environ.get("LUXOPI_SYNTHESIZE_SPEECH", "false").lower() in {"true", "1", "yes"})
         self.synthesize_speech = self.get_parameter("synthesize_speech").value
         self.audio_directory = self.get_parameter("audio_directory").value
+        self.tts_directory = self.get_parameter("tts_directory").value
         backend = self.get_parameter("backend").value
         if backend == "simulation":
             self.client = SimulatedConversation()
@@ -39,11 +43,13 @@ class SpeechBridge(Node):
             self.client = ConversationClient(
                 command, cwd=self.get_parameter("service_cwd").value or None,
                 timeout=self.get_parameter("service_timeout").value,
+                wait_for_ready=True,
             )
         else:
             raise ValueError("backend must be simulation or local")
         self.transcripts = self.create_publisher(String, "/voice/transcript", 10)
         self.responses = self.create_publisher(String, "/voice/response", 10)
+        self.audio_responses = self.create_publisher(String, "/voice/audio_response", 10)
         self.status = self.create_publisher(
             String, "/voice/status", QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL),
         )
@@ -52,6 +58,7 @@ class SpeechBridge(Node):
         self.brightness_control = self.create_publisher(String, "/luxo/brightness_control", 10)
         self.color_control = self.create_publisher(String, "/luxo/color_control", 10)
         self.color_temp_control = self.create_publisher(String, "/luxo/color_temp_control", 10)
+        self.music_request = self.create_publisher(String, "/luxo/music_request", 10)
         self.subscription = self.create_subscription(String, "/voice/command", self.command, 10)
         self.audio_subscription = self.create_subscription(String, "/voice/audio_file", self.audio_command, 10)
         self._pending = queue.Queue(maxsize=1)
@@ -105,6 +112,20 @@ class SpeechBridge(Node):
             self.light_control.publish(Bool(data=value))
         elif kind == "color" and isinstance(value, str) and value in {"red", "orange", "yellow", "green", "cyan", "blue", "purple", "white"}:
             self.color_control.publish(String(data=f"color:{value}"))
+        elif kind == "music" and isinstance(value, dict):
+            operation = value.get("operation")
+            query = value.get("query")
+            source = value.get("source")
+            if operation in {"play", "pause", "stop", "next", "previous"}:
+                payload = {"operation": operation}
+            elif (operation == "play_media" and isinstance(query, str)
+                  and query.strip() and len(query) <= 240):
+                payload = {"operation": operation, "query": query.strip()}
+            elif operation == "select_source" and source in {"Spotify", "Music Assistant"}:
+                payload = {"operation": operation, "source": source}
+            else:
+                return False
+            self.music_request.publish(String(data=json.dumps(payload)))
         elif kind in {"brightness", "color_temp"} and type(value) in {int, float} and math.isfinite(value) and 0 <= value <= 1:
             publisher = self.brightness_control if kind == "brightness" else self.color_temp_control
             publisher.publish(String(data=f"{kind}:{value}"))
@@ -182,6 +203,22 @@ class SpeechBridge(Node):
                 elif animation in SimulatedConversation.ANIMATIONS:
                     self.animations.publish(String(data=animation))
                 self.responses.publish(String(data=result["response"]))
+                audio_path = result.get("audio_path")
+                tts_directory = getattr(self, "tts_directory", "")
+                if self.synthesize_speech and tts_directory and isinstance(audio_path, str):
+                    output_dir = Path(tts_directory).resolve()
+                    candidate = Path(audio_path).resolve()
+                    if (candidate.parent == output_dir and
+                            re.fullmatch(r"reply-[0-9a-f]{32}\.wav", candidate.name) and candidate.is_file()):
+                        self.audio_responses.publish(String(data=candidate.name))
+                        generated = sorted(
+                            (path for path in output_dir.glob("reply-*.wav")
+                             if re.fullmatch(r"reply-[0-9a-f]{32}\.wav", path.name)),
+                            key=lambda path: path.stat().st_mtime,
+                            reverse=True,
+                        )
+                        for old_audio in generated[10:]:
+                            old_audio.unlink(missing_ok=True)
                 self._publish_status("speaking")
                 # A visual preview, not actual audio playback or motor feedback.
                 duration = speaking_preview_duration(result, self.get_parameter("preview_speaking_seconds").value,

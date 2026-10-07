@@ -404,7 +404,7 @@
       "consumer": "sim_direction_node then motion controller",
       "offline_evidence": "tests/test_direction_estimation.py",
       "offline_scope": "actual delayed PCM\u2192GCC angle",
-      "ros_scope": "passed: synthesized delayedPCM through shared estimator to VOICE_FOLLOWING/base joint turn and quiet IDLE",
+      "ros_scope": "passed: synthesized delayedPCM through shared estimator to VOICE_FOLLOWING/base joint turn, nearest cable-safe yaw across the ±180° seam, quiet IDLE, and collision-priority rejection",
       "physical": "unvalidated"
     },
     {

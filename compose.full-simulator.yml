@@ -11,12 +11,13 @@ services:
       LUXOPI_SIM_IDLE_AFTER: "${LUXOPI_SIM_IDLE_AFTER:-7.0}"
       LUXOPI_SIM_IDLE_INTERVAL: "${LUXOPI_SIM_IDLE_INTERVAL:-20.0}"
       LUXOPI_SIM_EMOTION_INTERVAL: "${LUXOPI_SIM_EMOTION_INTERVAL:-75.0}"
-      LUXOPI_WORLD_SENSOR_FIXTURE: "${LUXOPI_WORLD_SENSOR_FIXTURE:-false}"
+      LUXOPI_WORLD_SENSOR_FIXTURE: "${LUXOPI_WORLD_SENSOR_FIXTURE:-true}"
       LUXOPI_WORLD_OBSTACLES_JSON: "${LUXOPI_WORLD_OBSTACLES_JSON:-}"
       LUXOPI_SENSOR_MOUNTS_JSON: "${LUXOPI_SENSOR_MOUNTS_JSON:-}"
       LUXOPI_VISION_URL: http://vision:8765/analyze
       LUXOPI_PIPER_MODEL: /voices/en_US-amy-low.onnx
       LUXOPI_SYNTHESIZE_SPEECH: "true"
+      LUXOPI_SIM_TTS_DIRECTORY: /tmp/luxopi-sim-tts
       LUXOPI_SPEECH_COMMAND: '["/opt/speech/bin/python", "/opt/luxopi-ai/local_conversation.py", "--backend", "llm", "--asr-model", "/models/moonshine/tiny", "--audio-directory", "/tmp/luxopi-sim-audio", "--wav-directory", "/tmp/luxopi-sim-tts"]'
     volumes:
       - type: bind

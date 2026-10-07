@@ -1,0 +1,6090 @@
+{
+  "suite": "dashboard_controls_e2e",
+  "passed": 107,
+  "failed": 0,
+  "duration_seconds": 60.95,
+  "scenarios": [
+    {
+      "scenario": "pause_autonomous_activity_for_isolated_controls",
+      "passed": true
+    },
+    {
+      "scenario": "view_fk_2d",
+      "passed": true,
+      "result": {
+        "state": "IDLE",
+        "animation": "shoulder_shimmy",
+        "physics_time_scale": 1,
+        "sensors": {
+          "state_request_result": {
+            "success": true,
+            "state": "IDLE",
+            "message": "Transition to IDLE granted",
+            "requested": "IDLE"
+          },
+          "manual_pose_result": {
+            "success": true,
+            "state": "USER_CONTROL",
+            "message": "pose sent through the simulator motion controller",
+            "positions": {
+              "base_link_to_link1": -2.0916,
+              "link1_to_link2": -0.8508,
+              "link2_to_link3": 1.15,
+              "link3_to_link4": 1.4492,
+              "link4_to_link5": -0.9016,
+              "link5_to_gripper_link": 0
+            }
+          },
+          "animation_request": "acknowledge",
+          "animation_result": {
+            "success": true,
+            "message": "Animation acknowledge completed",
+            "duration": 3.6465320587158203,
+            "state": "completed"
+          },
+          "animation_cancel_result": null,
+          "animation_cancel_requested": false,
+          "last_voice_command": "Please nod",
+          "simulation_speed": 1,
+          "simulator_autonomy_enabled": false,
+          "gesture": "near",
+          "proximity": 0,
+          "requested_mic_direction": 90,
+          "petting_zone_requested": {
+            "zone": "top_front",
+            "active": false
+          },
+          "simulated_obstacles": {
+            "front": false,
+            "left": false,
+            "right": false
+          },
+          "vision_request": {
+            "person_present": false,
+            "emotion": "neutral",
+            "person_distance": 1.5
+          },
+          "light_color_requested": "blue",
+          "light_control_requested": true,
+          "brightness_requested": 0.22,
+          "color_temperature_requested": 0.7
+        }
+      }
+    },
+    {
+      "scenario": "view_mesh_3d",
+      "passed": true,
+      "result": {
+        "state": "IDLE",
+        "animation": "shoulder_shimmy",
+        "physics_time_scale": 1,
+        "sensors": {
+          "state_request_result": {
+            "success": true,
+            "state": "IDLE",
+            "message": "Transition to IDLE granted",
+            "requested": "IDLE"
+          },
+          "manual_pose_result": {
+            "success": true,
+            "state": "USER_CONTROL",
+            "message": "pose sent through the simulator motion controller",
+            "positions": {
+              "base_link_to_link1": -2.0916,
+              "link1_to_link2": -0.8508,
+              "link2_to_link3": 1.15,
+              "link3_to_link4": 1.4492,
+              "link4_to_link5": -0.9016,
+              "link5_to_gripper_link": 0
+            }
+          },
+          "animation_request": "acknowledge",
+          "animation_result": {
+            "success": true,
+            "message": "Animation acknowledge completed",
+            "duration": 3.6465320587158203,
+            "state": "completed"
+          },
+          "animation_cancel_result": null,
+          "animation_cancel_requested": false,
+          "last_voice_command": "Please nod",
+          "simulation_speed": 1,
+          "simulator_autonomy_enabled": false,
+          "gesture": "near",
+          "proximity": 0,
+          "requested_mic_direction": 90,
+          "petting_zone_requested": {
+            "zone": "top_front",
+            "active": false
+          },
+          "simulated_obstacles": {
+            "front": false,
+            "left": false,
+            "right": false
+          },
+          "vision_request": {
+            "person_present": false,
+            "emotion": "neutral",
+            "person_distance": 1.5
+          },
+          "light_color_requested": "blue",
+          "light_control_requested": true,
+          "brightness_requested": 0.22,
+          "color_temperature_requested": 0.7
+        }
+      }
+    },
+    {
+      "scenario": "select_vendor_m3_model",
+      "passed": true,
+      "selected": "m3"
+    },
+    {
+      "scenario": "simulation_speed_2x",
+      "passed": true,
+      "scale": 2
+    },
+    {
+      "scenario": "simulation_speed_3x",
+      "passed": true,
+      "scale": 3
+    },
+    {
+      "scenario": "simulation_speed_1x",
+      "passed": true,
+      "scale": 1
+    },
+    {
+      "scenario": "voice_form_submit",
+      "passed": true,
+      "result": {
+        "state": "USER_CONTROL",
+        "animation": "shoulder_shimmy",
+        "physics_time_scale": 1,
+        "sensors": {
+          "state_request_result": {
+            "success": true,
+            "state": "IDLE",
+            "message": "Transition to IDLE granted",
+            "requested": "IDLE"
+          },
+          "manual_pose_result": {
+            "success": true,
+            "state": "USER_CONTROL",
+            "message": "pose sent through the simulator motion controller",
+            "positions": {
+              "base_link_to_link1": -2.0916,
+              "link1_to_link2": -0.8508,
+              "link2_to_link3": 1.15,
+              "link3_to_link4": 1.4492,
+              "link4_to_link5": -0.9016,
+              "link5_to_gripper_link": 0
+            }
+          },
+          "animation_request": "acknowledge",
+          "animation_result": {
+            "success": true,
+            "message": "Animation acknowledge completed",
+            "duration": 3.6465320587158203,
+            "state": "completed"
+          },
+          "animation_cancel_result": null,
+          "animation_cancel_requested": false,
+          "last_voice_command": "Tell me a joke",
+          "simulation_speed": 1,
+          "simulator_autonomy_enabled": false,
+          "gesture": "near",
+          "proximity": 0,
+          "requested_mic_direction": 90,
+          "petting_zone_requested": {
+            "zone": "top_front",
+            "active": false
+          },
+          "simulated_obstacles": {
+            "front": false,
+            "left": false,
+            "right": false
+          },
+          "vision_request": {
+            "person_present": false,
+            "emotion": "neutral",
+            "person_distance": 1.5
+          },
+          "light_color_requested": "blue",
+          "light_control_requested": true,
+          "brightness_requested": 0.22,
+          "color_temperature_requested": 0.7
+        }
+      }
+    },
+    {
+      "scenario": "quick_command_please_dance",
+      "passed": true,
+      "result": {
+        "state": "USER_CONTROL",
+        "animation": "shoulder_shimmy",
+        "physics_time_scale": 1,
+        "sensors": {
+          "state_request_result": {
+            "success": true,
+            "state": "IDLE",
+            "message": "Transition to IDLE granted",
+            "requested": "IDLE"
+          },
+          "manual_pose_result": {
+            "success": true,
+            "state": "USER_CONTROL",
+            "message": "pose sent through the simulator motion controller",
+            "positions": {
+              "base_link_to_link1": -2.0916,
+              "link1_to_link2": -0.8508,
+              "link2_to_link3": 1.15,
+              "link3_to_link4": 1.4492,
+              "link4_to_link5": -0.9016,
+              "link5_to_gripper_link": 0
+            }
+          },
+          "animation_request": "acknowledge",
+          "animation_result": {
+            "success": true,
+            "message": "Animation acknowledge completed",
+            "duration": 3.6465320587158203,
+            "state": "completed"
+          },
+          "animation_cancel_result": null,
+          "animation_cancel_requested": false,
+          "last_voice_command": "Please dance",
+          "simulation_speed": 1,
+          "simulator_autonomy_enabled": false,
+          "gesture": "near",
+          "proximity": 0,
+          "requested_mic_direction": 90,
+          "petting_zone_requested": {
+            "zone": "top_front",
+            "active": false
+          },
+          "simulated_obstacles": {
+            "front": false,
+            "left": false,
+            "right": false
+          },
+          "vision_request": {
+            "person_present": false,
+            "emotion": "neutral",
+            "person_distance": 1.5
+          },
+          "light_color_requested": "blue",
+          "light_control_requested": true,
+          "brightness_requested": 0.22,
+          "color_temperature_requested": 0.7
+        }
+      }
+    },
+    {
+      "scenario": "quick_command_please_nod",
+      "passed": true,
+      "result": {
+        "state": "USER_CONTROL",
+        "animation": "nod",
+        "physics_time_scale": 1,
+        "sensors": {
+          "state_request_result": {
+            "success": true,
+            "state": "IDLE",
+            "message": "Transition to IDLE granted",
+            "requested": "IDLE"
+          },
+          "manual_pose_result": {
+            "success": true,
+            "state": "USER_CONTROL",
+            "message": "pose sent through the simulator motion controller",
+            "positions": {
+              "base_link_to_link1": -2.0916,
+              "link1_to_link2": -0.8508,
+              "link2_to_link3": 1.15,
+              "link3_to_link4": 1.4492,
+              "link4_to_link5": -0.9016,
+              "link5_to_gripper_link": 0
+            }
+          },
+          "animation_request": "acknowledge",
+          "animation_result": {
+            "success": true,
+            "message": "Animation acknowledge completed",
+            "duration": 3.6465320587158203,
+            "state": "completed"
+          },
+          "animation_cancel_result": null,
+          "animation_cancel_requested": false,
+          "last_voice_command": "Please nod",
+          "simulation_speed": 1,
+          "simulator_autonomy_enabled": false,
+          "gesture": "near",
+          "proximity": 0,
+          "requested_mic_direction": 90,
+          "petting_zone_requested": {
+            "zone": "top_front",
+            "active": false
+          },
+          "simulated_obstacles": {
+            "front": false,
+            "left": false,
+            "right": false
+          },
+          "vision_request": {
+            "person_present": false,
+            "emotion": "neutral",
+            "person_distance": 1.5
+          },
+          "light_color_requested": "blue",
+          "light_control_requested": true,
+          "brightness_requested": 0.22,
+          "color_temperature_requested": 0.7
+        }
+      }
+    },
+    {
+      "scenario": "quick_command_tell_me_a_joke",
+      "passed": true,
+      "result": {
+        "state": "USER_CONTROL",
+        "animation": "nod",
+        "physics_time_scale": 1,
+        "sensors": {
+          "state_request_result": {
+            "success": true,
+            "state": "IDLE",
+            "message": "Transition to IDLE granted",
+            "requested": "IDLE"
+          },
+          "manual_pose_result": {
+            "success": true,
+            "state": "USER_CONTROL",
+            "message": "pose sent through the simulator motion controller",
+            "positions": {
+              "base_link_to_link1": -2.0916,
+              "link1_to_link2": -0.8508,
+              "link2_to_link3": 1.15,
+              "link3_to_link4": 1.4492,
+              "link4_to_link5": -0.9016,
+              "link5_to_gripper_link": 0
+            }
+          },
+          "animation_request": "acknowledge",
+          "animation_result": {
+            "success": true,
+            "message": "Animation acknowledge completed",
+            "duration": 3.6465320587158203,
+            "state": "completed"
+          },
+          "animation_cancel_result": null,
+          "animation_cancel_requested": false,
+          "last_voice_command": "Tell me a joke",
+          "simulation_speed": 1,
+          "simulator_autonomy_enabled": false,
+          "gesture": "near",
+          "proximity": 0,
+          "requested_mic_direction": 90,
+          "petting_zone_requested": {
+            "zone": "top_front",
+            "active": false
+          },
+          "simulated_obstacles": {
+            "front": false,
+            "left": false,
+            "right": false
+          },
+          "vision_request": {
+            "person_present": false,
+            "emotion": "neutral",
+            "person_distance": 1.5
+          },
+          "light_color_requested": "blue",
+          "light_control_requested": true,
+          "brightness_requested": 0.22,
+          "color_temperature_requested": 0.7
+        }
+      }
+    },
+    {
+      "scenario": "audio_controls_disabled_without_audio_profile",
+      "passed": true,
+      "reason": "WAV upload is disabled because no audio storage directory is configured."
+    },
+    {
+      "scenario": "run_animation_button",
+      "passed": true,
+      "result": {
+        "state": "USER_CONTROL",
+        "animation": "nod",
+        "physics_time_scale": 1,
+        "sensors": {
+          "state_request_result": {
+            "success": true,
+            "state": "IDLE",
+            "message": "Transition to IDLE granted",
+            "requested": "IDLE"
+          },
+          "manual_pose_result": {
+            "success": true,
+            "state": "USER_CONTROL",
+            "message": "pose sent through the simulator motion controller",
+            "positions": {
+              "base_link_to_link1": -2.0916,
+              "link1_to_link2": -0.8508,
+              "link2_to_link3": 1.15,
+              "link3_to_link4": 1.4492,
+              "link4_to_link5": -0.9016,
+              "link5_to_gripper_link": 0
+            }
+          },
+          "animation_request": "nod",
+          "animation_result": {
+            "success": true,
+            "message": "Animation acknowledge completed",
+            "duration": 3.6465320587158203,
+            "state": "completed"
+          },
+          "animation_cancel_result": null,
+          "animation_cancel_requested": false,
+          "last_voice_command": "Tell me a joke",
+          "simulation_speed": 1,
+          "simulator_autonomy_enabled": false,
+          "gesture": "near",
+          "proximity": 0,
+          "requested_mic_direction": 90,
+          "petting_zone_requested": {
+            "zone": "top_front",
+            "active": false
+          },
+          "simulated_obstacles": {
+            "front": false,
+            "left": false,
+            "right": false
+          },
+          "vision_request": {
+            "person_present": false,
+            "emotion": "neutral",
+            "person_distance": 1.5
+          },
+          "light_color_requested": "blue",
+          "light_control_requested": true,
+          "brightness_requested": 0.22,
+          "color_temperature_requested": 0.7
+        }
+      }
+    },
+    {
+      "scenario": "cancel_animation_button",
+      "passed": true,
+      "result": {
+        "state": "USER_CONTROL",
+        "animation": "nod",
+        "physics_time_scale": 1,
+        "sensors": {
+          "state_request_result": {
+            "success": true,
+            "state": "IDLE",
+            "message": "Transition to IDLE granted",
+            "requested": "IDLE"
+          },
+          "manual_pose_result": {
+            "success": true,
+            "state": "USER_CONTROL",
+            "message": "pose sent through the simulator motion controller",
+            "positions": {
+              "base_link_to_link1": -2.0916,
+              "link1_to_link2": -0.8508,
+              "link2_to_link3": 1.15,
+              "link3_to_link4": 1.4492,
+              "link4_to_link5": -0.9016,
+              "link5_to_gripper_link": 0
+            }
+          },
+          "animation_request": "nod",
+          "animation_result": {
+            "success": true,
+            "message": "Animation acknowledge completed",
+            "duration": 3.6465320587158203,
+            "state": "completed"
+          },
+          "animation_cancel_result": null,
+          "animation_cancel_requested": true,
+          "last_voice_command": "Tell me a joke",
+          "simulation_speed": 1,
+          "simulator_autonomy_enabled": false,
+          "gesture": "near",
+          "proximity": 0,
+          "requested_mic_direction": 90,
+          "petting_zone_requested": {
+            "zone": "top_front",
+            "active": false
+          },
+          "simulated_obstacles": {
+            "front": false,
+            "left": false,
+            "right": false
+          },
+          "vision_request": {
+            "person_present": false,
+            "emotion": "neutral",
+            "person_distance": 1.5
+          },
+          "light_color_requested": "blue",
+          "light_control_requested": true,
+          "brightness_requested": 0.22,
+          "color_temperature_requested": 0.7
+        }
+      }
+    },
+    {
+      "scenario": "request_state_initializing",
+      "passed": true,
+      "result": {
+        "state": "IDLE",
+        "animation": "",
+        "physics_time_scale": 1,
+        "sensors": {
+          "state_request_result": {
+            "success": true,
+            "state": "INITIALIZING",
+            "message": "Transition to INITIALIZING granted",
+            "requested": "INITIALIZING"
+          },
+          "manual_pose_result": {
+            "success": true,
+            "state": "USER_CONTROL",
+            "message": "pose sent through the simulator motion controller",
+            "positions": {
+              "base_link_to_link1": -2.0916,
+              "link1_to_link2": -0.8508,
+              "link2_to_link3": 1.15,
+              "link3_to_link4": 1.4492,
+              "link4_to_link5": -0.9016,
+              "link5_to_gripper_link": 0
+            }
+          },
+          "animation_request": "nod",
+          "animation_result": {
+            "success": false,
+            "message": "Animation nod canceled",
+            "duration": 2.8170080184936523,
+            "state": "canceled"
+          },
+          "animation_cancel_result": {
+            "accepted": true,
+            "message": "cancel accepted"
+          },
+          "animation_cancel_requested": false,
+          "last_voice_command": "Tell me a joke",
+          "simulation_speed": 1,
+          "simulator_autonomy_enabled": false,
+          "gesture": "near",
+          "proximity": 0,
+          "requested_mic_direction": 90,
+          "petting_zone_requested": {
+            "zone": "top_front",
+            "active": false
+          },
+          "simulated_obstacles": {
+            "front": false,
+            "left": false,
+            "right": false
+          },
+          "vision_request": {
+            "person_present": false,
+            "emotion": "neutral",
+            "person_distance": 1.5
+          },
+          "light_color_requested": "blue",
+          "light_control_requested": true,
+          "brightness_requested": 0.22,
+          "color_temperature_requested": 0.7
+        }
+      }
+    },
+    {
+      "scenario": "reset_idle_after_initializing",
+      "passed": true,
+      "result": {
+        "state": "IDLE",
+        "animation": "",
+        "physics_time_scale": 1,
+        "sensors": {
+          "state_request_result": {
+            "success": true,
+            "state": "IDLE",
+            "message": "Transition to IDLE granted",
+            "requested": "IDLE"
+          },
+          "manual_pose_result": {
+            "success": true,
+            "state": "USER_CONTROL",
+            "message": "pose sent through the simulator motion controller",
+            "positions": {
+              "base_link_to_link1": -2.0916,
+              "link1_to_link2": -0.8508,
+              "link2_to_link3": 1.15,
+              "link3_to_link4": 1.4492,
+              "link4_to_link5": -0.9016,
+              "link5_to_gripper_link": 0
+            }
+          },
+          "animation_request": "nod",
+          "animation_result": {
+            "success": false,
+            "message": "Animation nod canceled",
+            "duration": 2.8170080184936523,
+            "state": "canceled"
+          },
+          "animation_cancel_result": {
+            "accepted": true,
+            "message": "cancel accepted"
+          },
+          "animation_cancel_requested": false,
+          "last_voice_command": "Tell me a joke",
+          "simulation_speed": 1,
+          "simulator_autonomy_enabled": false,
+          "gesture": "near",
+          "proximity": 0,
+          "requested_mic_direction": 90,
+          "petting_zone_requested": {
+            "zone": "top_front",
+            "active": false
+          },
+          "simulated_obstacles": {
+            "front": false,
+            "left": false,
+            "right": false
+          },
+          "vision_request": {
+            "person_present": false,
+            "emotion": "neutral",
+            "person_distance": 1.5
+          },
+          "light_color_requested": "blue",
+          "light_control_requested": true,
+          "brightness_requested": 0.22,
+          "color_temperature_requested": 0.7
+        }
+      }
+    },
+    {
+      "scenario": "request_state_idle",
+      "passed": true,
+      "result": {
+        "state": "IDLE",
+        "animation": "",
+        "physics_time_scale": 1,
+        "sensors": {
+          "state_request_result": {
+            "success": true,
+            "state": "IDLE",
+            "message": "Transition to IDLE granted",
+            "requested": "IDLE"
+          },
+          "manual_pose_result": {
+            "success": true,
+            "state": "USER_CONTROL",
+            "message": "pose sent through the simulator motion controller",
+            "positions": {
+              "base_link_to_link1": -2.0916,
+              "link1_to_link2": -0.8508,
+              "link2_to_link3": 1.15,
+              "link3_to_link4": 1.4492,
+              "link4_to_link5": -0.9016,
+              "link5_to_gripper_link": 0
+            }
+          },
+          "animation_request": "nod",
+          "animation_result": {
+            "success": false,
+            "message": "Animation nod canceled",
+            "duration": 2.8170080184936523,
+            "state": "canceled"
+          },
+          "animation_cancel_result": {
+            "accepted": true,
+            "message": "cancel accepted"
+          },
+          "animation_cancel_requested": false,
+          "last_voice_command": "Tell me a joke",
+          "simulation_speed": 1,
+          "simulator_autonomy_enabled": false,
+          "gesture": "near",
+          "proximity": 0,
+          "requested_mic_direction": 90,
+          "petting_zone_requested": {
+            "zone": "top_front",
+            "active": false
+          },
+          "simulated_obstacles": {
+            "front": false,
+            "left": false,
+            "right": false
+          },
+          "vision_request": {
+            "person_present": false,
+            "emotion": "neutral",
+            "person_distance": 1.5
+          },
+          "light_color_requested": "blue",
+          "light_control_requested": true,
+          "brightness_requested": 0.22,
+          "color_temperature_requested": 0.7
+        }
+      }
+    },
+    {
+      "scenario": "reset_idle_after_idle",
+      "passed": true,
+      "result": {
+        "state": "IDLE",
+        "animation": "",
+        "physics_time_scale": 1,
+        "sensors": {
+          "state_request_result": {
+            "success": true,
+            "state": "IDLE",
+            "message": "Transition to IDLE granted",
+            "requested": "IDLE"
+          },
+          "manual_pose_result": {
+            "success": true,
+            "state": "USER_CONTROL",
+            "message": "pose sent through the simulator motion controller",
+            "positions": {
+              "base_link_to_link1": -2.0916,
+              "link1_to_link2": -0.8508,
+              "link2_to_link3": 1.15,
+              "link3_to_link4": 1.4492,
+              "link4_to_link5": -0.9016,
+              "link5_to_gripper_link": 0
+            }
+          },
+          "animation_request": "nod",
+          "animation_result": {
+            "success": false,
+            "message": "Animation nod canceled",
+            "duration": 2.8170080184936523,
+            "state": "canceled"
+          },
+          "animation_cancel_result": {
+            "accepted": true,
+            "message": "cancel accepted"
+          },
+          "animation_cancel_requested": false,
+          "last_voice_command": "Tell me a joke",
+          "simulation_speed": 1,
+          "simulator_autonomy_enabled": false,
+          "gesture": "near",
+          "proximity": 0,
+          "requested_mic_direction": 90,
+          "petting_zone_requested": {
+            "zone": "top_front",
+            "active": false
+          },
+          "simulated_obstacles": {
+            "front": false,
+            "left": false,
+            "right": false
+          },
+          "vision_request": {
+            "person_present": false,
+            "emotion": "neutral",
+            "person_distance": 1.5
+          },
+          "light_color_requested": "blue",
+          "light_control_requested": true,
+          "brightness_requested": 0.22,
+          "color_temperature_requested": 0.7
+        }
+      }
+    },
+    {
+      "scenario": "request_state_animating",
+      "passed": true,
+      "result": {
+        "state": "ANIMATING",
+        "animation": "",
+        "physics_time_scale": 1,
+        "sensors": {
+          "state_request_result": {
+            "success": true,
+            "state": "ANIMATING",
+            "message": "Transition to ANIMATING granted",
+            "requested": "ANIMATING"
+          },
+          "manual_pose_result": {
+            "success": true,
+            "state": "USER_CONTROL",
+            "message": "pose sent through the simulator motion controller",
+            "positions": {
+              "base_link_to_link1": -2.0916,
+              "link1_to_link2": -0.8508,
+              "link2_to_link3": 1.15,
+              "link3_to_link4": 1.4492,
+              "link4_to_link5": -0.9016,
+              "link5_to_gripper_link": 0
+            }
+          },
+          "animation_request": "nod",
+          "animation_result": {
+            "success": false,
+            "message": "Animation nod canceled",
+            "duration": 2.8170080184936523,
+            "state": "canceled"
+          },
+          "animation_cancel_result": {
+            "accepted": true,
+            "message": "cancel accepted"
+          },
+          "animation_cancel_requested": false,
+          "last_voice_command": "Tell me a joke",
+          "simulation_speed": 1,
+          "simulator_autonomy_enabled": false,
+          "gesture": "near",
+          "proximity": 0,
+          "requested_mic_direction": 90,
+          "petting_zone_requested": {
+            "zone": "top_front",
+            "active": false
+          },
+          "simulated_obstacles": {
+            "front": false,
+            "left": false,
+            "right": false
+          },
+          "vision_request": {
+            "person_present": false,
+            "emotion": "neutral",
+            "person_distance": 1.5
+          },
+          "light_color_requested": "blue",
+          "light_control_requested": true,
+          "brightness_requested": 0.22,
+          "color_temperature_requested": 0.7
+        }
+      }
+    },
+    {
+      "scenario": "reset_idle_after_animating",
+      "passed": true,
+      "result": {
+        "state": "IDLE",
+        "animation": "",
+        "physics_time_scale": 1,
+        "sensors": {
+          "state_request_result": {
+            "success": true,
+            "state": "IDLE",
+            "message": "Transition to IDLE granted",
+            "requested": "IDLE"
+          },
+          "manual_pose_result": {
+            "success": true,
+            "state": "USER_CONTROL",
+            "message": "pose sent through the simulator motion controller",
+            "positions": {
+              "base_link_to_link1": -2.0916,
+              "link1_to_link2": -0.8508,
+              "link2_to_link3": 1.15,
+              "link3_to_link4": 1.4492,
+              "link4_to_link5": -0.9016,
+              "link5_to_gripper_link": 0
+            }
+          },
+          "animation_request": "nod",
+          "animation_result": {
+            "success": false,
+            "message": "Animation nod canceled",
+            "duration": 2.8170080184936523,
+            "state": "canceled"
+          },
+          "animation_cancel_result": {
+            "accepted": true,
+            "message": "cancel accepted"
+          },
+          "animation_cancel_requested": false,
+          "last_voice_command": "Tell me a joke",
+          "simulation_speed": 1,
+          "simulator_autonomy_enabled": false,
+          "gesture": "near",
+          "proximity": 0,
+          "requested_mic_direction": 90,
+          "petting_zone_requested": {
+            "zone": "top_front",
+            "active": false
+          },
+          "simulated_obstacles": {
+            "front": false,
+            "left": false,
+            "right": false
+          },
+          "vision_request": {
+            "person_present": false,
+            "emotion": "neutral",
+            "person_distance": 1.5
+          },
+          "light_color_requested": "blue",
+          "light_control_requested": true,
+          "brightness_requested": 0.22,
+          "color_temperature_requested": 0.7
+        }
+      }
+    },
+    {
+      "scenario": "request_state_voice_following",
+      "passed": true,
+      "result": {
+        "state": "IDLE",
+        "animation": "",
+        "physics_time_scale": 1,
+        "sensors": {
+          "state_request_result": {
+            "success": true,
+            "state": "VOICE_FOLLOWING",
+            "message": "Transition to VOICE_FOLLOWING granted",
+            "requested": "VOICE_FOLLOWING"
+          },
+          "manual_pose_result": {
+            "success": true,
+            "state": "USER_CONTROL",
+            "message": "pose sent through the simulator motion controller",
+            "positions": {
+              "base_link_to_link1": -2.0916,
+              "link1_to_link2": -0.8508,
+              "link2_to_link3": 1.15,
+              "link3_to_link4": 1.4492,
+              "link4_to_link5": -0.9016,
+              "link5_to_gripper_link": 0
+            }
+          },
+          "animation_request": "nod",
+          "animation_result": {
+            "success": false,
+            "message": "Animation nod canceled",
+            "duration": 2.8170080184936523,
+            "state": "canceled"
+          },
+          "animation_cancel_result": {
+            "accepted": true,
+            "message": "cancel accepted"
+          },
+          "animation_cancel_requested": false,
+          "last_voice_command": "Tell me a joke",
+          "simulation_speed": 1,
+          "simulator_autonomy_enabled": false,
+          "gesture": "near",
+          "proximity": 0,
+          "requested_mic_direction": 90,
+          "petting_zone_requested": {
+            "zone": "top_front",
+            "active": false
+          },
+          "simulated_obstacles": {
+            "front": false,
+            "left": false,
+            "right": false
+          },
+          "vision_request": {
+            "person_present": false,
+            "emotion": "neutral",
+            "person_distance": 1.5
+          },
+          "light_color_requested": "blue",
+          "light_control_requested": true,
+          "brightness_requested": 0.22,
+          "color_temperature_requested": 0.7
+        }
+      }
+    },
+    {
+      "scenario": "reset_idle_after_voice_following",
+      "passed": true,
+      "result": {
+        "state": "IDLE",
+        "animation": "",
+        "physics_time_scale": 1,
+        "sensors": {
+          "state_request_result": {
+            "success": true,
+            "state": "IDLE",
+            "message": "Transition to IDLE granted",
+            "requested": "IDLE"
+          },
+          "manual_pose_result": {
+            "success": true,
+            "state": "USER_CONTROL",
+            "message": "pose sent through the simulator motion controller",
+            "positions": {
+              "base_link_to_link1": -2.0916,
+              "link1_to_link2": -0.8508,
+              "link2_to_link3": 1.15,
+              "link3_to_link4": 1.4492,
+              "link4_to_link5": -0.9016,
+              "link5_to_gripper_link": 0
+            }
+          },
+          "animation_request": "nod",
+          "animation_result": {
+            "success": false,
+            "message": "Animation nod canceled",
+            "duration": 2.8170080184936523,
+            "state": "canceled"
+          },
+          "animation_cancel_result": {
+            "accepted": true,
+            "message": "cancel accepted"
+          },
+          "animation_cancel_requested": false,
+          "last_voice_command": "Tell me a joke",
+          "simulation_speed": 1,
+          "simulator_autonomy_enabled": false,
+          "gesture": "near",
+          "proximity": 0,
+          "requested_mic_direction": 90,
+          "petting_zone_requested": {
+            "zone": "top_front",
+            "active": false
+          },
+          "simulated_obstacles": {
+            "front": false,
+            "left": false,
+            "right": false
+          },
+          "vision_request": {
+            "person_present": false,
+            "emotion": "neutral",
+            "person_distance": 1.5
+          },
+          "light_color_requested": "blue",
+          "light_control_requested": true,
+          "brightness_requested": 0.22,
+          "color_temperature_requested": 0.7
+        }
+      }
+    },
+    {
+      "scenario": "request_state_collision_avoiding",
+      "passed": true,
+      "result": {
+        "state": "COLLISION_AVOIDING",
+        "animation": "",
+        "physics_time_scale": 1,
+        "sensors": {
+          "state_request_result": {
+            "success": true,
+            "state": "COLLISION_AVOIDING",
+            "message": "Transition to COLLISION_AVOIDING granted",
+            "requested": "COLLISION_AVOIDING"
+          },
+          "manual_pose_result": {
+            "success": true,
+            "state": "USER_CONTROL",
+            "message": "pose sent through the simulator motion controller",
+            "positions": {
+              "base_link_to_link1": -2.0916,
+              "link1_to_link2": -0.8508,
+              "link2_to_link3": 1.15,
+              "link3_to_link4": 1.4492,
+              "link4_to_link5": -0.9016,
+              "link5_to_gripper_link": 0
+            }
+          },
+          "animation_request": "nod",
+          "animation_result": {
+            "success": false,
+            "message": "Animation nod canceled",
+            "duration": 2.8170080184936523,
+            "state": "canceled"
+          },
+          "animation_cancel_result": {
+            "accepted": true,
+            "message": "cancel accepted"
+          },
+          "animation_cancel_requested": false,
+          "last_voice_command": "Tell me a joke",
+          "simulation_speed": 1,
+          "simulator_autonomy_enabled": false,
+          "gesture": "near",
+          "proximity": 0,
+          "requested_mic_direction": 90,
+          "petting_zone_requested": {
+            "zone": "top_front",
+            "active": false
+          },
+          "simulated_obstacles": {
+            "front": false,
+            "left": false,
+            "right": false
+          },
+          "vision_request": {
+            "person_present": false,
+            "emotion": "neutral",
+            "person_distance": 1.5
+          },
+          "light_color_requested": "blue",
+          "light_control_requested": true,
+          "brightness_requested": 0.22,
+          "color_temperature_requested": 0.7
+        }
+      }
+    },
+    {
+      "scenario": "reset_idle_after_collision_avoiding",
+      "passed": true,
+      "result": {
+        "state": "COLLISION_AVOIDING",
+        "animation": "",
+        "physics_time_scale": 1,
+        "sensors": {
+          "state_request_result": {
+            "success": true,
+            "state": "IDLE",
+            "message": "Transition to IDLE granted",
+            "requested": "IDLE"
+          },
+          "manual_pose_result": {
+            "success": true,
+            "state": "USER_CONTROL",
+            "message": "pose sent through the simulator motion controller",
+            "positions": {
+              "base_link_to_link1": -2.0916,
+              "link1_to_link2": -0.8508,
+              "link2_to_link3": 1.15,
+              "link3_to_link4": 1.4492,
+              "link4_to_link5": -0.9016,
+              "link5_to_gripper_link": 0
+            }
+          },
+          "animation_request": "nod",
+          "animation_result": {
+            "success": false,
+            "message": "Animation nod canceled",
+            "duration": 2.8170080184936523,
+            "state": "canceled"
+          },
+          "animation_cancel_result": {
+            "accepted": true,
+            "message": "cancel accepted"
+          },
+          "animation_cancel_requested": false,
+          "last_voice_command": "Tell me a joke",
+          "simulation_speed": 1,
+          "simulator_autonomy_enabled": false,
+          "gesture": "near",
+          "proximity": 0,
+          "requested_mic_direction": 90,
+          "petting_zone_requested": {
+            "zone": "top_front",
+            "active": false
+          },
+          "simulated_obstacles": {
+            "front": false,
+            "left": false,
+            "right": false
+          },
+          "vision_request": {
+            "person_present": false,
+            "emotion": "neutral",
+            "person_distance": 1.5
+          },
+          "light_color_requested": "blue",
+          "light_control_requested": true,
+          "brightness_requested": 0.22,
+          "color_temperature_requested": 0.7
+        }
+      }
+    },
+    {
+      "scenario": "request_state_returning_home",
+      "passed": true,
+      "result": {
+        "state": "IDLE",
+        "animation": "",
+        "physics_time_scale": 1,
+        "sensors": {
+          "state_request_result": {
+            "success": true,
+            "state": "RETURNING_HOME",
+            "message": "Transition to RETURNING_HOME granted",
+            "requested": "RETURNING_HOME"
+          },
+          "manual_pose_result": {
+            "success": true,
+            "state": "USER_CONTROL",
+            "message": "pose sent through the simulator motion controller",
+            "positions": {
+              "base_link_to_link1": -2.0916,
+              "link1_to_link2": -0.8508,
+              "link2_to_link3": 1.15,
+              "link3_to_link4": 1.4492,
+              "link4_to_link5": -0.9016,
+              "link5_to_gripper_link": 0
+            }
+          },
+          "animation_request": "nod",
+          "animation_result": {
+            "success": false,
+            "message": "Animation nod canceled",
+            "duration": 2.8170080184936523,
+            "state": "canceled"
+          },
+          "animation_cancel_result": {
+            "accepted": true,
+            "message": "cancel accepted"
+          },
+          "animation_cancel_requested": false,
+          "last_voice_command": "Tell me a joke",
+          "simulation_speed": 1,
+          "simulator_autonomy_enabled": false,
+          "gesture": "near",
+          "proximity": 0,
+          "requested_mic_direction": 90,
+          "petting_zone_requested": {
+            "zone": "top_front",
+            "active": false
+          },
+          "simulated_obstacles": {
+            "front": false,
+            "left": false,
+            "right": false
+          },
+          "vision_request": {
+            "person_present": false,
+            "emotion": "neutral",
+            "person_distance": 1.5
+          },
+          "light_color_requested": "blue",
+          "light_control_requested": true,
+          "brightness_requested": 0.22,
+          "color_temperature_requested": 0.7
+        }
+      }
+    },
+    {
+      "scenario": "reset_idle_after_returning_home",
+      "passed": true,
+      "result": {
+        "state": "RETURNING_HOME",
+        "animation": "",
+        "physics_time_scale": 1,
+        "sensors": {
+          "state_request_result": {
+            "success": true,
+            "state": "IDLE",
+            "message": "Transition to IDLE granted",
+            "requested": "IDLE"
+          },
+          "manual_pose_result": {
+            "success": true,
+            "state": "USER_CONTROL",
+            "message": "pose sent through the simulator motion controller",
+            "positions": {
+              "base_link_to_link1": -2.0916,
+              "link1_to_link2": -0.8508,
+              "link2_to_link3": 1.15,
+              "link3_to_link4": 1.4492,
+              "link4_to_link5": -0.9016,
+              "link5_to_gripper_link": 0
+            }
+          },
+          "animation_request": "nod",
+          "animation_result": {
+            "success": false,
+            "message": "Animation nod canceled",
+            "duration": 2.8170080184936523,
+            "state": "canceled"
+          },
+          "animation_cancel_result": {
+            "accepted": true,
+            "message": "cancel accepted"
+          },
+          "animation_cancel_requested": false,
+          "last_voice_command": "Tell me a joke",
+          "simulation_speed": 1,
+          "simulator_autonomy_enabled": false,
+          "gesture": "near",
+          "proximity": 0,
+          "requested_mic_direction": 90,
+          "petting_zone_requested": {
+            "zone": "top_front",
+            "active": false
+          },
+          "simulated_obstacles": {
+            "front": false,
+            "left": false,
+            "right": false
+          },
+          "vision_request": {
+            "person_present": false,
+            "emotion": "neutral",
+            "person_distance": 1.5
+          },
+          "light_color_requested": "blue",
+          "light_control_requested": true,
+          "brightness_requested": 0.22,
+          "color_temperature_requested": 0.7
+        }
+      }
+    },
+    {
+      "scenario": "request_state_escape_mode",
+      "passed": true,
+      "result": {
+        "state": "IDLE",
+        "animation": "",
+        "physics_time_scale": 1,
+        "sensors": {
+          "state_request_result": {
+            "success": true,
+            "state": "ESCAPE_MODE",
+            "message": "Transition to ESCAPE_MODE granted",
+            "requested": "ESCAPE_MODE"
+          },
+          "manual_pose_result": {
+            "success": true,
+            "state": "USER_CONTROL",
+            "message": "pose sent through the simulator motion controller",
+            "positions": {
+              "base_link_to_link1": -2.0916,
+              "link1_to_link2": -0.8508,
+              "link2_to_link3": 1.15,
+              "link3_to_link4": 1.4492,
+              "link4_to_link5": -0.9016,
+              "link5_to_gripper_link": 0
+            }
+          },
+          "animation_request": "nod",
+          "animation_result": {
+            "success": false,
+            "message": "Animation nod canceled",
+            "duration": 2.8170080184936523,
+            "state": "canceled"
+          },
+          "animation_cancel_result": {
+            "accepted": true,
+            "message": "cancel accepted"
+          },
+          "animation_cancel_requested": false,
+          "last_voice_command": "Tell me a joke",
+          "simulation_speed": 1,
+          "simulator_autonomy_enabled": false,
+          "gesture": "near",
+          "proximity": 0,
+          "requested_mic_direction": 90,
+          "petting_zone_requested": {
+            "zone": "top_front",
+            "active": false
+          },
+          "simulated_obstacles": {
+            "front": false,
+            "left": false,
+            "right": false
+          },
+          "vision_request": {
+            "person_present": false,
+            "emotion": "neutral",
+            "person_distance": 1.5
+          },
+          "light_color_requested": "blue",
+          "light_control_requested": true,
+          "brightness_requested": 0.22,
+          "color_temperature_requested": 0.7
+        }
+      }
+    },
+    {
+      "scenario": "reset_idle_after_escape_mode",
+      "passed": true,
+      "result": {
+        "state": "ESCAPE_MODE",
+        "animation": "",
+        "physics_time_scale": 1,
+        "sensors": {
+          "state_request_result": {
+            "success": true,
+            "state": "IDLE",
+            "message": "Transition to IDLE granted",
+            "requested": "IDLE"
+          },
+          "manual_pose_result": {
+            "success": true,
+            "state": "USER_CONTROL",
+            "message": "pose sent through the simulator motion controller",
+            "positions": {
+              "base_link_to_link1": -2.0916,
+              "link1_to_link2": -0.8508,
+              "link2_to_link3": 1.15,
+              "link3_to_link4": 1.4492,
+              "link4_to_link5": -0.9016,
+              "link5_to_gripper_link": 0
+            }
+          },
+          "animation_request": "nod",
+          "animation_result": {
+            "success": false,
+            "message": "Animation nod canceled",
+            "duration": 2.8170080184936523,
+            "state": "canceled"
+          },
+          "animation_cancel_result": {
+            "accepted": true,
+            "message": "cancel accepted"
+          },
+          "animation_cancel_requested": false,
+          "last_voice_command": "Tell me a joke",
+          "simulation_speed": 1,
+          "simulator_autonomy_enabled": false,
+          "gesture": "near",
+          "proximity": 0,
+          "requested_mic_direction": 90,
+          "petting_zone_requested": {
+            "zone": "top_front",
+            "active": false
+          },
+          "simulated_obstacles": {
+            "front": false,
+            "left": false,
+            "right": false
+          },
+          "vision_request": {
+            "person_present": false,
+            "emotion": "neutral",
+            "person_distance": 1.5
+          },
+          "light_color_requested": "blue",
+          "light_control_requested": true,
+          "brightness_requested": 0.22,
+          "color_temperature_requested": 0.7
+        }
+      }
+    },
+    {
+      "scenario": "request_state_user_control",
+      "passed": true,
+      "result": {
+        "state": "ESCAPE_MODE",
+        "animation": "",
+        "physics_time_scale": 1,
+        "sensors": {
+          "state_request_result": {
+            "success": true,
+            "state": "USER_CONTROL",
+            "message": "Transition to USER_CONTROL granted",
+            "requested": "USER_CONTROL"
+          },
+          "manual_pose_result": {
+            "success": true,
+            "state": "USER_CONTROL",
+            "message": "pose sent through the simulator motion controller",
+            "positions": {
+              "base_link_to_link1": -2.0916,
+              "link1_to_link2": -0.8508,
+              "link2_to_link3": 1.15,
+              "link3_to_link4": 1.4492,
+              "link4_to_link5": -0.9016,
+              "link5_to_gripper_link": 0
+            }
+          },
+          "animation_request": "nod",
+          "animation_result": {
+            "success": false,
+            "message": "Animation nod canceled",
+            "duration": 2.8170080184936523,
+            "state": "canceled"
+          },
+          "animation_cancel_result": {
+            "accepted": true,
+            "message": "cancel accepted"
+          },
+          "animation_cancel_requested": false,
+          "last_voice_command": "Tell me a joke",
+          "simulation_speed": 1,
+          "simulator_autonomy_enabled": false,
+          "gesture": "near",
+          "proximity": 0,
+          "requested_mic_direction": 90,
+          "petting_zone_requested": {
+            "zone": "top_front",
+            "active": false
+          },
+          "simulated_obstacles": {
+            "front": false,
+            "left": false,
+            "right": false
+          },
+          "vision_request": {
+            "person_present": false,
+            "emotion": "neutral",
+            "person_distance": 1.5
+          },
+          "light_color_requested": "blue",
+          "light_control_requested": true,
+          "brightness_requested": 0.22,
+          "color_temperature_requested": 0.7
+        }
+      }
+    },
+    {
+      "scenario": "reset_idle_after_user_control",
+      "passed": true,
+      "result": {
+        "state": "USER_CONTROL",
+        "animation": "",
+        "physics_time_scale": 1,
+        "sensors": {
+          "state_request_result": {
+            "success": true,
+            "state": "IDLE",
+            "message": "Transition to IDLE granted",
+            "requested": "IDLE"
+          },
+          "manual_pose_result": {
+            "success": true,
+            "state": "USER_CONTROL",
+            "message": "pose sent through the simulator motion controller",
+            "positions": {
+              "base_link_to_link1": -2.0916,
+              "link1_to_link2": -0.8508,
+              "link2_to_link3": 1.15,
+              "link3_to_link4": 1.4492,
+              "link4_to_link5": -0.9016,
+              "link5_to_gripper_link": 0
+            }
+          },
+          "animation_request": "nod",
+          "animation_result": {
+            "success": false,
+            "message": "Animation nod canceled",
+            "duration": 2.8170080184936523,
+            "state": "canceled"
+          },
+          "animation_cancel_result": {
+            "accepted": true,
+            "message": "cancel accepted"
+          },
+          "animation_cancel_requested": false,
+          "last_voice_command": "Tell me a joke",
+          "simulation_speed": 1,
+          "simulator_autonomy_enabled": false,
+          "gesture": "near",
+          "proximity": 0,
+          "requested_mic_direction": 90,
+          "petting_zone_requested": {
+            "zone": "top_front",
+            "active": false
+          },
+          "simulated_obstacles": {
+            "front": false,
+            "left": false,
+            "right": false
+          },
+          "vision_request": {
+            "person_present": false,
+            "emotion": "neutral",
+            "person_distance": 1.5
+          },
+          "light_color_requested": "blue",
+          "light_control_requested": true,
+          "brightness_requested": 0.22,
+          "color_temperature_requested": 0.7
+        }
+      }
+    },
+    {
+      "scenario": "request_state_emotion_reacting",
+      "passed": true,
+      "result": {
+        "state": "IDLE",
+        "animation": "",
+        "physics_time_scale": 1,
+        "sensors": {
+          "state_request_result": {
+            "success": true,
+            "state": "EMOTION_REACTING",
+            "message": "Transition to EMOTION_REACTING granted",
+            "requested": "EMOTION_REACTING"
+          },
+          "manual_pose_result": {
+            "success": true,
+            "state": "USER_CONTROL",
+            "message": "pose sent through the simulator motion controller",
+            "positions": {
+              "base_link_to_link1": -2.0916,
+              "link1_to_link2": -0.8508,
+              "link2_to_link3": 1.15,
+              "link3_to_link4": 1.4492,
+              "link4_to_link5": -0.9016,
+              "link5_to_gripper_link": 0
+            }
+          },
+          "animation_request": "nod",
+          "animation_result": {
+            "success": false,
+            "message": "Animation nod canceled",
+            "duration": 2.8170080184936523,
+            "state": "canceled"
+          },
+          "animation_cancel_result": {
+            "accepted": true,
+            "message": "cancel accepted"
+          },
+          "animation_cancel_requested": false,
+          "last_voice_command": "Tell me a joke",
+          "simulation_speed": 1,
+          "simulator_autonomy_enabled": false,
+          "gesture": "near",
+          "proximity": 0,
+          "requested_mic_direction": 90,
+          "petting_zone_requested": {
+            "zone": "top_front",
+            "active": false
+          },
+          "simulated_obstacles": {
+            "front": false,
+            "left": false,
+            "right": false
+          },
+          "vision_request": {
+            "person_present": false,
+            "emotion": "neutral",
+            "person_distance": 1.5
+          },
+          "light_color_requested": "blue",
+          "light_control_requested": true,
+          "brightness_requested": 0.22,
+          "color_temperature_requested": 0.7
+        }
+      }
+    },
+    {
+      "scenario": "reset_idle_after_emotion_reacting",
+      "passed": true,
+      "result": {
+        "state": "EMOTION_REACTING",
+        "animation": "",
+        "physics_time_scale": 1,
+        "sensors": {
+          "state_request_result": {
+            "success": true,
+            "state": "IDLE",
+            "message": "Transition to IDLE granted",
+            "requested": "IDLE"
+          },
+          "manual_pose_result": {
+            "success": true,
+            "state": "USER_CONTROL",
+            "message": "pose sent through the simulator motion controller",
+            "positions": {
+              "base_link_to_link1": -2.0916,
+              "link1_to_link2": -0.8508,
+              "link2_to_link3": 1.15,
+              "link3_to_link4": 1.4492,
+              "link4_to_link5": -0.9016,
+              "link5_to_gripper_link": 0
+            }
+          },
+          "animation_request": "nod",
+          "animation_result": {
+            "success": false,
+            "message": "Animation nod canceled",
+            "duration": 2.8170080184936523,
+            "state": "canceled"
+          },
+          "animation_cancel_result": {
+            "accepted": true,
+            "message": "cancel accepted"
+          },
+          "animation_cancel_requested": false,
+          "last_voice_command": "Tell me a joke",
+          "simulation_speed": 1,
+          "simulator_autonomy_enabled": false,
+          "gesture": "near",
+          "proximity": 0,
+          "requested_mic_direction": 90,
+          "petting_zone_requested": {
+            "zone": "top_front",
+            "active": false
+          },
+          "simulated_obstacles": {
+            "front": false,
+            "left": false,
+            "right": false
+          },
+          "vision_request": {
+            "person_present": false,
+            "emotion": "neutral",
+            "person_distance": 1.5
+          },
+          "light_color_requested": "blue",
+          "light_control_requested": true,
+          "brightness_requested": 0.22,
+          "color_temperature_requested": 0.7
+        }
+      }
+    },
+    {
+      "scenario": "request_state_petting",
+      "passed": true,
+      "result": {
+        "state": "PETTING",
+        "animation": "",
+        "physics_time_scale": 1,
+        "sensors": {
+          "state_request_result": {
+            "success": true,
+            "state": "PETTING",
+            "message": "Transition to PETTING granted",
+            "requested": "PETTING"
+          },
+          "manual_pose_result": {
+            "success": true,
+            "state": "USER_CONTROL",
+            "message": "pose sent through the simulator motion controller",
+            "positions": {
+              "base_link_to_link1": -2.0916,
+              "link1_to_link2": -0.8508,
+              "link2_to_link3": 1.15,
+              "link3_to_link4": 1.4492,
+              "link4_to_link5": -0.9016,
+              "link5_to_gripper_link": 0
+            }
+          },
+          "animation_request": "nod",
+          "animation_result": {
+            "success": false,
+            "message": "Animation nod canceled",
+            "duration": 2.8170080184936523,
+            "state": "canceled"
+          },
+          "animation_cancel_result": {
+            "accepted": true,
+            "message": "cancel accepted"
+          },
+          "animation_cancel_requested": false,
+          "last_voice_command": "Tell me a joke",
+          "simulation_speed": 1,
+          "simulator_autonomy_enabled": false,
+          "gesture": "near",
+          "proximity": 0,
+          "requested_mic_direction": 90,
+          "petting_zone_requested": {
+            "zone": "top_front",
+            "active": false
+          },
+          "simulated_obstacles": {
+            "front": false,
+            "left": false,
+            "right": false
+          },
+          "vision_request": {
+            "person_present": false,
+            "emotion": "neutral",
+            "person_distance": 1.5
+          },
+          "light_color_requested": "blue",
+          "light_control_requested": true,
+          "brightness_requested": 0.22,
+          "color_temperature_requested": 0.7
+        }
+      }
+    },
+    {
+      "scenario": "reset_idle_after_petting",
+      "passed": true,
+      "result": {
+        "state": "PETTING",
+        "animation": "",
+        "physics_time_scale": 1,
+        "sensors": {
+          "state_request_result": {
+            "success": true,
+            "state": "IDLE",
+            "message": "Transition to IDLE granted",
+            "requested": "IDLE"
+          },
+          "manual_pose_result": {
+            "success": true,
+            "state": "USER_CONTROL",
+            "message": "pose sent through the simulator motion controller",
+            "positions": {
+              "base_link_to_link1": -2.0916,
+              "link1_to_link2": -0.8508,
+              "link2_to_link3": 1.15,
+              "link3_to_link4": 1.4492,
+              "link4_to_link5": -0.9016,
+              "link5_to_gripper_link": 0
+            }
+          },
+          "animation_request": "nod",
+          "animation_result": {
+            "success": false,
+            "message": "Animation nod canceled",
+            "duration": 2.8170080184936523,
+            "state": "canceled"
+          },
+          "animation_cancel_result": {
+            "accepted": true,
+            "message": "cancel accepted"
+          },
+          "animation_cancel_requested": false,
+          "last_voice_command": "Tell me a joke",
+          "simulation_speed": 1,
+          "simulator_autonomy_enabled": false,
+          "gesture": "near",
+          "proximity": 0,
+          "requested_mic_direction": 90,
+          "petting_zone_requested": {
+            "zone": "top_front",
+            "active": false
+          },
+          "simulated_obstacles": {
+            "front": false,
+            "left": false,
+            "right": false
+          },
+          "vision_request": {
+            "person_present": false,
+            "emotion": "neutral",
+            "person_distance": 1.5
+          },
+          "light_color_requested": "blue",
+          "light_control_requested": true,
+          "brightness_requested": 0.22,
+          "color_temperature_requested": 0.7
+        }
+      }
+    },
+    {
+      "scenario": "request_state_error",
+      "passed": true,
+      "result": {
+        "state": "IDLE",
+        "animation": "",
+        "physics_time_scale": 1,
+        "sensors": {
+          "state_request_result": {
+            "success": true,
+            "state": "ERROR",
+            "message": "Transition to ERROR granted",
+            "requested": "ERROR"
+          },
+          "manual_pose_result": {
+            "success": true,
+            "state": "USER_CONTROL",
+            "message": "pose sent through the simulator motion controller",
+            "positions": {
+              "base_link_to_link1": -2.0916,
+              "link1_to_link2": -0.8508,
+              "link2_to_link3": 1.15,
+              "link3_to_link4": 1.4492,
+              "link4_to_link5": -0.9016,
+              "link5_to_gripper_link": 0
+            }
+          },
+          "animation_request": "nod",
+          "animation_result": {
+            "success": false,
+            "message": "Animation nod canceled",
+            "duration": 2.8170080184936523,
+            "state": "canceled"
+          },
+          "animation_cancel_result": {
+            "accepted": true,
+            "message": "cancel accepted"
+          },
+          "animation_cancel_requested": false,
+          "last_voice_command": "Tell me a joke",
+          "simulation_speed": 1,
+          "simulator_autonomy_enabled": false,
+          "gesture": "near",
+          "proximity": 0,
+          "requested_mic_direction": 90,
+          "petting_zone_requested": {
+            "zone": "top_front",
+            "active": false
+          },
+          "simulated_obstacles": {
+            "front": false,
+            "left": false,
+            "right": false
+          },
+          "vision_request": {
+            "person_present": false,
+            "emotion": "neutral",
+            "person_distance": 1.5
+          },
+          "light_color_requested": "blue",
+          "light_control_requested": true,
+          "brightness_requested": 0.22,
+          "color_temperature_requested": 0.7
+        }
+      }
+    },
+    {
+      "scenario": "reset_idle_after_error",
+      "passed": true,
+      "result": {
+        "state": "ERROR",
+        "animation": "",
+        "physics_time_scale": 1,
+        "sensors": {
+          "state_request_result": {
+            "success": true,
+            "state": "IDLE",
+            "message": "Transition to IDLE granted",
+            "requested": "IDLE"
+          },
+          "manual_pose_result": {
+            "success": true,
+            "state": "USER_CONTROL",
+            "message": "pose sent through the simulator motion controller",
+            "positions": {
+              "base_link_to_link1": -2.0916,
+              "link1_to_link2": -0.8508,
+              "link2_to_link3": 1.15,
+              "link3_to_link4": 1.4492,
+              "link4_to_link5": -0.9016,
+              "link5_to_gripper_link": 0
+            }
+          },
+          "animation_request": "nod",
+          "animation_result": {
+            "success": false,
+            "message": "Animation nod canceled",
+            "duration": 2.8170080184936523,
+            "state": "canceled"
+          },
+          "animation_cancel_result": {
+            "accepted": true,
+            "message": "cancel accepted"
+          },
+          "animation_cancel_requested": false,
+          "last_voice_command": "Tell me a joke",
+          "simulation_speed": 1,
+          "simulator_autonomy_enabled": false,
+          "gesture": "near",
+          "proximity": 0,
+          "requested_mic_direction": 90,
+          "petting_zone_requested": {
+            "zone": "top_front",
+            "active": false
+          },
+          "simulated_obstacles": {
+            "front": false,
+            "left": false,
+            "right": false
+          },
+          "vision_request": {
+            "person_present": false,
+            "emotion": "neutral",
+            "person_distance": 1.5
+          },
+          "light_color_requested": "blue",
+          "light_control_requested": true,
+          "brightness_requested": 0.22,
+          "color_temperature_requested": 0.7
+        }
+      }
+    },
+    {
+      "scenario": "request_state_shutdown",
+      "passed": true,
+      "result": {
+        "state": "IDLE",
+        "animation": "",
+        "physics_time_scale": 1,
+        "sensors": {
+          "state_request_result": {
+            "success": true,
+            "state": "SHUTDOWN",
+            "message": "Transition to SHUTDOWN granted",
+            "requested": "SHUTDOWN"
+          },
+          "manual_pose_result": {
+            "success": true,
+            "state": "USER_CONTROL",
+            "message": "pose sent through the simulator motion controller",
+            "positions": {
+              "base_link_to_link1": -2.0916,
+              "link1_to_link2": -0.8508,
+              "link2_to_link3": 1.15,
+              "link3_to_link4": 1.4492,
+              "link4_to_link5": -0.9016,
+              "link5_to_gripper_link": 0
+            }
+          },
+          "animation_request": "nod",
+          "animation_result": {
+            "success": false,
+            "message": "Animation nod canceled",
+            "duration": 2.8170080184936523,
+            "state": "canceled"
+          },
+          "animation_cancel_result": {
+            "accepted": true,
+            "message": "cancel accepted"
+          },
+          "animation_cancel_requested": false,
+          "last_voice_command": "Tell me a joke",
+          "simulation_speed": 1,
+          "simulator_autonomy_enabled": false,
+          "gesture": "near",
+          "proximity": 0,
+          "requested_mic_direction": 90,
+          "petting_zone_requested": {
+            "zone": "top_front",
+            "active": false
+          },
+          "simulated_obstacles": {
+            "front": false,
+            "left": false,
+            "right": false
+          },
+          "vision_request": {
+            "person_present": false,
+            "emotion": "neutral",
+            "person_distance": 1.5
+          },
+          "light_color_requested": "blue",
+          "light_control_requested": true,
+          "brightness_requested": 0.22,
+          "color_temperature_requested": 0.7
+        }
+      }
+    },
+    {
+      "scenario": "reset_idle_after_shutdown",
+      "passed": true,
+      "result": {
+        "state": "IDLE",
+        "animation": "",
+        "physics_time_scale": 1,
+        "sensors": {
+          "state_request_result": {
+            "success": true,
+            "state": "IDLE",
+            "message": "Transition to IDLE granted",
+            "requested": "IDLE"
+          },
+          "manual_pose_result": {
+            "success": true,
+            "state": "USER_CONTROL",
+            "message": "pose sent through the simulator motion controller",
+            "positions": {
+              "base_link_to_link1": -2.0916,
+              "link1_to_link2": -0.8508,
+              "link2_to_link3": 1.15,
+              "link3_to_link4": 1.4492,
+              "link4_to_link5": -0.9016,
+              "link5_to_gripper_link": 0
+            }
+          },
+          "animation_request": "nod",
+          "animation_result": {
+            "success": false,
+            "message": "Animation nod canceled",
+            "duration": 2.8170080184936523,
+            "state": "canceled"
+          },
+          "animation_cancel_result": {
+            "accepted": true,
+            "message": "cancel accepted"
+          },
+          "animation_cancel_requested": false,
+          "last_voice_command": "Tell me a joke",
+          "simulation_speed": 1,
+          "simulator_autonomy_enabled": false,
+          "gesture": "near",
+          "proximity": 0,
+          "requested_mic_direction": 90,
+          "petting_zone_requested": {
+            "zone": "top_front",
+            "active": false
+          },
+          "simulated_obstacles": {
+            "front": false,
+            "left": false,
+            "right": false
+          },
+          "vision_request": {
+            "person_present": false,
+            "emotion": "neutral",
+            "person_distance": 1.5
+          },
+          "light_color_requested": "blue",
+          "light_control_requested": true,
+          "brightness_requested": 0.22,
+          "color_temperature_requested": 0.7
+        }
+      }
+    },
+    {
+      "scenario": "apply_manual_pose",
+      "passed": true,
+      "result": {
+        "state": "IDLE",
+        "animation": "",
+        "physics_time_scale": 1,
+        "sensors": {
+          "state_request_result": {
+            "success": true,
+            "state": "IDLE",
+            "message": "Transition to IDLE granted",
+            "requested": "IDLE"
+          },
+          "manual_pose_result": {
+            "success": true,
+            "state": "USER_CONTROL",
+            "message": "pose sent through the simulator motion controller",
+            "positions": {
+              "base_link_to_link1": -2.0916,
+              "link1_to_link2": -0.8508,
+              "link2_to_link3": 1.15,
+              "link3_to_link4": 1.4492,
+              "link4_to_link5": -0.9016,
+              "link5_to_gripper_link": 0
+            }
+          },
+          "animation_request": "nod",
+          "animation_result": {
+            "success": false,
+            "message": "Animation nod canceled",
+            "duration": 2.8170080184936523,
+            "state": "canceled"
+          },
+          "animation_cancel_result": {
+            "accepted": true,
+            "message": "cancel accepted"
+          },
+          "animation_cancel_requested": false,
+          "last_voice_command": "Tell me a joke",
+          "simulation_speed": 1,
+          "simulator_autonomy_enabled": false,
+          "gesture": "near",
+          "proximity": 0,
+          "requested_mic_direction": 90,
+          "petting_zone_requested": {
+            "zone": "top_front",
+            "active": false
+          },
+          "simulated_obstacles": {
+            "front": false,
+            "left": false,
+            "right": false
+          },
+          "vision_request": {
+            "person_present": false,
+            "emotion": "neutral",
+            "person_distance": 1.5
+          },
+          "light_color_requested": "blue",
+          "light_control_requested": true,
+          "brightness_requested": 0.22,
+          "color_temperature_requested": 0.7
+        }
+      }
+    },
+    {
+      "scenario": "reset_manual_pose",
+      "passed": true,
+      "result": {
+        "state": "IDLE",
+        "animation": "",
+        "physics_time_scale": 1,
+        "sensors": {
+          "state_request_result": {
+            "success": true,
+            "state": "IDLE",
+            "message": "Transition to IDLE granted",
+            "requested": "IDLE"
+          },
+          "manual_pose_result": {
+            "success": true,
+            "state": "USER_CONTROL",
+            "message": "pose sent through the simulator motion controller",
+            "positions": {
+              "base_link_to_link1": -2.0916,
+              "link1_to_link2": -0.8508,
+              "link2_to_link3": 1.15,
+              "link3_to_link4": 1.4492,
+              "link4_to_link5": -0.9016,
+              "link5_to_gripper_link": 0
+            }
+          },
+          "animation_request": "nod",
+          "animation_result": {
+            "success": false,
+            "message": "Animation nod canceled",
+            "duration": 2.8170080184936523,
+            "state": "canceled"
+          },
+          "animation_cancel_result": {
+            "accepted": true,
+            "message": "cancel accepted"
+          },
+          "animation_cancel_requested": false,
+          "last_voice_command": "Tell me a joke",
+          "simulation_speed": 1,
+          "simulator_autonomy_enabled": false,
+          "gesture": "near",
+          "proximity": 0,
+          "requested_mic_direction": 90,
+          "petting_zone_requested": {
+            "zone": "top_front",
+            "active": false
+          },
+          "simulated_obstacles": {
+            "front": false,
+            "left": false,
+            "right": false
+          },
+          "vision_request": {
+            "person_present": false,
+            "emotion": "neutral",
+            "person_distance": 1.5
+          },
+          "light_color_requested": "blue",
+          "light_control_requested": true,
+          "brightness_requested": 0.22,
+          "color_temperature_requested": 0.7
+        }
+      }
+    },
+    {
+      "scenario": "apply_lights_white",
+      "passed": true,
+      "result": {
+        "state": "USER_CONTROL",
+        "animation": "",
+        "physics_time_scale": 1,
+        "sensors": {
+          "state_request_result": {
+            "success": true,
+            "state": "IDLE",
+            "message": "Transition to IDLE granted",
+            "requested": "IDLE"
+          },
+          "manual_pose_result": {
+            "success": true,
+            "state": "USER_CONTROL",
+            "message": "pose sent through the simulator motion controller",
+            "positions": {
+              "base_link_to_link1": 0,
+              "link1_to_link2": 0,
+              "link2_to_link3": 0,
+              "link3_to_link4": 0,
+              "link4_to_link5": 0,
+              "link5_to_gripper_link": 0
+            }
+          },
+          "animation_request": "nod",
+          "animation_result": {
+            "success": false,
+            "message": "Animation nod canceled",
+            "duration": 2.8170080184936523,
+            "state": "canceled"
+          },
+          "animation_cancel_result": {
+            "accepted": true,
+            "message": "cancel accepted"
+          },
+          "animation_cancel_requested": false,
+          "last_voice_command": "Tell me a joke",
+          "simulation_speed": 1,
+          "simulator_autonomy_enabled": false,
+          "gesture": "near",
+          "proximity": 0,
+          "requested_mic_direction": 90,
+          "petting_zone_requested": {
+            "zone": "top_front",
+            "active": false
+          },
+          "simulated_obstacles": {
+            "front": false,
+            "left": false,
+            "right": false
+          },
+          "vision_request": {
+            "person_present": false,
+            "emotion": "neutral",
+            "person_distance": 1.5
+          },
+          "light_color_requested": "white",
+          "light_control_requested": true,
+          "brightness_requested": 0.22,
+          "color_temperature_requested": 0.7
+        }
+      }
+    },
+    {
+      "scenario": "apply_lights_red",
+      "passed": true,
+      "result": {
+        "state": "USER_CONTROL",
+        "animation": "",
+        "physics_time_scale": 1,
+        "sensors": {
+          "state_request_result": {
+            "success": true,
+            "state": "IDLE",
+            "message": "Transition to IDLE granted",
+            "requested": "IDLE"
+          },
+          "manual_pose_result": {
+            "success": true,
+            "state": "USER_CONTROL",
+            "message": "pose sent through the simulator motion controller",
+            "positions": {
+              "base_link_to_link1": 0,
+              "link1_to_link2": 0,
+              "link2_to_link3": 0,
+              "link3_to_link4": 0,
+              "link4_to_link5": 0,
+              "link5_to_gripper_link": 0
+            }
+          },
+          "animation_request": "nod",
+          "animation_result": {
+            "success": false,
+            "message": "Animation nod canceled",
+            "duration": 2.8170080184936523,
+            "state": "canceled"
+          },
+          "animation_cancel_result": {
+            "accepted": true,
+            "message": "cancel accepted"
+          },
+          "animation_cancel_requested": false,
+          "last_voice_command": "Tell me a joke",
+          "simulation_speed": 1,
+          "simulator_autonomy_enabled": false,
+          "gesture": "near",
+          "proximity": 0,
+          "requested_mic_direction": 90,
+          "petting_zone_requested": {
+            "zone": "top_front",
+            "active": false
+          },
+          "simulated_obstacles": {
+            "front": false,
+            "left": false,
+            "right": false
+          },
+          "vision_request": {
+            "person_present": false,
+            "emotion": "neutral",
+            "person_distance": 1.5
+          },
+          "light_color_requested": "red",
+          "light_control_requested": true,
+          "brightness_requested": 0.22,
+          "color_temperature_requested": 0.7
+        }
+      }
+    },
+    {
+      "scenario": "apply_lights_orange",
+      "passed": true,
+      "result": {
+        "state": "USER_CONTROL",
+        "animation": "",
+        "physics_time_scale": 1,
+        "sensors": {
+          "state_request_result": {
+            "success": true,
+            "state": "IDLE",
+            "message": "Transition to IDLE granted",
+            "requested": "IDLE"
+          },
+          "manual_pose_result": {
+            "success": true,
+            "state": "USER_CONTROL",
+            "message": "pose sent through the simulator motion controller",
+            "positions": {
+              "base_link_to_link1": 0,
+              "link1_to_link2": 0,
+              "link2_to_link3": 0,
+              "link3_to_link4": 0,
+              "link4_to_link5": 0,
+              "link5_to_gripper_link": 0
+            }
+          },
+          "animation_request": "nod",
+          "animation_result": {
+            "success": false,
+            "message": "Animation nod canceled",
+            "duration": 2.8170080184936523,
+            "state": "canceled"
+          },
+          "animation_cancel_result": {
+            "accepted": true,
+            "message": "cancel accepted"
+          },
+          "animation_cancel_requested": false,
+          "last_voice_command": "Tell me a joke",
+          "simulation_speed": 1,
+          "simulator_autonomy_enabled": false,
+          "gesture": "near",
+          "proximity": 0,
+          "requested_mic_direction": 90,
+          "petting_zone_requested": {
+            "zone": "top_front",
+            "active": false
+          },
+          "simulated_obstacles": {
+            "front": false,
+            "left": false,
+            "right": false
+          },
+          "vision_request": {
+            "person_present": false,
+            "emotion": "neutral",
+            "person_distance": 1.5
+          },
+          "light_color_requested": "orange",
+          "light_control_requested": true,
+          "brightness_requested": 0.22,
+          "color_temperature_requested": 0.7
+        }
+      }
+    },
+    {
+      "scenario": "apply_lights_yellow",
+      "passed": true,
+      "result": {
+        "state": "USER_CONTROL",
+        "animation": "",
+        "physics_time_scale": 1,
+        "sensors": {
+          "state_request_result": {
+            "success": true,
+            "state": "IDLE",
+            "message": "Transition to IDLE granted",
+            "requested": "IDLE"
+          },
+          "manual_pose_result": {
+            "success": true,
+            "state": "USER_CONTROL",
+            "message": "pose sent through the simulator motion controller",
+            "positions": {
+              "base_link_to_link1": 0,
+              "link1_to_link2": 0,
+              "link2_to_link3": 0,
+              "link3_to_link4": 0,
+              "link4_to_link5": 0,
+              "link5_to_gripper_link": 0
+            }
+          },
+          "animation_request": "nod",
+          "animation_result": {
+            "success": false,
+            "message": "Animation nod canceled",
+            "duration": 2.8170080184936523,
+            "state": "canceled"
+          },
+          "animation_cancel_result": {
+            "accepted": true,
+            "message": "cancel accepted"
+          },
+          "animation_cancel_requested": false,
+          "last_voice_command": "Tell me a joke",
+          "simulation_speed": 1,
+          "simulator_autonomy_enabled": false,
+          "gesture": "near",
+          "proximity": 0,
+          "requested_mic_direction": 90,
+          "petting_zone_requested": {
+            "zone": "top_front",
+            "active": false
+          },
+          "simulated_obstacles": {
+            "front": false,
+            "left": false,
+            "right": false
+          },
+          "vision_request": {
+            "person_present": false,
+            "emotion": "neutral",
+            "person_distance": 1.5
+          },
+          "light_color_requested": "yellow",
+          "light_control_requested": true,
+          "brightness_requested": 0.22,
+          "color_temperature_requested": 0.7
+        }
+      }
+    },
+    {
+      "scenario": "apply_lights_green",
+      "passed": true,
+      "result": {
+        "state": "USER_CONTROL",
+        "animation": "",
+        "physics_time_scale": 1,
+        "sensors": {
+          "state_request_result": {
+            "success": true,
+            "state": "IDLE",
+            "message": "Transition to IDLE granted",
+            "requested": "IDLE"
+          },
+          "manual_pose_result": {
+            "success": true,
+            "state": "USER_CONTROL",
+            "message": "pose sent through the simulator motion controller",
+            "positions": {
+              "base_link_to_link1": 0,
+              "link1_to_link2": 0,
+              "link2_to_link3": 0,
+              "link3_to_link4": 0,
+              "link4_to_link5": 0,
+              "link5_to_gripper_link": 0
+            }
+          },
+          "animation_request": "nod",
+          "animation_result": {
+            "success": false,
+            "message": "Animation nod canceled",
+            "duration": 2.8170080184936523,
+            "state": "canceled"
+          },
+          "animation_cancel_result": {
+            "accepted": true,
+            "message": "cancel accepted"
+          },
+          "animation_cancel_requested": false,
+          "last_voice_command": "Tell me a joke",
+          "simulation_speed": 1,
+          "simulator_autonomy_enabled": false,
+          "gesture": "near",
+          "proximity": 0,
+          "requested_mic_direction": 90,
+          "petting_zone_requested": {
+            "zone": "top_front",
+            "active": false
+          },
+          "simulated_obstacles": {
+            "front": false,
+            "left": false,
+            "right": false
+          },
+          "vision_request": {
+            "person_present": false,
+            "emotion": "neutral",
+            "person_distance": 1.5
+          },
+          "light_color_requested": "green",
+          "light_control_requested": true,
+          "brightness_requested": 0.22,
+          "color_temperature_requested": 0.7
+        }
+      }
+    },
+    {
+      "scenario": "apply_lights_cyan",
+      "passed": true,
+      "result": {
+        "state": "USER_CONTROL",
+        "animation": "",
+        "physics_time_scale": 1,
+        "sensors": {
+          "state_request_result": {
+            "success": true,
+            "state": "IDLE",
+            "message": "Transition to IDLE granted",
+            "requested": "IDLE"
+          },
+          "manual_pose_result": {
+            "success": true,
+            "state": "USER_CONTROL",
+            "message": "pose sent through the simulator motion controller",
+            "positions": {
+              "base_link_to_link1": 0,
+              "link1_to_link2": 0,
+              "link2_to_link3": 0,
+              "link3_to_link4": 0,
+              "link4_to_link5": 0,
+              "link5_to_gripper_link": 0
+            }
+          },
+          "animation_request": "nod",
+          "animation_result": {
+            "success": false,
+            "message": "Animation nod canceled",
+            "duration": 2.8170080184936523,
+            "state": "canceled"
+          },
+          "animation_cancel_result": {
+            "accepted": true,
+            "message": "cancel accepted"
+          },
+          "animation_cancel_requested": false,
+          "last_voice_command": "Tell me a joke",
+          "simulation_speed": 1,
+          "simulator_autonomy_enabled": false,
+          "gesture": "near",
+          "proximity": 0,
+          "requested_mic_direction": 90,
+          "petting_zone_requested": {
+            "zone": "top_front",
+            "active": false
+          },
+          "simulated_obstacles": {
+            "front": false,
+            "left": false,
+            "right": false
+          },
+          "vision_request": {
+            "person_present": false,
+            "emotion": "neutral",
+            "person_distance": 1.5
+          },
+          "light_color_requested": "cyan",
+          "light_control_requested": true,
+          "brightness_requested": 0.22,
+          "color_temperature_requested": 0.7
+        }
+      }
+    },
+    {
+      "scenario": "apply_lights_blue",
+      "passed": true,
+      "result": {
+        "state": "USER_CONTROL",
+        "animation": "",
+        "physics_time_scale": 1,
+        "sensors": {
+          "state_request_result": {
+            "success": true,
+            "state": "IDLE",
+            "message": "Transition to IDLE granted",
+            "requested": "IDLE"
+          },
+          "manual_pose_result": {
+            "success": true,
+            "state": "USER_CONTROL",
+            "message": "pose sent through the simulator motion controller",
+            "positions": {
+              "base_link_to_link1": 0,
+              "link1_to_link2": 0,
+              "link2_to_link3": 0,
+              "link3_to_link4": 0,
+              "link4_to_link5": 0,
+              "link5_to_gripper_link": 0
+            }
+          },
+          "animation_request": "nod",
+          "animation_result": {
+            "success": false,
+            "message": "Animation nod canceled",
+            "duration": 2.8170080184936523,
+            "state": "canceled"
+          },
+          "animation_cancel_result": {
+            "accepted": true,
+            "message": "cancel accepted"
+          },
+          "animation_cancel_requested": false,
+          "last_voice_command": "Tell me a joke",
+          "simulation_speed": 1,
+          "simulator_autonomy_enabled": false,
+          "gesture": "near",
+          "proximity": 0,
+          "requested_mic_direction": 90,
+          "petting_zone_requested": {
+            "zone": "top_front",
+            "active": false
+          },
+          "simulated_obstacles": {
+            "front": false,
+            "left": false,
+            "right": false
+          },
+          "vision_request": {
+            "person_present": false,
+            "emotion": "neutral",
+            "person_distance": 1.5
+          },
+          "light_color_requested": "blue",
+          "light_control_requested": true,
+          "brightness_requested": 0.22,
+          "color_temperature_requested": 0.7
+        }
+      }
+    },
+    {
+      "scenario": "apply_lights_purple",
+      "passed": true,
+      "result": {
+        "state": "USER_CONTROL",
+        "animation": "",
+        "physics_time_scale": 1,
+        "sensors": {
+          "state_request_result": {
+            "success": true,
+            "state": "IDLE",
+            "message": "Transition to IDLE granted",
+            "requested": "IDLE"
+          },
+          "manual_pose_result": {
+            "success": true,
+            "state": "USER_CONTROL",
+            "message": "pose sent through the simulator motion controller",
+            "positions": {
+              "base_link_to_link1": 0,
+              "link1_to_link2": 0,
+              "link2_to_link3": 0,
+              "link3_to_link4": 0,
+              "link4_to_link5": 0,
+              "link5_to_gripper_link": 0
+            }
+          },
+          "animation_request": "nod",
+          "animation_result": {
+            "success": false,
+            "message": "Animation nod canceled",
+            "duration": 2.8170080184936523,
+            "state": "canceled"
+          },
+          "animation_cancel_result": {
+            "accepted": true,
+            "message": "cancel accepted"
+          },
+          "animation_cancel_requested": false,
+          "last_voice_command": "Tell me a joke",
+          "simulation_speed": 1,
+          "simulator_autonomy_enabled": false,
+          "gesture": "near",
+          "proximity": 0,
+          "requested_mic_direction": 90,
+          "petting_zone_requested": {
+            "zone": "top_front",
+            "active": false
+          },
+          "simulated_obstacles": {
+            "front": false,
+            "left": false,
+            "right": false
+          },
+          "vision_request": {
+            "person_present": false,
+            "emotion": "neutral",
+            "person_distance": 1.5
+          },
+          "light_color_requested": "purple",
+          "light_control_requested": true,
+          "brightness_requested": 0.22,
+          "color_temperature_requested": 0.7
+        }
+      }
+    },
+    {
+      "scenario": "apply_lights_disabled_and_ranges",
+      "passed": true,
+      "result": {
+        "state": "USER_CONTROL",
+        "animation": "",
+        "physics_time_scale": 1,
+        "sensors": {
+          "state_request_result": {
+            "success": true,
+            "state": "IDLE",
+            "message": "Transition to IDLE granted",
+            "requested": "IDLE"
+          },
+          "manual_pose_result": {
+            "success": true,
+            "state": "USER_CONTROL",
+            "message": "pose sent through the simulator motion controller",
+            "positions": {
+              "base_link_to_link1": 0,
+              "link1_to_link2": 0,
+              "link2_to_link3": 0,
+              "link3_to_link4": 0,
+              "link4_to_link5": 0,
+              "link5_to_gripper_link": 0
+            }
+          },
+          "animation_request": "nod",
+          "animation_result": {
+            "success": false,
+            "message": "Animation nod canceled",
+            "duration": 2.8170080184936523,
+            "state": "canceled"
+          },
+          "animation_cancel_result": {
+            "accepted": true,
+            "message": "cancel accepted"
+          },
+          "animation_cancel_requested": false,
+          "last_voice_command": "Tell me a joke",
+          "simulation_speed": 1,
+          "simulator_autonomy_enabled": false,
+          "gesture": "near",
+          "proximity": 0,
+          "requested_mic_direction": 90,
+          "petting_zone_requested": {
+            "zone": "top_front",
+            "active": false
+          },
+          "simulated_obstacles": {
+            "front": false,
+            "left": false,
+            "right": false
+          },
+          "vision_request": {
+            "person_present": false,
+            "emotion": "neutral",
+            "person_distance": 1.5
+          },
+          "light_color_requested": "purple",
+          "light_control_requested": false,
+          "brightness_requested": 0.22,
+          "color_temperature_requested": 0.7
+        }
+      }
+    },
+    {
+      "scenario": "apply_lights_enabled",
+      "passed": true,
+      "result": {
+        "state": "USER_CONTROL",
+        "animation": "",
+        "physics_time_scale": 1,
+        "sensors": {
+          "state_request_result": {
+            "success": true,
+            "state": "IDLE",
+            "message": "Transition to IDLE granted",
+            "requested": "IDLE"
+          },
+          "manual_pose_result": {
+            "success": true,
+            "state": "USER_CONTROL",
+            "message": "pose sent through the simulator motion controller",
+            "positions": {
+              "base_link_to_link1": 0,
+              "link1_to_link2": 0,
+              "link2_to_link3": 0,
+              "link3_to_link4": 0,
+              "link4_to_link5": 0,
+              "link5_to_gripper_link": 0
+            }
+          },
+          "animation_request": "nod",
+          "animation_result": {
+            "success": false,
+            "message": "Animation nod canceled",
+            "duration": 2.8170080184936523,
+            "state": "canceled"
+          },
+          "animation_cancel_result": {
+            "accepted": true,
+            "message": "cancel accepted"
+          },
+          "animation_cancel_requested": false,
+          "last_voice_command": "Tell me a joke",
+          "simulation_speed": 1,
+          "simulator_autonomy_enabled": false,
+          "gesture": "near",
+          "proximity": 0,
+          "requested_mic_direction": 90,
+          "petting_zone_requested": {
+            "zone": "top_front",
+            "active": false
+          },
+          "simulated_obstacles": {
+            "front": false,
+            "left": false,
+            "right": false
+          },
+          "vision_request": {
+            "person_present": false,
+            "emotion": "neutral",
+            "person_distance": 1.5
+          },
+          "light_color_requested": "purple",
+          "light_control_requested": true,
+          "brightness_requested": 0.4,
+          "color_temperature_requested": 0.7
+        }
+      }
+    },
+    {
+      "scenario": "select_direction_0",
+      "passed": true,
+      "result": {
+        "state": "USER_CONTROL",
+        "animation": "",
+        "physics_time_scale": 1,
+        "sensors": {
+          "state_request_result": {
+            "success": true,
+            "state": "IDLE",
+            "message": "Transition to IDLE granted",
+            "requested": "IDLE"
+          },
+          "manual_pose_result": {
+            "success": true,
+            "state": "USER_CONTROL",
+            "message": "pose sent through the simulator motion controller",
+            "positions": {
+              "base_link_to_link1": 0,
+              "link1_to_link2": 0,
+              "link2_to_link3": 0,
+              "link3_to_link4": 0,
+              "link4_to_link5": 0,
+              "link5_to_gripper_link": 0
+            }
+          },
+          "animation_request": "nod",
+          "animation_result": {
+            "success": false,
+            "message": "Animation nod canceled",
+            "duration": 2.8170080184936523,
+            "state": "canceled"
+          },
+          "animation_cancel_result": {
+            "accepted": true,
+            "message": "cancel accepted"
+          },
+          "animation_cancel_requested": false,
+          "last_voice_command": "Tell me a joke",
+          "simulation_speed": 1,
+          "simulator_autonomy_enabled": false,
+          "gesture": "near",
+          "proximity": 0,
+          "requested_mic_direction": 90,
+          "petting_zone_requested": {
+            "zone": "top_front",
+            "active": false
+          },
+          "simulated_obstacles": {
+            "front": false,
+            "left": false,
+            "right": false
+          },
+          "vision_request": {
+            "person_present": false,
+            "emotion": "neutral",
+            "person_distance": 1.5
+          },
+          "light_color_requested": "purple",
+          "light_control_requested": true,
+          "brightness_requested": 0.4,
+          "color_temperature_requested": 0.7
+        }
+      }
+    },
+    {
+      "scenario": "inject_direction_0",
+      "passed": true,
+      "result": {
+        "state": "VOICE_FOLLOWING",
+        "animation": "",
+        "physics_time_scale": 1,
+        "sensors": {
+          "state_request_result": {
+            "success": true,
+            "state": "IDLE",
+            "message": "Transition to IDLE granted",
+            "requested": "IDLE"
+          },
+          "manual_pose_result": {
+            "success": true,
+            "state": "USER_CONTROL",
+            "message": "pose sent through the simulator motion controller",
+            "positions": {
+              "base_link_to_link1": 0,
+              "link1_to_link2": 0,
+              "link2_to_link3": 0,
+              "link3_to_link4": 0,
+              "link4_to_link5": 0,
+              "link5_to_gripper_link": 0
+            }
+          },
+          "animation_request": "nod",
+          "animation_result": {
+            "success": false,
+            "message": "Animation nod canceled",
+            "duration": 2.8170080184936523,
+            "state": "canceled"
+          },
+          "animation_cancel_result": {
+            "accepted": true,
+            "message": "cancel accepted"
+          },
+          "animation_cancel_requested": false,
+          "last_voice_command": "Tell me a joke",
+          "simulation_speed": 1,
+          "simulator_autonomy_enabled": false,
+          "gesture": "near",
+          "proximity": 0,
+          "requested_mic_direction": 0,
+          "petting_zone_requested": {
+            "zone": "top_front",
+            "active": false
+          },
+          "simulated_obstacles": {
+            "front": false,
+            "left": false,
+            "right": false
+          },
+          "vision_request": {
+            "person_present": false,
+            "emotion": "neutral",
+            "person_distance": 1.5
+          },
+          "light_color_requested": "purple",
+          "light_control_requested": true,
+          "brightness_requested": 0.4,
+          "color_temperature_requested": 0.7
+        }
+      }
+    },
+    {
+      "scenario": "select_direction_90",
+      "passed": true,
+      "result": {
+        "state": "VOICE_FOLLOWING",
+        "animation": "",
+        "physics_time_scale": 1,
+        "sensors": {
+          "state_request_result": {
+            "success": true,
+            "state": "IDLE",
+            "message": "Transition to IDLE granted",
+            "requested": "IDLE"
+          },
+          "manual_pose_result": {
+            "success": true,
+            "state": "USER_CONTROL",
+            "message": "pose sent through the simulator motion controller",
+            "positions": {
+              "base_link_to_link1": 0,
+              "link1_to_link2": 0,
+              "link2_to_link3": 0,
+              "link3_to_link4": 0,
+              "link4_to_link5": 0,
+              "link5_to_gripper_link": 0
+            }
+          },
+          "animation_request": "nod",
+          "animation_result": {
+            "success": false,
+            "message": "Animation nod canceled",
+            "duration": 2.8170080184936523,
+            "state": "canceled"
+          },
+          "animation_cancel_result": {
+            "accepted": true,
+            "message": "cancel accepted"
+          },
+          "animation_cancel_requested": false,
+          "last_voice_command": "Tell me a joke",
+          "simulation_speed": 1,
+          "simulator_autonomy_enabled": false,
+          "gesture": "near",
+          "proximity": 0,
+          "requested_mic_direction": 0,
+          "petting_zone_requested": {
+            "zone": "top_front",
+            "active": false
+          },
+          "simulated_obstacles": {
+            "front": false,
+            "left": false,
+            "right": false
+          },
+          "vision_request": {
+            "person_present": false,
+            "emotion": "neutral",
+            "person_distance": 1.5
+          },
+          "light_color_requested": "purple",
+          "light_control_requested": true,
+          "brightness_requested": 0.4,
+          "color_temperature_requested": 0.7
+        }
+      }
+    },
+    {
+      "scenario": "inject_direction_90",
+      "passed": true,
+      "result": {
+        "state": "VOICE_FOLLOWING",
+        "animation": "",
+        "physics_time_scale": 1,
+        "sensors": {
+          "state_request_result": {
+            "success": true,
+            "state": "IDLE",
+            "message": "Transition to IDLE granted",
+            "requested": "IDLE"
+          },
+          "manual_pose_result": {
+            "success": true,
+            "state": "USER_CONTROL",
+            "message": "pose sent through the simulator motion controller",
+            "positions": {
+              "base_link_to_link1": 0,
+              "link1_to_link2": 0,
+              "link2_to_link3": 0,
+              "link3_to_link4": 0,
+              "link4_to_link5": 0,
+              "link5_to_gripper_link": 0
+            }
+          },
+          "animation_request": "nod",
+          "animation_result": {
+            "success": false,
+            "message": "Animation nod canceled",
+            "duration": 2.8170080184936523,
+            "state": "canceled"
+          },
+          "animation_cancel_result": {
+            "accepted": true,
+            "message": "cancel accepted"
+          },
+          "animation_cancel_requested": false,
+          "last_voice_command": "Tell me a joke",
+          "simulation_speed": 1,
+          "simulator_autonomy_enabled": false,
+          "gesture": "near",
+          "proximity": 0,
+          "requested_mic_direction": 90,
+          "petting_zone_requested": {
+            "zone": "top_front",
+            "active": false
+          },
+          "simulated_obstacles": {
+            "front": false,
+            "left": false,
+            "right": false
+          },
+          "vision_request": {
+            "person_present": false,
+            "emotion": "neutral",
+            "person_distance": 1.5
+          },
+          "light_color_requested": "purple",
+          "light_control_requested": true,
+          "brightness_requested": 0.4,
+          "color_temperature_requested": 0.7
+        }
+      }
+    },
+    {
+      "scenario": "select_direction_180",
+      "passed": true,
+      "result": {
+        "state": "VOICE_FOLLOWING",
+        "animation": "",
+        "physics_time_scale": 1,
+        "sensors": {
+          "state_request_result": {
+            "success": true,
+            "state": "IDLE",
+            "message": "Transition to IDLE granted",
+            "requested": "IDLE"
+          },
+          "manual_pose_result": {
+            "success": true,
+            "state": "USER_CONTROL",
+            "message": "pose sent through the simulator motion controller",
+            "positions": {
+              "base_link_to_link1": 0,
+              "link1_to_link2": 0,
+              "link2_to_link3": 0,
+              "link3_to_link4": 0,
+              "link4_to_link5": 0,
+              "link5_to_gripper_link": 0
+            }
+          },
+          "animation_request": "nod",
+          "animation_result": {
+            "success": false,
+            "message": "Animation nod canceled",
+            "duration": 2.8170080184936523,
+            "state": "canceled"
+          },
+          "animation_cancel_result": {
+            "accepted": true,
+            "message": "cancel accepted"
+          },
+          "animation_cancel_requested": false,
+          "last_voice_command": "Tell me a joke",
+          "simulation_speed": 1,
+          "simulator_autonomy_enabled": false,
+          "gesture": "near",
+          "proximity": 0,
+          "requested_mic_direction": 90,
+          "petting_zone_requested": {
+            "zone": "top_front",
+            "active": false
+          },
+          "simulated_obstacles": {
+            "front": false,
+            "left": false,
+            "right": false
+          },
+          "vision_request": {
+            "person_present": false,
+            "emotion": "neutral",
+            "person_distance": 1.5
+          },
+          "light_color_requested": "purple",
+          "light_control_requested": true,
+          "brightness_requested": 0.4,
+          "color_temperature_requested": 0.7
+        }
+      }
+    },
+    {
+      "scenario": "inject_direction_180",
+      "passed": true,
+      "result": {
+        "state": "VOICE_FOLLOWING",
+        "animation": "",
+        "physics_time_scale": 1,
+        "sensors": {
+          "state_request_result": {
+            "success": true,
+            "state": "IDLE",
+            "message": "Transition to IDLE granted",
+            "requested": "IDLE"
+          },
+          "manual_pose_result": {
+            "success": true,
+            "state": "USER_CONTROL",
+            "message": "pose sent through the simulator motion controller",
+            "positions": {
+              "base_link_to_link1": 0,
+              "link1_to_link2": 0,
+              "link2_to_link3": 0,
+              "link3_to_link4": 0,
+              "link4_to_link5": 0,
+              "link5_to_gripper_link": 0
+            }
+          },
+          "animation_request": "nod",
+          "animation_result": {
+            "success": false,
+            "message": "Animation nod canceled",
+            "duration": 2.8170080184936523,
+            "state": "canceled"
+          },
+          "animation_cancel_result": {
+            "accepted": true,
+            "message": "cancel accepted"
+          },
+          "animation_cancel_requested": false,
+          "last_voice_command": "Tell me a joke",
+          "simulation_speed": 1,
+          "simulator_autonomy_enabled": false,
+          "gesture": "near",
+          "proximity": 0,
+          "requested_mic_direction": 180,
+          "petting_zone_requested": {
+            "zone": "top_front",
+            "active": false
+          },
+          "simulated_obstacles": {
+            "front": false,
+            "left": false,
+            "right": false
+          },
+          "vision_request": {
+            "person_present": false,
+            "emotion": "neutral",
+            "person_distance": 1.5
+          },
+          "light_color_requested": "purple",
+          "light_control_requested": true,
+          "brightness_requested": 0.4,
+          "color_temperature_requested": 0.7
+        }
+      }
+    },
+    {
+      "scenario": "select_direction_270",
+      "passed": true,
+      "result": {
+        "state": "VOICE_FOLLOWING",
+        "animation": "",
+        "physics_time_scale": 1,
+        "sensors": {
+          "state_request_result": {
+            "success": true,
+            "state": "IDLE",
+            "message": "Transition to IDLE granted",
+            "requested": "IDLE"
+          },
+          "manual_pose_result": {
+            "success": true,
+            "state": "USER_CONTROL",
+            "message": "pose sent through the simulator motion controller",
+            "positions": {
+              "base_link_to_link1": 0,
+              "link1_to_link2": 0,
+              "link2_to_link3": 0,
+              "link3_to_link4": 0,
+              "link4_to_link5": 0,
+              "link5_to_gripper_link": 0
+            }
+          },
+          "animation_request": "nod",
+          "animation_result": {
+            "success": false,
+            "message": "Animation nod canceled",
+            "duration": 2.8170080184936523,
+            "state": "canceled"
+          },
+          "animation_cancel_result": {
+            "accepted": true,
+            "message": "cancel accepted"
+          },
+          "animation_cancel_requested": false,
+          "last_voice_command": "Tell me a joke",
+          "simulation_speed": 1,
+          "simulator_autonomy_enabled": false,
+          "gesture": "near",
+          "proximity": 0,
+          "requested_mic_direction": 180,
+          "petting_zone_requested": {
+            "zone": "top_front",
+            "active": false
+          },
+          "simulated_obstacles": {
+            "front": false,
+            "left": false,
+            "right": false
+          },
+          "vision_request": {
+            "person_present": false,
+            "emotion": "neutral",
+            "person_distance": 1.5
+          },
+          "light_color_requested": "purple",
+          "light_control_requested": true,
+          "brightness_requested": 0.4,
+          "color_temperature_requested": 0.7
+        }
+      }
+    },
+    {
+      "scenario": "inject_direction_270",
+      "passed": true,
+      "result": {
+        "state": "USER_CONTROL",
+        "animation": "",
+        "physics_time_scale": 1,
+        "sensors": {
+          "state_request_result": {
+            "success": true,
+            "state": "IDLE",
+            "message": "Transition to IDLE granted",
+            "requested": "IDLE"
+          },
+          "manual_pose_result": {
+            "success": true,
+            "state": "USER_CONTROL",
+            "message": "pose sent through the simulator motion controller",
+            "positions": {
+              "base_link_to_link1": 0,
+              "link1_to_link2": 0,
+              "link2_to_link3": 0,
+              "link3_to_link4": 0,
+              "link4_to_link5": 0,
+              "link5_to_gripper_link": 0
+            }
+          },
+          "animation_request": "nod",
+          "animation_result": {
+            "success": false,
+            "message": "Animation nod canceled",
+            "duration": 2.8170080184936523,
+            "state": "canceled"
+          },
+          "animation_cancel_result": {
+            "accepted": true,
+            "message": "cancel accepted"
+          },
+          "animation_cancel_requested": false,
+          "last_voice_command": "Tell me a joke",
+          "simulation_speed": 1,
+          "simulator_autonomy_enabled": false,
+          "gesture": "near",
+          "proximity": 0,
+          "requested_mic_direction": 270,
+          "petting_zone_requested": {
+            "zone": "top_front",
+            "active": false
+          },
+          "simulated_obstacles": {
+            "front": false,
+            "left": false,
+            "right": false
+          },
+          "vision_request": {
+            "person_present": false,
+            "emotion": "neutral",
+            "person_distance": 1.5
+          },
+          "light_color_requested": "purple",
+          "light_control_requested": true,
+          "brightness_requested": 0.4,
+          "color_temperature_requested": 0.7
+        }
+      }
+    },
+    {
+      "scenario": "touch_head_top_press",
+      "passed": true,
+      "result": {
+        "state": "VOICE_FOLLOWING",
+        "animation": "",
+        "physics_time_scale": 1,
+        "sensors": {
+          "state_request_result": {
+            "success": true,
+            "state": "IDLE",
+            "message": "Transition to IDLE granted",
+            "requested": "IDLE"
+          },
+          "manual_pose_result": {
+            "success": true,
+            "state": "USER_CONTROL",
+            "message": "pose sent through the simulator motion controller",
+            "positions": {
+              "base_link_to_link1": 0,
+              "link1_to_link2": 0,
+              "link2_to_link3": 0,
+              "link3_to_link4": 0,
+              "link4_to_link5": 0,
+              "link5_to_gripper_link": 0
+            }
+          },
+          "animation_request": "nod",
+          "animation_result": {
+            "success": false,
+            "message": "Animation nod canceled",
+            "duration": 2.8170080184936523,
+            "state": "canceled"
+          },
+          "animation_cancel_result": {
+            "accepted": true,
+            "message": "cancel accepted"
+          },
+          "animation_cancel_requested": false,
+          "last_voice_command": "Tell me a joke",
+          "simulation_speed": 1,
+          "simulator_autonomy_enabled": false,
+          "gesture": "near",
+          "proximity": 0,
+          "requested_mic_direction": 270,
+          "petting_zone_requested": {
+            "zone": "top_front",
+            "active": false
+          },
+          "simulated_obstacles": {
+            "front": false,
+            "left": false,
+            "right": false
+          },
+          "vision_request": {
+            "person_present": false,
+            "emotion": "neutral",
+            "person_distance": 1.5
+          },
+          "light_color_requested": "purple",
+          "light_control_requested": true,
+          "brightness_requested": 0.4,
+          "color_temperature_requested": 0.7
+        }
+      }
+    },
+    {
+      "scenario": "touch_head_top_release",
+      "passed": true,
+      "result": {
+        "state": "VOICE_FOLLOWING",
+        "animation": "",
+        "physics_time_scale": 1,
+        "sensors": {
+          "state_request_result": {
+            "success": true,
+            "state": "IDLE",
+            "message": "Transition to IDLE granted",
+            "requested": "IDLE"
+          },
+          "manual_pose_result": {
+            "success": true,
+            "state": "USER_CONTROL",
+            "message": "pose sent through the simulator motion controller",
+            "positions": {
+              "base_link_to_link1": 0,
+              "link1_to_link2": 0,
+              "link2_to_link3": 0,
+              "link3_to_link4": 0,
+              "link4_to_link5": 0,
+              "link5_to_gripper_link": 0
+            }
+          },
+          "animation_request": "nod",
+          "animation_result": {
+            "success": false,
+            "message": "Animation nod canceled",
+            "duration": 2.8170080184936523,
+            "state": "canceled"
+          },
+          "animation_cancel_result": {
+            "accepted": true,
+            "message": "cancel accepted"
+          },
+          "animation_cancel_requested": false,
+          "last_voice_command": "Tell me a joke",
+          "simulation_speed": 1,
+          "simulator_autonomy_enabled": false,
+          "gesture": "near",
+          "proximity": 0,
+          "requested_mic_direction": 270,
+          "petting_zone_requested": {
+            "zone": "top_front",
+            "active": false
+          },
+          "simulated_obstacles": {
+            "front": false,
+            "left": false,
+            "right": false
+          },
+          "vision_request": {
+            "person_present": false,
+            "emotion": "neutral",
+            "person_distance": 1.5
+          },
+          "light_color_requested": "purple",
+          "light_control_requested": true,
+          "brightness_requested": 0.4,
+          "color_temperature_requested": 0.7
+        }
+      }
+    },
+    {
+      "scenario": "touch_head_left_press",
+      "passed": true,
+      "result": {
+        "state": "VOICE_FOLLOWING",
+        "animation": "",
+        "physics_time_scale": 1,
+        "sensors": {
+          "state_request_result": {
+            "success": true,
+            "state": "IDLE",
+            "message": "Transition to IDLE granted",
+            "requested": "IDLE"
+          },
+          "manual_pose_result": {
+            "success": true,
+            "state": "USER_CONTROL",
+            "message": "pose sent through the simulator motion controller",
+            "positions": {
+              "base_link_to_link1": 0,
+              "link1_to_link2": 0,
+              "link2_to_link3": 0,
+              "link3_to_link4": 0,
+              "link4_to_link5": 0,
+              "link5_to_gripper_link": 0
+            }
+          },
+          "animation_request": "nod",
+          "animation_result": {
+            "success": false,
+            "message": "Animation nod canceled",
+            "duration": 2.8170080184936523,
+            "state": "canceled"
+          },
+          "animation_cancel_result": {
+            "accepted": true,
+            "message": "cancel accepted"
+          },
+          "animation_cancel_requested": false,
+          "last_voice_command": "Tell me a joke",
+          "simulation_speed": 1,
+          "simulator_autonomy_enabled": false,
+          "gesture": "near",
+          "proximity": 0,
+          "requested_mic_direction": 270,
+          "petting_zone_requested": {
+            "zone": "top_front",
+            "active": false
+          },
+          "simulated_obstacles": {
+            "front": false,
+            "left": false,
+            "right": false
+          },
+          "vision_request": {
+            "person_present": false,
+            "emotion": "neutral",
+            "person_distance": 1.5
+          },
+          "light_color_requested": "purple",
+          "light_control_requested": true,
+          "brightness_requested": 0.4,
+          "color_temperature_requested": 0.7
+        }
+      }
+    },
+    {
+      "scenario": "touch_head_left_release",
+      "passed": true,
+      "result": {
+        "state": "COLLISION_AVOIDING",
+        "animation": "",
+        "physics_time_scale": 1,
+        "sensors": {
+          "state_request_result": {
+            "success": true,
+            "state": "IDLE",
+            "message": "Transition to IDLE granted",
+            "requested": "IDLE"
+          },
+          "manual_pose_result": {
+            "success": true,
+            "state": "USER_CONTROL",
+            "message": "pose sent through the simulator motion controller",
+            "positions": {
+              "base_link_to_link1": 0,
+              "link1_to_link2": 0,
+              "link2_to_link3": 0,
+              "link3_to_link4": 0,
+              "link4_to_link5": 0,
+              "link5_to_gripper_link": 0
+            }
+          },
+          "animation_request": "nod",
+          "animation_result": {
+            "success": false,
+            "message": "Animation nod canceled",
+            "duration": 2.8170080184936523,
+            "state": "canceled"
+          },
+          "animation_cancel_result": {
+            "accepted": true,
+            "message": "cancel accepted"
+          },
+          "animation_cancel_requested": false,
+          "last_voice_command": "Tell me a joke",
+          "simulation_speed": 1,
+          "simulator_autonomy_enabled": false,
+          "gesture": "near",
+          "proximity": 0,
+          "requested_mic_direction": 270,
+          "petting_zone_requested": {
+            "zone": "top_front",
+            "active": false
+          },
+          "simulated_obstacles": {
+            "front": false,
+            "left": false,
+            "right": false
+          },
+          "vision_request": {
+            "person_present": false,
+            "emotion": "neutral",
+            "person_distance": 1.5
+          },
+          "light_color_requested": "purple",
+          "light_control_requested": true,
+          "brightness_requested": 0.4,
+          "color_temperature_requested": 0.7
+        }
+      }
+    },
+    {
+      "scenario": "touch_head_right_press",
+      "passed": true,
+      "result": {
+        "state": "VOICE_FOLLOWING",
+        "animation": "",
+        "physics_time_scale": 1,
+        "sensors": {
+          "state_request_result": {
+            "success": true,
+            "state": "IDLE",
+            "message": "Transition to IDLE granted",
+            "requested": "IDLE"
+          },
+          "manual_pose_result": {
+            "success": true,
+            "state": "USER_CONTROL",
+            "message": "pose sent through the simulator motion controller",
+            "positions": {
+              "base_link_to_link1": 0,
+              "link1_to_link2": 0,
+              "link2_to_link3": 0,
+              "link3_to_link4": 0,
+              "link4_to_link5": 0,
+              "link5_to_gripper_link": 0
+            }
+          },
+          "animation_request": "nod",
+          "animation_result": {
+            "success": false,
+            "message": "Animation nod canceled",
+            "duration": 2.8170080184936523,
+            "state": "canceled"
+          },
+          "animation_cancel_result": {
+            "accepted": true,
+            "message": "cancel accepted"
+          },
+          "animation_cancel_requested": false,
+          "last_voice_command": "Tell me a joke",
+          "simulation_speed": 1,
+          "simulator_autonomy_enabled": false,
+          "gesture": "near",
+          "proximity": 0,
+          "requested_mic_direction": 270,
+          "petting_zone_requested": {
+            "zone": "top_front",
+            "active": false
+          },
+          "simulated_obstacles": {
+            "front": false,
+            "left": false,
+            "right": false
+          },
+          "vision_request": {
+            "person_present": false,
+            "emotion": "neutral",
+            "person_distance": 1.5
+          },
+          "light_color_requested": "purple",
+          "light_control_requested": true,
+          "brightness_requested": 0.4,
+          "color_temperature_requested": 0.7
+        }
+      }
+    },
+    {
+      "scenario": "touch_head_right_release",
+      "passed": true,
+      "result": {
+        "state": "VOICE_FOLLOWING",
+        "animation": "",
+        "physics_time_scale": 1,
+        "sensors": {
+          "state_request_result": {
+            "success": true,
+            "state": "IDLE",
+            "message": "Transition to IDLE granted",
+            "requested": "IDLE"
+          },
+          "manual_pose_result": {
+            "success": true,
+            "state": "USER_CONTROL",
+            "message": "pose sent through the simulator motion controller",
+            "positions": {
+              "base_link_to_link1": 0,
+              "link1_to_link2": 0,
+              "link2_to_link3": 0,
+              "link3_to_link4": 0,
+              "link4_to_link5": 0,
+              "link5_to_gripper_link": 0
+            }
+          },
+          "animation_request": "nod",
+          "animation_result": {
+            "success": false,
+            "message": "Animation nod canceled",
+            "duration": 2.8170080184936523,
+            "state": "canceled"
+          },
+          "animation_cancel_result": {
+            "accepted": true,
+            "message": "cancel accepted"
+          },
+          "animation_cancel_requested": false,
+          "last_voice_command": "Tell me a joke",
+          "simulation_speed": 1,
+          "simulator_autonomy_enabled": false,
+          "gesture": "near",
+          "proximity": 0,
+          "requested_mic_direction": 270,
+          "petting_zone_requested": {
+            "zone": "top_front",
+            "active": false
+          },
+          "simulated_obstacles": {
+            "front": false,
+            "left": false,
+            "right": false
+          },
+          "vision_request": {
+            "person_present": false,
+            "emotion": "neutral",
+            "person_distance": 1.5
+          },
+          "light_color_requested": "purple",
+          "light_control_requested": true,
+          "brightness_requested": 0.4,
+          "color_temperature_requested": 0.7
+        }
+      }
+    },
+    {
+      "scenario": "touch_head_bottom_press",
+      "passed": true,
+      "result": {
+        "state": "COLLISION_AVOIDING",
+        "animation": "",
+        "physics_time_scale": 1,
+        "sensors": {
+          "state_request_result": {
+            "success": true,
+            "state": "IDLE",
+            "message": "Transition to IDLE granted",
+            "requested": "IDLE"
+          },
+          "manual_pose_result": {
+            "success": true,
+            "state": "USER_CONTROL",
+            "message": "pose sent through the simulator motion controller",
+            "positions": {
+              "base_link_to_link1": 0,
+              "link1_to_link2": 0,
+              "link2_to_link3": 0,
+              "link3_to_link4": 0,
+              "link4_to_link5": 0,
+              "link5_to_gripper_link": 0
+            }
+          },
+          "animation_request": "nod",
+          "animation_result": {
+            "success": false,
+            "message": "Animation nod canceled",
+            "duration": 2.8170080184936523,
+            "state": "canceled"
+          },
+          "animation_cancel_result": {
+            "accepted": true,
+            "message": "cancel accepted"
+          },
+          "animation_cancel_requested": false,
+          "last_voice_command": "Tell me a joke",
+          "simulation_speed": 1,
+          "simulator_autonomy_enabled": false,
+          "gesture": "near",
+          "proximity": 0,
+          "requested_mic_direction": 270,
+          "petting_zone_requested": {
+            "zone": "top_front",
+            "active": false
+          },
+          "simulated_obstacles": {
+            "front": false,
+            "left": false,
+            "right": false
+          },
+          "vision_request": {
+            "person_present": false,
+            "emotion": "neutral",
+            "person_distance": 1.5
+          },
+          "light_color_requested": "purple",
+          "light_control_requested": true,
+          "brightness_requested": 0.4,
+          "color_temperature_requested": 0.7
+        }
+      }
+    },
+    {
+      "scenario": "touch_head_bottom_release",
+      "passed": true,
+      "result": {
+        "state": "COLLISION_AVOIDING",
+        "animation": "",
+        "physics_time_scale": 1,
+        "sensors": {
+          "state_request_result": {
+            "success": true,
+            "state": "IDLE",
+            "message": "Transition to IDLE granted",
+            "requested": "IDLE"
+          },
+          "manual_pose_result": {
+            "success": true,
+            "state": "USER_CONTROL",
+            "message": "pose sent through the simulator motion controller",
+            "positions": {
+              "base_link_to_link1": 0,
+              "link1_to_link2": 0,
+              "link2_to_link3": 0,
+              "link3_to_link4": 0,
+              "link4_to_link5": 0,
+              "link5_to_gripper_link": 0
+            }
+          },
+          "animation_request": "nod",
+          "animation_result": {
+            "success": false,
+            "message": "Animation nod canceled",
+            "duration": 2.8170080184936523,
+            "state": "canceled"
+          },
+          "animation_cancel_result": {
+            "accepted": true,
+            "message": "cancel accepted"
+          },
+          "animation_cancel_requested": false,
+          "last_voice_command": "Tell me a joke",
+          "simulation_speed": 1,
+          "simulator_autonomy_enabled": false,
+          "gesture": "near",
+          "proximity": 0,
+          "requested_mic_direction": 270,
+          "petting_zone_requested": {
+            "zone": "top_front",
+            "active": false
+          },
+          "simulated_obstacles": {
+            "front": false,
+            "left": false,
+            "right": false
+          },
+          "vision_request": {
+            "person_present": false,
+            "emotion": "neutral",
+            "person_distance": 1.5
+          },
+          "light_color_requested": "purple",
+          "light_control_requested": true,
+          "brightness_requested": 0.4,
+          "color_temperature_requested": 0.7
+        }
+      }
+    },
+    {
+      "scenario": "petting_top_front_press",
+      "passed": true,
+      "result": {
+        "state": "COLLISION_AVOIDING",
+        "animation": "",
+        "physics_time_scale": 1,
+        "sensors": {
+          "state_request_result": {
+            "success": true,
+            "state": "IDLE",
+            "message": "Transition to IDLE granted",
+            "requested": "IDLE"
+          },
+          "manual_pose_result": {
+            "success": true,
+            "state": "USER_CONTROL",
+            "message": "pose sent through the simulator motion controller",
+            "positions": {
+              "base_link_to_link1": 0,
+              "link1_to_link2": 0,
+              "link2_to_link3": 0,
+              "link3_to_link4": 0,
+              "link4_to_link5": 0,
+              "link5_to_gripper_link": 0
+            }
+          },
+          "animation_request": "nod",
+          "animation_result": {
+            "success": false,
+            "message": "Animation nod canceled",
+            "duration": 2.8170080184936523,
+            "state": "canceled"
+          },
+          "animation_cancel_result": {
+            "accepted": true,
+            "message": "cancel accepted"
+          },
+          "animation_cancel_requested": false,
+          "last_voice_command": "Tell me a joke",
+          "simulation_speed": 1,
+          "simulator_autonomy_enabled": false,
+          "gesture": "near",
+          "proximity": 0,
+          "requested_mic_direction": 270,
+          "petting_zone_requested": {
+            "zone": "top_front",
+            "active": true
+          },
+          "simulated_obstacles": {
+            "front": false,
+            "left": false,
+            "right": false
+          },
+          "vision_request": {
+            "person_present": false,
+            "emotion": "neutral",
+            "person_distance": 1.5
+          },
+          "light_color_requested": "purple",
+          "light_control_requested": true,
+          "brightness_requested": 0.4,
+          "color_temperature_requested": 0.7
+        }
+      }
+    },
+    {
+      "scenario": "petting_top_front_release",
+      "passed": true,
+      "result": {
+        "state": "COLLISION_AVOIDING",
+        "animation": "",
+        "physics_time_scale": 1,
+        "sensors": {
+          "state_request_result": {
+            "success": true,
+            "state": "IDLE",
+            "message": "Transition to IDLE granted",
+            "requested": "IDLE"
+          },
+          "manual_pose_result": {
+            "success": true,
+            "state": "USER_CONTROL",
+            "message": "pose sent through the simulator motion controller",
+            "positions": {
+              "base_link_to_link1": 0,
+              "link1_to_link2": 0,
+              "link2_to_link3": 0,
+              "link3_to_link4": 0,
+              "link4_to_link5": 0,
+              "link5_to_gripper_link": 0
+            }
+          },
+          "animation_request": "nod",
+          "animation_result": {
+            "success": false,
+            "message": "Animation nod canceled",
+            "duration": 2.8170080184936523,
+            "state": "canceled"
+          },
+          "animation_cancel_result": {
+            "accepted": true,
+            "message": "cancel accepted"
+          },
+          "animation_cancel_requested": false,
+          "last_voice_command": "Tell me a joke",
+          "simulation_speed": 1,
+          "simulator_autonomy_enabled": false,
+          "gesture": "near",
+          "proximity": 0,
+          "requested_mic_direction": 270,
+          "petting_zone_requested": {
+            "zone": "top_front",
+            "active": false
+          },
+          "simulated_obstacles": {
+            "front": false,
+            "left": false,
+            "right": false
+          },
+          "vision_request": {
+            "person_present": false,
+            "emotion": "neutral",
+            "person_distance": 1.5
+          },
+          "light_color_requested": "purple",
+          "light_control_requested": true,
+          "brightness_requested": 0.4,
+          "color_temperature_requested": 0.7
+        }
+      }
+    },
+    {
+      "scenario": "petting_antenna_press",
+      "passed": true,
+      "result": {
+        "state": "COLLISION_AVOIDING",
+        "animation": "",
+        "physics_time_scale": 1,
+        "sensors": {
+          "state_request_result": {
+            "success": true,
+            "state": "IDLE",
+            "message": "Transition to IDLE granted",
+            "requested": "IDLE"
+          },
+          "manual_pose_result": {
+            "success": true,
+            "state": "USER_CONTROL",
+            "message": "pose sent through the simulator motion controller",
+            "positions": {
+              "base_link_to_link1": 0,
+              "link1_to_link2": 0,
+              "link2_to_link3": 0,
+              "link3_to_link4": 0,
+              "link4_to_link5": 0,
+              "link5_to_gripper_link": 0
+            }
+          },
+          "animation_request": "nod",
+          "animation_result": {
+            "success": false,
+            "message": "Animation nod canceled",
+            "duration": 2.8170080184936523,
+            "state": "canceled"
+          },
+          "animation_cancel_result": {
+            "accepted": true,
+            "message": "cancel accepted"
+          },
+          "animation_cancel_requested": false,
+          "last_voice_command": "Tell me a joke",
+          "simulation_speed": 1,
+          "simulator_autonomy_enabled": false,
+          "gesture": "near",
+          "proximity": 0,
+          "requested_mic_direction": 270,
+          "petting_zone_requested": {
+            "zone": "antenna",
+            "active": true
+          },
+          "simulated_obstacles": {
+            "front": false,
+            "left": false,
+            "right": false
+          },
+          "vision_request": {
+            "person_present": false,
+            "emotion": "neutral",
+            "person_distance": 1.5
+          },
+          "light_color_requested": "purple",
+          "light_control_requested": true,
+          "brightness_requested": 0.4,
+          "color_temperature_requested": 0.7
+        }
+      }
+    },
+    {
+      "scenario": "petting_antenna_release",
+      "passed": true,
+      "result": {
+        "state": "COLLISION_AVOIDING",
+        "animation": "",
+        "physics_time_scale": 1,
+        "sensors": {
+          "state_request_result": {
+            "success": true,
+            "state": "IDLE",
+            "message": "Transition to IDLE granted",
+            "requested": "IDLE"
+          },
+          "manual_pose_result": {
+            "success": true,
+            "state": "USER_CONTROL",
+            "message": "pose sent through the simulator motion controller",
+            "positions": {
+              "base_link_to_link1": 0,
+              "link1_to_link2": 0,
+              "link2_to_link3": 0,
+              "link3_to_link4": 0,
+              "link4_to_link5": 0,
+              "link5_to_gripper_link": 0
+            }
+          },
+          "animation_request": "nod",
+          "animation_result": {
+            "success": false,
+            "message": "Animation nod canceled",
+            "duration": 2.8170080184936523,
+            "state": "canceled"
+          },
+          "animation_cancel_result": {
+            "accepted": true,
+            "message": "cancel accepted"
+          },
+          "animation_cancel_requested": false,
+          "last_voice_command": "Tell me a joke",
+          "simulation_speed": 1,
+          "simulator_autonomy_enabled": false,
+          "gesture": "near",
+          "proximity": 0,
+          "requested_mic_direction": 270,
+          "petting_zone_requested": {
+            "zone": "antenna",
+            "active": false
+          },
+          "simulated_obstacles": {
+            "front": false,
+            "left": false,
+            "right": false
+          },
+          "vision_request": {
+            "person_present": false,
+            "emotion": "neutral",
+            "person_distance": 1.5
+          },
+          "light_color_requested": "purple",
+          "light_control_requested": true,
+          "brightness_requested": 0.4,
+          "color_temperature_requested": 0.7
+        }
+      }
+    },
+    {
+      "scenario": "apds_gesture_left",
+      "passed": true,
+      "result": {
+        "state": "COLLISION_AVOIDING",
+        "animation": "",
+        "physics_time_scale": 1,
+        "sensors": {
+          "state_request_result": {
+            "success": true,
+            "state": "IDLE",
+            "message": "Transition to IDLE granted",
+            "requested": "IDLE"
+          },
+          "manual_pose_result": {
+            "success": true,
+            "state": "USER_CONTROL",
+            "message": "pose sent through the simulator motion controller",
+            "positions": {
+              "base_link_to_link1": 0,
+              "link1_to_link2": 0,
+              "link2_to_link3": 0,
+              "link3_to_link4": 0,
+              "link4_to_link5": 0,
+              "link5_to_gripper_link": 0
+            }
+          },
+          "animation_request": "nod",
+          "animation_result": {
+            "success": false,
+            "message": "Animation nod canceled",
+            "duration": 2.8170080184936523,
+            "state": "canceled"
+          },
+          "animation_cancel_result": {
+            "accepted": true,
+            "message": "cancel accepted"
+          },
+          "animation_cancel_requested": false,
+          "last_voice_command": "Tell me a joke",
+          "simulation_speed": 1,
+          "simulator_autonomy_enabled": false,
+          "gesture": "left",
+          "proximity": 0,
+          "requested_mic_direction": 270,
+          "petting_zone_requested": {
+            "zone": "antenna",
+            "active": false
+          },
+          "simulated_obstacles": {
+            "front": false,
+            "left": false,
+            "right": false
+          },
+          "vision_request": {
+            "person_present": false,
+            "emotion": "neutral",
+            "person_distance": 1.5
+          },
+          "light_color_requested": "purple",
+          "light_control_requested": true,
+          "brightness_requested": 0.4,
+          "color_temperature_requested": 0.7
+        }
+      }
+    },
+    {
+      "scenario": "apds_gesture_right",
+      "passed": true,
+      "result": {
+        "state": "COLLISION_AVOIDING",
+        "animation": "",
+        "physics_time_scale": 1,
+        "sensors": {
+          "state_request_result": {
+            "success": true,
+            "state": "IDLE",
+            "message": "Transition to IDLE granted",
+            "requested": "IDLE"
+          },
+          "manual_pose_result": {
+            "success": true,
+            "state": "USER_CONTROL",
+            "message": "pose sent through the simulator motion controller",
+            "positions": {
+              "base_link_to_link1": 0,
+              "link1_to_link2": 0,
+              "link2_to_link3": 0,
+              "link3_to_link4": 0,
+              "link4_to_link5": 0,
+              "link5_to_gripper_link": 0
+            }
+          },
+          "animation_request": "nod",
+          "animation_result": {
+            "success": false,
+            "message": "Animation nod canceled",
+            "duration": 2.8170080184936523,
+            "state": "canceled"
+          },
+          "animation_cancel_result": {
+            "accepted": true,
+            "message": "cancel accepted"
+          },
+          "animation_cancel_requested": false,
+          "last_voice_command": "Tell me a joke",
+          "simulation_speed": 1,
+          "simulator_autonomy_enabled": false,
+          "gesture": "right",
+          "proximity": 0,
+          "requested_mic_direction": 270,
+          "petting_zone_requested": {
+            "zone": "antenna",
+            "active": false
+          },
+          "simulated_obstacles": {
+            "front": false,
+            "left": false,
+            "right": false
+          },
+          "vision_request": {
+            "person_present": false,
+            "emotion": "neutral",
+            "person_distance": 1.5
+          },
+          "light_color_requested": "purple",
+          "light_control_requested": true,
+          "brightness_requested": 0.4,
+          "color_temperature_requested": 0.7
+        }
+      }
+    },
+    {
+      "scenario": "apds_gesture_up",
+      "passed": true,
+      "result": {
+        "state": "COLLISION_AVOIDING",
+        "animation": "",
+        "physics_time_scale": 1,
+        "sensors": {
+          "state_request_result": {
+            "success": true,
+            "state": "IDLE",
+            "message": "Transition to IDLE granted",
+            "requested": "IDLE"
+          },
+          "manual_pose_result": {
+            "success": true,
+            "state": "USER_CONTROL",
+            "message": "pose sent through the simulator motion controller",
+            "positions": {
+              "base_link_to_link1": 0,
+              "link1_to_link2": 0,
+              "link2_to_link3": 0,
+              "link3_to_link4": 0,
+              "link4_to_link5": 0,
+              "link5_to_gripper_link": 0
+            }
+          },
+          "animation_request": "nod",
+          "animation_result": {
+            "success": false,
+            "message": "Animation nod canceled",
+            "duration": 2.8170080184936523,
+            "state": "canceled"
+          },
+          "animation_cancel_result": {
+            "accepted": true,
+            "message": "cancel accepted"
+          },
+          "animation_cancel_requested": false,
+          "last_voice_command": "Tell me a joke",
+          "simulation_speed": 1,
+          "simulator_autonomy_enabled": false,
+          "gesture": "up",
+          "proximity": 0,
+          "requested_mic_direction": 270,
+          "petting_zone_requested": {
+            "zone": "antenna",
+            "active": false
+          },
+          "simulated_obstacles": {
+            "front": false,
+            "left": false,
+            "right": false
+          },
+          "vision_request": {
+            "person_present": false,
+            "emotion": "neutral",
+            "person_distance": 1.5
+          },
+          "light_color_requested": "purple",
+          "light_control_requested": true,
+          "brightness_requested": 0.4,
+          "color_temperature_requested": 0.7
+        }
+      }
+    },
+    {
+      "scenario": "apds_gesture_down",
+      "passed": true,
+      "result": {
+        "state": "COLLISION_AVOIDING",
+        "animation": "",
+        "physics_time_scale": 1,
+        "sensors": {
+          "state_request_result": {
+            "success": true,
+            "state": "IDLE",
+            "message": "Transition to IDLE granted",
+            "requested": "IDLE"
+          },
+          "manual_pose_result": {
+            "success": true,
+            "state": "USER_CONTROL",
+            "message": "pose sent through the simulator motion controller",
+            "positions": {
+              "base_link_to_link1": 0,
+              "link1_to_link2": 0,
+              "link2_to_link3": 0,
+              "link3_to_link4": 0,
+              "link4_to_link5": 0,
+              "link5_to_gripper_link": 0
+            }
+          },
+          "animation_request": "nod",
+          "animation_result": {
+            "success": false,
+            "message": "Animation nod canceled",
+            "duration": 2.8170080184936523,
+            "state": "canceled"
+          },
+          "animation_cancel_result": {
+            "accepted": true,
+            "message": "cancel accepted"
+          },
+          "animation_cancel_requested": false,
+          "last_voice_command": "Tell me a joke",
+          "simulation_speed": 1,
+          "simulator_autonomy_enabled": false,
+          "gesture": "down",
+          "proximity": 0,
+          "requested_mic_direction": 270,
+          "petting_zone_requested": {
+            "zone": "antenna",
+            "active": false
+          },
+          "simulated_obstacles": {
+            "front": false,
+            "left": false,
+            "right": false
+          },
+          "vision_request": {
+            "person_present": false,
+            "emotion": "neutral",
+            "person_distance": 1.5
+          },
+          "light_color_requested": "purple",
+          "light_control_requested": true,
+          "brightness_requested": 0.4,
+          "color_temperature_requested": 0.7
+        }
+      }
+    },
+    {
+      "scenario": "apds_gesture_near",
+      "passed": true,
+      "result": {
+        "state": "COLLISION_AVOIDING",
+        "animation": "",
+        "physics_time_scale": 1,
+        "sensors": {
+          "state_request_result": {
+            "success": true,
+            "state": "IDLE",
+            "message": "Transition to IDLE granted",
+            "requested": "IDLE"
+          },
+          "manual_pose_result": {
+            "success": true,
+            "state": "USER_CONTROL",
+            "message": "pose sent through the simulator motion controller",
+            "positions": {
+              "base_link_to_link1": 0,
+              "link1_to_link2": 0,
+              "link2_to_link3": 0,
+              "link3_to_link4": 0,
+              "link4_to_link5": 0,
+              "link5_to_gripper_link": 0
+            }
+          },
+          "animation_request": "nod",
+          "animation_result": {
+            "success": false,
+            "message": "Animation nod canceled",
+            "duration": 2.8170080184936523,
+            "state": "canceled"
+          },
+          "animation_cancel_result": {
+            "accepted": true,
+            "message": "cancel accepted"
+          },
+          "animation_cancel_requested": false,
+          "last_voice_command": "Tell me a joke",
+          "simulation_speed": 1,
+          "simulator_autonomy_enabled": false,
+          "gesture": "near",
+          "proximity": 0,
+          "requested_mic_direction": 270,
+          "petting_zone_requested": {
+            "zone": "antenna",
+            "active": false
+          },
+          "simulated_obstacles": {
+            "front": false,
+            "left": false,
+            "right": false
+          },
+          "vision_request": {
+            "person_present": false,
+            "emotion": "neutral",
+            "person_distance": 1.5
+          },
+          "light_color_requested": "purple",
+          "light_control_requested": true,
+          "brightness_requested": 0.4,
+          "color_temperature_requested": 0.7
+        }
+      }
+    },
+    {
+      "scenario": "apds_proximity_near",
+      "passed": true,
+      "result": {
+        "state": "COLLISION_AVOIDING",
+        "animation": "",
+        "physics_time_scale": 1,
+        "sensors": {
+          "state_request_result": {
+            "success": true,
+            "state": "IDLE",
+            "message": "Transition to IDLE granted",
+            "requested": "IDLE"
+          },
+          "manual_pose_result": {
+            "success": true,
+            "state": "USER_CONTROL",
+            "message": "pose sent through the simulator motion controller",
+            "positions": {
+              "base_link_to_link1": 0,
+              "link1_to_link2": 0,
+              "link2_to_link3": 0,
+              "link3_to_link4": 0,
+              "link4_to_link5": 0,
+              "link5_to_gripper_link": 0
+            }
+          },
+          "animation_request": "nod",
+          "animation_result": {
+            "success": false,
+            "message": "Animation nod canceled",
+            "duration": 2.8170080184936523,
+            "state": "canceled"
+          },
+          "animation_cancel_result": {
+            "accepted": true,
+            "message": "cancel accepted"
+          },
+          "animation_cancel_requested": false,
+          "last_voice_command": "Tell me a joke",
+          "simulation_speed": 1,
+          "simulator_autonomy_enabled": false,
+          "gesture": "near",
+          "proximity": 190,
+          "requested_mic_direction": 270,
+          "petting_zone_requested": {
+            "zone": "antenna",
+            "active": false
+          },
+          "simulated_obstacles": {
+            "front": false,
+            "left": false,
+            "right": false
+          },
+          "vision_request": {
+            "person_present": false,
+            "emotion": "neutral",
+            "person_distance": 1.5
+          },
+          "light_color_requested": "purple",
+          "light_control_requested": true,
+          "brightness_requested": 0.4,
+          "color_temperature_requested": 0.7
+        }
+      }
+    },
+    {
+      "scenario": "apds_proximity_clear",
+      "passed": true,
+      "result": {
+        "state": "COLLISION_AVOIDING",
+        "animation": "",
+        "physics_time_scale": 1,
+        "sensors": {
+          "state_request_result": {
+            "success": true,
+            "state": "IDLE",
+            "message": "Transition to IDLE granted",
+            "requested": "IDLE"
+          },
+          "manual_pose_result": {
+            "success": true,
+            "state": "USER_CONTROL",
+            "message": "pose sent through the simulator motion controller",
+            "positions": {
+              "base_link_to_link1": 0,
+              "link1_to_link2": 0,
+              "link2_to_link3": 0,
+              "link3_to_link4": 0,
+              "link4_to_link5": 0,
+              "link5_to_gripper_link": 0
+            }
+          },
+          "animation_request": "nod",
+          "animation_result": {
+            "success": false,
+            "message": "Animation nod canceled",
+            "duration": 2.8170080184936523,
+            "state": "canceled"
+          },
+          "animation_cancel_result": {
+            "accepted": true,
+            "message": "cancel accepted"
+          },
+          "animation_cancel_requested": false,
+          "last_voice_command": "Tell me a joke",
+          "simulation_speed": 1,
+          "simulator_autonomy_enabled": false,
+          "gesture": "near",
+          "proximity": 0,
+          "requested_mic_direction": 270,
+          "petting_zone_requested": {
+            "zone": "antenna",
+            "active": false
+          },
+          "simulated_obstacles": {
+            "front": false,
+            "left": false,
+            "right": false
+          },
+          "vision_request": {
+            "person_present": false,
+            "emotion": "neutral",
+            "person_distance": 1.5
+          },
+          "light_color_requested": "purple",
+          "light_control_requested": true,
+          "brightness_requested": 0.4,
+          "color_temperature_requested": 0.7
+        }
+      }
+    },
+    {
+      "scenario": "publish_left_and_right_ranges",
+      "passed": true,
+      "result": {
+        "state": "COLLISION_AVOIDING",
+        "animation": "",
+        "physics_time_scale": 1,
+        "sensors": {
+          "state_request_result": {
+            "success": true,
+            "state": "IDLE",
+            "message": "Transition to IDLE granted",
+            "requested": "IDLE"
+          },
+          "manual_pose_result": {
+            "success": true,
+            "state": "USER_CONTROL",
+            "message": "pose sent through the simulator motion controller",
+            "positions": {
+              "base_link_to_link1": 0,
+              "link1_to_link2": 0,
+              "link2_to_link3": 0,
+              "link3_to_link4": 0,
+              "link4_to_link5": 0,
+              "link5_to_gripper_link": 0
+            }
+          },
+          "animation_request": "nod",
+          "animation_result": {
+            "success": false,
+            "message": "Animation nod canceled",
+            "duration": 2.8170080184936523,
+            "state": "canceled"
+          },
+          "animation_cancel_result": {
+            "accepted": true,
+            "message": "cancel accepted"
+          },
+          "animation_cancel_requested": false,
+          "last_voice_command": "Tell me a joke",
+          "simulation_speed": 1,
+          "simulator_autonomy_enabled": false,
+          "gesture": "near",
+          "proximity": 0,
+          "requested_mic_direction": 270,
+          "petting_zone_requested": {
+            "zone": "antenna",
+            "active": false
+          },
+          "simulated_obstacles": {
+            "front": false,
+            "left": false,
+            "right": false
+          },
+          "vision_request": {
+            "person_present": false,
+            "emotion": "neutral",
+            "person_distance": 1.5
+          },
+          "light_color_requested": "purple",
+          "light_control_requested": true,
+          "brightness_requested": 0.4,
+          "color_temperature_requested": 0.7
+        }
+      }
+    },
+    {
+      "scenario": "obstacle_front_activate",
+      "passed": true,
+      "result": {
+        "state": "COLLISION_AVOIDING",
+        "animation": "",
+        "physics_time_scale": 1,
+        "sensors": {
+          "state_request_result": {
+            "success": true,
+            "state": "IDLE",
+            "message": "Transition to IDLE granted",
+            "requested": "IDLE"
+          },
+          "manual_pose_result": {
+            "success": true,
+            "state": "USER_CONTROL",
+            "message": "pose sent through the simulator motion controller",
+            "positions": {
+              "base_link_to_link1": 0,
+              "link1_to_link2": 0,
+              "link2_to_link3": 0,
+              "link3_to_link4": 0,
+              "link4_to_link5": 0,
+              "link5_to_gripper_link": 0
+            }
+          },
+          "animation_request": "nod",
+          "animation_result": {
+            "success": false,
+            "message": "Animation nod canceled",
+            "duration": 2.8170080184936523,
+            "state": "canceled"
+          },
+          "animation_cancel_result": {
+            "accepted": true,
+            "message": "cancel accepted"
+          },
+          "animation_cancel_requested": false,
+          "last_voice_command": "Tell me a joke",
+          "simulation_speed": 1,
+          "simulator_autonomy_enabled": false,
+          "gesture": "near",
+          "proximity": 0,
+          "requested_mic_direction": 270,
+          "petting_zone_requested": {
+            "zone": "antenna",
+            "active": false
+          },
+          "simulated_obstacles": {
+            "front": true,
+            "left": false,
+            "right": false
+          },
+          "vision_request": {
+            "person_present": false,
+            "emotion": "neutral",
+            "person_distance": 1.5
+          },
+          "light_color_requested": "purple",
+          "light_control_requested": true,
+          "brightness_requested": 0.4,
+          "color_temperature_requested": 0.7
+        }
+      }
+    },
+    {
+      "scenario": "obstacle_front_clear",
+      "passed": true,
+      "result": {
+        "state": "COLLISION_AVOIDING",
+        "animation": "",
+        "physics_time_scale": 1,
+        "sensors": {
+          "state_request_result": {
+            "success": true,
+            "state": "IDLE",
+            "message": "Transition to IDLE granted",
+            "requested": "IDLE"
+          },
+          "manual_pose_result": {
+            "success": true,
+            "state": "USER_CONTROL",
+            "message": "pose sent through the simulator motion controller",
+            "positions": {
+              "base_link_to_link1": 0,
+              "link1_to_link2": 0,
+              "link2_to_link3": 0,
+              "link3_to_link4": 0,
+              "link4_to_link5": 0,
+              "link5_to_gripper_link": 0
+            }
+          },
+          "animation_request": "nod",
+          "animation_result": {
+            "success": false,
+            "message": "Animation nod canceled",
+            "duration": 2.8170080184936523,
+            "state": "canceled"
+          },
+          "animation_cancel_result": {
+            "accepted": true,
+            "message": "cancel accepted"
+          },
+          "animation_cancel_requested": false,
+          "last_voice_command": "Tell me a joke",
+          "simulation_speed": 1,
+          "simulator_autonomy_enabled": false,
+          "gesture": "near",
+          "proximity": 0,
+          "requested_mic_direction": 270,
+          "petting_zone_requested": {
+            "zone": "antenna",
+            "active": false
+          },
+          "simulated_obstacles": {
+            "front": false,
+            "left": false,
+            "right": false
+          },
+          "vision_request": {
+            "person_present": false,
+            "emotion": "neutral",
+            "person_distance": 1.5
+          },
+          "light_color_requested": "purple",
+          "light_control_requested": true,
+          "brightness_requested": 0.4,
+          "color_temperature_requested": 0.7
+        }
+      }
+    },
+    {
+      "scenario": "obstacle_left_activate",
+      "passed": true,
+      "result": {
+        "state": "COLLISION_AVOIDING",
+        "animation": "",
+        "physics_time_scale": 1,
+        "sensors": {
+          "state_request_result": {
+            "success": true,
+            "state": "IDLE",
+            "message": "Transition to IDLE granted",
+            "requested": "IDLE"
+          },
+          "manual_pose_result": {
+            "success": true,
+            "state": "USER_CONTROL",
+            "message": "pose sent through the simulator motion controller",
+            "positions": {
+              "base_link_to_link1": 0,
+              "link1_to_link2": 0,
+              "link2_to_link3": 0,
+              "link3_to_link4": 0,
+              "link4_to_link5": 0,
+              "link5_to_gripper_link": 0
+            }
+          },
+          "animation_request": "nod",
+          "animation_result": {
+            "success": false,
+            "message": "Animation nod canceled",
+            "duration": 2.8170080184936523,
+            "state": "canceled"
+          },
+          "animation_cancel_result": {
+            "accepted": true,
+            "message": "cancel accepted"
+          },
+          "animation_cancel_requested": false,
+          "last_voice_command": "Tell me a joke",
+          "simulation_speed": 1,
+          "simulator_autonomy_enabled": false,
+          "gesture": "near",
+          "proximity": 0,
+          "requested_mic_direction": 270,
+          "petting_zone_requested": {
+            "zone": "antenna",
+            "active": false
+          },
+          "simulated_obstacles": {
+            "front": false,
+            "left": true,
+            "right": false
+          },
+          "vision_request": {
+            "person_present": false,
+            "emotion": "neutral",
+            "person_distance": 1.5
+          },
+          "light_color_requested": "purple",
+          "light_control_requested": true,
+          "brightness_requested": 0.4,
+          "color_temperature_requested": 0.7
+        }
+      }
+    },
+    {
+      "scenario": "obstacle_left_clear",
+      "passed": true,
+      "result": {
+        "state": "COLLISION_AVOIDING",
+        "animation": "",
+        "physics_time_scale": 1,
+        "sensors": {
+          "state_request_result": {
+            "success": true,
+            "state": "IDLE",
+            "message": "Transition to IDLE granted",
+            "requested": "IDLE"
+          },
+          "manual_pose_result": {
+            "success": true,
+            "state": "USER_CONTROL",
+            "message": "pose sent through the simulator motion controller",
+            "positions": {
+              "base_link_to_link1": 0,
+              "link1_to_link2": 0,
+              "link2_to_link3": 0,
+              "link3_to_link4": 0,
+              "link4_to_link5": 0,
+              "link5_to_gripper_link": 0
+            }
+          },
+          "animation_request": "nod",
+          "animation_result": {
+            "success": false,
+            "message": "Animation nod canceled",
+            "duration": 2.8170080184936523,
+            "state": "canceled"
+          },
+          "animation_cancel_result": {
+            "accepted": true,
+            "message": "cancel accepted"
+          },
+          "animation_cancel_requested": false,
+          "last_voice_command": "Tell me a joke",
+          "simulation_speed": 1,
+          "simulator_autonomy_enabled": false,
+          "gesture": "near",
+          "proximity": 0,
+          "requested_mic_direction": 270,
+          "petting_zone_requested": {
+            "zone": "antenna",
+            "active": false
+          },
+          "simulated_obstacles": {
+            "front": false,
+            "left": false,
+            "right": false
+          },
+          "vision_request": {
+            "person_present": false,
+            "emotion": "neutral",
+            "person_distance": 1.5
+          },
+          "light_color_requested": "purple",
+          "light_control_requested": true,
+          "brightness_requested": 0.4,
+          "color_temperature_requested": 0.7
+        }
+      }
+    },
+    {
+      "scenario": "obstacle_right_activate",
+      "passed": true,
+      "result": {
+        "state": "COLLISION_AVOIDING",
+        "animation": "",
+        "physics_time_scale": 1,
+        "sensors": {
+          "state_request_result": {
+            "success": true,
+            "state": "IDLE",
+            "message": "Transition to IDLE granted",
+            "requested": "IDLE"
+          },
+          "manual_pose_result": {
+            "success": true,
+            "state": "USER_CONTROL",
+            "message": "pose sent through the simulator motion controller",
+            "positions": {
+              "base_link_to_link1": 0,
+              "link1_to_link2": 0,
+              "link2_to_link3": 0,
+              "link3_to_link4": 0,
+              "link4_to_link5": 0,
+              "link5_to_gripper_link": 0
+            }
+          },
+          "animation_request": "nod",
+          "animation_result": {
+            "success": false,
+            "message": "Animation nod canceled",
+            "duration": 2.8170080184936523,
+            "state": "canceled"
+          },
+          "animation_cancel_result": {
+            "accepted": true,
+            "message": "cancel accepted"
+          },
+          "animation_cancel_requested": false,
+          "last_voice_command": "Tell me a joke",
+          "simulation_speed": 1,
+          "simulator_autonomy_enabled": false,
+          "gesture": "near",
+          "proximity": 0,
+          "requested_mic_direction": 270,
+          "petting_zone_requested": {
+            "zone": "antenna",
+            "active": false
+          },
+          "simulated_obstacles": {
+            "front": false,
+            "left": false,
+            "right": true
+          },
+          "vision_request": {
+            "person_present": false,
+            "emotion": "neutral",
+            "person_distance": 1.5
+          },
+          "light_color_requested": "purple",
+          "light_control_requested": true,
+          "brightness_requested": 0.4,
+          "color_temperature_requested": 0.7
+        }
+      }
+    },
+    {
+      "scenario": "obstacle_right_clear",
+      "passed": true,
+      "result": {
+        "state": "COLLISION_AVOIDING",
+        "animation": "",
+        "physics_time_scale": 1,
+        "sensors": {
+          "state_request_result": {
+            "success": true,
+            "state": "IDLE",
+            "message": "Transition to IDLE granted",
+            "requested": "IDLE"
+          },
+          "manual_pose_result": {
+            "success": true,
+            "state": "USER_CONTROL",
+            "message": "pose sent through the simulator motion controller",
+            "positions": {
+              "base_link_to_link1": 0,
+              "link1_to_link2": 0,
+              "link2_to_link3": 0,
+              "link3_to_link4": 0,
+              "link4_to_link5": 0,
+              "link5_to_gripper_link": 0
+            }
+          },
+          "animation_request": "nod",
+          "animation_result": {
+            "success": false,
+            "message": "Animation nod canceled",
+            "duration": 2.8170080184936523,
+            "state": "canceled"
+          },
+          "animation_cancel_result": {
+            "accepted": true,
+            "message": "cancel accepted"
+          },
+          "animation_cancel_requested": false,
+          "last_voice_command": "Tell me a joke",
+          "simulation_speed": 1,
+          "simulator_autonomy_enabled": false,
+          "gesture": "near",
+          "proximity": 0,
+          "requested_mic_direction": 270,
+          "petting_zone_requested": {
+            "zone": "antenna",
+            "active": false
+          },
+          "simulated_obstacles": {
+            "front": false,
+            "left": false,
+            "right": false
+          },
+          "vision_request": {
+            "person_present": false,
+            "emotion": "neutral",
+            "person_distance": 1.5
+          },
+          "light_color_requested": "purple",
+          "light_control_requested": true,
+          "brightness_requested": 0.4,
+          "color_temperature_requested": 0.7
+        }
+      }
+    },
+    {
+      "scenario": "touch_latch_restored_after_refresh",
+      "passed": true
+    },
+    {
+      "scenario": "touch_first_click_releases_after_refresh",
+      "passed": true,
+      "result": {
+        "state": "COLLISION_AVOIDING",
+        "animation": "",
+        "physics_time_scale": 1,
+        "sensors": {
+          "state_request_result": {
+            "success": true,
+            "state": "IDLE",
+            "message": "Transition to IDLE granted",
+            "requested": "IDLE"
+          },
+          "manual_pose_result": {
+            "success": true,
+            "state": "USER_CONTROL",
+            "message": "pose sent through the simulator motion controller",
+            "positions": {
+              "base_link_to_link1": 0,
+              "link1_to_link2": 0,
+              "link2_to_link3": 0,
+              "link3_to_link4": 0,
+              "link4_to_link5": 0,
+              "link5_to_gripper_link": 0
+            }
+          },
+          "animation_request": "nod",
+          "animation_result": {
+            "success": false,
+            "message": "Animation nod canceled",
+            "duration": 2.8170080184936523,
+            "state": "canceled"
+          },
+          "animation_cancel_result": {
+            "accepted": true,
+            "message": "cancel accepted"
+          },
+          "animation_cancel_requested": false,
+          "last_voice_command": "Tell me a joke",
+          "simulation_speed": 1,
+          "simulator_autonomy_enabled": false,
+          "gesture": "near",
+          "proximity": 0,
+          "requested_mic_direction": 270,
+          "petting_zone_requested": {
+            "zone": "antenna",
+            "active": false
+          },
+          "simulated_obstacles": {
+            "front": false,
+            "left": false,
+            "right": false
+          },
+          "vision_request": {
+            "person_present": false,
+            "emotion": "neutral",
+            "person_distance": 1.5
+          },
+          "light_color_requested": "purple",
+          "light_control_requested": true,
+          "brightness_requested": 0.4,
+          "color_temperature_requested": 0.7
+        }
+      }
+    },
+    {
+      "scenario": "petting_latch_restored_after_refresh",
+      "passed": true
+    },
+    {
+      "scenario": "petting_first_click_releases_after_refresh",
+      "passed": true,
+      "result": {
+        "state": "COLLISION_AVOIDING",
+        "animation": "",
+        "physics_time_scale": 1,
+        "sensors": {
+          "state_request_result": {
+            "success": true,
+            "state": "IDLE",
+            "message": "Transition to IDLE granted",
+            "requested": "IDLE"
+          },
+          "manual_pose_result": {
+            "success": true,
+            "state": "USER_CONTROL",
+            "message": "pose sent through the simulator motion controller",
+            "positions": {
+              "base_link_to_link1": 0,
+              "link1_to_link2": 0,
+              "link2_to_link3": 0,
+              "link3_to_link4": 0,
+              "link4_to_link5": 0,
+              "link5_to_gripper_link": 0
+            }
+          },
+          "animation_request": "nod",
+          "animation_result": {
+            "success": false,
+            "message": "Animation nod canceled",
+            "duration": 2.8170080184936523,
+            "state": "canceled"
+          },
+          "animation_cancel_result": {
+            "accepted": true,
+            "message": "cancel accepted"
+          },
+          "animation_cancel_requested": false,
+          "last_voice_command": "Tell me a joke",
+          "simulation_speed": 1,
+          "simulator_autonomy_enabled": false,
+          "gesture": "near",
+          "proximity": 0,
+          "requested_mic_direction": 270,
+          "petting_zone_requested": {
+            "zone": "antenna",
+            "active": false
+          },
+          "simulated_obstacles": {
+            "front": false,
+            "left": false,
+            "right": false
+          },
+          "vision_request": {
+            "person_present": false,
+            "emotion": "neutral",
+            "person_distance": 1.5
+          },
+          "light_color_requested": "purple",
+          "light_control_requested": true,
+          "brightness_requested": 0.4,
+          "color_temperature_requested": 0.7
+        }
+      }
+    },
+    {
+      "scenario": "obstacle_latch_restored_after_refresh",
+      "passed": true
+    },
+    {
+      "scenario": "obstacle_first_click_releases_after_refresh",
+      "passed": true,
+      "result": {
+        "state": "COLLISION_AVOIDING",
+        "animation": "",
+        "physics_time_scale": 1,
+        "sensors": {
+          "state_request_result": {
+            "success": true,
+            "state": "IDLE",
+            "message": "Transition to IDLE granted",
+            "requested": "IDLE"
+          },
+          "manual_pose_result": {
+            "success": true,
+            "state": "USER_CONTROL",
+            "message": "pose sent through the simulator motion controller",
+            "positions": {
+              "base_link_to_link1": 0,
+              "link1_to_link2": 0,
+              "link2_to_link3": 0,
+              "link3_to_link4": 0,
+              "link4_to_link5": 0,
+              "link5_to_gripper_link": 0
+            }
+          },
+          "animation_request": "nod",
+          "animation_result": {
+            "success": false,
+            "message": "Animation nod canceled",
+            "duration": 2.8170080184936523,
+            "state": "canceled"
+          },
+          "animation_cancel_result": {
+            "accepted": true,
+            "message": "cancel accepted"
+          },
+          "animation_cancel_requested": false,
+          "last_voice_command": "Tell me a joke",
+          "simulation_speed": 1,
+          "simulator_autonomy_enabled": false,
+          "gesture": "near",
+          "proximity": 0,
+          "requested_mic_direction": 270,
+          "petting_zone_requested": {
+            "zone": "antenna",
+            "active": false
+          },
+          "simulated_obstacles": {
+            "front": false,
+            "left": false,
+            "right": false
+          },
+          "vision_request": {
+            "person_present": false,
+            "emotion": "neutral",
+            "person_distance": 1.5
+          },
+          "light_color_requested": "purple",
+          "light_control_requested": true,
+          "brightness_requested": 0.4,
+          "color_temperature_requested": 0.7
+        }
+      }
+    },
+    {
+      "scenario": "front_sensor_fault_enable",
+      "passed": true,
+      "result": {
+        "state": "COLLISION_AVOIDING",
+        "animation": "",
+        "physics_time_scale": 1,
+        "sensors": {
+          "state_request_result": {
+            "success": true,
+            "state": "IDLE",
+            "message": "Transition to IDLE granted",
+            "requested": "IDLE"
+          },
+          "manual_pose_result": {
+            "success": true,
+            "state": "USER_CONTROL",
+            "message": "pose sent through the simulator motion controller",
+            "positions": {
+              "base_link_to_link1": 0,
+              "link1_to_link2": 0,
+              "link2_to_link3": 0,
+              "link3_to_link4": 0,
+              "link4_to_link5": 0,
+              "link5_to_gripper_link": 0
+            }
+          },
+          "animation_request": "nod",
+          "animation_result": {
+            "success": false,
+            "message": "Animation nod canceled",
+            "duration": 2.8170080184936523,
+            "state": "canceled"
+          },
+          "animation_cancel_result": {
+            "accepted": true,
+            "message": "cancel accepted"
+          },
+          "animation_cancel_requested": false,
+          "last_voice_command": "Tell me a joke",
+          "simulation_speed": 1,
+          "simulator_autonomy_enabled": false,
+          "gesture": "near",
+          "proximity": 0,
+          "requested_mic_direction": 270,
+          "petting_zone_requested": {
+            "zone": "antenna",
+            "active": false
+          },
+          "simulated_obstacles": {
+            "front": false,
+            "left": false,
+            "right": false
+          },
+          "vision_request": {
+            "person_present": false,
+            "emotion": "neutral",
+            "person_distance": 1.5
+          },
+          "light_color_requested": "purple",
+          "light_control_requested": true,
+          "brightness_requested": 0.4,
+          "color_temperature_requested": 0.7
+        }
+      }
+    },
+    {
+      "scenario": "front_sensor_dropout_causes_stale_coverage_hold",
+      "passed": true,
+      "result": {
+        "avoidance_mode": "hold_stale",
+        "stale": [
+          "front"
+        ]
+      }
+    },
+    {
+      "scenario": "front_sensor_fault_clear",
+      "passed": true,
+      "result": {
+        "state": "COLLISION_AVOIDING",
+        "animation": "",
+        "physics_time_scale": 1,
+        "sensors": {
+          "state_request_result": {
+            "success": true,
+            "state": "IDLE",
+            "message": "Transition to IDLE granted",
+            "requested": "IDLE"
+          },
+          "manual_pose_result": {
+            "success": true,
+            "state": "USER_CONTROL",
+            "message": "pose sent through the simulator motion controller",
+            "positions": {
+              "base_link_to_link1": 0,
+              "link1_to_link2": 0,
+              "link2_to_link3": 0,
+              "link3_to_link4": 0,
+              "link4_to_link5": 0,
+              "link5_to_gripper_link": 0
+            }
+          },
+          "animation_request": "nod",
+          "animation_result": {
+            "success": false,
+            "message": "Animation nod canceled",
+            "duration": 2.8170080184936523,
+            "state": "canceled"
+          },
+          "animation_cancel_result": {
+            "accepted": true,
+            "message": "cancel accepted"
+          },
+          "animation_cancel_requested": false,
+          "last_voice_command": "Tell me a joke",
+          "simulation_speed": 1,
+          "simulator_autonomy_enabled": false,
+          "gesture": "near",
+          "proximity": 0,
+          "requested_mic_direction": 270,
+          "petting_zone_requested": {
+            "zone": "antenna",
+            "active": false
+          },
+          "simulated_obstacles": {
+            "front": false,
+            "left": false,
+            "right": false
+          },
+          "vision_request": {
+            "person_present": false,
+            "emotion": "neutral",
+            "person_distance": 1.5
+          },
+          "light_color_requested": "purple",
+          "light_control_requested": true,
+          "brightness_requested": 0.4,
+          "color_temperature_requested": 0.7
+        }
+      }
+    },
+    {
+      "scenario": "front_sensor_recovery_restores_coverage",
+      "passed": true,
+      "result": {
+        "avoidance_mode": "hold_replan",
+        "stale": []
+      }
+    },
+    {
+      "scenario": "left_sensor_fault_enable",
+      "passed": true,
+      "result": {
+        "state": "COLLISION_AVOIDING",
+        "animation": "",
+        "physics_time_scale": 1,
+        "sensors": {
+          "state_request_result": {
+            "success": true,
+            "state": "IDLE",
+            "message": "Transition to IDLE granted",
+            "requested": "IDLE"
+          },
+          "manual_pose_result": {
+            "success": true,
+            "state": "USER_CONTROL",
+            "message": "pose sent through the simulator motion controller",
+            "positions": {
+              "base_link_to_link1": 0,
+              "link1_to_link2": 0,
+              "link2_to_link3": 0,
+              "link3_to_link4": 0,
+              "link4_to_link5": 0,
+              "link5_to_gripper_link": 0
+            }
+          },
+          "animation_request": "nod",
+          "animation_result": {
+            "success": false,
+            "message": "Animation nod canceled",
+            "duration": 2.8170080184936523,
+            "state": "canceled"
+          },
+          "animation_cancel_result": {
+            "accepted": true,
+            "message": "cancel accepted"
+          },
+          "animation_cancel_requested": false,
+          "last_voice_command": "Tell me a joke",
+          "simulation_speed": 1,
+          "simulator_autonomy_enabled": false,
+          "gesture": "near",
+          "proximity": 0,
+          "requested_mic_direction": 270,
+          "petting_zone_requested": {
+            "zone": "antenna",
+            "active": false
+          },
+          "simulated_obstacles": {
+            "front": false,
+            "left": false,
+            "right": false
+          },
+          "vision_request": {
+            "person_present": false,
+            "emotion": "neutral",
+            "person_distance": 1.5
+          },
+          "light_color_requested": "purple",
+          "light_control_requested": true,
+          "brightness_requested": 0.4,
+          "color_temperature_requested": 0.7
+        }
+      }
+    },
+    {
+      "scenario": "left_sensor_dropout_causes_stale_coverage_hold",
+      "passed": true,
+      "result": {
+        "avoidance_mode": "hold_stale",
+        "stale": [
+          "left"
+        ]
+      }
+    },
+    {
+      "scenario": "left_sensor_fault_clear",
+      "passed": true,
+      "result": {
+        "state": "COLLISION_AVOIDING",
+        "animation": "",
+        "physics_time_scale": 1,
+        "sensors": {
+          "state_request_result": {
+            "success": true,
+            "state": "IDLE",
+            "message": "Transition to IDLE granted",
+            "requested": "IDLE"
+          },
+          "manual_pose_result": {
+            "success": true,
+            "state": "USER_CONTROL",
+            "message": "pose sent through the simulator motion controller",
+            "positions": {
+              "base_link_to_link1": 0,
+              "link1_to_link2": 0,
+              "link2_to_link3": 0,
+              "link3_to_link4": 0,
+              "link4_to_link5": 0,
+              "link5_to_gripper_link": 0
+            }
+          },
+          "animation_request": "nod",
+          "animation_result": {
+            "success": false,
+            "message": "Animation nod canceled",
+            "duration": 2.8170080184936523,
+            "state": "canceled"
+          },
+          "animation_cancel_result": {
+            "accepted": true,
+            "message": "cancel accepted"
+          },
+          "animation_cancel_requested": false,
+          "last_voice_command": "Tell me a joke",
+          "simulation_speed": 1,
+          "simulator_autonomy_enabled": false,
+          "gesture": "near",
+          "proximity": 0,
+          "requested_mic_direction": 270,
+          "petting_zone_requested": {
+            "zone": "antenna",
+            "active": false
+          },
+          "simulated_obstacles": {
+            "front": false,
+            "left": false,
+            "right": false
+          },
+          "vision_request": {
+            "person_present": false,
+            "emotion": "neutral",
+            "person_distance": 1.5
+          },
+          "light_color_requested": "purple",
+          "light_control_requested": true,
+          "brightness_requested": 0.4,
+          "color_temperature_requested": 0.7
+        }
+      }
+    },
+    {
+      "scenario": "left_sensor_recovery_restores_coverage",
+      "passed": true,
+      "result": {
+        "avoidance_mode": "hold_replan",
+        "stale": []
+      }
+    },
+    {
+      "scenario": "right_sensor_fault_enable",
+      "passed": true,
+      "result": {
+        "state": "COLLISION_AVOIDING",
+        "animation": "",
+        "physics_time_scale": 1,
+        "sensors": {
+          "state_request_result": {
+            "success": true,
+            "state": "IDLE",
+            "message": "Transition to IDLE granted",
+            "requested": "IDLE"
+          },
+          "manual_pose_result": {
+            "success": true,
+            "state": "USER_CONTROL",
+            "message": "pose sent through the simulator motion controller",
+            "positions": {
+              "base_link_to_link1": 0,
+              "link1_to_link2": 0,
+              "link2_to_link3": 0,
+              "link3_to_link4": 0,
+              "link4_to_link5": 0,
+              "link5_to_gripper_link": 0
+            }
+          },
+          "animation_request": "nod",
+          "animation_result": {
+            "success": false,
+            "message": "Animation nod canceled",
+            "duration": 2.8170080184936523,
+            "state": "canceled"
+          },
+          "animation_cancel_result": {
+            "accepted": true,
+            "message": "cancel accepted"
+          },
+          "animation_cancel_requested": false,
+          "last_voice_command": "Tell me a joke",
+          "simulation_speed": 1,
+          "simulator_autonomy_enabled": false,
+          "gesture": "near",
+          "proximity": 0,
+          "requested_mic_direction": 270,
+          "petting_zone_requested": {
+            "zone": "antenna",
+            "active": false
+          },
+          "simulated_obstacles": {
+            "front": false,
+            "left": false,
+            "right": false
+          },
+          "vision_request": {
+            "person_present": false,
+            "emotion": "neutral",
+            "person_distance": 1.5
+          },
+          "light_color_requested": "purple",
+          "light_control_requested": true,
+          "brightness_requested": 0.4,
+          "color_temperature_requested": 0.7
+        }
+      }
+    },
+    {
+      "scenario": "right_sensor_dropout_causes_stale_coverage_hold",
+      "passed": true,
+      "result": {
+        "avoidance_mode": "hold_stale",
+        "stale": [
+          "right"
+        ]
+      }
+    },
+    {
+      "scenario": "right_sensor_fault_clear",
+      "passed": true,
+      "result": {
+        "state": "COLLISION_AVOIDING",
+        "animation": "",
+        "physics_time_scale": 1,
+        "sensors": {
+          "state_request_result": {
+            "success": true,
+            "state": "IDLE",
+            "message": "Transition to IDLE granted",
+            "requested": "IDLE"
+          },
+          "manual_pose_result": {
+            "success": true,
+            "state": "USER_CONTROL",
+            "message": "pose sent through the simulator motion controller",
+            "positions": {
+              "base_link_to_link1": 0,
+              "link1_to_link2": 0,
+              "link2_to_link3": 0,
+              "link3_to_link4": 0,
+              "link4_to_link5": 0,
+              "link5_to_gripper_link": 0
+            }
+          },
+          "animation_request": "nod",
+          "animation_result": {
+            "success": false,
+            "message": "Animation nod canceled",
+            "duration": 2.8170080184936523,
+            "state": "canceled"
+          },
+          "animation_cancel_result": {
+            "accepted": true,
+            "message": "cancel accepted"
+          },
+          "animation_cancel_requested": false,
+          "last_voice_command": "Tell me a joke",
+          "simulation_speed": 1,
+          "simulator_autonomy_enabled": false,
+          "gesture": "near",
+          "proximity": 0,
+          "requested_mic_direction": 270,
+          "petting_zone_requested": {
+            "zone": "antenna",
+            "active": false
+          },
+          "simulated_obstacles": {
+            "front": false,
+            "left": false,
+            "right": false
+          },
+          "vision_request": {
+            "person_present": false,
+            "emotion": "neutral",
+            "person_distance": 1.5
+          },
+          "light_color_requested": "purple",
+          "light_control_requested": true,
+          "brightness_requested": 0.4,
+          "color_temperature_requested": 0.7
+        }
+      }
+    },
+    {
+      "scenario": "right_sensor_recovery_restores_coverage",
+      "passed": true,
+      "result": {
+        "avoidance_mode": "hold_replan",
+        "stale": []
+      }
+    },
+    {
+      "scenario": "publish_happy_person",
+      "passed": true,
+      "result": {
+        "state": "COLLISION_AVOIDING",
+        "animation": "",
+        "physics_time_scale": 1,
+        "sensors": {
+          "state_request_result": {
+            "success": true,
+            "state": "IDLE",
+            "message": "Transition to IDLE granted",
+            "requested": "IDLE"
+          },
+          "manual_pose_result": {
+            "success": true,
+            "state": "USER_CONTROL",
+            "message": "pose sent through the simulator motion controller",
+            "positions": {
+              "base_link_to_link1": 0,
+              "link1_to_link2": 0,
+              "link2_to_link3": 0,
+              "link3_to_link4": 0,
+              "link4_to_link5": 0,
+              "link5_to_gripper_link": 0
+            }
+          },
+          "animation_request": "nod",
+          "animation_result": {
+            "success": false,
+            "message": "Animation nod canceled",
+            "duration": 2.8170080184936523,
+            "state": "canceled"
+          },
+          "animation_cancel_result": {
+            "accepted": true,
+            "message": "cancel accepted"
+          },
+          "animation_cancel_requested": false,
+          "last_voice_command": "Tell me a joke",
+          "simulation_speed": 1,
+          "simulator_autonomy_enabled": false,
+          "gesture": "near",
+          "proximity": 0,
+          "requested_mic_direction": 270,
+          "petting_zone_requested": {
+            "zone": "antenna",
+            "active": false
+          },
+          "simulated_obstacles": {
+            "front": false,
+            "left": false,
+            "right": false
+          },
+          "vision_request": {
+            "person_present": true,
+            "emotion": "happy",
+            "person_distance": 1.2
+          },
+          "light_color_requested": "purple",
+          "light_control_requested": true,
+          "brightness_requested": 0.4,
+          "color_temperature_requested": 0.7
+        }
+      }
+    },
+    {
+      "scenario": "publish_person_absent",
+      "passed": true,
+      "result": {
+        "state": "COLLISION_AVOIDING",
+        "animation": "",
+        "physics_time_scale": 1,
+        "sensors": {
+          "state_request_result": {
+            "success": true,
+            "state": "IDLE",
+            "message": "Transition to IDLE granted",
+            "requested": "IDLE"
+          },
+          "manual_pose_result": {
+            "success": true,
+            "state": "USER_CONTROL",
+            "message": "pose sent through the simulator motion controller",
+            "positions": {
+              "base_link_to_link1": 0,
+              "link1_to_link2": 0,
+              "link2_to_link3": 0,
+              "link3_to_link4": 0,
+              "link4_to_link5": 0,
+              "link5_to_gripper_link": 0
+            }
+          },
+          "animation_request": "nod",
+          "animation_result": {
+            "success": false,
+            "message": "Animation nod canceled",
+            "duration": 2.8170080184936523,
+            "state": "canceled"
+          },
+          "animation_cancel_result": {
+            "accepted": true,
+            "message": "cancel accepted"
+          },
+          "animation_cancel_requested": false,
+          "last_voice_command": "Tell me a joke",
+          "simulation_speed": 1,
+          "simulator_autonomy_enabled": false,
+          "gesture": "near",
+          "proximity": 0,
+          "requested_mic_direction": 270,
+          "petting_zone_requested": {
+            "zone": "antenna",
+            "active": false
+          },
+          "simulated_obstacles": {
+            "front": false,
+            "left": false,
+            "right": false
+          },
+          "vision_request": {
+            "person_present": false,
+            "emotion": "happy",
+            "person_distance": 1.2
+          },
+          "light_color_requested": "purple",
+          "light_control_requested": true,
+          "brightness_requested": 0.4,
+          "color_temperature_requested": 0.7
+        }
+      }
+    },
+    {
+      "scenario": "analyze_image_without_file_validation",
+      "passed": true,
+      "result": {
+        "state": "COLLISION_AVOIDING",
+        "animation": "",
+        "physics_time_scale": 1,
+        "sensors": {
+          "state_request_result": {
+            "success": true,
+            "state": "IDLE",
+            "message": "Transition to IDLE granted",
+            "requested": "IDLE"
+          },
+          "manual_pose_result": {
+            "success": true,
+            "state": "USER_CONTROL",
+            "message": "pose sent through the simulator motion controller",
+            "positions": {
+              "base_link_to_link1": 0,
+              "link1_to_link2": 0,
+              "link2_to_link3": 0,
+              "link3_to_link4": 0,
+              "link4_to_link5": 0,
+              "link5_to_gripper_link": 0
+            }
+          },
+          "animation_request": "nod",
+          "animation_result": {
+            "success": false,
+            "message": "Animation nod canceled",
+            "duration": 2.8170080184936523,
+            "state": "canceled"
+          },
+          "animation_cancel_result": {
+            "accepted": true,
+            "message": "cancel accepted"
+          },
+          "animation_cancel_requested": false,
+          "last_voice_command": "Tell me a joke",
+          "simulation_speed": 1,
+          "simulator_autonomy_enabled": false,
+          "gesture": "near",
+          "proximity": 0,
+          "requested_mic_direction": 270,
+          "petting_zone_requested": {
+            "zone": "antenna",
+            "active": false
+          },
+          "simulated_obstacles": {
+            "front": false,
+            "left": false,
+            "right": false
+          },
+          "vision_request": {
+            "person_present": false,
+            "emotion": "happy",
+            "person_distance": 1.2
+          },
+          "light_color_requested": "purple",
+          "light_control_requested": true,
+          "brightness_requested": 0.4,
+          "color_temperature_requested": 0.7
+        }
+      }
+    },
+    {
+      "scenario": "final_recovery_to_idle",
+      "passed": true,
+      "result": {
+        "state": "IDLE",
+        "animation": "",
+        "physics_time_scale": 1,
+        "sensors": {
+          "state_request_result": {
+            "success": true,
+            "state": "IDLE",
+            "message": "Transition to IDLE granted",
+            "requested": "IDLE"
+          },
+          "manual_pose_result": {
+            "success": true,
+            "state": "USER_CONTROL",
+            "message": "pose sent through the simulator motion controller",
+            "positions": {
+              "base_link_to_link1": 0,
+              "link1_to_link2": 0,
+              "link2_to_link3": 0,
+              "link3_to_link4": 0,
+              "link4_to_link5": 0,
+              "link5_to_gripper_link": 0
+            }
+          },
+          "animation_request": "nod",
+          "animation_result": {
+            "success": false,
+            "message": "Animation nod canceled",
+            "duration": 2.8170080184936523,
+            "state": "canceled"
+          },
+          "animation_cancel_result": {
+            "accepted": true,
+            "message": "cancel accepted"
+          },
+          "animation_cancel_requested": false,
+          "last_voice_command": "Tell me a joke",
+          "simulation_speed": 1,
+          "simulator_autonomy_enabled": false,
+          "gesture": "near",
+          "proximity": 0,
+          "requested_mic_direction": 270,
+          "petting_zone_requested": {
+            "zone": "antenna",
+            "active": false
+          },
+          "simulated_obstacles": {
+            "front": false,
+            "left": false,
+            "right": false
+          },
+          "vision_request": {
+            "person_present": false,
+            "emotion": "neutral",
+            "person_distance": 1.5
+          },
+          "light_color_requested": "purple",
+          "light_control_requested": true,
+          "brightness_requested": 0.4,
+          "color_temperature_requested": 0.7
+        }
+      }
+    },
+    {
+      "scenario": "restore_autonomous_activity",
+      "passed": true
+    }
+  ],
+  "browser_errors": []
+}

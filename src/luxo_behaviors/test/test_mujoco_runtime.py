@@ -9,7 +9,11 @@ pytest.importorskip("mujoco")
 
 from luxo_behaviors.gazebo_description import build_vendor_description
 from luxo_behaviors.joint_profiles import ROARM_M3_NAMES
-from luxo_behaviors.mujoco_runtime import build_m3_model, servo_torque
+from luxo_behaviors.mujoco_runtime import (
+    build_m3_model,
+    servo_torque,
+    set_virtual_obstacle_contacts,
+)
 
 
 ASSETS = Path(__file__).parents[1] / "luxo_behaviors/assets/roarm_m3"
@@ -27,11 +31,48 @@ def test_vendor_m3_geometry_and_inertias_load_with_only_mount_contact_excluded()
     mujoco.mj_forward(model, data)
 
     assert model.nq == model.nv == len(ROARM_M3_NAMES) == 6
-    assert model.ngeom == 14
+    assert model.ngeom == 22
+    geom_names = {
+        mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_GEOM, index)
+        for index in range(model.ngeom)
+    }
+    assert {
+        "desk_top",
+        "desk_leg_front_left",
+        "desk_leg_front_right",
+        "desk_leg_back_left",
+        "desk_leg_back_right",
+        "virtual_obstacle_front",
+        "virtual_obstacle_left",
+        "virtual_obstacle_right",
+    } <= geom_names
     assert [mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_JOINT, joint) for joint in joints] == list(ROARM_M3_NAMES)
     assert np.count_nonzero(model.geom_contype) >= 6
     assert np.all(model.body_mass[1:] > 0.0)
     assert data.ncon == 0
+    for side in ("front", "left", "right"):
+        geom = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, f"virtual_obstacle_{side}")
+        assert model.geom_contype[geom] == model.geom_conaffinity[geom] == 0
+
+
+def test_virtual_obstacle_stimulus_enables_and_releases_matching_physics_collider():
+    mujoco, model, _joints = make_model()
+    set_virtual_obstacle_contacts(mujoco, model, {"front": True, "left": False, "right": False})
+    for side in ("front", "left", "right"):
+        geom = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, f"virtual_obstacle_{side}")
+        expected = int(side == "front")
+        assert model.geom_contype[geom] == expected
+        assert model.geom_conaffinity[geom] == expected
+
+    set_virtual_obstacle_contacts(mujoco, model, {"front": False, "left": True, "right": False})
+    left = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, "virtual_obstacle_left")
+    assert model.geom_contype[left] == model.geom_conaffinity[left] == 1
+    set_virtual_obstacle_contacts(mujoco, model, {"front": False, "left": False, "right": False})
+
+    with pytest.raises(ValueError):
+        set_virtual_obstacle_contacts(mujoco, model, {"front": 1})
+    with pytest.raises(ValueError):
+        set_virtual_obstacle_contacts(mujoco, model, {"unknown": True})
 
 
 def test_gravity_compensated_full_mass_matrix_servo_tracks_six_measured_axes():

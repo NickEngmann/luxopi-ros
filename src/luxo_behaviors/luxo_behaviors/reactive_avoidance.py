@@ -16,10 +16,11 @@ JOINT_ALIASES = {
     "shoulder": ("L1_to_L2", "link1_to_link2"),
 }
 DEFAULT_RETREATS = {
-    # These match the established MovementValidator's safe half-spaces.
+    # ROS base frame is x-forward/y-left. Positive base yaw rotates the forward
+    # gripper toward the robot's left, so side hazards require the opposite yaw.
     "front": {"axis": "shoulder", "sign": 1},
-    "left": {"axis": "base", "sign": 1},
-    "right": {"axis": "base", "sign": -1},
+    "left": {"axis": "base", "sign": -1},
+    "right": {"axis": "base", "sign": 1},
 }
 
 

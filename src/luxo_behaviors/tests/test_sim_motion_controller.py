@@ -1,9 +1,14 @@
+import math
+
 import pytest
 
 from luxo_behaviors.joint_motion import URDF_JOINT_LIMITS
 from luxo_behaviors.joint_profiles import ROARM_M3_NAMES, ROARM_M3_LIMITS
 from luxo_behaviors.sim_motion_rules import (
-    motion_is_frozen, validate_manual_pose, validate_feedback,
+    inactive_voice_reconcile_due, motion_is_frozen, nearest_cable_safe_angle,
+    validate_manual_pose, validate_feedback,
+    normalize_direction_degrees, voice_direction_is_fresh,
+    voice_overlay_allowed, voice_state_request_allowed,
 )
 
 
@@ -20,6 +25,69 @@ def test_motion_holds_for_safety_states_after_sensor_clears():
 def test_motion_remains_available_in_ordinary_states_without_collision():
     for state in ("IDLE", "VOICE_FOLLOWING", "ANIMATING", "PETTING"):
         assert not motion_is_frozen(state, (False, False, False))
+
+
+def test_inactive_voice_state_is_reconciled_after_collision_completion_race():
+    assert not inactive_voice_reconcile_due("VOICE_FOLLOWING", False, 10.0, None, 10.1)
+    assert inactive_voice_reconcile_due("VOICE_FOLLOWING", False, 10.0, None, 10.3)
+    assert not inactive_voice_reconcile_due("VOICE_FOLLOWING", False, 10.0, 10.3, 10.8)
+    assert inactive_voice_reconcile_due("VOICE_FOLLOWING", False, 10.0, 10.3, 11.31)
+    assert not inactive_voice_reconcile_due("VOICE_FOLLOWING", True, 10.0, None, 20.0)
+    assert not inactive_voice_reconcile_due("IDLE", False, 10.0, None, 20.0)
+
+
+@pytest.mark.parametrize(("current", "requested", "expected"), [
+    (math.radians(179), math.radians(-179), math.pi),
+    (math.radians(-179), math.radians(179), -math.pi),
+    (0.0, math.radians(270), math.radians(-90)),
+    (math.radians(30), math.radians(40), math.radians(40)),
+])
+def test_voice_yaw_uses_shortest_cable_safe_equivalent(current, requested, expected):
+    actual = nearest_cable_safe_angle(current, requested, -math.pi, math.pi)
+    assert actual == pytest.approx(expected)
+    assert -math.pi <= actual <= math.pi
+    assert abs(actual - current) <= math.pi
+
+
+def test_voice_yaw_rejects_invalid_current_angle_or_limits():
+    with pytest.raises(ValueError, match="current yaw"):
+        nearest_cable_safe_angle(4.0, 0.0, -math.pi, math.pi)
+    with pytest.raises(ValueError, match="finite"):
+        nearest_cable_safe_angle(0.0, float("nan"), -math.pi, math.pi)
+
+
+@pytest.mark.parametrize(("angle", "expected"), [
+    (0, 0), (181, -179), (-181, 179), (360, 0), (240, -120),
+])
+def test_direction_estimates_are_normalized_to_short_signed_turn(angle, expected):
+    assert normalize_direction_degrees(angle) == pytest.approx(expected)
+
+
+@pytest.mark.parametrize("angle", [float("nan"), float("inf"), -float("inf"), 361, -361, "bad"])
+def test_invalid_direction_estimates_are_rejected(angle):
+    with pytest.raises(ValueError):
+        normalize_direction_degrees(angle)
+
+
+def test_direction_lease_rejects_missing_stale_future_and_nonfinite_data():
+    assert voice_direction_is_fresh(-45, 9.5, 10.0)
+    assert not voice_direction_is_fresh(None, 9.5, 10.0)
+    assert not voice_direction_is_fresh(-45, None, 10.0)
+    assert not voice_direction_is_fresh(-45, 7.9, 10.0)
+    assert not voice_direction_is_fresh(-45, 10.1, 10.0)
+    assert not voice_direction_is_fresh(float("nan"), 9.9, 10.0)
+
+
+def test_doa_overlays_ordinary_animation_without_taking_fsm_ownership():
+    for state in ("ANIMATING", "PETTING", "EMOTION_REACTING"):
+        assert voice_overlay_allowed(state)
+        assert not voice_state_request_allowed(state)
+    assert voice_overlay_allowed("VOICE_FOLLOWING")
+    assert voice_state_request_allowed("IDLE")
+    assert voice_state_request_allowed("VOICE_FOLLOWING")
+    for state in ("COLLISION_AVOIDING", "ESCAPE_MODE", "RETURNING_HOME", "USER_CONTROL", "ERROR"):
+        assert not voice_overlay_allowed(state)
+        assert not voice_state_request_allowed(state)
 
 
 def test_manual_pose_requires_user_control_state():

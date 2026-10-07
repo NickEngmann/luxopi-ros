@@ -1,0 +1,602 @@
+{
+  "results": [
+    {
+      "scenario": "render_and_graph",
+      "passed": true,
+      "nodes": 14,
+      "model": "Waveshare M3 \u00b7 all six live joint values \u00b7 MuJoCo simulated dynamics",
+      "animations": 38,
+      "selectable_states": [
+        "ANIMATING",
+        "COLLISION_AVOIDING",
+        "EMOTION_REACTING",
+        "ERROR",
+        "ESCAPE_MODE",
+        "IDLE",
+        "INITIALIZING",
+        "PETTING",
+        "RETURNING_HOME",
+        "SHUTDOWN",
+        "USER_CONTROL",
+        "VOICE_FOLLOWING"
+      ],
+      "joint_names": [
+        "base_link_to_link1",
+        "link1_to_link2",
+        "link2_to_link3",
+        "link3_to_link4",
+        "link4_to_link5",
+        "link5_to_gripper_link"
+      ],
+      "health_status": 200,
+      "simulation_backend": "mujoco",
+      "engine_caption": "MuJoCo M3 dynamics \u00b7 measured ROS joint states",
+      "loaded_m3_meshes": [
+        "base_link.stl",
+        "gripper_link.stl",
+        "link1.stl",
+        "link2.stl",
+        "link3.stl",
+        "link4.stl",
+        "link5.stl"
+      ]
+    },
+    {
+      "scenario": "both_robot_views",
+      "passed": true
+    },
+    {
+      "scenario": "hover_identifies_model_frame",
+      "passed": true,
+      "frame": "base_link",
+      "tooltip": "base_link\nFixed base/mounting plate; stable reference for base-mounted sensors. This is a modeled link, not a documented physical sensor mount."
+    },
+    {
+      "scenario": "hover_identifies_left",
+      "passed": true,
+      "tooltip": "link2\u2194link3 connector \u00b7 left\nLeft-facing collision sensor between link 2 and link 3. Locator geometry only; adjust its offset after measuring the physical mount."
+    },
+    {
+      "scenario": "hover_identifies_right",
+      "passed": true,
+      "tooltip": "link2\u2194link3 connector \u00b7 right\nRight-facing collision sensor between link 2 and link 3. Locator geometry only; adjust its offset after measuring the physical mount."
+    },
+    {
+      "scenario": "hover_identifies_rear",
+      "passed": true,
+      "tooltip": "link2\u2194link3 connector \u00b7 rear\nRear-facing collision sensor between link 2 and link 3. Locator geometry only; adjust its offset after measuring the physical mount."
+    },
+    {
+      "scenario": "hover_identifies_hand_tcp",
+      "passed": true,
+      "tooltip": "hand_tcp\nCollision sensor at the end of the hand TCP. Locator geometry only; adjust its offset after measuring the physical mount."
+    },
+    {
+      "scenario": "hover_identifies_camera",
+      "passed": true,
+      "tooltip": "hand_tcp \u00b7 camera\nMounted at the end of the gripper. Proxy uses OAK-D Lite 91 \u00d7 28 \u00d7 17.5 mm body dimensions and 75 mm stereo baseline; exact attached SKU, mount offset, and optical axis still need physical verification."
+    },
+    {
+      "scenario": "hover_identifies_ring60",
+      "passed": true,
+      "tooltip": "hand_tcp \u00b7 60 NeoPixels\n60-pixel ring placement guide (158 mm outer diameter), floating near the gripper. Physical mounting orientation is not measured."
+    },
+    {
+      "scenario": "hover_identifies_ring16",
+      "passed": true,
+      "tooltip": "hand_tcp \u00b7 16 NeoPixels\n16-pixel ring placement guide (45 mm outer diameter), floating near the gripper. Physical mounting orientation is not measured."
+    },
+    {
+      "scenario": "hand_sensors_camera_and_led_rings",
+      "passed": true,
+      "sensors": [
+        "hand_tcp",
+        "left",
+        "rear",
+        "right"
+      ],
+      "ring_pixels": [
+        60,
+        16
+      ],
+      "state_manager_lighting": "solid on/off rendered in both rings"
+    },
+    {
+      "scenario": "conversation_text_and_reply",
+      "passed": true,
+      "transcript": "Please nod",
+      "response": "Simulator heard: Please nod",
+      "previous_response": "",
+      "matched_command": "nod"
+    },
+    {
+      "scenario": "conversation_animation_returns_to_idle",
+      "passed": true,
+      "state": "IDLE",
+      "animation": ""
+    },
+    {
+      "scenario": "manual_state_request",
+      "passed": true,
+      "requested": "RETURNING_HOME",
+      "current": "RETURNING_HOME",
+      "message": "Transition to RETURNING_HOME granted"
+    },
+    {
+      "scenario": "manual_state_request",
+      "passed": true,
+      "requested": "USER_CONTROL",
+      "current": "USER_CONTROL",
+      "message": "Transition to USER_CONTROL granted"
+    },
+    {
+      "scenario": "manual_state_request",
+      "passed": true,
+      "requested": "IDLE",
+      "current": "IDLE",
+      "message": "Transition to IDLE granted"
+    },
+    {
+      "scenario": "manual_profile_pose_to_joint_feedback",
+      "passed": true,
+      "joint": "base_link_to_link1",
+      "target": 0.12000009878971574,
+      "observed": 0.09152741288217726,
+      "joint_names": [
+        "base_link_to_link1",
+        "link1_to_link2",
+        "link2_to_link3",
+        "link3_to_link4",
+        "link4_to_link5",
+        "link5_to_gripper_link"
+      ]
+    },
+    {
+      "scenario": "vendor_gripper_and_hand_tcp_frame",
+      "passed": true,
+      "frames": {
+        "base_link": [
+          0,
+          0,
+          0.0701
+        ],
+        "link1": [
+          0,
+          0,
+          0.0701
+        ],
+        "link2": [
+          0,
+          0,
+          0.122059
+        ],
+        "link3": [
+          -0.11012257574291127,
+          -0.0032032198445336516,
+          0.33382354359352595
+        ],
+        "link4": [
+          -0.030884280339745232,
+          -0.0008983547597506505,
+          0.4547412492223607
+        ],
+        "link5": [
+          0.02281107484038345,
+          0.0006635232292141035,
+          0.43982664606882643
+        ],
+        "gripper_link": [
+          0.07537621335232358,
+          -0.01654283925929169,
+          0.43817783767041063
+        ],
+        "hand_tcp": [
+          0.1381891912199097,
+          0.004019615014750089,
+          0.44032673869979194
+        ]
+      },
+      "expected": {
+        "base_link": [
+          0.0,
+          0.0,
+          0.0701
+        ],
+        "link1": [
+          0.0,
+          0.0,
+          0.0701
+        ],
+        "link2": [
+          0.0,
+          0.0,
+          0.122059
+        ],
+        "link3": [
+          -0.1101225757429113,
+          -0.003203219844533648,
+          0.3338235435935259
+        ],
+        "link4": [
+          -0.030884280339745246,
+          -0.0008983547597506652,
+          0.45474124922236064
+        ],
+        "link5": [
+          0.022811074840383444,
+          0.000663523229214082,
+          0.4398266460688264
+        ],
+        "gripper_link": [
+          0.07537621335232358,
+          -0.016542839259291727,
+          0.43817783767041063
+        ],
+        "hand_tcp": [
+          0.13818919121990972,
+          0.0040196150147500396,
+          0.4403267386997919
+        ]
+      },
+      "tolerance_m": 0.0001,
+      "joints": {
+        "base_link_to_link1": 0.02908324081941815,
+        "link1_to_link2": -0.6057256306983452,
+        "link2_to_link3": 1.1860168843075558,
+        "link3_to_link4": 0.9861762257243419,
+        "link4_to_link5": -1.471043451150335,
+        "link5_to_gripper_link": 0.00010905722764400061
+      }
+    },
+    {
+      "scenario": "legacy_view_tracks_m3_joint_feedback",
+      "passed": true,
+      "joint": "base_link_to_link1",
+      "target": 0.19152741288217728,
+      "observed": 0.1662012814708967
+    },
+    {
+      "scenario": "lighting_drafts_survive_live_polling",
+      "passed": true
+    },
+    {
+      "scenario": "lamp_controls_to_consumer",
+      "passed": true,
+      "light": {
+        "simulated": true,
+        "pixel_count": 60,
+        "brightness": 0.22,
+        "rgbw": [
+          0,
+          0,
+          255,
+          0
+        ],
+        "effect": "solid",
+        "parameters": {},
+        "revision": 24,
+        "enabled": true,
+        "state": "IDLE",
+        "color_temperature": 0.7
+      }
+    },
+    {
+      "scenario": "live_led_telemetry_updates_both_rendered_rings",
+      "passed": true,
+      "ring60_color": "#0000ff",
+      "ring16_color": "#0000ff",
+      "lit_pixels": [
+        60,
+        16
+      ]
+    },
+    {
+      "scenario": "action_moves_and_cancels",
+      "passed": true,
+      "result": {
+        "success": false,
+        "message": "Animation dance canceled",
+        "duration": 0.5286262035369873,
+        "state": "canceled"
+      }
+    },
+    {
+      "scenario": "action_completes_without_external_cancellation",
+      "passed": true,
+      "result": {
+        "success": true,
+        "message": "Animation acknowledge completed",
+        "duration": 5.277283668518066,
+        "state": "completed"
+      },
+      "state": "IDLE"
+    },
+    {
+      "scenario": "actual_direction_estimator",
+      "passed": true,
+      "evidence": {
+        "requested_mic_angle": 90,
+        "measured_mic_angle": 89.95854916612012,
+        "robot_angle": -97.92895439923973,
+        "channels": 6,
+        "sample_rate": 16000,
+        "method": "shared GCC-PHAT on delayed PCM",
+        "noise": 0.02
+      }
+    },
+    {
+      "scenario": "raw_sensor_collision_to_motion_hold",
+      "passed": true,
+      "state": "COLLISION_AVOIDING",
+      "motion": {
+        "state": "COLLISION_AVOIDING",
+        "exclusive_motion_owner": "",
+        "home_stage": null,
+        "home_status": "",
+        "home_reason": "",
+        "collision_active": true,
+        "collision_directions": [
+          "front"
+        ],
+        "avoidance_mode": "hold_imminent",
+        "avoidance_directions": [
+          "front"
+        ],
+        "stale": [],
+        "voice_override": false,
+        "manual_override": false,
+        "manual_target_rejected": "",
+        "motion_hold_requested": true,
+        "motion_frozen": true,
+        "positions": [
+          -0.4212286608664064,
+          -0.6500003240434709,
+          1.2000007876783954,
+          0.9999987903305501,
+          -1.499999983929358,
+          2.0927215250420608e-05
+        ],
+        "target": [
+          -0.4212286608664064,
+          -0.6500003240434709,
+          1.2000007876783954,
+          0.9999987903305501,
+          -1.499999983929358,
+          2.0927215250420608e-05
+        ]
+      }
+    },
+    {
+      "scenario": "collision_clear_waits_for_fresh_intent",
+      "passed": true,
+      "motion": {
+        "state": "IDLE",
+        "exclusive_motion_owner": "",
+        "home_stage": null,
+        "home_status": "",
+        "home_reason": "",
+        "collision_active": false,
+        "collision_directions": [],
+        "avoidance_mode": "hold_replan",
+        "avoidance_directions": [],
+        "stale": [],
+        "voice_override": false,
+        "manual_override": false,
+        "manual_target_rejected": "",
+        "motion_hold_requested": true,
+        "motion_frozen": true,
+        "positions": [
+          -0.4212286608664064,
+          -0.6500003240434709,
+          1.2000007876783954,
+          0.9999987903305501,
+          -1.499999983929358,
+          2.0927215250420608e-05
+        ],
+        "target": [
+          -0.4212286608664064,
+          -0.6500003240434709,
+          1.2000007876783954,
+          0.9999987903305501,
+          -1.499999983929358,
+          2.0927215250420608e-05
+        ]
+      }
+    },
+    {
+      "scenario": "fresh_manual_intent_releases_replan_hold",
+      "passed": true,
+      "joint": "base_link_to_link1",
+      "target": -0.301228660866407,
+      "observed": -0.3289636202462488,
+      "motion": {
+        "state": "USER_CONTROL",
+        "exclusive_motion_owner": "",
+        "home_stage": null,
+        "home_status": "",
+        "home_reason": "",
+        "collision_active": false,
+        "collision_directions": [],
+        "avoidance_mode": "clear",
+        "avoidance_directions": [],
+        "stale": [],
+        "voice_override": false,
+        "manual_override": true,
+        "manual_target_rejected": "",
+        "motion_hold_requested": false,
+        "motion_frozen": false,
+        "positions": [
+          -0.3096397990873051,
+          -0.4999758763093406,
+          1.0499763399442652,
+          0.8499743425964198,
+          -1.349975536195228,
+          0
+        ],
+        "target": [
+          -0.3016,
+          -0.0008,
+          0,
+          -0.0008,
+          -0.0016,
+          0
+        ]
+      }
+    },
+    {
+      "scenario": "collision_quiet_recovery",
+      "passed": true,
+      "motion": {
+        "state": "IDLE",
+        "exclusive_motion_owner": "",
+        "home_stage": null,
+        "home_status": "",
+        "home_reason": "",
+        "collision_active": false,
+        "collision_directions": [],
+        "avoidance_mode": "clear",
+        "avoidance_directions": [],
+        "stale": [],
+        "voice_override": false,
+        "manual_override": false,
+        "manual_target_rejected": "",
+        "motion_hold_requested": false,
+        "motion_frozen": false,
+        "positions": [
+          -0.3016005956837486,
+          -0.0007227093200859984,
+          0.17391960401885334,
+          0.014471702454916701,
+          -0.47391880026981603,
+          9.818688705357565e-05
+        ],
+        "target": [
+          -0.3016005956837486,
+          -0.0007227093200859984,
+          0.24965929863454434,
+          0.061158249401247845,
+          -0.5499266677656306,
+          9.818688705357565e-05
+        ]
+      }
+    },
+    {
+      "scenario": "single_apds_proximity_event_reaches_safety_fsm",
+      "passed": true,
+      "raw_value": 80,
+      "severity": "danger",
+      "state": "COLLISION_AVOIDING"
+    },
+    {
+      "scenario": "single_apds_event_clears_with_fresh_safe_samples",
+      "passed": true
+    },
+    {
+      "scenario": "emotion_event_triggers_real_animation_and_motion",
+      "passed": true,
+      "emotion": "happy",
+      "animation": "playful",
+      "position_before": [
+        -0.3016031721063797,
+        -0.0006884982291522364,
+        0.09805177346311451,
+        0.00016574655711985487,
+        -0.39818193389152357,
+        0.00010049320140121689
+      ],
+      "position_during": [
+        -0.3016023183004075,
+        -0.0009490325185573453,
+        0.10045491325571093,
+        0.0021190254200859748,
+        -0.4019374260147741,
+        0.0001087387014591628
+      ]
+    },
+    {
+      "scenario": "emotion_animation_completes_and_recovers_to_idle",
+      "passed": true,
+      "state": "IDLE"
+    },
+    {
+      "scenario": "random_stl_physics_obstacle",
+      "passed": true,
+      "asset": "wedge",
+      "frame": "simulated_obstacle_front",
+      "collider_enabled_during_stimulus": true,
+      "collider_released": true
+    },
+    {
+      "scenario": "autonomous_idle_animation_moves_robot",
+      "passed": true,
+      "animation": "attentive_listening",
+      "position_before": [
+        -0.30160255741110925,
+        -0.6500000000000011,
+        1.2000000000000013,
+        1.0000000000000022,
+        -1.4999999999999973,
+        0.0012618078537524138
+      ],
+      "position_during": [
+        -0.30160247441661897,
+        -0.650783986816257,
+        1.2000008369275463,
+        1.0041554347374442,
+        -1.4972404463501003,
+        0.0012551606289855333
+      ]
+    },
+    {
+      "scenario": "invalid_requests_rejected",
+      "passed": true
+    },
+    {
+      "scenario": "no_browser_errors",
+      "passed": true,
+      "console_errors": 0,
+      "canceled_hidden_model_mesh_requests": 7
+    },
+    {
+      "scenario": "health_stale_fault_test_skipped",
+      "passed": true,
+      "reason": "pass --pause-state-manager-pid for simulator process"
+    }
+  ],
+  "error": null,
+  "page_errors": [],
+  "console_errors": [],
+  "failed_requests": [],
+  "canceled_hidden_model_mesh_requests": [
+    {
+      "url": "http://127.0.0.1:8080/assets/roarm/L1.stl",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "url": "http://127.0.0.1:8080/assets/roarm/L2.stl",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "url": "http://127.0.0.1:8080/assets/roarm/L4.stl",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "url": "http://127.0.0.1:8080/assets/roarm_m3/link1.stl",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "url": "http://127.0.0.1:8080/assets/roarm_m3/link2.stl",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "url": "http://127.0.0.1:8080/assets/roarm_m3/link3.stl",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "url": "http://127.0.0.1:8080/assets/roarm_m3/gripper_link.stl",
+      "failure": "net::ERR_ABORTED"
+    }
+  ],
+  "elapsed_seconds": 166.84153687092476,
+  "url": "http://127.0.0.1:8080"
+}

@@ -1,0 +1,62 @@
+{
+  "results": [
+    {
+      "source_angle_degrees": 0.0,
+      "measured_mic_angle_degrees": 359.95854916612006,
+      "robot_target_raw_degrees": -359.9518127441406,
+      "robot_target_degrees": 0.048187255859375,
+      "base_before_degrees": -2.6633579427211903e-18,
+      "base_after_degrees": 0.004569496951580615,
+      "final_error_degrees": 0.04361775890779439,
+      "base_path_min_degrees": -2.743219958917114e-18,
+      "base_path_max_degrees": -2.743219958917114e-18,
+      "feedback_frames": 1,
+      "quiet_state": "IDLE",
+      "passed": true
+    },
+    {
+      "source_angle_degrees": 90.0,
+      "measured_mic_angle_degrees": 89.95854916612012,
+      "robot_target_raw_degrees": -97.928955078125,
+      "robot_target_degrees": -97.928955078125,
+      "base_before_degrees": 1.861009434647291e-07,
+      "base_after_degrees": -97.64054438533513,
+      "final_error_degrees": 0.28841069278986364,
+      "base_path_min_degrees": -95.36176754666481,
+      "base_path_max_degrees": 1.8398446977971833e-07,
+      "feedback_frames": 196,
+      "quiet_state": "IDLE",
+      "passed": true
+    },
+    {
+      "source_angle_degrees": 180.0,
+      "measured_mic_angle_degrees": 179.95854916612012,
+      "robot_target_raw_degrees": -179.96363830566406,
+      "robot_target_degrees": -179.96363830566406,
+      "base_before_degrees": -0.011186066182623546,
+      "base_after_degrees": -180.00025506123728,
+      "final_error_degrees": 0.03661675557323262,
+      "base_path_min_degrees": -177.4122601692158,
+      "base_path_max_degrees": 0.18339703457427156,
+      "feedback_frames": 338,
+      "quiet_state": "IDLE",
+      "passed": true
+    },
+    {
+      "source_angle_degrees": 270.0,
+      "measured_mic_angle_degrees": 269.9585491661201,
+      "robot_target_raw_degrees": -261.98974609375,
+      "robot_target_degrees": 98.01025390625,
+      "base_before_degrees": -0.14221931464292722,
+      "base_after_degrees": 97.66679816670062,
+      "final_error_degrees": 0.34345573954938263,
+      "base_path_min_degrees": -0.12127862778377754,
+      "base_path_max_degrees": 95.3921983832584,
+      "feedback_frames": 196,
+      "quiet_state": "IDLE",
+      "passed": true
+    }
+  ],
+  "error": null,
+  "scope": "Synthetic delayed-array DOA angles through the shared estimator and MuJoCo motion controller; no physical microphones or speaker output."
+}

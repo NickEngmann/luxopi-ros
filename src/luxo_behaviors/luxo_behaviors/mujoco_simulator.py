@@ -11,11 +11,15 @@ from ament_index_python.packages import get_package_share_directory
 from rclpy.node import Node
 from rclpy.executors import ExternalShutdownException
 from sensor_msgs.msg import JointState
-from std_msgs.msg import String
+from std_msgs.msg import Float32, String
 
 from luxo_behaviors.joint_motion import ordered_joint_target, clamp_joint_positions
 from luxo_behaviors.joint_profiles import ROARM_M3_NAMES, ROARM_M3_LIMITS
-from luxo_behaviors.mujoco_runtime import build_m3_model, servo_torque
+from luxo_behaviors.mujoco_runtime import (
+    build_m3_model,
+    servo_torque,
+    set_virtual_obstacle_contacts,
+)
 
 
 class MujocoSimulator(Node):
@@ -83,6 +87,7 @@ class MujocoSimulator(Node):
         self.last_target_time = time.monotonic()
         self.started_at = self.last_target_time
         self.simulation_time = 0.0
+        self.time_scale = 1.0
         self.command_stale = False
         self.ticks = 0
         self.saturated_ticks = 0
@@ -101,6 +106,13 @@ class MujocoSimulator(Node):
             self.command_callback,
             10,
         )
+        self.virtual_obstacles = {side: False for side in ("front", "left", "right")}
+        self.obstacle_sub = self.create_subscription(
+            String, "/sim/environment_obstacles", self.environment_obstacles_callback, 10
+        )
+        self.time_scale_sub = self.create_subscription(
+            Float32, "/sim/time_scale", self.time_scale_callback, 10
+        )
         self.steps_per_feedback = max(1, round(self.physics_rate / self.feedback_rate))
         self.timer = self.create_timer(1.0 / self.physics_rate, self.step)
         self.get_logger().info(
@@ -118,26 +130,46 @@ class MujocoSimulator(Node):
         except (TypeError, ValueError) as exc:
             self.get_logger().warning(f"Ignored malformed bounded M3 command: {exc}")
 
+    def environment_obstacles_callback(self, message):
+        try:
+            values = json.loads(message.data)
+            set_virtual_obstacle_contacts(self.mujoco, self.model, values)
+            self.virtual_obstacles = {
+                side: values.get(side, False) for side in ("front", "left", "right")
+            }
+        except (TypeError, ValueError, json.JSONDecodeError) as exc:
+            self.get_logger().warning(f"Ignored malformed virtual obstacle scene: {exc}")
+
+    def time_scale_callback(self, message):
+        scale = float(message.data)
+        if scale in (1.0, 2.0, 3.0):
+            self.time_scale = scale
+
     def step(self):
         started = time.perf_counter()
         try:
-            if time.monotonic() - self.last_target_time > self.command_timeout and not self.command_stale:
+            if time.monotonic() - self.last_target_time > self.command_timeout / self.time_scale and not self.command_stale:
                 self.target = [float(self.data.qpos[index]) for index in self.qpos_addresses]
                 self.command_stale = True
                 self.get_logger().warning("Bounded joint command stale; holding measured MuJoCo pose")
-            torque = servo_torque(
-                self.mujoco,
-                self.model,
-                self.data,
-                self.target,
-                self.qpos_addresses,
-                self.dof_addresses,
-                omega=self.omega,
-                damping_ratio=self.damping_ratio,
-                effort_limit=self.effort_limit,
-            )
-            self.data.ctrl[self.actuator_ids] = torque
-            self.mujoco.mj_step(self.model, self.data)
+            torque = None
+            prior_ticks = self.ticks
+            for _ in range(int(self.time_scale)):
+                torque = servo_torque(
+                    self.mujoco,
+                    self.model,
+                    self.data,
+                    self.target,
+                    self.qpos_addresses,
+                    self.dof_addresses,
+                    omega=self.omega,
+                    damping_ratio=self.damping_ratio,
+                    effort_limit=self.effort_limit,
+                )
+                self.data.ctrl[self.actuator_ids] = torque
+                self.mujoco.mj_step(self.model, self.data)
+                self.ticks += 1
+                self.simulation_time += 1.0 / self.physics_rate
             positions = [float(self.data.qpos[index]) for index in self.qpos_addresses]
             velocities = [float(self.data.qvel[index]) for index in self.dof_addresses]
             if not all(math.isfinite(value) for value in positions + velocities + list(torque)):
@@ -146,14 +178,12 @@ class MujocoSimulator(Node):
                 lower, upper = ROARM_M3_LIMITS[name]
                 if value < lower - 0.02 or value > upper + 0.02:
                     raise RuntimeError(f"MuJoCo joint {name} exceeded vendor limits: {value}")
-            self.ticks += 1
-            self.simulation_time += 1.0 / self.physics_rate
             self.last_contacts = int(self.data.ncon)
             tick_seconds = time.perf_counter() - started
             self.max_tick_seconds = max(self.max_tick_seconds, tick_seconds)
             self.saturated_ticks += int(any(abs(value) >= self.effort_limit - 1e-9 for value in torque))
 
-            if self.ticks % self.steps_per_feedback == 0:
+            if self.ticks // self.steps_per_feedback > prior_ticks // self.steps_per_feedback:
                 self.publish_feedback(torque)
         except Exception as exc:
             self.get_logger().fatal(f"MuJoCo dynamics failed; stopping the critical simulation process: {exc}")
@@ -174,6 +204,7 @@ class MujocoSimulator(Node):
             "profile": "roarm_m3",
             "physics_rate": self.physics_rate,
             "feedback_rate": self.feedback_rate,
+            "time_scale": self.time_scale,
             "simulated": True,
             "simulation_time_seconds": self.simulation_time,
             "wall_time_seconds": time.monotonic() - self.started_at,
@@ -188,6 +219,7 @@ class MujocoSimulator(Node):
             "command_age_seconds": max(0.0, time.monotonic() - self.last_target_time),
             "command_stale": self.command_stale,
             "saturated_ticks": self.saturated_ticks,
+            "virtual_obstacles": dict(self.virtual_obstacles),
         }, separators=(",", ":"), allow_nan=False, default=self._json_value)
         self.status_pub.publish(status)
 

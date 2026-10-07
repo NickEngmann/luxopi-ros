@@ -33,9 +33,18 @@ def generate_launch_description():
             "enable_watchdog": LaunchConfiguration("enable_watchdog"),
             "enable_voice": LaunchConfiguration("enable_voice"),
             "enable_speech_bridge": LaunchConfiguration("enable_speech_bridge"),
+            "enable_smart_home_bridge": LaunchConfiguration("enable_smart_home_bridge"),
             "enable_sim_sensors": LaunchConfiguration("enable_sim_sensors"),
             "enable_sim_vision": LaunchConfiguration("enable_sim_vision"),
             "enable_gestures": LaunchConfiguration("enable_gestures"),
+            # Forward the synthetic activity driver controls into the shared
+            # behavior graph. These were declared at this launch layer but
+            # never reached luxo_system, so physics simulators stayed static
+            # and the dashboard always reported autonomy disabled.
+            "enable_sim_autonomy": LaunchConfiguration("enable_sim_autonomy"),
+            "sim_idle_after": LaunchConfiguration("sim_idle_after"),
+            "sim_idle_interval": LaunchConfiguration("sim_idle_interval"),
+            "sim_emotion_interval": LaunchConfiguration("sim_emotion_interval"),
             "joint_profile": LaunchConfiguration("joint_profile"),
             "continuous_animation_timing": LaunchConfiguration("continuous_animation_timing"),
             "simulation_backend": "mujoco",
@@ -101,6 +110,7 @@ def generate_launch_description():
         DeclareLaunchArgument("enable_watchdog", default_value="true"),
         DeclareLaunchArgument("enable_voice", default_value="true"),
         DeclareLaunchArgument("enable_speech_bridge", default_value="true"),
+        DeclareLaunchArgument("enable_smart_home_bridge", default_value="false"),
         DeclareLaunchArgument("enable_sim_sensors", default_value="true"),
         DeclareLaunchArgument("enable_sim_autonomy", default_value=EnvironmentVariable("LUXOPI_SIM_AUTONOMY", default_value="false")),
         DeclareLaunchArgument("sim_idle_after", default_value=EnvironmentVariable("LUXOPI_SIM_IDLE_AFTER", default_value="7.0")),

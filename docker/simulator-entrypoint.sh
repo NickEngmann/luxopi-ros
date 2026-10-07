@@ -21,6 +21,7 @@ MODEL
 fi
 [[ -z "${LUXOPI_SPEECH_CWD:-}" ]] || optional_args+=("speech_service_cwd:=${LUXOPI_SPEECH_CWD}")
 [[ -z "${LUXOPI_SIM_AUDIO_DIRECTORY:-}" ]] || optional_args+=("simulator_audio_directory:=${LUXOPI_SIM_AUDIO_DIRECTORY}")
+[[ -z "${LUXOPI_SIM_TTS_DIRECTORY:-}" ]] || optional_args+=("simulator_tts_directory:=${LUXOPI_SIM_TTS_DIRECTORY}")
 launch_file=luxo_system.launch.py
 backend="${LUXOPI_SIM_BACKEND:-kinematic}"
 if [[ "$backend" == mujoco ]]; then

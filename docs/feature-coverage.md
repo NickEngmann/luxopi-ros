@@ -43,6 +43,12 @@ recorded in `feature-coverage.json` under `continuous_timing_default` and in
 
 Unvalidated physical features include microphone wiring/acoustic VAD accuracy, actual motor torque adaptation, real stopping distance, LEDs/speaker electronics, camera stereo calibration and vendor neural-network inference. Delayed-array direction fixtures exercise the shared estimator, but room acoustics and real source locations are not established.
 
+The M3 scene also renders a four-strand articulated cable harness with moving
+service loops, and browser checks confirm the route updates through manual poses
+and animation waypoints. This is a visual routing proxy only: wire attachment
+points, connector slack, bend radius, and actual snag limits remain unmeasured
+until the physical robot is available.
+
 Native environment check: the feature, direction, collision-fault and state
 suites also passed together inside the arm64 `ros:jazzy-ros-base` container:
 **134 passed in 1.91 seconds**. Sources were staged under

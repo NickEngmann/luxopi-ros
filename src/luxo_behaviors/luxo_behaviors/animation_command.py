@@ -6,7 +6,7 @@ from rclpy.action import ActionServer, CancelResponse, GoalResponse
 from rclpy.action import ActionClient
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
-from std_msgs.msg import Bool, String
+from std_msgs.msg import Bool, Float32, String
 from sensor_msgs.msg import JointState
 from luxo_interfaces.action import PlayAnimation
 from luxo_interfaces.srv import RequestStateTransition
@@ -181,6 +181,8 @@ class AnimationCommandActionServer(Node):
         self.step_durations = []
         self.animation_timer = None
         self.speed_multiplier = 1.0
+        self.simulation_time_scale = 1.0
+        self.create_subscription(Float32, "/sim/time_scale", self._simulation_time_scale_cb, 10)
 
         # Action server state
         self._goal_handle = None
@@ -293,6 +295,11 @@ class AnimationCommandActionServer(Node):
             self.get_logger().warn(f"Unknown state received: {msg.data}")
         except Exception as e:
             self.get_logger().error(f"Error in animation state update callback: {e}")
+
+    def _simulation_time_scale_cb(self, message):
+        value = float(message.data)
+        if value in (1.0, 2.0, 3.0):
+            self.simulation_time_scale = value
 
     def is_in_state(self, *states: LuxoState) -> bool:
         """Check if currently in any of the given states"""
@@ -492,6 +499,14 @@ class AnimationCommandActionServer(Node):
             self._goal_handle = goal_handle
             self._goal_tracker.accept(goal_handle)
 
+        # Publish ownership at acceptance, before execute_callback asks the
+        # state manager for ANIMATING. Other motion overlays (notably DOA)
+        # must not win the brief interval between acceptance and that state
+        # transition.
+        self.current_animation_publisher.publish(
+            String(data=goal_handle.request.animation_name)
+        )
+
         # Execute the goal immediately
         goal_handle.execute()
 
@@ -526,6 +541,7 @@ class AnimationCommandActionServer(Node):
             goal = goal_handle.request
             animation_name = goal.animation_name
             speed_multiplier = goal.speed_multiplier if 0.1 <= goal.speed_multiplier <= 2.0 else 1.0
+            speed_multiplier *= self.simulation_time_scale
 
             # A goal may be replaced while waiting for the execution lock.
             # Do not publish status or transition the robot for an already
@@ -1040,8 +1056,10 @@ class AnimationCommandActionServer(Node):
                 self.movement_source = "idle"
                 self.publish_movement_source()
 
-                # Request transition to IDLE state
-                self.request_state_transition(LuxoState.IDLE, priority=30)
+                # A delayed animation cleanup must not override a newer owner
+                # such as USER_CONTROL, PETTING, or a safety state.
+                if self.get_current_state() == LuxoState.ANIMATING:
+                    self.request_state_transition(LuxoState.IDLE, priority=30)
 
         if self.is_animating:
             self.last_animation_end_time = current_time

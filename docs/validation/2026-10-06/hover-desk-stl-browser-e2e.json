@@ -1,0 +1,436 @@
+{
+  "results": [
+    {
+      "scenario": "render_and_graph",
+      "passed": true,
+      "nodes": 12,
+      "model": "Waveshare M3 \u00b7 all six live joint values \u00b7 MuJoCo simulated dynamics",
+      "animations": 38,
+      "joint_names": [
+        "base_link_to_link1",
+        "link1_to_link2",
+        "link2_to_link3",
+        "link3_to_link4",
+        "link4_to_link5",
+        "link5_to_gripper_link"
+      ],
+      "health_status": 200,
+      "simulation_backend": "mujoco",
+      "engine_caption": "MuJoCo M3 dynamics \u00b7 measured ROS joint states",
+      "loaded_m3_meshes": [
+        "base_link.stl",
+        "gripper_link.stl",
+        "link1.stl",
+        "link2.stl",
+        "link3.stl",
+        "link4.stl",
+        "link5.stl"
+      ]
+    },
+    {
+      "scenario": "both_robot_views",
+      "passed": true
+    },
+    {
+      "scenario": "hover_identifies_model_frame",
+      "passed": true,
+      "frame": "link5",
+      "tooltip": "link5\nLast wrist link before the gripper; useful reference for distal sensors. This is a modeled link, not a documented physical sensor mount."
+    },
+    {
+      "scenario": "conversation_text_and_reply",
+      "passed": true,
+      "transcript": "Please nod",
+      "response": "I'll nod for you.",
+      "previous_response": "",
+      "matched_command": "nod"
+    },
+    {
+      "scenario": "manual_state_request",
+      "passed": true,
+      "requested": "RETURNING_HOME",
+      "current": "RETURNING_HOME",
+      "message": "Transition to RETURNING_HOME granted"
+    },
+    {
+      "scenario": "manual_state_request",
+      "passed": true,
+      "requested": "USER_CONTROL",
+      "current": "USER_CONTROL",
+      "message": "Transition to USER_CONTROL granted"
+    },
+    {
+      "scenario": "manual_state_request",
+      "passed": true,
+      "requested": "IDLE",
+      "current": "IDLE",
+      "message": "Transition to IDLE granted"
+    },
+    {
+      "scenario": "manual_profile_pose_to_joint_feedback",
+      "passed": true,
+      "joint": "base_link_to_link1",
+      "target": 0.12000257076674946,
+      "observed": 0.10560296176941959,
+      "joint_names": [
+        "base_link_to_link1",
+        "link1_to_link2",
+        "link2_to_link3",
+        "link3_to_link4",
+        "link4_to_link5",
+        "link5_to_gripper_link"
+      ]
+    },
+    {
+      "scenario": "vendor_gripper_and_hand_tcp_frame",
+      "passed": true,
+      "frames": {
+        "base_link": [
+          0,
+          0,
+          0.0701
+        ],
+        "link1": [
+          0,
+          0,
+          0.0701
+        ],
+        "link2": [
+          0,
+          0,
+          0.122059
+        ],
+        "link3": [
+          -0.04248451878810963,
+          -0.0037361402756199737,
+          0.3569261350959594
+        ],
+        "link4": [
+          0.0680923638022156,
+          0.005988125315185489,
+          0.44957225261485434
+        ],
+        "link5": [
+          0.10961864605906935,
+          0.009639997101696494,
+          0.4125545847739571
+        ],
+        "gripper_link": [
+          0.1565167270877788,
+          -0.004858260513666165,
+          0.38701555996988174
+        ],
+        "hand_tcp": [
+          0.2131063614222959,
+          0.018740832704777884,
+          0.3622446380017186
+        ]
+      },
+      "expected": {
+        "base_link": [
+          0.0,
+          0.0,
+          0.0701
+        ],
+        "link1": [
+          0.0,
+          0.0,
+          0.0701
+        ],
+        "link2": [
+          0.0,
+          0.0,
+          0.122059
+        ],
+        "link3": [
+          -0.042484518788109674,
+          -0.003736140275619984,
+          0.35692613509595933
+        ],
+        "link4": [
+          0.06809236380221556,
+          0.0059881253151854545,
+          0.44957225261485423
+        ],
+        "link5": [
+          0.1096186460590693,
+          0.009639997101696454,
+          0.412554584773957
+        ],
+        "gripper_link": [
+          0.15651672708777878,
+          -0.00485826051366622,
+          0.38701555996988163
+        ],
+        "hand_tcp": [
+          0.2131063614222959,
+          0.01874083270477782,
+          0.36224463800171847
+        ]
+      },
+      "tolerance_m": 0.0001,
+      "joints": {
+        "base_link_to_link1": 0.08771923363633292,
+        "link1_to_link2": -0.3056429129103253,
+        "link2_to_link3": 1.1809407258849596,
+        "link3_to_link4": 1.1464909576294446,
+        "link4_to_link5": -1.4011843735765366,
+        "link5_to_gripper_link": 0.00026865155047369295
+      }
+    },
+    {
+      "scenario": "legacy_view_tracks_m3_joint_feedback",
+      "passed": true,
+      "joint": "base_link_to_link1",
+      "target": 0.2056029617694196,
+      "observed": 0.1807992483092207
+    },
+    {
+      "scenario": "lighting_drafts_survive_live_polling",
+      "passed": true
+    },
+    {
+      "scenario": "lamp_controls_to_consumer",
+      "passed": true,
+      "light": {
+        "simulated": true,
+        "pixel_count": 60,
+        "brightness": 0.22,
+        "rgbw": [
+          0,
+          0,
+          255,
+          0
+        ],
+        "effect": "solid",
+        "parameters": {},
+        "revision": 24,
+        "enabled": true,
+        "state": "IDLE",
+        "color_temperature": 0.7
+      }
+    },
+    {
+      "scenario": "action_moves_and_cancels",
+      "passed": true,
+      "result": {
+        "success": false,
+        "message": "Animation dance canceled",
+        "duration": 0.4711599349975586,
+        "state": "canceled"
+      }
+    },
+    {
+      "scenario": "actual_direction_estimator",
+      "passed": true,
+      "evidence": {
+        "requested_mic_angle": 90,
+        "measured_mic_angle": 89.95854916612012,
+        "robot_angle": -97.92895439923973,
+        "channels": 6,
+        "sample_rate": 16000,
+        "method": "shared GCC-PHAT on delayed PCM",
+        "noise": 0.02
+      }
+    },
+    {
+      "scenario": "raw_sensor_collision_to_motion_hold",
+      "passed": true,
+      "state": "COLLISION_AVOIDING",
+      "motion": {
+        "state": "COLLISION_AVOIDING",
+        "exclusive_motion_owner": "",
+        "home_stage": null,
+        "home_status": "",
+        "home_reason": "",
+        "collision_active": true,
+        "collision_directions": [
+          "front"
+        ],
+        "avoidance_mode": "hold_imminent",
+        "avoidance_directions": [
+          "front"
+        ],
+        "voice_override": false,
+        "manual_override": false,
+        "manual_target_rejected": "",
+        "motion_hold_requested": true,
+        "motion_frozen": true,
+        "positions": [
+          -0.45697026931128515,
+          -0.006500201547388408,
+          0.024137460732966576,
+          0.01647371859537303,
+          -0.06376022458237827,
+          1.2155671959938397e-08
+        ],
+        "target": [
+          -0.45697026931128515,
+          -0.006500201547388408,
+          0.024137460732966576,
+          0.01647371859537303,
+          -0.06376022458237827,
+          1.2155671959938397e-08
+        ]
+      }
+    },
+    {
+      "scenario": "collision_clear_waits_for_fresh_intent",
+      "passed": true,
+      "motion": {
+        "state": "IDLE",
+        "exclusive_motion_owner": "",
+        "home_stage": null,
+        "home_status": "",
+        "home_reason": "",
+        "collision_active": false,
+        "collision_directions": [],
+        "avoidance_mode": "hold_replan",
+        "avoidance_directions": [],
+        "voice_override": false,
+        "manual_override": false,
+        "manual_target_rejected": "",
+        "motion_hold_requested": true,
+        "motion_frozen": true,
+        "positions": [
+          -0.45697026931128515,
+          -0.006500201547388408,
+          0.024137460732966576,
+          0.01647371859537303,
+          -0.06376022458237827,
+          1.2155671959938397e-08
+        ],
+        "target": [
+          -0.45697026931128515,
+          -0.006500201547388408,
+          0.024137460732966576,
+          0.01647371859537303,
+          -0.06376022458237827,
+          1.2155671959938397e-08
+        ]
+      }
+    },
+    {
+      "scenario": "fresh_manual_intent_releases_replan_hold",
+      "passed": true,
+      "joint": "base_link_to_link1",
+      "target": -0.33697026931128465,
+      "observed": -0.37286470554518136,
+      "motion": {
+        "state": "USER_CONTROL",
+        "exclusive_motion_owner": "",
+        "home_stage": null,
+        "home_status": "",
+        "home_reason": "",
+        "collision_active": false,
+        "collision_directions": [],
+        "avoidance_mode": "clear",
+        "avoidance_directions": [],
+        "voice_override": false,
+        "manual_override": true,
+        "manual_target_rejected": "",
+        "motion_hold_requested": false,
+        "motion_frozen": false,
+        "positions": [
+          -0.3542560130703313,
+          -0.0008,
+          4.176194859519056e-53,
+          -0.0008,
+          0.0009407746424801765,
+          0
+        ],
+        "target": [
+          -0.3416,
+          -0.0008,
+          0,
+          -0.0008,
+          -0.0016,
+          0
+        ]
+      }
+    },
+    {
+      "scenario": "collision_quiet_recovery",
+      "passed": true,
+      "motion": {
+        "state": "IDLE",
+        "exclusive_motion_owner": "",
+        "home_stage": null,
+        "home_status": "",
+        "home_reason": "",
+        "collision_active": false,
+        "collision_directions": [],
+        "avoidance_mode": "clear",
+        "avoidance_directions": [],
+        "voice_override": false,
+        "manual_override": false,
+        "manual_target_rejected": "",
+        "motion_hold_requested": false,
+        "motion_frozen": false,
+        "positions": [
+          -0.3405517568981131,
+          -0.0008000645647476727,
+          -7.854771648037599e-07,
+          -0.0007999789785181336,
+          -0.0015164103092518858,
+          0
+        ],
+        "target": [
+          -0.3405517568981131,
+          -0.0008000645647476727,
+          -7.854771648037599e-07,
+          -0.0007999789785181336,
+          -0.0015164103092518858,
+          0
+        ]
+      }
+    },
+    {
+      "scenario": "random_stl_physics_obstacle",
+      "passed": true,
+      "asset": "can",
+      "frame": "simulated_obstacle_front",
+      "collider_enabled_during_stimulus": true,
+      "collider_released": true
+    },
+    {
+      "scenario": "invalid_requests_rejected",
+      "passed": true
+    },
+    {
+      "scenario": "no_browser_errors",
+      "passed": true,
+      "console_errors": 0,
+      "canceled_hidden_model_mesh_requests": 4
+    },
+    {
+      "scenario": "health_stale_fault_test_skipped",
+      "passed": true,
+      "reason": "pass --pause-state-manager-pid for simulator process"
+    }
+  ],
+  "error": null,
+  "page_errors": [],
+  "console_errors": [],
+  "failed_requests": [],
+  "canceled_hidden_model_mesh_requests": [
+    {
+      "url": "http://127.0.0.1:8080/assets/roarm/L2.stl",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "url": "http://127.0.0.1:8080/assets/roarm/L4.stl",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "url": "http://127.0.0.1:8080/assets/roarm_m3/link2.stl",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "url": "http://127.0.0.1:8080/assets/roarm_m3/link3.stl",
+      "failure": "net::ERR_ABORTED"
+    }
+  ],
+  "elapsed_seconds": 88.69810354313813,
+  "url": "http://127.0.0.1:8080"
+}

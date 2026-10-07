@@ -54,9 +54,10 @@ not reproduce APDS9960 optics. Side outputs use ray distance in centimetres,
 including zero on overlap so the classifier conservatively brakes. The fixture
 does not emulate VL53 firmware noise or other invalid-return behavior.
 
-This producer has a separate opt-in switch,
-`enable_world_sensor_fixture` (default `false`). `enable_sim_sensors=true`
-starts the regular collision classifier and does not enable synthetic rays.
+Direct `physics_simulator.launch.py` keeps the producer opt-in with
+`enable_world_sensor_fixture` (default `false`); the physics and full Compose
+profiles enable it by default. `enable_sim_sensors=true` starts the regular
+collision classifier and does not by itself enable synthetic rays.
 The fixture also supplies fresh zero-contact FSR samples, since its geometric
 scene does not model tactile contact. Required range/contact coverage therefore
 remains strict; it is not silently disabled to make a range-only fixture work.
@@ -82,5 +83,8 @@ The dashboard's Front/Left/Right virtual-obstacle buttons now hold raw range
 readings through the standard sensor classifier while active, then send fresh
 clear samples briefly after release so the collision state can recover. Orange
 markers track the gripper and show which virtual sensor obstacle is active.
-This quick control is a sensor stimulus, not a MuJoCo physical obstacle; use the
-world-fixture option above when testing raycasts against configured geometry.
+Dashboard dropout toggles stop the selected front/left/right ray at the
+synthetic sensor source. Required sensor coverage then puts the real motion
+controller into a named stale-coverage hold until the ray resumes. This is a
+sensor stimulus, not a MuJoCo physical obstacle; use configured primitives to
+test raycasts against geometry.

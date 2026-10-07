@@ -8,18 +8,21 @@ package_name = 'luxo_behaviors'
 setup(
     name=package_name,
     version='0.1.0',
-    packages=[package_name, package_name + '.animation_plugins'],
+    packages=[package_name, package_name + '.animation_plugins', package_name + '.integrations'],
     package_data={package_name: [
         'simulator_ui.html',
         'assets/vendor/*.js',
         'assets/vendor/*.txt',
         'assets/roarm_m3/*',
         'assets/roarm_m3/**/*',
+        'assets/simulator_props/*.stl',
     ]},
     data_files=[
         ('share/ament_index/resource_index/packages',
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
+        ('share/' + package_name + '/systemd',
+         glob(os.path.join('..', '..', 'systemd', '*.service'))),
         # Add the launch files
         (os.path.join('share', package_name, 'launch'), 
          glob(os.path.join('launch', '*.launch.py'))),
@@ -58,6 +61,7 @@ setup(
             'sim_activity_driver = luxo_behaviors.sim_activity_driver:main',
             'sim_camera_interaction = luxo_behaviors.sim_camera_interaction:main',
             'sim_interaction_adapter = luxo_behaviors.sim_interaction_adapter:main',
+            'smart_home_bridge = luxo_behaviors.integrations.bridge:main',
         ],
     },
 )

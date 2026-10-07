@@ -17,6 +17,7 @@ def _simulator_dashboard_parameters():
         'host': LaunchConfiguration('simulator_host'),
         'port': LaunchConfiguration('simulator_port'),
         'audio_directory': LaunchConfiguration('simulator_audio_directory'),
+        'tts_directory': LaunchConfiguration('simulator_tts_directory'),
         'simulation_backend': LaunchConfiguration('simulation_backend'),
     }
 
@@ -127,6 +128,10 @@ def generate_launch_description():
         'simulator_audio_directory', default_value='',
         description='Optional shared directory for bounded WAV upload/ASR testing'
     )
+    declare_simulator_tts_directory = DeclareLaunchArgument(
+        'simulator_tts_directory', default_value='',
+        description='Optional local Piper output directory served to the browser simulator'
+    )
     declare_joint_profile = DeclareLaunchArgument(
         'joint_profile', default_value='urdf4',
         description='Simulation joint profile: checked-in four-axis urdf4 or canonical six-axis roarm_m3'
@@ -204,6 +209,10 @@ def generate_launch_description():
         'enable_speech_bridge',
         default_value=PythonExpression(["'true' if '", use_hardware, "' == 'false' else 'false'"]),
         description='Enable silent speech bridge (simulation default; hardware opt-in)'
+    )
+    declare_enable_smart_home_bridge = DeclareLaunchArgument(
+        'enable_smart_home_bridge', default_value='false',
+        description='Enable optional Home Assistant and Music Assistant adapters'
     )
     declare_speech_synthesize = DeclareLaunchArgument(
         'speech_synthesize', default_value=EnvironmentVariable('LUXOPI_SYNTHESIZE_SPEECH', default_value='false'),
@@ -553,9 +562,16 @@ def generate_launch_description():
                 LaunchConfiguration('speech_event_socket'), value_type=str
             ),
             'audio_directory': LaunchConfiguration('simulator_audio_directory'),
+            'tts_directory': LaunchConfiguration('simulator_tts_directory'),
             'simulation_backend': LaunchConfiguration('simulation_backend'),
         }],
         condition=IfCondition(LaunchConfiguration('enable_speech_bridge'))
+    )
+
+    smart_home_bridge_node = Node(
+        package='luxo_behaviors', executable='smart_home_bridge',
+        name='smart_home_bridge', output='screen',
+        condition=IfCondition(LaunchConfiguration('enable_smart_home_bridge')),
     )
 
     sim_motion_controller_node = Node(
@@ -606,9 +622,9 @@ def generate_launch_description():
         name='sim_activity_driver',
         output='screen',
         parameters=[{
-            'idle_after': LaunchConfiguration('sim_idle_after'),
-            'idle_interval': LaunchConfiguration('sim_idle_interval'),
-            'emotion_interval': LaunchConfiguration('sim_emotion_interval'),
+            'idle_after': ParameterValue(LaunchConfiguration('sim_idle_after'), value_type=float),
+            'idle_interval': ParameterValue(LaunchConfiguration('sim_idle_interval'), value_type=float),
+            'emotion_interval': ParameterValue(LaunchConfiguration('sim_emotion_interval'), value_type=float),
         }],
         condition=IfCondition(PythonExpression([
             "'", use_hardware, "' == 'false' and '",
@@ -768,6 +784,7 @@ def generate_launch_description():
         declare_test_mode,
         declare_enable_voice,
         declare_enable_speech_bridge,
+        declare_enable_smart_home_bridge,
         declare_speech_synthesize,
         declare_speech_backend,
         declare_speech_service_command,
@@ -790,6 +807,7 @@ def generate_launch_description():
         declare_simulator_host,
         declare_simulator_port,
         declare_simulator_audio_directory,
+        declare_simulator_tts_directory,
         declare_joint_profile,
         declare_continuous_timing,
         declare_simulation_backend,
@@ -837,6 +855,7 @@ def generate_launch_description():
         voice_direction_node,
         sim_direction_node,
         speech_bridge_node,
+        smart_home_bridge_node,
         # Launch files
         roarm_launch,
         

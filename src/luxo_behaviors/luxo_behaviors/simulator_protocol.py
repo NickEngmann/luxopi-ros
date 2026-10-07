@@ -2,6 +2,8 @@
 
 import math
 import re
+import hashlib
+import json
 
 from luxo_behaviors.roarm_m3_kinematics import M3_JOINT_LIMITS, M3_JOINT_NAMES
 from luxo_behaviors.animation_capabilities import ANIMATION_NAMES
@@ -18,7 +20,6 @@ STATE_NAMES = {
     "ESCAPE_MODE", "USER_CONTROL", "EMOTION_REACTING", "PETTING", "ERROR",
     "INITIALIZING", "SHUTDOWN",
 }
-MANUAL_STATE_NAMES = {"IDLE", "USER_CONTROL", "RETURNING_HOME"}
 MANUAL_JOINT_LIMITS = {
     "base_to_L1": (-3.14, 3.14),
     "L1_to_L2": (-1.570796, 1.570796),
@@ -30,6 +31,7 @@ MAX_COMMAND_CHARS = 2000
 MAX_EVENT_BYTES = 4096
 MAX_AUDIO_BYTES = 8 * 1024 * 1024
 MAX_VISION_IMAGE_BYTES = 8 * 1024 * 1024
+MAX_REQUEST_ID_CHARS = 96
 HEALTH_STALE_SECONDS = 3.0
 REQUIRED_GRAPH_COMPONENTS = (
     "state_manager",
@@ -63,6 +65,24 @@ def valid_joint_feedback(names, positions):
         if not lower - 0.02 <= value <= upper + 0.02:
             return False
     return True
+
+
+def prune_expired_request_ids(request_ids, now, max_age=3600.0):
+    """Expire oldest idempotency entries without copying the bounded cache.
+
+    Entries are inserted with monotonic timestamps and never moved except on
+    insertion, so expiration is a prefix scan and can stop at the first live
+    entry. The caller must hold the cache's synchronization lock.
+    """
+    cutoff = now - max_age
+    removed = 0
+    while request_ids:
+        _request_id, cached = next(iter(request_ids.items()))
+        if cached[1] >= cutoff:
+            break
+        request_ids.popitem(last=False)
+        removed += 1
+    return removed
 
 
 def camera_input_publications(event):
@@ -168,6 +188,13 @@ def normalize_event(payload):
         raise ValueError("event must be a JSON object")
 
     kind = payload.get("type")
+    request_id = payload.get("request_id")
+    if request_id is not None and (
+        not isinstance(request_id, str)
+        or not 1 <= len(request_id) <= MAX_REQUEST_ID_CHARS
+        or re.fullmatch(r"[A-Za-z0-9_.:-]+", request_id) is None
+    ):
+        raise ValueError("request_id must be 1..96 safe identifier characters")
     if kind == "voice_command":
         text = payload.get("text")
         if not isinstance(text, str) or not text.strip():
@@ -175,13 +202,13 @@ def normalize_event(payload):
         text = text.strip()
         if len(text) > MAX_COMMAND_CHARS:
             raise ValueError("voice command is too long")
-        return {"type": kind, "text": text}
+        return _with_request_id({"type": kind, "text": text}, request_id)
 
     if kind == "audio_file":
         name = payload.get("name")
         if not isinstance(name, str) or not re.fullmatch(r"[0-9a-fA-F]{32}\.wav", name):
             raise ValueError("audio file must be a UUID WAV basename")
-        return {"type": kind, "name": name}
+        return _with_request_id({"type": kind, "name": name}, request_id)
 
     if kind == "animation":
         name = payload.get("name")
@@ -190,16 +217,25 @@ def normalize_event(payload):
         speed = _number(payload.get("speed", 1.0), "speed")
         if not 0.1 <= speed <= 2.0:
             raise ValueError("animation speed must be between 0.1 and 2.0")
-        return {"type": kind, "name": name, "speed": speed}
+        return _with_request_id({"type": kind, "name": name, "speed": speed}, request_id)
 
     if kind == "cancel_animation":
-        return {"type": kind}
+        return _with_request_id({"type": kind}, request_id)
 
     if kind == "state_request":
         state = payload.get("state")
-        if state not in MANUAL_STATE_NAMES:
-            raise ValueError("state can only be requested through the dashboard for IDLE, USER_CONTROL, or RETURNING_HOME")
-        return {"type": kind, "state": state}
+        if state not in STATE_NAMES:
+            raise ValueError("state must be one of the registered simulator states")
+        return _with_request_id({"type": kind, "state": state}, request_id)
+
+    if kind == "simulation_speed":
+        speed = _number(payload.get("scale"), "simulation speed")
+        if speed not in (1.0, 2.0, 3.0):
+            raise ValueError("simulation speed must be 1x, 2x, or 3x")
+        return _with_request_id({"type": kind, "scale": speed}, request_id)
+
+    if kind == "simulator_autonomy":
+        return _with_request_id({"type": kind, "enabled": _boolean(payload.get("enabled"), "autonomy enabled")}, request_id)
 
     if kind == "manual_joint_target":
         positions = payload.get("positions")
@@ -218,31 +254,31 @@ def normalize_event(payload):
             if not bounds[0] <= value <= bounds[1]:
                 raise ValueError(f"{name} is outside its URDF limits")
             normalized[name] = value
-        return {"type": kind, "positions": normalized}
+        return _with_request_id({"type": kind, "positions": normalized}, request_id)
 
     if kind == "light_control":
-        return {"type": kind, "enabled": _boolean(payload.get("enabled"), "enabled")}
+        return _with_request_id({"type": kind, "enabled": _boolean(payload.get("enabled"), "enabled")}, request_id)
 
     if kind in {"brightness", "color_temperature"}:
         level = _number(payload.get("value"), "value")
         if not 0.0 <= level <= 1.0:
             raise ValueError(f"{kind} must be between 0.0 and 1.0")
-        return {"type": kind, "value": level}
+        return _with_request_id({"type": kind, "value": level}, request_id)
 
     if kind == "light_color":
         color = payload.get("color")
         if color not in LIGHT_COLORS:
             raise ValueError("unknown light color")
-        return {"type": kind, "color": color}
+        return _with_request_id({"type": kind, "color": color}, request_id)
 
     if kind == "audio_direction":
         angle = _number(payload.get("degrees"), "degrees")
         if not 0 <= angle <= 359:
             raise ValueError("microphone direction must be between 0 and 359 degrees")
-        return {"type": kind, "degrees": angle}
+        return _with_request_id({"type": kind, "degrees": angle}, request_id)
 
     if kind == "voice_active":
-        return {"type": kind, "active": _boolean(payload.get("active"), "active")}
+        return _with_request_id({"type": kind, "active": _boolean(payload.get("active"), "active")}, request_id)
 
     if kind == "touch":
         sensor = payload.get("sensor")
@@ -251,26 +287,26 @@ def normalize_event(payload):
         value = _integer(payload.get("value"), "value")
         if not 0 <= value <= 255:
             raise ValueError("touch value must be between 0 and 255")
-        return {"type": kind, "sensor": sensor, "value": value}
+        return _with_request_id({"type": kind, "sensor": sensor, "value": value}, request_id)
 
     if kind == "petting_zone":
         zone = payload.get("zone")
         if zone not in SIM_PETTING_ZONES:
             raise ValueError("unknown simulated petting zone")
-        return {"type": kind, "zone": zone,
-                "active": _boolean(payload.get("active"), "active")}
+        return _with_request_id({"type": kind, "zone": zone,
+                "active": _boolean(payload.get("active"), "active")}, request_id)
 
     if kind == "gesture":
         gesture = payload.get("gesture")
         if gesture not in GESTURES:
             raise ValueError("unknown gesture")
-        return {"type": kind, "gesture": gesture}
+        return _with_request_id({"type": kind, "gesture": gesture}, request_id)
 
     if kind == "proximity":
         value = _integer(payload.get("value"), "value")
         if not 0 <= value <= 255:
             raise ValueError("proximity must be between 0 and 255")
-        return {"type": kind, "value": value}
+        return _with_request_id({"type": kind, "value": value}, request_id)
 
     if kind == "distance":
         side = payload.get("side")
@@ -279,14 +315,21 @@ def normalize_event(payload):
         metres = _number(payload.get("metres"), "metres")
         if not 0 <= metres <= 1.2:
             raise ValueError("distance must be between 0 and 1.2 metres")
-        return {"type": kind, "side": side, "metres": metres}
+        return _with_request_id({"type": kind, "side": side, "metres": metres}, request_id)
 
     if kind == "collision":
         side = payload.get("side")
         if side not in COLLISION_SIDES:
             raise ValueError("collision side must be front, left, or right")
         active = _boolean(payload.get("active"), "active")
-        return {"type": kind, "side": side, "active": active}
+        return _with_request_id({"type": kind, "side": side, "active": active}, request_id)
+
+    if kind == "sensor_fault":
+        side = payload.get("side")
+        if side not in COLLISION_SIDES:
+            raise ValueError("sensor fault side must be front, left, or right")
+        active = _boolean(payload.get("active"), "active")
+        return _with_request_id({"type": kind, "side": side, "active": active}, request_id)
 
     if kind == "vision":
         present = _boolean(payload.get("person_present"), "person_present")
@@ -296,14 +339,27 @@ def normalize_event(payload):
         metres = _number(payload.get("metres", 1.0), "metres")
         if not 0.1 <= metres <= 10:
             raise ValueError("person distance must be between 0.1 and 10 metres")
-        return {
+        return _with_request_id({
             "type": kind,
             "person_present": present,
             "emotion": emotion,
             "metres": metres,
-        }
+        }, request_id)
 
     raise ValueError("unsupported simulator event")
+
+
+def _with_request_id(event, request_id):
+    if request_id is not None:
+        event["request_id"] = request_id
+    return event
+
+
+def event_fingerprint(event):
+    """Stable digest for idempotency; request IDs themselves are excluded."""
+    payload = {key: value for key, value in event.items() if key != "request_id"}
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), allow_nan=False)
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
 def _number(value, name):

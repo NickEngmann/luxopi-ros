@@ -1,0 +1,22 @@
+[Unit]
+Description=LuxoPI Sendspin player for Music Assistant
+Documentation=https://github.com/Sendspin/sendspin-python-cli
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=10
+
+[Service]
+Type=simple
+# Run as the same unprivileged account that owns the robot audio device.
+User=luxopi
+Group=audio
+# Sendspin remains independent from ROS and the voice pipeline. Set the ALSA device
+# through a systemd drop-in after checking the actual robot's shared audio setup.
+ExecStart=/usr/bin/sendspin daemon --name LuxoPI --hardware-volume false
+Restart=always
+RestartSec=10
+Nice=5
+
+[Install]
+WantedBy=multi-user.target

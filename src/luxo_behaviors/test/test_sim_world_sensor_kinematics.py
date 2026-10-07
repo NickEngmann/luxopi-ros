@@ -13,6 +13,7 @@ from luxo_behaviors.joint_profiles import ROARM_M3_NAMES
 from luxo_behaviors.mujoco_runtime import build_m3_model
 from luxo_behaviors.sim_world_geometry import raycast_fixture, transform_mount
 from luxo_behaviors.sim_world_sensors import DEFAULT_MOUNTS
+from luxo_behaviors.reactive_avoidance import DEFAULT_RETREATS
 
 
 ASSETS = Path(__file__).parents[1] / "luxo_behaviors/assets/roarm_m3"
@@ -52,3 +53,26 @@ def test_synthetic_end_effector_ray_tracks_actual_m3_base_yaw():
     assert raycast_fixture(turned_origin, turned_ray, obstacle, 0.5) is None
 
     assert len(ROARM_M3_NAMES) == 6
+
+
+@pytest.mark.parametrize(("side", "obstacle_y", "retreat_sign"), [
+    ("left", 1.0, -1), ("right", -1.0, 1),
+])
+def test_side_warning_retreat_moves_gripper_away_in_robot_frame(side, obstacle_y, retreat_sign):
+    engine, model, joints = build_m3_model(
+        build_vendor_description(ASSETS), ASSETS, timestep=0.002, effort_limit=3.0
+    )
+    data = engine.MjData(model)
+    body = engine.mj_name2id(model, engine.mjtObj.mjOBJ_BODY, "gripper_link")
+    base_address = int(model.jnt_qposadr[joints[0]])
+    engine.mj_forward(model, data)
+    initial = data.xpos[body].copy()
+    # ROS base coordinates: x is forward and y is left. Place a fixed hazard
+    # just beyond the side of the distal gripper, independent of the ray test.
+    obstacle = initial + np.array([0.0, obstacle_y * 0.14, 0.0])
+    initial_distance = float(np.linalg.norm(initial - obstacle))
+    data.qpos[base_address] = retreat_sign * 0.08
+    engine.mj_forward(model, data)
+    retreated = data.xpos[body].copy()
+    assert DEFAULT_RETREATS[side]["sign"] == retreat_sign
+    assert np.linalg.norm(retreated - obstacle) > initial_distance + 0.005

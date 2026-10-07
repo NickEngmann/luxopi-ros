@@ -30,6 +30,25 @@ for line in sys.stdin:
         client.close()
 
 
+def test_local_service_ready_handshake_moves_model_warmup_before_first_request():
+    child = '''
+import json,sys,time
+time.sleep(.15)
+sys.stderr.write('LUXOPI_LOCAL_SERVICE_READY\\n');sys.stderr.flush()
+for line in sys.stdin:
+ request=json.loads(line)
+ print(json.dumps({'id':request['id'],'response':'warm'}),flush=True)
+'''
+    client = ConversationClient([sys.executable, "-u", "-c", child], timeout=2,
+                                wait_for_ready=True, startup_timeout=1)
+    try:
+        client.start()
+        assert client._ready_event.is_set()
+        assert client.request("first turn")["response"] == "warm"
+    finally:
+        client.close()
+
+
 def test_hung_child_is_killed_and_next_request_starts_fresh():
     child = '''
 import json, sys, time

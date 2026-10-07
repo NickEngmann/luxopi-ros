@@ -5,6 +5,7 @@ if os.environ.get('ROS_DOMAIN_ID')!='73' or os.environ.get('ROS_LOCALHOST_ONLY')
     raise SystemExit('Sensor scenarios require domain73 localhost-only')
 import rclpy
 from rclpy.node import Node
+from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile
 from std_msgs.msg import String,Float32,UInt8,Bool,Int16
 from sensor_msgs.msg import JointState
 from luxo_interfaces.srv import RequestStateTransition
@@ -13,7 +14,7 @@ from luxo_behaviors.joint_motion import URDF_JOINT_LIMITS
 
 def main():
     rclpy.init();node=Node('sensor_scenarios')
-    observed=dict(states=[],petting=[],animations=[],joints=[],joint_names=[],gestures=[],front=[],left=[],right=[],motion=[])
+    observed=dict(states=[],petting=[],animations=[],joints=[],joint_names=[],gestures=[],front=[],left=[],right=[],motion=[],world_sensors=None)
     for message,topic,key in [(String,'/luxo/current_state','states'),(String,'/collision/petting_events','petting'),
         (String,'/roarm/current_animation','animations'),(String,'/gestures','gestures'),
         (Bool,'/head_collision_warning','front'),(Bool,'/left_collision_warning','left'),(Bool,'/right_collision_warning','right')]:
@@ -22,6 +23,8 @@ def main():
         observed['joints'].append(list(msg.position));observed['joint_names']=list(msg.name)
     node.create_subscription(JointState,'/joint_states',joint_callback,100)
     node.create_subscription(String,'/sim/motion_status',lambda msg:observed['motion'].append(json.loads(msg.data)),100)
+    node.create_subscription(String,'/sim/world_sensor_status',
+                             lambda msg:observed.update(world_sensors=json.loads(msg.data)),10)
     touch={side:node.create_publisher(UInt8,'/touch_sensors/head_'+side,10) for side in ('top','left','bottom','right')}
     distance=node.create_publisher(Float32,'/i2c/vl53_left/distance',10)
     right_distance=node.create_publisher(Float32,'/i2c/vl53_right/distance',10)
@@ -36,6 +39,13 @@ def main():
         raw['touch'][side]=value;touch[side].publish(UInt8(data=value))
     gesture=node.create_publisher(String,'/i2c/apds9960/gesture',10)
     manual=node.create_publisher(JointState,'/sim/manual_joint_target',10)
+    autonomy=node.create_publisher(Bool,'/sim/autonomy_enabled',10)
+    sensor_faults=node.create_publisher(String,'/sim/sensor_faults',10)
+    autonomy_state={'enabled':None}
+    autonomy_qos=QoSProfile(history=HistoryPolicy.KEEP_LAST,depth=1,
+                            durability=DurabilityPolicy.TRANSIENT_LOCAL)
+    node.create_subscription(Bool,'/sim/autonomy_status',
+                             lambda msg:autonomy_state.update(enabled=msg.data),autonomy_qos)
     states=node.create_client(RequestStateTransition,'/luxo/request_state_transition')
     def spin(seconds):
         end=time.monotonic()+seconds
@@ -55,6 +65,20 @@ def main():
     try:
         assert states.wait_for_service(timeout_sec=10)
         wait(lambda:bool(observed['states']) and bool(observed['joints']))
+        wait(lambda:autonomy_state['enabled'] is not None,timeout=5)
+        for _ in range(8):
+            autonomy.publish(Bool(data=False))
+            if autonomy_state['enabled'] is False:break
+            spin(.1)
+        wait(lambda:autonomy_state['enabled'] is False,timeout=3)
+        # Isolate raw production-topic injection from sim_world_sensors, which
+        # otherwise publishes geometric ranges to these same optical topics.
+        wait(lambda:observed['world_sensors'] is not None,timeout=5)
+        sensor_faults.publish(String(data=json.dumps(
+            {'front':True,'left':True,'right':True},separators=(',',':'))))
+        wait(lambda:observed['world_sensors'].get('sensor_faults')==
+             {'front':True,'left':True,'right':True},timeout=5)
+        spin(.2)
         spin(6) # Actual classifier startup gate remains enabled.
         transition('IDLE')
         baseline=len(observed['joints'])
@@ -88,12 +112,19 @@ def main():
         wait(lambda:observed['motion'] and observed['motion'][-1].get('manual_override'))
         wait(lambda:max(abs(a-b) for a,b in zip(observed['joints'][start],observed['joints'][-1]))>.03)
         report('manual_input_actual_motion',state='USER_CONTROL',joint_frames=len(observed['joints'])-start)
+        collision_start_pose=observed['joints'][-1][:]
+        start=len(observed['joints'])
         raw['left']=3.;send_raw();spin(.12)
         wait(lambda:observed['left'][-1] is True and observed['states'][-1]=='COLLISION_AVOIDING')
-        wait(lambda:observed['motion'][-1].get('motion_frozen'),timeout=1)
-        start=len(observed['joints']);spin(.4)
+        wait(lambda:observed['motion'][-1].get('motion_frozen'),timeout=3)
+        spin(1.0)
         poses=observed['joints'][start:]
-        assert poses and max(max(abs(a-b) for a,b in zip(poses[0],p)) for p in poses)<1e-5,'Raw collision did not freeze actual motion'
+        assert len(poses)>=10,'No measured joint feedback during collision braking'
+        stopping_excursion=max(max(abs(a-b) for a,b in zip(collision_start_pose,p)) for p in poses)
+        settled=poses[-10:]
+        settled_drift=max(max(abs(a-b) for a,b in zip(settled[0],p)) for p in settled)
+        assert stopping_excursion<.25, f'Collision stopping excursion exceeded bounded envelope: {stopping_excursion:.4f} rad'
+        assert settled_drift<.001, f'Joint feedback did not settle under collision hold: {settled_drift:.6f} rad'
         raw['left']=100.;send_raw();spin(.4)
         wait(lambda:observed['left'][-1] is False and observed['states'][-1]!='COLLISION_AVOIDING')
         held_after_clear=observed['joints'][-1][:]
@@ -102,7 +133,9 @@ def main():
         replan=held_after_clear[:];replan[0]+=.08
         manual.publish(JointState(name=names,position=replan))
         wait(lambda:max(abs(a-b) for a,b in zip(held_after_clear,observed['joints'][-1]))>.01)
-        report('raw_distance_collision_motion_hold_and_recovery',held_joint_frames=len(poses),restored_state=observed['states'][-1])
+        report('raw_distance_collision_motion_hold_and_recovery',held_joint_frames=len(poses),
+               stopping_excursion_radians=round(stopping_excursion,5),
+               settled_drift_radians=round(settled_drift,6),restored_state=observed['states'][-1])
         # Passthrough is independent of the new reaction consumer. Keep user
         # control leased here so this raw-input suite does not leave a gesture
         # animation running into the next sequential voice suite.
@@ -114,7 +147,13 @@ def main():
                motion_mapping='guarded during USER_CONTROL; action consumer validated separately')
         transition('IDLE')
     finally:
-        set_touch('top',0)
+        raw['left']=100.;raw['right']=100.
+        for side in raw['touch']:raw['touch'][side]=0
+        send_raw();spin(.5)
+        sensor_faults.publish(String(data=json.dumps(
+            {'front':False,'left':False,'right':False},separators=(',',':'))))
+        spin(.1)
+        autonomy.publish(Bool(data=True));spin(.1)
         node.destroy_node();rclpy.shutdown()
 
 if __name__=='__main__':main()

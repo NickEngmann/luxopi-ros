@@ -121,7 +121,9 @@ def main():
         raise SystemExit('Requires a local isolated simulator endpoint')
     before = inspect(args.container)
     config, host = before['Config'], before['HostConfig']
-    assert config['Image'] == 'luxopi/simulator:local', 'Unexpected container image'
+    assert config['Image'] in {
+        'luxopi/simulator:local', 'luxopi/physics-simulator:local',
+    }, 'Unexpected container image'
     assert config.get('Labels', {}).get('com.docker.compose.service') == 'simulator'
     assert not host.get('Devices') and host['NetworkMode'] != 'host'
     assert host['RestartPolicy']['Name'] == 'unless-stopped'

@@ -43,3 +43,29 @@ previously it only emitted `true`, leaving listeners without an end-of-speech ed
 Circular statistics are shared with tests and clamp floating-point strength before
 logarithms to avoid invalid standard deviations. LED presence is checked before
 updates so missing LED hardware does not stop direction processing.
+
+The simulator motion controller resolves each voice-facing base target to the
+nearest equivalent yaw inside the vendor base-joint limits. Near the ±180° seam,
+it takes the short turn to the cable stop instead of rotating almost a full
+revolution; it still respects the mechanical limit when a source is outside the
+reachable arc. `scripts/run_motion_scenarios.py --directions-only` verifies that a synthetic
+170° source moves from a +170° starting pose to the nearest cable-safe target,
+stays inside the vendor limits, and returns to IDLE after the quiet timeout.
+This verifies command geometry in the model; the actual cable-safe range must
+still be checked against the assembled robot.
+
+DOA updates are normalized to a signed single-turn angle and rejected if they
+are non-finite or outside ±360°. The motion controller expires direction
+estimates after two seconds and clears the cached estimate at the inactive edge,
+so a later activity event cannot reuse an old speaker position. Repeated
+direction frames share one pending state request rather than flooding the FSM.
+Only IDLE can be promoted to VOICE_FOLLOWING; while ANIMATING, PETTING, or
+EMOTION_REACTING, DOA can overlay base yaw while preserving the current state
+and the other joints' animation targets. Collision avoidance, escape, home,
+manual control, and fault states retain ownership and suppress the overlay.
+The simulator also observes the animation action's announced intent before its
+FSM transition, closing the brief IDLE-to-ANIMATING startup race.
+`doa-animation-overlay-e2e.json` records an end-to-end MuJoCo check where an
+animation continues and completes while the base follows synthetic audio and
+then returns to its own quiet/idle state. These are simulator ownership and
+command-path checks, not a physical microphone, cable, or acoustic test.

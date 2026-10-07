@@ -21,6 +21,7 @@ def main():
     emotion=node.create_publisher(String,'/sim/camera/emotion',10)
     distance=node.create_publisher(Float32,'/sim/camera/person_distance',10)
     person=node.create_publisher(Bool,'/sim/camera/person_present',10)
+    autonomy=node.create_publisher(Bool,'/sim/autonomy_enabled',10)
     states=node.create_client(RequestStateTransition,'/luxo/request_state_transition')
     def spin(seconds):
         end=time.monotonic()+seconds
@@ -32,6 +33,10 @@ def main():
             spin(.05)
     try:
         assert states.wait_for_service(timeout_sec=10)
+        # Keep autonomous idle activity from racing this test's cooldown and
+        # emotion animation assertions. Disabling autonomy cancels an in-flight
+        # synthetic idle goal through the same action path used by the UI.
+        autonomy.publish(Bool(data=False));spin(.3)
         req=RequestStateTransition.Request();req.requested_state='IDLE';req.requesting_node='vision_scenarios';req.priority=100;req.force=True
         future=states.call_async(req);wait(future.done);assert future.result().success
         # Preserve startup cooldown rather than speeding up an unrelated policy.
@@ -53,6 +58,7 @@ def main():
         print(json.dumps(dict(scenario='stale_person_presence_expires',passed=True)),flush=True)
         wait(lambda:observed['states'][-1]=='IDLE' and not observed['animations'][-1],timeout=40)
     finally:
+        person.publish(Bool(data=False));autonomy.publish(Bool(data=True));spin(.2)
         node.destroy_node();rclpy.shutdown()
 
 if __name__=='__main__':main()

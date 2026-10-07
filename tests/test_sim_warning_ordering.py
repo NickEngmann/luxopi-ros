@@ -24,6 +24,15 @@ class FakePolicy:
     def update_sensor(self, direction, active, now, *, severity, valid):
         self.updates.append((direction, active, now, severity, valid))
 
+    def snapshot(self, _now):
+        latest = {}
+        for direction, active, timestamp, severity, valid in self.updates:
+            if valid:
+                latest[direction] = (active, timestamp, severity)
+        hazards = [direction for direction, (active, _time, severity) in latest.items()
+                   if active and severity in {"warning", "danger"}]
+        return hazards, [], {}
+
 
 def make_node(now):
     tree = ast.parse(CONTROLLER.read_text())
@@ -74,7 +83,7 @@ def warning(node, direction, active=True):
     node._collision_callback(direction)(SimpleNamespace(data=active))
 
 
-def test_atomic_warning_before_bool_true_is_kept_and_repeated_true_does_not_refresh_edge():
+def test_atomic_warning_before_bool_true_is_kept_without_duplicate_edge():
     now = [10.0]
     node = make_node(now)
     atomic(node, "left", now[0])
@@ -82,10 +91,10 @@ def test_atomic_warning_before_bool_true_is_kept_and_repeated_true_does_not_refr
     assert node.reactive_avoidance.updates == [
         ("left", True, 10.0, "warning", True)
     ]
-    first_edge = node._warning_started_at["left"]
+    assert "left" not in node._warning_started_at
     now[0] = 10.2
     warning(node, "left")
-    assert node._warning_started_at["left"] == first_edge
+    assert "left" not in node._warning_started_at
     assert len(node.reactive_avoidance.updates) == 1
 
 

@@ -29,15 +29,15 @@ def decision(motion, current, requested, now, received=None):
     )
 
 
-def test_left_warning_redirects_toward_configured_retreat_within_joint_limits():
+def test_left_warning_redirects_away_from_hazard_within_joint_limits():
     motion = policy()
     current = [0.0, 0.0, 0.5, 0.0, 0.0, 0.0]
     warn(motion, "left", 1.0)
-    requested = [-0.4, 0.1, 0.7, 0.0, 0.0, 0.0]  # legacy leftward yaw
+    requested = [0.4, 0.1, 0.7, 0.0, 0.0, 0.0]
     result = decision(motion, current, requested, 1.01)
     assert result["mode"] == "adjust"
-    assert result["target"][0] == pytest.approx(0.08)
-    assert result["target"][0] >= current[0]
+    assert result["target"][0] == pytest.approx(-0.08)
+    assert result["target"][0] < current[0]
     assert all(ROARM_M3_LIMITS[name][0] <= value <= ROARM_M3_LIMITS[name][1]
                for name, value in zip(ROARM_M3_NAMES, result["target"]))
     assert result["target"][2] == pytest.approx(current[2])
@@ -50,7 +50,7 @@ def test_right_and_front_warning_use_their_configured_axes():
     motion = policy()
     warn(motion, "right", 1.0)
     result = decision(motion, current, [0.4, 0.2, 0.5, 0.0, 0.0, 0.0], 1.01)
-    assert result["target"][0] == pytest.approx(-0.08)
+    assert result["target"][0] == pytest.approx(0.08)
 
     motion = policy()
     warn(motion, "front", 1.0)
@@ -64,7 +64,7 @@ def test_warning_severity_remains_actionable_when_legacy_collision_bool_is_false
     motion.update_sensor("left", False, 1.0, severity="warning", valid=True)
     result = decision(motion, current, [-0.4, 0.2, 0.5, 0.0, 0.0, 0.0], 1.01)
     assert result["mode"] == "adjust"
-    assert result["target"][0] == pytest.approx(0.08)
+    assert result["target"][0] == pytest.approx(-0.08)
 
 
 def test_front_warning_holds_unmapped_axes_instead_of_extending_toward_sensor():
@@ -79,10 +79,10 @@ def test_front_warning_holds_unmapped_axes_instead_of_extending_toward_sensor():
 
 def test_reversed_calibration_is_used_and_empty_calibration_holds():
     current = [0.0, 0.2, 0.5, 0.0, 0.0, 0.0]
-    reversed_motion = policy({"left": {"axis": "base", "sign": -1}})
+    reversed_motion = policy({"left": {"axis": "base", "sign": 1}})
     warn(reversed_motion, "left", 1.0)
     result = decision(reversed_motion, current, [0.4, 0.2, 0.5, 0.0, 0.0, 0.0], 1.01)
-    assert result["target"][0] == pytest.approx(-0.08)
+    assert result["target"][0] == pytest.approx(0.08)
 
     unconfigured = policy({})
     warn(unconfigured, "left", 1.0)
@@ -129,7 +129,7 @@ def test_contact_holds_all_direct_commands_until_fresh_release_and_new_target():
 def test_joint_limit_without_escape_room_holds_instead_of_claiming_adjustment():
     motion = policy()
     current = [ROARM_M3_LIMITS[ROARM_M3_NAMES[0]][1], 0.2, 0.5, 0.0, 0.0, 0.0]
-    warn(motion, "left", 1.0)
+    warn(motion, "right", 1.0)
     result = decision(motion, current, [current[0] - 0.4, *current[1:]], 1.01)
     assert result["mode"] == "hold_no_safe_projection"
     assert result["target"] == current

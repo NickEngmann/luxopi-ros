@@ -1,0 +1,221 @@
+{
+  "results": [
+    {
+      "scenario": "reset idle",
+      "passed": true,
+      "milliseconds": 1.97,
+      "state": "IDLE",
+      "message": "Transition to IDLE granted"
+    },
+    {
+      "scenario": "dance state",
+      "passed": true,
+      "milliseconds": 1.25,
+      "state": "ANIMATING",
+      "message": "Transition to ANIMATING granted"
+    },
+    {
+      "scenario": "collision interrupts dance",
+      "passed": true,
+      "milliseconds": 1.45,
+      "state": "COLLISION_AVOIDING",
+      "message": "Transition to COLLISION_AVOIDING granted"
+    },
+    {
+      "scenario": "idle cannot steal safety state",
+      "passed": true,
+      "milliseconds": 0.91,
+      "state": "COLLISION_AVOIDING",
+      "message": "Transition to IDLE denied - insufficient priority or invalid transition"
+    },
+    {
+      "scenario": "collision completion restores dance",
+      "passed": true,
+      "milliseconds": 1.68,
+      "state": "ANIMATING",
+      "message": "Transition to IDLE granted"
+    },
+    {
+      "scenario": "foreign completion cannot finish dance",
+      "passed": true,
+      "milliseconds": 0.85,
+      "state": "ANIMATING",
+      "message": "Transition to IDLE denied - insufficient priority or invalid transition"
+    },
+    {
+      "scenario": "dance finishes",
+      "passed": true,
+      "milliseconds": 1.23,
+      "state": "IDLE",
+      "message": "Transition to IDLE granted"
+    },
+    {
+      "scenario": "voice heard",
+      "passed": true,
+      "milliseconds": 0.85,
+      "state": "VOICE_FOLLOWING",
+      "message": "Transition to VOICE_FOLLOWING granted"
+    },
+    {
+      "scenario": "capture command",
+      "passed": true,
+      "milliseconds": 1.78,
+      "state": "USER_CONTROL",
+      "message": "Transition to USER_CONTROL granted"
+    },
+    {
+      "scenario": "animation cannot finish active voice session",
+      "passed": true,
+      "milliseconds": 1.06,
+      "state": "USER_CONTROL",
+      "message": "Transition to IDLE denied - insufficient priority or invalid transition"
+    },
+    {
+      "scenario": "voice session completion restores direction owner",
+      "passed": true,
+      "milliseconds": 1.19,
+      "state": "VOICE_FOLLOWING",
+      "message": "Transition to IDLE granted"
+    },
+    {
+      "scenario": "direction owner completes",
+      "passed": true,
+      "milliseconds": 1.73,
+      "state": "IDLE",
+      "message": "Transition to IDLE granted"
+    },
+    {
+      "scenario": "animation before touch",
+      "passed": true,
+      "milliseconds": 1.43,
+      "state": "ANIMATING",
+      "message": "Transition to ANIMATING granted"
+    },
+    {
+      "scenario": "touch interrupts",
+      "passed": true,
+      "milliseconds": 1.65,
+      "state": "PETTING",
+      "message": "Transition to PETTING granted"
+    },
+    {
+      "scenario": "touch finishes restoring animation",
+      "passed": true,
+      "milliseconds": 1.5,
+      "state": "ANIMATING",
+      "message": "Transition to IDLE granted"
+    },
+    {
+      "scenario": "restored animation owner finishes",
+      "passed": true,
+      "milliseconds": 1.82,
+      "state": "IDLE",
+      "message": "Transition to IDLE granted"
+    },
+    {
+      "scenario": "state entry EMOTION_REACTING",
+      "passed": true,
+      "milliseconds": 1.54,
+      "state": "EMOTION_REACTING",
+      "message": "Transition to EMOTION_REACTING granted"
+    },
+    {
+      "scenario": "state recovery EMOTION_REACTING",
+      "passed": true,
+      "milliseconds": 1.36,
+      "state": "IDLE",
+      "message": "Transition to IDLE granted"
+    },
+    {
+      "scenario": "state entry RETURNING_HOME",
+      "passed": true,
+      "milliseconds": 0.96,
+      "state": "RETURNING_HOME",
+      "message": "Transition to RETURNING_HOME granted"
+    },
+    {
+      "scenario": "state recovery RETURNING_HOME",
+      "passed": true,
+      "milliseconds": 0.98,
+      "state": "IDLE",
+      "message": "Transition to IDLE granted"
+    },
+    {
+      "scenario": "state entry ESCAPE_MODE",
+      "passed": true,
+      "milliseconds": 1.39,
+      "state": "ESCAPE_MODE",
+      "message": "Transition to ESCAPE_MODE granted"
+    },
+    {
+      "scenario": "state recovery ESCAPE_MODE",
+      "passed": true,
+      "milliseconds": 1.24,
+      "state": "IDLE",
+      "message": "Transition to IDLE granted"
+    },
+    {
+      "scenario": "state entry ERROR",
+      "passed": true,
+      "milliseconds": 0.9,
+      "state": "ERROR",
+      "message": "Transition to ERROR granted"
+    },
+    {
+      "scenario": "error latch rejects ordinary idle",
+      "passed": true,
+      "milliseconds": 0.96,
+      "state": "ERROR",
+      "message": "Transition to IDLE denied - insufficient priority or invalid transition"
+    },
+    {
+      "scenario": "state recovery ERROR",
+      "passed": true,
+      "milliseconds": 0.85,
+      "state": "IDLE",
+      "message": "Transition to IDLE granted"
+    },
+    {
+      "scenario": "state entry INITIALIZING",
+      "passed": true,
+      "milliseconds": 1.64,
+      "state": "INITIALIZING",
+      "message": "Transition to INITIALIZING granted"
+    },
+    {
+      "scenario": "state recovery INITIALIZING",
+      "passed": true,
+      "milliseconds": 1.24,
+      "state": "IDLE",
+      "message": "Transition to IDLE granted"
+    },
+    {
+      "scenario": "invalid state",
+      "passed": true,
+      "milliseconds": 0.35,
+      "state": "IDLE",
+      "message": "Invalid state requested: UNKNOWN"
+    },
+    {
+      "scenario": "shutdown",
+      "passed": true,
+      "milliseconds": 0.94,
+      "state": "SHUTDOWN",
+      "message": "Transition to SHUTDOWN granted"
+    },
+    {
+      "scenario": "shutdown rejects ordinary restart",
+      "passed": true,
+      "milliseconds": 1.92,
+      "state": "SHUTDOWN",
+      "message": "Transition to IDLE denied - insufficient priority or invalid transition"
+    },
+    {
+      "scenario": "reset after scenario suite",
+      "passed": true,
+      "milliseconds": 1.12,
+      "state": "IDLE",
+      "message": "Transition to IDLE granted"
+    }
+  ]
+}

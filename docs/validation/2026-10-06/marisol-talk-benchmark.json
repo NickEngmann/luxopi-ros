@@ -1,0 +1,106 @@
+{
+  "benchmark": "Marisol HTTP Talk API, audio ASR + response generation",
+  "source": "locally synthesized Piper WAV commands; not human/acoustic accuracy",
+  "created_at_utc": "2026-10-06T18:17:18Z",
+  "endpoint": "https://marisol.tailf22a5.ts.net:8443/api/talk/turn",
+  "model_status_before": {
+    "kokoro_gpu": true,
+    "kokoro_cpu": true,
+    "last_turn": {
+      "engine": "kokoro-gpu",
+      "prompt_s": 0.05,
+      "llm_s": 0.48,
+      "first_sentence_s": 0.48,
+      "tts_tail_s": 0.0,
+      "total_s": 0.53,
+      "words": 0,
+      "audio_s": 0,
+      "sentences": 0,
+      "lang": "en-us",
+      "at": "2026-10-06T17:47:38",
+      "interrupted": true
+    },
+    "https_url": "https://marisol.tailf22a5.ts.net:8443/#talk"
+  },
+  "cases": [
+    {
+      "expected": "Please dance.",
+      "transcript": "Please dance.",
+      "wer": 0.0,
+      "exact_match": true,
+      "request_seconds": 1.562,
+      "asr_seconds": 0.16,
+      "total_seconds": 1.38,
+      "llm_seconds": 1.2,
+      "tts_tail_seconds": 0.15,
+      "reply_words": 27,
+      "reply_audio_discarded": true,
+      "error": null
+    },
+    {
+      "expected": "Please nod.",
+      "transcript": "Please nod.",
+      "wer": 0.0,
+      "exact_match": true,
+      "request_seconds": 1.208,
+      "asr_seconds": 0.27,
+      "total_seconds": 0.92,
+      "llm_seconds": 0.67,
+      "tts_tail_seconds": 0.2,
+      "reply_words": 5,
+      "reply_audio_discarded": true,
+      "error": null
+    },
+    {
+      "expected": "Turn the light on.",
+      "transcript": "Turn the light on.",
+      "wer": 0.0,
+      "exact_match": true,
+      "request_seconds": 1.785,
+      "asr_seconds": 0.31,
+      "total_seconds": 1.45,
+      "llm_seconds": 1.17,
+      "tts_tail_seconds": 0.25,
+      "reply_words": 30,
+      "reply_audio_discarded": true,
+      "error": null
+    },
+    {
+      "expected": "What time is it?",
+      "transcript": "What time is it?",
+      "wer": 0.0,
+      "exact_match": true,
+      "request_seconds": 1.364,
+      "asr_seconds": 0.34,
+      "total_seconds": 1.0,
+      "llm_seconds": 0.73,
+      "tts_tail_seconds": 0.25,
+      "reply_words": 11,
+      "reply_audio_discarded": true,
+      "error": null
+    },
+    {
+      "expected": "Tell me a joke.",
+      "transcript": "Tell me a joke.",
+      "wer": 0.0,
+      "exact_match": true,
+      "request_seconds": 1.633,
+      "asr_seconds": 0.31,
+      "total_seconds": 1.3,
+      "llm_seconds": 1.05,
+      "tts_tail_seconds": 0.2,
+      "reply_words": 21,
+      "reply_audio_discarded": true,
+      "error": null
+    }
+  ],
+  "summary": {
+    "count": 5,
+    "exact_matches": 5,
+    "mean_wer": 0.0,
+    "mean_request_seconds": 1.51,
+    "p95_request_seconds": 1.785
+  },
+  "response_audio_played": false,
+  "response_audio_saved": false
+}

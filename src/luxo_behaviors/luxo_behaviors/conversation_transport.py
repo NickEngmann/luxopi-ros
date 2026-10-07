@@ -16,15 +16,21 @@ class ConversationRequestError(RuntimeError):
     """A healthy service rejected one transaction; keep its models loaded."""
 
 
+LOCAL_SERVICE_READY = "LUXOPI_LOCAL_SERVICE_READY"
+
+
 class ConversationClient:
     """Own one reusable subprocess; a timeout tears down its stale transaction."""
 
-    def __init__(self, command, cwd=None, timeout=15.0):
-        if not command or timeout <= 0:
+    def __init__(self, command, cwd=None, timeout=15.0, *, wait_for_ready=False,
+                 startup_timeout=60.0):
+        if not command or timeout <= 0 or startup_timeout <= 0:
             raise ValueError("A command and positive timeout are required")
         self.command = list(command)
         self.cwd = cwd
         self.timeout = timeout
+        self.wait_for_ready = bool(wait_for_ready)
+        self.startup_timeout = float(startup_timeout)
         self.diagnostics = deque(maxlen=32)
         self._process = None
         self._results = queue.Queue(maxsize=16)
@@ -42,25 +48,49 @@ class ConversationClient:
         except (OSError, ValueError):
             pass  # Process shutdown closes its owned pipes.
 
-    def _read_errors(self, process):
+    def _read_errors(self, process, ready_event):
         try:
             for line in process.stderr:
-                self.diagnostics.append(line.strip()[:1000])
+                line = line.strip()
+                if line == LOCAL_SERVICE_READY:
+                    ready_event.set()
+                else:
+                    self.diagnostics.append(line[:1000])
         except (OSError, ValueError):
             pass
 
+    def _await_ready(self, process, ready_event):
+        deadline = time.monotonic() + self.startup_timeout
+        while not ready_event.is_set():
+            if process.poll() is not None:
+                raise RuntimeError("Local conversation service exited before becoming ready")
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError("Local conversation service startup timed out")
+            ready_event.wait(min(0.1, remaining))
+
     def _start(self):
         if self._process is not None and self._process.poll() is None:
+            if self.wait_for_ready:
+                self._await_ready(self._process, self._ready_event)
             return
         self.close()
         self._results = queue.Queue(maxsize=16)
+        self._ready_event = threading.Event()
         self._process = subprocess.Popen(
             self.command, cwd=self.cwd, stdin=subprocess.PIPE,
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, bufsize=1,
             start_new_session=True,
         )
         threading.Thread(target=self._read_output, args=(self._process, self._results), daemon=True).start()
-        threading.Thread(target=self._read_errors, args=(self._process,), daemon=True).start()
+        threading.Thread(target=self._read_errors,
+                         args=(self._process, self._ready_event), daemon=True).start()
+        if self.wait_for_ready:
+            try:
+                self._await_ready(self._process, self._ready_event)
+            except (RuntimeError, TimeoutError):
+                self.close()
+                raise
 
     def start(self):
         """Start the owned service early so it can warm models before a command."""
@@ -119,6 +149,7 @@ class ConversationClient:
 
     def close(self):
         process, self._process = self._process, None
+        self._ready_event = threading.Event()
         if process is not None:
             if process.poll() is None:
                 self._signal_group(process, signal.SIGTERM)
