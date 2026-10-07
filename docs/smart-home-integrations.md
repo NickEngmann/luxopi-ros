@@ -41,9 +41,9 @@ socket:
 ```sh
 export LUXOPI_ROS_EVENT_SOCKET=/tmp/luxopi-voice.sock
 ros2 launch luxo_behaviors robot_stack.launch.py
-# In another terminal, using the same environment and user:
+# In another terminal, using the same user:
 cd /path/to/luxopi-ai
-./start_assistant.sh
+LUXOPI_ROS_EVENT_SOCKET=/tmp/luxopi-voice.sock ./start_assistant.sh
 ```
 
 The assistant sends transcript/status and allowlisted animation, lamp, and
