@@ -16,6 +16,7 @@ the physical route and safe bend radius have not been measured.
 The run exposed a launch gap: MuJoCo declared synthetic idle/emotion controls
 but did not pass them to the shared behavior graph. Forwarding those settings
 started the autonomy node; float-typed launch parameters also prevent integer
-environment values from crashing it. A separate offline check passed 595 tests
-with one skipped. All browser and ROS graph tests ran in a disposable local
-container with no hardware, physical audio, or camera access.
+environment values from crashing it. The offline suite passed 596 tests with
+one skipped, including a regression test for bounded in-place event replay-cache
+expiry. All browser and ROS graph tests ran in a disposable local container
+with no hardware, physical audio, or camera access.
