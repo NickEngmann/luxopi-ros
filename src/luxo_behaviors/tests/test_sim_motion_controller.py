@@ -4,11 +4,13 @@ import pytest
 
 from luxo_behaviors.joint_motion import URDF_JOINT_LIMITS
 from luxo_behaviors.joint_profiles import ROARM_M3_NAMES, ROARM_M3_LIMITS
+from luxo_behaviors.motion_policy import (
+    cable_safe_voice_yaw, nearest_cable_safe_angle, normalize_direction_degrees,
+    voice_direction_is_fresh, voice_overlay_allowed, voice_state_request_allowed,
+)
 from luxo_behaviors.sim_motion_rules import (
-    inactive_voice_reconcile_due, motion_is_frozen, nearest_cable_safe_angle,
+    inactive_voice_reconcile_due, motion_is_frozen,
     validate_manual_pose, validate_feedback,
-    normalize_direction_degrees, voice_direction_is_fresh,
-    voice_overlay_allowed, voice_state_request_allowed,
 )
 
 
@@ -47,6 +49,13 @@ def test_voice_yaw_uses_shortest_cable_safe_equivalent(current, requested, expec
     assert actual == pytest.approx(expected)
     assert -math.pi <= actual <= math.pi
     assert abs(actual - current) <= math.pi
+
+
+def test_robot_and_simulator_share_cable_safe_voice_heading_projection():
+    assert cable_safe_voice_yaw(math.radians(170), 190, -math.pi, math.pi) == pytest.approx(math.pi)
+    assert cable_safe_voice_yaw(math.radians(-170), 190, -math.pi, math.pi) == pytest.approx(
+        math.radians(-170)
+    )
 
 
 def test_voice_yaw_rejects_invalid_current_angle_or_limits():

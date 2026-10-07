@@ -30,11 +30,28 @@ Home Assistant at `http://100.110.232.145:8123`; Music Assistant falls back to
 port 8095 on the Home Assistant host. A `ma_url` file allows LAN/Tailscale
 selection in deployments where the robot and Garden are on different networks.
 
-Launch the optional ROS adapter with:
+## Connect the robot to the local AI stack
+
+The hardware launch preset starts the ROS event bridge, disables simulator-only
+sensor/vision/autonomy fixtures, and enables the configured smart-home bridge.
+It does not start a second language or speech model. Start ROS and the AI
+assistant as the same OS user so both can access the private Unix datagram
+socket:
 
 ```sh
-ros2 launch luxo_behaviors luxo_system.launch.py enable_smart_home_bridge:=true
+export LUXOPI_ROS_EVENT_SOCKET=/tmp/luxopi-voice.sock
+ros2 launch luxo_behaviors robot_stack.launch.py
+# In another terminal, using the same environment and user:
+cd /path/to/luxopi-ai
+./start_assistant.sh
 ```
+
+The assistant sends transcript/status and allowlisted animation, lamp, and
+music intents through the socket. ROS publishes those to the existing hardware
+animation and lamp paths; music commands go to Music Assistant. Local state
+and motion safety continue to arbitrate robot movement. Override
+`speech_event_socket` in the launch preset only if the assistant uses the same
+alternate `LUXOPI_ROS_EVENT_SOCKET` path.
 
 Set `LUXOPI_MA_PLAYER_ID` to the robot's Sendspin player ID from Music
 Assistant. The adapter writes `sensor.luxopi_state` and
@@ -74,8 +91,9 @@ after verifying the robot's audio path.
 Offline tests cover HA authentication and service calls, HA event allowlisting,
 Music Assistant's command/args REST contract, file-based credentials, endpoint
 fallback, and the separate Sendspin systemd service. No credentials, network
-music server, or physical speaker are required. The bridge and Sendspin service
-remain opt-in on hardware.
+music server, or physical speaker are required. The ROS bridge is enabled by
+the hardware launch preset; without credentials, remote adapters remain
+inactive. The Sendspin service is still a separate hardware-specific setup.
 
 The deployment follows [Reachy's HA state helper](https://github.com/NickEngmann/smarthome-reachy-mini-display/blob/main/robot/marisol_backend/ha_state.py),
 [Reachy's Music Assistant client](https://github.com/NickEngmann/smarthome-reachy-mini-display/blob/main/robot/marisol_backend/marisol_realtime.py),

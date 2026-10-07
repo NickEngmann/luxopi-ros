@@ -1,6 +1,5 @@
 """Safe ROS simulation backend for the RoArm motion target interface."""
 
-import math
 import json
 import time
 from collections import deque
@@ -17,7 +16,6 @@ from luxo_behaviors.joint_profiles import joint_profile
 from luxo_behaviors.sim_motion_rules import (
     inactive_voice_reconcile_due,
     motion_is_frozen,
-    nearest_cable_safe_angle,
     normalize_direction_degrees,
     validate_manual_pose,
     validate_feedback,
@@ -25,6 +23,7 @@ from luxo_behaviors.sim_motion_rules import (
     voice_overlay_allowed,
     voice_state_request_allowed,
 )
+from luxo_behaviors.motion_policy import cable_safe_voice_yaw
 from luxo_behaviors.reactive_avoidance import ReactiveAvoidance
 from luxo_behaviors.home_sequence import HomeSequence
 
@@ -493,8 +492,8 @@ class SimMotionController(Node):
         if may_follow:
             lower, upper = self.joint_limits[self.joint_names[0]]
             current_base = self.measured_positions[0] if self.publish_feedback else self.limiter.positions[0]
-            target[0] = nearest_cable_safe_angle(
-                current_base, math.radians(self.voice_direction), lower, upper
+            target[0] = cable_safe_voice_yaw(
+                current_base, self.voice_direction, lower, upper
             )
 
         current = list(self.limiter.positions)
