@@ -20,6 +20,7 @@ jobs:
           python-version: '3.12'
       - name: Start isolated ROS simulator
         run: |
+          scripts/simulator.sh build simulator
           scripts/simulator.sh --mode physics up -d --build
           for attempt in $(seq 1 90); do
             if curl --fail --silent http://127.0.0.1:8080/healthz; then exit 0; fi
