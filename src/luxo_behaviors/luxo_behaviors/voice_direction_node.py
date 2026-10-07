@@ -14,6 +14,7 @@ import sys
 import os
 import contextlib
 from .mic_array import MicArray
+from .direction_estimation import DirectionActivity, circular_statistics, robot_angle as corrected_robot_angle
 from .pixel_ring import pixel_ring
 import webrtcvad
 
@@ -84,6 +85,7 @@ class VoiceDirectionNode(Node):
         self.doa_chunks = int(self.DOA_FRAMES / self.VAD_FRAMES)
         self.last_speech_time = time.time()
         self.last_direction = None
+        self.direction_activity = DirectionActivity(self.config['vad']['timeout'])
         self.leds_on = False
         self.recent_peak_amplitude = self.MIN_AMPLITUDE_THRESHOLD
         self.amplitude_decay_rate = self.config['amplitude']['peak_decay_rate']
@@ -279,30 +281,9 @@ class VoiceDirectionNode(Node):
         estimated_distance = max(self.min_correction_distance, 
                                min(self.max_correction_distance, estimated_distance))
         
-        # Convert mic angle to radians
-        mic_angle_rad = np.radians(mic_angle)
-        
-        # Calculate the position of the sound source relative to the mic array
-        # Assuming mic array coordinate system: 0° = forward, increasing CCW
-        sound_x_mic = estimated_distance * np.cos(mic_angle_rad)
-        sound_y_mic = estimated_distance * np.sin(mic_angle_rad)
-        
-        # Transform to robot arm coordinate system
-        # Robot arm base is offset by mic_offset_x in x-direction
-        sound_x_robot = sound_x_mic - self.mic_offset_x
-        sound_y_robot = sound_y_mic - self.mic_offset_y
-        
-        # Calculate angle from robot arm base to sound source
-        robot_angle_rad = np.arctan2(sound_y_robot, sound_x_robot)
-        robot_angle_deg = np.degrees(robot_angle_rad)
-        
-        # Ensure angle is in [0, 360) range
-        if robot_angle_deg < 0:
-            robot_angle_deg += 360
-        
-        # Convert to your robot's coordinate system (negative for your system)
-        robot_angle_corrected = -robot_angle_deg
-        
+        robot_angle_corrected = corrected_robot_angle(
+            mic_angle, estimated_distance, self.mic_offset_x, self.mic_offset_y)
+
         # Calculate the correction applied for debugging
         correction = robot_angle_corrected - (-mic_angle)
         
@@ -363,6 +344,7 @@ class VoiceDirectionNode(Node):
         active_msg = Bool()
         active_msg.data = True
         self.voice_active_pub.publish(active_msg)
+        self.direction_activity.heard(time.monotonic())
     
     def audio_processing_thread(self):
         """Main audio processing thread - EXACT copy of vad_doa.py main() function"""
@@ -395,9 +377,13 @@ class VoiceDirectionNode(Node):
                             # Skip the sys.stdout.write('0') from vad_doa.py
                             pass
 
+                        if self.direction_activity.expire(time.monotonic()):
+                            self.voice_active_pub.publish(Bool(data=False))
+
                         # Turn off LEDs if no speech for configured timeout - exactly from vad_doa.py
                         if current_time - self.last_speech_time > self.config['vad']['timeout'] and self.leds_on:
-                            pixel_ring.off()
+                            if pixel_ring:
+                                pixel_ring.off()
                             self.leds_on = False
                             self.direction_history.clear()  # Clear history when speech stops
 
@@ -431,7 +417,8 @@ class VoiceDirectionNode(Node):
                                     if direction is not None:
                                         # Skip stability filtering if disabled for debugging - exactly from vad_doa.py
                                         if self.config['debug'].get('disable_stability_filter', False):
-                                            pixel_ring.set_direction(int(direction))
+                                            if pixel_ring:
+                                                pixel_ring.set_direction(int(direction))
                                             self.leds_on = True
                                             self.last_direction = int(direction)
                                             
@@ -451,23 +438,12 @@ class VoiceDirectionNode(Node):
                                         # Only update display if we have enough consistent readings - exactly from vad_doa.py
                                         if len(self.direction_history) >= 2:
                                             # Check for consistency (handle wraparound at 0/360) - exactly from vad_doa.py
-                                            angles = np.array(self.direction_history)
-                                            # Convert to unit vectors to handle wraparound
-                                            x_coords = np.cos(np.radians(angles))
-                                            y_coords = np.sin(np.radians(angles))
-                                            # Calculate average direction
-                                            avg_x = np.mean(x_coords)
-                                            avg_y = np.mean(y_coords)
-                                            avg_direction = np.degrees(np.arctan2(avg_y, avg_x))
-                                            if avg_direction < 0:
-                                                avg_direction += 360
-                                            
-                                            # Calculate angular standard deviation
-                                            angular_std = np.degrees(np.sqrt(-np.log(avg_x**2 + avg_y**2)))
-                                            
+                                            avg_direction, angular_std = circular_statistics(self.direction_history)
+
                                             # Only update if directions are reasonably consistent - exactly from vad_doa.py
                                             if angular_std < self.max_angular_std:  # Within configured standard deviation
-                                                pixel_ring.set_direction(int(avg_direction))
+                                                if pixel_ring:
+                                                    pixel_ring.set_direction(int(avg_direction))
                                                 self.leds_on = True
                                                 self.last_direction = int(avg_direction)
                                                 

@@ -2,6 +2,7 @@
 #state_manager_node.py
 
 import threading
+import json
 from typing import Dict, List, Callable, Optional, Any, Tuple
 import time
 import rclpy
@@ -9,7 +10,9 @@ from rclpy.node import Node
 from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSHistoryPolicy
 
 # Import core state machine components from state_machine.py
-from luxo_behaviors.state_machine import LuxoState, StateTransition
+from luxo_behaviors.state_machine import (
+    LuxoState, StateTransition, StateTransitionPolicy,
+)
 
 # ROS2 message imports
 from std_msgs.msg import Bool, String, Header
@@ -37,8 +40,8 @@ class StateManagerNode(Node):
         self._state_history = []
         self._max_history = 100
         self._last_state_requester = "system"
-        self._return_state_stack = []  # Stack to track states to return to
         self._interrupted_states = {}  # Map of state -> what it interrupted
+        self._interrupted_requesters = {}
         
         # Priority management for state requests
         self._node_priorities = {
@@ -53,6 +56,8 @@ class StateManagerNode(Node):
             'system': 50  # Default system priority
         }
         
+        self._transition_policy = StateTransitionPolicy(self._node_priorities)
+
         # Track active nodes and their requested states
         self._active_node_states = {}  # Dict[str, Tuple[LuxoState, int, float]]
         # Format: {node_name: (requested_state, priority, timestamp)}
@@ -79,6 +84,9 @@ class StateManagerNode(Node):
         # Light control state
         self._lights_enabled = True  # Track light state
         
+        self.declare_parameter('simulated_lighting', False)
+        self.simulated_lighting = bool(self.get_parameter('simulated_lighting').value)
+
         # Initialize NeoPixel controller
         self._neopixel_controller = None
         self._neopixel_override_active = False
@@ -89,6 +97,7 @@ class StateManagerNode(Node):
         self._current_animation_duration = None
         
         # Color and brightness state
+        self._color_temperature = None  # Legacy white has no equivalent temperature setting.
         self._default_white_color = (255, 255, 255, 100)  # Default neutral white RGBW
         self._color_mode = None  # Track if we're in a specific color mode
         
@@ -125,6 +134,8 @@ class StateManagerNode(Node):
             )
         )
         
+        self.light_state_publisher = self.create_publisher(String, '/luxo/light_state', 10)
+
         # Publish detailed state info for debugging
         self.state_info_publisher = self.create_publisher(
             StateInfo,
@@ -211,6 +222,12 @@ class StateManagerNode(Node):
     
     def _initialize_neopixel(self):
         """Initialize NeoPixel controller for state visualization"""
+        if self.simulated_lighting:
+            from luxo_behaviors.virtual_lighting import VirtualNeoPixelController
+            self._neopixel_controller = VirtualNeoPixelController(
+                pixel_count=60, brightness=0.5, logger=self.get_logger())
+            self.get_logger().info("Simulated lamp enabled; no physical LED driver loaded")
+            return
         try:
             from luxo_behaviors.neopixel_control import NeoPixelController
             self._neopixel_controller = NeoPixelController(
@@ -318,48 +335,39 @@ class StateManagerNode(Node):
             requesting_node: Name of the node making the request
             priority: Priority level (higher = more important)
             force: If True, bypass priority checks (use carefully!)
-            is_completion: If True, this is a completion transition (bypass priority)
+            is_completion: Complete only the current owner and restore interrupted state
             
         Returns:
             bool: True if transition was successful
         """
         with self._state_lock:
-            # Use default priority if not specified
-            if priority is None:
-                priority = self._node_priorities.get(requesting_node, 50)
-            
-            # For completion transitions, check if we should return to a saved state
-            if is_completion and self._return_state_stack:
-                # Check if current state had interrupted something
-                if self._current_state in self._interrupted_states:
-                    # Return to what we interrupted
-                    requested_state = self._interrupted_states[self._current_state]
-                    del self._interrupted_states[self._current_state]
-                    self.get_logger().info(f"Completion transition: returning to {requested_state.name}")
-            
-            # Check if this request has high enough priority (skip for completions)
-            if not force and not is_completion and not self._has_transition_priority(requesting_node, priority):
+            decision = self._transition_policy.decide(
+                current_state=self._current_state,
+                current_requester=self._last_state_requester,
+                current_priority=self._get_current_priority(),
+                requested_state=requested_state, requesting_node=requesting_node,
+                priority=priority, force=force, completion=is_completion,
+                interrupted_states=self._interrupted_states,
+                interrupted_requesters=self._interrupted_requesters,
+            )
+            if not decision["accepted"]:
                 self.get_logger().info(
-                    f"State transition request from {requesting_node} (priority {priority}) "
-                    f"denied due to insufficient priority"
+                    f"State request from {requesting_node} rejected: {decision['reason']}"
                 )
                 return False
-            
-            # Track what state we're interrupting (if not a completion)
-            if not is_completion and self._current_state != requested_state:
-                # This is an interruption - save the current state for potential return
-                if priority > self._get_current_priority():
-                    self._interrupted_states[requested_state] = self._current_state
-                    self.get_logger().info(f"{requested_state.name} interrupted {self._current_state.name}")
-            
-            # Attempt the transition
-            success = self.transition_to(requested_state, force)
-            
+            success = self.transition_to(decision["target_state"], force)
             if success:
-                self._last_state_requester = requesting_node
-                # Update active node states
-                self._active_node_states[requesting_node] = (requested_state, priority, time.time())
-            
+                self._interrupted_states, self._interrupted_requesters = (
+                    self._transition_policy.commit(
+                        decision, self._interrupted_states, self._interrupted_requesters
+                    )
+                )
+                if decision.get("release_owner"):
+                    self._active_node_states.pop(decision["release_owner"], None)
+                self._last_state_requester = decision["requesting_node"]
+                self._active_node_states[self._last_state_requester] = (
+                    decision["target_state"], decision["priority"], time.time()
+                )
             return success
 
     def _get_current_priority(self) -> int:
@@ -369,24 +377,6 @@ class StateManagerNode(Node):
             return current_priority
         return 0
 
-    def _has_transition_priority(self, requesting_node: str, priority: int) -> bool:
-        """Check if a node has sufficient priority to change state"""
-        # Always allow transitions from ERROR or COLLISION_AVOIDING states
-        if self._current_state in [LuxoState.ERROR, LuxoState.COLLISION_AVOIDING]:
-            return True
-        
-        # Always allow IDLE transitions (they're returns, not interruptions)
-        if self._current_state == LuxoState.IDLE:
-            return True
-
-        if requesting_node == "animation_command" and (priority == 30 or priority == 50):
-            return True
-        # Check against current state requester's priority
-        current_priority = self._get_current_priority()
-        
-        # Higher or equal priority can transition
-        return priority >= current_priority
-    
     def publish_state(self):
         """Publish current state information"""
         try:
@@ -397,6 +387,11 @@ class StateManagerNode(Node):
             state_msg = String()
             state_msg.data = self._current_state.name
             self.state_publisher.publish(state_msg)
+            if self.simulated_lighting and self._neopixel_controller:
+                snapshot = self._neopixel_controller.snapshot()
+                snapshot.update(enabled=self._lights_enabled, state=self._current_state.name,
+                                color_temperature=self._color_temperature)
+                self.light_state_publisher.publish(String(data=json.dumps(snapshot)))
             
             # Detailed state info using custom message
             info_msg = StateInfo()
@@ -485,7 +480,8 @@ class StateManagerNode(Node):
                     # time.sleep(0.25)  # Allow time for effects to stop
                     # Clear all pixels immediately
                     self._neopixel_controller.clear_all()
-                    time.sleep(0.25)
+                    if not self.simulated_lighting:
+                        time.sleep(0.25)
                     
                     # Set override to prevent any new updates
                     self._neopixel_override_active = True
@@ -504,8 +500,9 @@ class StateManagerNode(Node):
                             self._neopixel_controller.clear_all()
                             self.get_logger().debug("Secondary clear completed")
                     
-                    clear_thread = threading.Thread(target=delayed_clear, daemon=True)
-                    clear_thread.start()
+                    if not self.simulated_lighting:
+                        clear_thread = threading.Thread(target=delayed_clear, daemon=True)
+                        clear_thread.start()
                     
             elif previous_state != self._lights_enabled:
                 # Lights turned ON - re-enable NeoPixel updates
@@ -544,6 +541,8 @@ class StateManagerNode(Node):
             if msg.data.startswith("color_temp:"):
                 temp_str = msg.data.split(":")[1]
                 color_temp = float(temp_str)
+                if not 0.0 <= color_temp <= 1.0:
+                    raise ValueError("Color temperature must be finite and between zero and one")
                 
                 # Calculate RGB values based on color temperature
                 # 0.0 = cool (more blue), 1.0 = warm (more red/yellow)
@@ -564,11 +563,14 @@ class StateManagerNode(Node):
                 
                 # Store the temperature-based white color
                 self._default_white_color = (r, g, b, w)
+                self._color_temperature = color_temp
                 
                 # If lights are on and not in a specific color mode, apply the new temperature
                 if self._lights_enabled and self._neopixel_controller:
                     # Only apply if we're currently showing white/default colors
                     if not hasattr(self, '_color_mode') or self._color_mode is None:
+                        # The same state now has a different white color.
+                        self._neopixel_last_visual_state = None
                         self._update_neopixel_for_state(self._current_state)
                         
                 self.get_logger().info(f"Color temperature set to {color_temp:.1%} (RGBW: {r}, {g}, {b}, {w})")
@@ -631,7 +633,8 @@ class StateManagerNode(Node):
                 # self._neopixel_controller.stop_effect()
                 # time.sleep(0.25)  # Allow time for any effects to stop
                 self._neopixel_controller.clear_all()
-                time.sleep(0.1)  # Allow time for effects to stop
+                if not self.simulated_lighting:
+                    time.sleep(0.1)  # Allow time for physical effects to stop
                 self._neopixel_override_active = True
             else:
                 # Lights are off and override is active - force clear again to override any running animations
@@ -803,6 +806,9 @@ class StateManagerNode(Node):
         
         # From COLLISION_AVOIDING
         self.add_transition(LuxoState.COLLISION_AVOIDING, LuxoState.IDLE)
+        self.add_transition(LuxoState.COLLISION_AVOIDING, LuxoState.ANIMATING)
+        self.add_transition(LuxoState.COLLISION_AVOIDING, LuxoState.VOICE_FOLLOWING)
+        self.add_transition(LuxoState.COLLISION_AVOIDING, LuxoState.USER_CONTROL)
         self.add_transition(LuxoState.COLLISION_AVOIDING, LuxoState.ESCAPE_MODE)
         self.add_transition(LuxoState.COLLISION_AVOIDING, LuxoState.RETURNING_HOME)
         self.add_transition(LuxoState.COLLISION_AVOIDING, LuxoState.PETTING)
@@ -813,7 +819,9 @@ class StateManagerNode(Node):
         self.add_transition(LuxoState.ESCAPE_MODE, LuxoState.COLLISION_AVOIDING)
         self.add_transition(LuxoState.ESCAPE_MODE, LuxoState.PETTING)
         
-        # From RETURNING_HOME
+        # From RETURNING_HOME: recovery movement must remain interruptible by safety.
+        self.add_transition(LuxoState.RETURNING_HOME, LuxoState.COLLISION_AVOIDING)
+        self.add_transition(LuxoState.RETURNING_HOME, LuxoState.ESCAPE_MODE)
         self.add_transition(LuxoState.RETURNING_HOME, LuxoState.IDLE)
         self.add_transition(LuxoState.RETURNING_HOME, LuxoState.ANIMATING)
         self.add_transition(LuxoState.RETURNING_HOME, LuxoState.PETTING)
@@ -845,6 +853,17 @@ class StateManagerNode(Node):
         self.add_transition(LuxoState.ERROR, LuxoState.INITIALIZING)
         self.add_transition(LuxoState.ERROR, LuxoState.SHUTDOWN)
         
+        # Higher-priority manual/voice ownership can interrupt ordinary behavior.
+        # The policy still prevents this edge from overriding collision/escape.
+        for state in (LuxoState.ANIMATING, LuxoState.RETURNING_HOME,
+                      LuxoState.EMOTION_REACTING, LuxoState.PETTING):
+            self.add_transition(state, LuxoState.USER_CONTROL)
+
+        # A runtime failure must be able to latch ERROR during any live behavior.
+        for state in LuxoState:
+            if state not in (LuxoState.ERROR, LuxoState.SHUTDOWN, LuxoState.INITIALIZING):
+                self.add_transition(state, LuxoState.ERROR)
+
         # To SHUTDOWN from any state
         for state in LuxoState:
             if state != LuxoState.SHUTDOWN:

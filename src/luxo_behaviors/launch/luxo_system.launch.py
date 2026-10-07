@@ -1,11 +1,26 @@
 #!/usr/bin/env python3
 from launch import LaunchDescription
-from launch.actions import IncludeLaunchDescription, DeclareLaunchArgument, LogInfo, ExecuteProcess
+from launch.actions import IncludeLaunchDescription, DeclareLaunchArgument, LogInfo, ExecuteProcess, RegisterEventHandler, Shutdown
 from launch.conditions import IfCondition, UnlessCondition
+from launch.event_handlers import OnProcessExit
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import LaunchConfiguration, PathJoinSubstitution, PythonExpression, Command
+from launch.substitutions import LaunchConfiguration, PathJoinSubstitution, PythonExpression, Command, EnvironmentVariable
 from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
 from launch_ros.substitutions import FindPackageShare
+from luxo_behaviors.launch_options import continuous_timing_default
+
+
+def _simulator_dashboard_parameters():
+    """Keep the dashboard's displayed engine aligned with the launched backend."""
+    return {
+        'host': LaunchConfiguration('simulator_host'),
+        'port': LaunchConfiguration('simulator_port'),
+        'audio_directory': LaunchConfiguration('simulator_audio_directory'),
+        'tts_directory': LaunchConfiguration('simulator_tts_directory'),
+        'simulation_backend': LaunchConfiguration('simulation_backend'),
+    }
+
 
 def generate_launch_description():
     # Launch arguments with better defaults for simulation
@@ -19,6 +34,7 @@ def generate_launch_description():
     
     # Other standard arguments with simplified defaults
     use_gui = LaunchConfiguration('use_gui', default='false')
+    use_rviz = LaunchConfiguration('use_rviz', default='true')
     safety_distance = LaunchConfiguration('safety_distance', default='0.3')
     verbose_output = LaunchConfiguration('verbose', default='false')
     
@@ -55,12 +71,86 @@ def generate_launch_description():
         default_value=PythonExpression(["'false' if '", use_hardware, "' == 'false' else 'true'"]),
         description='Enable I2C proximity and distance sensors (default: true in hardware, false in simulation)'
     )
+    declare_required_sensor_directions = DeclareLaunchArgument(
+        'required_sensor_directions',
+        default_value=PythonExpression([
+            "'front,left,right' if '", use_hardware,
+            "' == 'true' and '", sense_collision, "' == 'true' else ''"
+        ]),
+        description=(
+            'Comma-separated directions required for motion coverage. Hardware with '
+            'collision sensing requires all three by default; simulation defaults to '
+            'optional unless explicitly configured.'
+        ),
+    )
     
     # Gesture detection argument
     declare_enable_gestures = DeclareLaunchArgument(
         'enable_gestures',
-        default_value='false',
-        description='Enable gesture detection with APDS9960 (default: false)'
+        default_value=PythonExpression(["'true' if '", use_hardware, "' == 'false' else 'false'"]),
+        description='Enable gesture passthrough (simulated inputs in simulation; APDS9960 on hardware)'
+    )
+
+    declare_enable_sim_sensors = DeclareLaunchArgument(
+        'enable_sim_sensors', default_value='true',
+        description='Run ROS-only collision and gesture classification on synthetic sensor topics'
+    )
+    declare_enable_simulator_dashboard = DeclareLaunchArgument(
+        'enable_simulator_dashboard',
+        default_value=PythonExpression(["'true' if '", use_hardware, "' == 'false' else 'false'"]),
+        description='Enable the browser simulator dashboard (simulation only)'
+    )
+    declare_enable_sim_vision = DeclareLaunchArgument(
+        'enable_sim_vision',
+        default_value=PythonExpression(["'true' if '", use_hardware, "' == 'false' else 'false'"]),
+        description='Enable the shared-policy simulated camera consumer (simulation only)'
+    )
+    declare_enable_sim_interactions = DeclareLaunchArgument(
+        'enable_sim_interactions',
+        default_value=PythonExpression(["'true' if '", use_hardware, "' == 'false' else 'false'"]),
+        description='Enable simulation-only voice session and touch/petting state consumers'
+    )
+    declare_enable_sim_autonomy = DeclareLaunchArgument(
+        'enable_sim_autonomy', default_value='false',
+        description='Run autonomous idle animations and synthetic person/emotion cues in simulation'
+    )
+    declare_sim_idle_after = DeclareLaunchArgument('sim_idle_after', default_value='7.0')
+    declare_sim_idle_interval = DeclareLaunchArgument('sim_idle_interval', default_value='20.0')
+    declare_sim_emotion_interval = DeclareLaunchArgument('sim_emotion_interval', default_value='75.0')
+
+    declare_simulator_host = DeclareLaunchArgument(
+        'simulator_host', default_value='0.0.0.0', description='Browser simulator bind address'
+    )
+    declare_simulator_port = DeclareLaunchArgument(
+        'simulator_port', default_value='8080', description='Browser simulator HTTP port'
+    )
+    declare_simulator_audio_directory = DeclareLaunchArgument(
+        'simulator_audio_directory', default_value='',
+        description='Optional shared directory for bounded WAV upload/ASR testing'
+    )
+    declare_simulator_tts_directory = DeclareLaunchArgument(
+        'simulator_tts_directory', default_value='',
+        description='Optional local Piper output directory served to the browser simulator'
+    )
+    declare_joint_profile = DeclareLaunchArgument(
+        'joint_profile', default_value='urdf4',
+        description='Simulation joint profile: checked-in four-axis urdf4 or canonical six-axis roarm_m3'
+    )
+    declare_continuous_timing = DeclareLaunchArgument(
+        'continuous_animation_timing', default_value=continuous_timing_default(use_hardware),
+        description=(
+            'Use settled continuous bounded trajectories in simulation; false selects '
+            'stopped-waypoint timing. Hardware animations do not use this option.'
+        ),
+    )
+    declare_simulation_backend = DeclareLaunchArgument(
+        'simulation_backend', default_value='kinematic',
+        description='Simulation motion transport: kinematic or mujoco'
+    )
+    declare_robot_description_file = DeclareLaunchArgument(
+        'robot_description_file',
+        default_value=PathJoinSubstitution([FindPackageShare('roarm'), 'urdf', 'roarm.urdf']),
+        description='URDF path for robot_state_publisher; physics launcher supplies generated M3 URDF'
     )
     
     # Depth collision argument with conditional default
@@ -75,6 +165,12 @@ def generate_launch_description():
         name='use_gui',
         default_value='false',
         description='Flag to enable joint_state_publisher_gui'
+    )
+
+    declare_use_rviz = DeclareLaunchArgument(
+        name='use_rviz',
+        default_value='true',
+        description='Whether to launch RViz in simulation mode (disable for headless runs)'
     )
     
     # Fix for joint_state_publisher issue - set a default value that doesn't 
@@ -107,6 +203,40 @@ def generate_launch_description():
         'enable_voice',
         default_value='true',
         description='Enable voice direction detection and following'
+    )
+
+    declare_enable_speech_bridge = DeclareLaunchArgument(
+        'enable_speech_bridge',
+        default_value=PythonExpression(["'true' if '", use_hardware, "' == 'false' else 'false'"]),
+        description='Enable silent speech bridge (simulation default; hardware opt-in)'
+    )
+    declare_enable_smart_home_bridge = DeclareLaunchArgument(
+        'enable_smart_home_bridge', default_value='false',
+        description='Enable optional Home Assistant and Music Assistant adapters'
+    )
+    declare_speech_synthesize = DeclareLaunchArgument(
+        'speech_synthesize', default_value=EnvironmentVariable('LUXOPI_SYNTHESIZE_SPEECH', default_value='false'),
+        description='Generate local Piper WAV responses silently (no playback)'
+    )
+    declare_speech_backend = DeclareLaunchArgument(
+        'speech_backend', default_value='simulation',
+        description='Speech backend: deterministic simulation or local JSONL service'
+    )
+    declare_speech_service_command = DeclareLaunchArgument(
+        'speech_service_command', default_value='[]',
+        description='Local service command as JSON argv (no shell)'
+    )
+    declare_speech_service_cwd = DeclareLaunchArgument(
+        'speech_service_cwd', default_value='',
+        description='Optional local JSONL service working directory'
+    )
+    declare_speech_service_timeout = DeclareLaunchArgument(
+        'speech_service_timeout', default_value='15.0',
+        description='Local JSONL service request timeout'
+    )
+    declare_speech_event_socket = DeclareLaunchArgument(
+        'speech_event_socket', default_value='',
+        description='Optional same-user Unix datagram live assistant event socket'
     )
 
     # Add a launch argument for camera rotation
@@ -261,7 +391,9 @@ def generate_launch_description():
         ]),
         launch_arguments={
             'gui': LaunchConfiguration('use_gui'),
-            'use_joint_state_publisher': 'true'
+            'use_joint_state_publisher': 'false',
+            'use_robot_state_pub': 'false',
+            'use_rviz': use_rviz,
         }.items(),
         condition=UnlessCondition(use_hardware)
     )
@@ -279,13 +411,7 @@ def generate_launch_description():
         name='robot_state_publisher',
         output='screen',
         parameters=[{
-            'robot_description': Command([
-                'cat ',
-                PathJoinSubstitution([
-                    FindPackageShare('roarm'),
-                    'urdf/roarm.urdf'
-                ])
-            ]),
+            'robot_description': Command(['cat ', LaunchConfiguration('robot_description_file')]),
             'publish_frequency': 30.0,
             # Ensure this is the root frame
             'frame_prefix': '',
@@ -307,7 +433,10 @@ def generate_launch_description():
         name='state_manager',
         output='screen',
         parameters=[
-            {'ros__parameters': {'log_level': 'info'}}
+            {'ros__parameters': {'log_level': 'info'}},
+            {'simulated_lighting': PythonExpression([
+                "'true' if '", use_hardware, "' == 'false' else 'false'"
+            ])},
         ]
         # No condition - runs in both hardware and simulation modes
     )
@@ -340,6 +469,7 @@ def generate_launch_description():
             {'enable_movement_source_integration': True},  # Explicitly enable movement source integration
             {'ros__parameters': {'log_level': 'error'}},
             {'enable_voice_following': LaunchConfiguration('enable_voice')},
+            {'required_sensor_directions': LaunchConfiguration('required_sensor_directions')},
             {'voice_follow_speed': 0.3},
             {'voice_follow_deadzone': 15.0},
             {'voice_follow_smoothing': 0.3}
@@ -374,8 +504,11 @@ def generate_launch_description():
             {'joint_timeout': LaunchConfiguration('watchdog_joint_timeout')},
             {'recovery_delay': 10.0},  # seconds between recovery attempts
             {'max_recovery_attempts': 3},
-            {'enable_node_restart': False},  # Start with safe mode (no killing nodes)
-            {'enable_state_recovery': True},  # Try state transitions for recovery
+            {'enable_node_restart': False},
+            {'enable_state_recovery': use_hardware},
+            {'monitor_only': PythonExpression([
+                "'false' if '", use_hardware, "' == 'true' else 'true'"
+            ])},
         ],
         condition=IfCondition(LaunchConfiguration('enable_watchdog'))
     )
@@ -395,7 +528,120 @@ def generate_launch_description():
             {'direction_smoothing_window': 5},
             {'min_report_interval': 0.5}
         ],
-        condition=IfCondition(LaunchConfiguration('enable_voice'))
+        condition=IfCondition(PythonExpression([
+            "'", use_hardware, "' == 'true' and '", LaunchConfiguration('enable_voice'), "' == 'true'"
+        ]))
+    )
+
+    sim_direction_node = Node(
+        package='luxo_behaviors',
+        executable='sim_direction_node',
+        name='sim_direction_node',
+        output='screen',
+        condition=IfCondition(PythonExpression([
+            "'", use_hardware, "' == 'false' and '", LaunchConfiguration('enable_voice'), "' == 'true'"
+        ]))
+    )
+
+    speech_bridge_node = Node(
+        package='luxo_behaviors',
+        executable='speech_bridge',
+        name='speech_bridge',
+        output='screen',
+        parameters=[{
+            'backend': LaunchConfiguration('speech_backend'),
+            'synthesize_speech': ParameterValue(LaunchConfiguration('speech_synthesize'), value_type=bool),
+            'service_command': ParameterValue(
+                LaunchConfiguration('speech_service_command'), value_type=str
+            ),
+            'service_cwd': ParameterValue(
+                LaunchConfiguration('speech_service_cwd'), value_type=str
+            ),
+            'service_timeout': LaunchConfiguration('speech_service_timeout'),
+            'event_socket': ParameterValue(
+                LaunchConfiguration('speech_event_socket'), value_type=str
+            ),
+            'audio_directory': LaunchConfiguration('simulator_audio_directory'),
+            'tts_directory': LaunchConfiguration('simulator_tts_directory'),
+            'simulation_backend': LaunchConfiguration('simulation_backend'),
+        }],
+        condition=IfCondition(LaunchConfiguration('enable_speech_bridge'))
+    )
+
+    smart_home_bridge_node = Node(
+        package='luxo_behaviors', executable='smart_home_bridge',
+        name='smart_home_bridge', output='screen',
+        condition=IfCondition(LaunchConfiguration('enable_smart_home_bridge')),
+    )
+
+    sim_motion_controller_node = Node(
+        package='luxo_behaviors',
+        executable='sim_motion_controller',
+        name='sim_motion_controller',
+        output='screen',
+        parameters=[
+            {'publish_rate': 50.0},
+            {'max_joint_velocity': 0.5},
+            {'max_joint_acceleration': 1.0},
+            {'voice_follow_priority': 75},
+            {'required_sensor_directions': LaunchConfiguration('required_sensor_directions')},
+            {'joint_profile': LaunchConfiguration('joint_profile')},
+            {'publish_joint_states': PythonExpression([
+                "'false' if '", LaunchConfiguration('simulation_backend'), "' in ('gazebo', 'mujoco') else 'true'"
+            ])},
+            {'command_topic': '/sim/bounded_joint_command'},
+        ],
+        condition=UnlessCondition(use_hardware)
+    )
+
+    simulator_dashboard_node = Node(
+        package='luxo_behaviors',
+        executable='simulator_dashboard',
+        name='simulator_dashboard',
+        output='screen',
+        parameters=[_simulator_dashboard_parameters()],
+        condition=IfCondition(PythonExpression([
+            "'", use_hardware, "' == 'false' and '", LaunchConfiguration('enable_simulator_dashboard'), "' == 'true'"
+        ]))
+    )
+
+    sim_camera_interaction_node = Node(
+        package='luxo_behaviors',
+        executable='sim_camera_interaction',
+        name='sim_camera_interaction',
+        output='screen',
+        condition=IfCondition(PythonExpression([
+            "'", use_hardware, "' == 'false' and '",
+            LaunchConfiguration('enable_sim_vision'), "' == 'true'"
+        ]))
+    )
+
+    sim_activity_driver_node = Node(
+        package='luxo_behaviors',
+        executable='sim_activity_driver',
+        name='sim_activity_driver',
+        output='screen',
+        parameters=[{
+            'idle_after': ParameterValue(LaunchConfiguration('sim_idle_after'), value_type=float),
+            'idle_interval': ParameterValue(LaunchConfiguration('sim_idle_interval'), value_type=float),
+            'emotion_interval': ParameterValue(LaunchConfiguration('sim_emotion_interval'), value_type=float),
+        }],
+        condition=IfCondition(PythonExpression([
+            "'", use_hardware, "' == 'false' and '",
+            LaunchConfiguration('enable_sim_autonomy'), "' == 'true'"
+        ]))
+    )
+
+    sim_interaction_adapter_node = Node(
+        package='luxo_behaviors',
+        executable='sim_interaction_adapter',
+        name='sim_interaction_adapter',
+        output='screen',
+        parameters=[{'petting_timeout': 5.0}],
+        condition=IfCondition(PythonExpression([
+            "'", use_hardware, "' == 'false' and '",
+            LaunchConfiguration('enable_sim_interactions'), "' == 'true'"
+        ]))
     )
 
     # Collision detection logic node (hardware only, now uses I2C manager data)
@@ -411,7 +657,10 @@ def generate_launch_description():
             {'warning_threshold': 15.0},
             {'enable_gestures': enable_gestures}
         ],
-        condition=IfCondition(PythonExpression(["'", use_hardware, "' == 'true' and '", sense_collision, "' == 'true'"]))
+        condition=IfCondition(PythonExpression([
+            "'", use_hardware, "' == 'true' and '", sense_collision,
+            "' == 'true' or '", use_hardware, "' == 'false' and '", LaunchConfiguration('enable_sim_sensors'), "' == 'true'"
+        ]))
     )
 
     system_monitor_node = Node(
@@ -459,9 +708,16 @@ def generate_launch_description():
         name='animation_command',
         output='screen',
         parameters=[
-            {'publish_joint_states_target': False},  # Changed to false for simulation
-            {'publish_target_topic': True},   # Simulation should use a separate topic
+            {'publish_joint_states_target': True},
+            {'publish_target_topic': True},
             {'enforce_joint_limits': True},    # Enable joint limits enforcement
+            {'joint_profile': LaunchConfiguration('joint_profile')},
+            {'enable_collision_warning_inputs': True},
+            {'enable_feasible_retiming': True},
+            {'enable_continuous_retiming': ParameterValue(
+                LaunchConfiguration('continuous_animation_timing'), value_type=bool)},
+            {'max_joint_velocity': 0.5},
+            {'max_joint_acceleration': 1.0},
         ],
         condition=UnlessCondition(use_hardware)
     )
@@ -481,7 +737,9 @@ def generate_launch_description():
             {'qos_reliability': 0},  # 0=BEST_EFFORT, 1=RELIABLE
             {'qos_durability': 0},   # 0=VOLATILE, 1=TRANSIENT_LOCAL
         ],
-        condition=IfCondition(enable_depth_collision)
+        condition=IfCondition(PythonExpression([
+            "'", use_hardware, "' == 'true' and '", enable_depth_collision, "' == 'true'"
+        ]))
     )
     
     # Camera interaction node (requires camera) - now with emotion detection capability
@@ -496,7 +754,9 @@ def generate_launch_description():
             {'react_to_emotions': LaunchConfiguration('enable_emotion_detection')},
             {'camera_rotation': LaunchConfiguration('camera_rotation')}
         ],
-        condition=IfCondition(use_camera)
+        condition=IfCondition(PythonExpression([
+            "'", use_hardware, "' == 'true' and '", use_camera, "' == 'true'"
+        ]))
     )
     
 
@@ -519,13 +779,39 @@ def generate_launch_description():
         declare_use_camera,
         declare_enable_emotion_detection,
         declare_use_gui,
+        declare_use_rviz,
         use_joint_state_publisher_arg,
         declare_test_mode,
         declare_enable_voice,
+        declare_enable_speech_bridge,
+        declare_enable_smart_home_bridge,
+        declare_speech_synthesize,
+        declare_speech_backend,
+        declare_speech_service_command,
+        declare_speech_service_cwd,
+        declare_speech_service_timeout,
+        declare_speech_event_socket,
         declare_enable_depth_collision,
         declare_safety_distance,
         declare_sense_collision,
+        declare_required_sensor_directions,
         declare_enable_gestures,
+        declare_enable_sim_sensors,
+        declare_enable_simulator_dashboard,
+        declare_enable_sim_vision,
+        declare_enable_sim_interactions,
+        declare_enable_sim_autonomy,
+        declare_sim_idle_after,
+        declare_sim_idle_interval,
+        declare_sim_emotion_interval,
+        declare_simulator_host,
+        declare_simulator_port,
+        declare_simulator_audio_directory,
+        declare_simulator_tts_directory,
+        declare_joint_profile,
+        declare_continuous_timing,
+        declare_simulation_backend,
+        declare_robot_description_file,
         declare_verbose,
         declare_camera_rotation,
         declare_enable_dynamic_adaptation,
@@ -544,7 +830,32 @@ def generate_launch_description():
         i2c_info,
         troubleshooting_info,
         jsp_killer,
+        # A missing motion/state/UI process leaves a misleading, half-live
+        # simulator. Shut down the owned graph so Compose can recover it.
+        RegisterEventHandler(OnProcessExit(
+            target_action=state_manager_node,
+            on_exit=[Shutdown(reason='critical state_manager exited')],
+        )),
+        RegisterEventHandler(OnProcessExit(
+            target_action=sim_motion_controller_node,
+            on_exit=[Shutdown(reason='critical sim_motion_controller exited')],
+        )),
+        RegisterEventHandler(OnProcessExit(
+            target_action=simulation_animation_node,
+            on_exit=[Shutdown(reason='critical animation_command exited')],
+        )),
+        RegisterEventHandler(OnProcessExit(
+            target_action=simulator_dashboard_node,
+            on_exit=[Shutdown(reason='critical simulator_dashboard exited')],
+        )),
+        RegisterEventHandler(OnProcessExit(
+            target_action=speech_bridge_node,
+            on_exit=[Shutdown(reason='critical speech_bridge exited')],
+        )),
         voice_direction_node,
+        sim_direction_node,
+        speech_bridge_node,
+        smart_home_bridge_node,
         # Launch files
         roarm_launch,
         
@@ -558,6 +869,11 @@ def generate_launch_description():
         hardware_animation_node,
         system_monitor_node,
         simulation_animation_node,
+        sim_motion_controller_node,
+        simulator_dashboard_node,
+        sim_camera_interaction_node,
+        sim_activity_driver_node,
+        sim_interaction_adapter_node,
         collision_detection_node,
         i2c_device_manager_node,
         collision_logic_node,

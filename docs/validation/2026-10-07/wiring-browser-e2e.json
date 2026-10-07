@@ -1,0 +1,50 @@
+{
+  "started_at": "2026-10-07T12:49:53.642714+00:00",
+  "passed": true,
+  "hardware_used": false,
+  "cases": [
+    {
+      "scenario": "four_routed_cables_render_with_finite_geometry",
+      "passed": true,
+      "cables": [
+        {
+          "name": "outer harness",
+          "vertices": 258,
+          "radius": 0.0046
+        },
+        {
+          "name": "power wire",
+          "vertices": 258,
+          "radius": 0.002
+        },
+        {
+          "name": "data wire",
+          "vertices": 258,
+          "radius": 0.0018
+        },
+        {
+          "name": "sensor wire",
+          "vertices": 258,
+          "radius": 0.0018
+        }
+      ],
+      "start": [
+        0.035,
+        0,
+        0.15510000000000002
+      ],
+      "end": [
+        0.10990814695819474,
+        0.028605894513104788,
+        0.6644201587259827
+      ]
+    },
+    {
+      "scenario": "cable_harness_recalculates_with_arm_and_wrist_motion",
+      "passed": true,
+      "cable_endpoint_delta_m": 0.4463,
+      "geometry_revision": 22
+    }
+  ],
+  "ended_at": "2026-10-07T12:50:03.178965+00:00"
+}

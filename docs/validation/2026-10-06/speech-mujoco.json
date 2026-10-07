@@ -1,0 +1,88 @@
+{
+  "started_at": "2026-10-06T03:27:32.489495+00:00",
+  "ended_at": "2026-10-06T03:29:08.187966+00:00",
+  "results": [
+    {
+      "scenario": "dance",
+      "passed": true,
+      "accepted": {
+        "accepted": true,
+        "name": "7f6e478ef68d4a8596e4f2c7ac20dc94.wav"
+      },
+      "transcript": "Please dance.",
+      "response": "I'll dance for you.",
+      "elapsed_seconds": 73.251,
+      "animation_observed": true,
+      "joint_movement": true,
+      "lamp_observed": false,
+      "statuses": [
+        "idle",
+        "speaking",
+        "thinking"
+      ],
+      "final_state": "IDLE"
+    },
+    {
+      "scenario": "lamp",
+      "passed": true,
+      "accepted": {
+        "accepted": true,
+        "name": "ee0f096a230b41608132eff22d6ec2b7.wav"
+      },
+      "transcript": "Turn the lamp blue.",
+      "response": "I'll set the lamp to blue.",
+      "elapsed_seconds": 4.222,
+      "animation_observed": false,
+      "joint_movement": true,
+      "lamp_observed": true,
+      "statuses": [
+        "idle",
+        "speaking",
+        "thinking"
+      ],
+      "final_state": "IDLE"
+    },
+    {
+      "scenario": "brightness",
+      "passed": true,
+      "accepted": {
+        "accepted": true,
+        "name": "a30b78598ff24cc9a1a45bad27ecd498.wav"
+      },
+      "transcript": "Please set brightness to 50%.",
+      "response": "I'll set brightness to 50 percent.",
+      "elapsed_seconds": 4.437,
+      "animation_observed": false,
+      "joint_movement": true,
+      "lamp_observed": true,
+      "statuses": [
+        "idle",
+        "speaking",
+        "thinking"
+      ],
+      "final_state": "IDLE"
+    },
+    {
+      "scenario": "question",
+      "passed": true,
+      "accepted": {
+        "accepted": true,
+        "name": "f3479b6c1a7e4664951129d54ffc33c1.wav"
+      },
+      "transcript": "Why do plants need water?",
+      "response": "Plants need water to survive and grow by providing essential nutrients and moisture for photosynthesis.",
+      "elapsed_seconds": 9.242,
+      "animation_observed": false,
+      "joint_movement": true,
+      "lamp_observed": false,
+      "statuses": [
+        "idle",
+        "speaking",
+        "thinking"
+      ],
+      "final_state": "IDLE"
+    }
+  ],
+  "error": null,
+  "scope": "Synthetic Piper fixtures through actual local models and ROS consumers; silent, not accuracy or hardware latency"
+}

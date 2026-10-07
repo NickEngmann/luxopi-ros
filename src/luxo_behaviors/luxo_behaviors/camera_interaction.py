@@ -3,7 +3,9 @@
 import rclpy
 from rclpy.node import Node
 from rclpy.action import ActionClient
+from .vision_reactions import VisionReactionMixin, EMOTION_ANIMATIONS
 from .MultiMsgSync import TwoStageHostSeqSync
+from .camera_queue import create_output_queues, enqueue_latest
 import blobconverter
 import depthai as dai
 import numpy as np
@@ -28,7 +30,7 @@ def frame_norm(frame, bbox):
 
 emotions = ['neutral', 'happy', 'sad', 'surprise', 'anger']
 
-class CameraInteraction(Node):
+class CameraInteraction(VisionReactionMixin, Node):
     def __init__(self):
         super().__init__('camera_interaction')
         
@@ -46,14 +48,9 @@ class CameraInteraction(Node):
         
         # === THREADING AND QUEUES FOR LATENCY OPTIMIZATION ===
         
-        # High-priority queue for raw camera frames (minimal latency)
-        self.frame_queue = queue.Queue(maxsize=2)  # Small queue to minimize latency
-        
-        # Low-priority queue for processing (emotion detection, etc.)
-        self.processing_queue = queue.Queue(maxsize=5)
-        
-        # Display data queue (for framebuffer updates)
-        self.display_queue = queue.Queue(maxsize=3)
+        # Keep only the newest pending inference frame; processing a backlog
+        # makes emotion feedback stale and retains several full-size images.
+        self.processing_queue = queue.Queue(maxsize=1)
         
         # Threading control
         self.shutdown_event = threading.Event()
@@ -70,9 +67,7 @@ class CameraInteraction(Node):
         # Create ROS publishers
         self.emotion_publisher = self.create_publisher(String, '/camera/emotion', 10)
         self.distance_publisher = self.create_publisher(Float32, '/camera/person_distance', 10)
-        
-        # Publisher for notifying animation command about emotion trigger
-        self.animation_trigger_publisher = self.create_publisher(String, '/animation_trigger_source', 10)
+        self.person_publisher = self.create_publisher(Bool, '/camera/person_present', 10)
         
         # Create action client for animation control
         self._animation_action_client = ActionClient(
@@ -192,13 +187,7 @@ class CameraInteraction(Node):
         self.recent_emotions = deque(maxlen=self.get_parameter('recent_emotion_history').get_parameter_value().integer_value)  # Keep track of last N emotions that triggered animations
         
         # Map emotions to animations
-        self.emotion_to_animation = {
-            'happy': ['excited', 'playful', 'dance'],
-            'sad': ['sad', 'droop'],
-            'surprise': ['startled', 'curious'],
-            'anger': ['shake', 'think', 'startled'],
-            'neutral': ['idle', 'stretch', 'nod']
-        }
+        self.emotion_to_animation = {emotion: list(names) for emotion, names in EMOTION_ANIMATIONS.items()}
         
         # Emotion buffer system - using ROS2 time
         self.emotion_buffer = deque(maxlen=60)
@@ -413,37 +402,28 @@ class CameraInteraction(Node):
     def emotion_processing_worker(self):
         """Background thread for emotion detection and analysis (can have latency)"""
         while not self.shutdown_event.is_set():
+            data = None
             try:
                 # Get processing data with timeout
                 data = self.processing_queue.get(timeout=0.1)
                 if data is None:
                     continue
-                
+
                 frame, detections, recognitions, timestamp = data
-                
-                # Process emotions (this can be slow)
                 self.process_emotions(frame, detections, recognitions, timestamp)
-                
-                self.processing_queue.task_done()
-                
             except queue.Empty:
                 continue
             except Exception as e:
                 self.get_logger().error(f"Error in emotion processing thread: {e}")
+            finally:
+                if data is not None:
+                    self.processing_queue.task_done()
 
     def display_update_worker(self):
         """Background thread for framebuffer display updates (can have latency)"""
-        last_display_update = time.time()
-        
-        while not self.shutdown_event.is_set():
+        interval = max(0.01, self.framebuffer_update_interval)
+        while not self.shutdown_event.wait(interval):
             try:
-                current_time = time.time()
-                
-                # Throttle display updates
-                if current_time - last_display_update < self.framebuffer_update_interval:
-                    time.sleep(0.01)
-                    continue
-                
                 # Get latest display data
                 with self.data_lock:
                     frame = self.latest_frame_for_display
@@ -456,10 +436,6 @@ class CameraInteraction(Node):
                     self._update_framebuffer_display_threaded(
                         frame, emotion, distance, face_bboxes
                     )
-                    last_display_update = current_time
-                
-                time.sleep(0.01)  # Small sleep to prevent busy waiting
-                
             except Exception as e:
                 self.get_logger().error(f"Error in display update thread: {e}")
 
@@ -736,8 +712,6 @@ class CameraInteraction(Node):
                     lamp_info={'status': self.lamp_status, 'last_update': time.time()}
                 )
                 
-                # Show success message briefly
-                time.sleep(1.0)
         except Exception as e:
             self.get_logger().error(f"Error showing camera reconnected message: {e}")
 
@@ -796,11 +770,10 @@ class CameraInteraction(Node):
             
             # Initialize sync and queues
             self.sync = TwoStageHostSeqSync()
-            self.queues = {}
-            
-            # Create output queues
-            for name in ["color", "detection", "recognition"]:
-                self.queues[name] = self.device.getOutputQueue(name)
+            # Frame-level messages use latest-only queues. Recognition uses a
+            # larger bounded queue because the two-stage network emits one
+            # result per detected face for each sequence.
+            self.queues = create_output_queues(self.device)
             
             # Create timer callback for processing camera data if not already created
             if self.timer is None:
@@ -926,7 +899,7 @@ class CameraInteraction(Node):
             # To avoid freezing (not necessary for this ObjDet model)
             if 15 < len(msgs):
                 node.warn(f"Removing first element! len {len(msgs)}")
-                msgs.popitem() # Remove first element
+                del msgs[next(iter(msgs))]  # Evict the oldest sequence.
 
         def get_msgs():
             global msgs
@@ -994,117 +967,10 @@ class CameraInteraction(Node):
 
         return pipeline
 
-    def process_camera_data(self):
-        """Process camera data with minimal latency for camera feed"""
-        # Skip if camera is not connected
-        if not self.camera_connected or self.device is None:
-            return
-        
-        try:
-            # Check if device is still valid before processing
-            if not self.device or not hasattr(self.device, 'getOutputQueue'):
-                self.get_logger().warn("Device is invalid, triggering reconnection")
-                self.handle_camera_disconnection()
-                return
-            
-            # Process all available messages
-            for name, q in self.queues.items():
-                try:
-                    # Add all msgs (color frames, object detections and age/gender recognitions) to the Sync class.
-                    if q.has():
-                        self.sync.add_msg(q.get(), name)
-                except Exception as e:
-                    # Individual queue error - might indicate device issue
-                    self.get_logger().error(f"Error accessing queue '{name}': {e}")
-                    self.consecutive_camera_errors += 1
-                    if self.consecutive_camera_errors >= self.max_consecutive_errors:
-                        self.handle_camera_disconnection()
-                    return
-
-            msgs = self.sync.get_msgs()
-            if msgs is not None:
-                frame = msgs["color"].getCvFrame()
-                detections = msgs["detection"].detections
-                recognitions = msgs["recognition"]
-                timestamp = self.get_clock().now()
-
-                # HIGH PRIORITY: Publish camera feed immediately for minimal latency
-                if self.publish_camera_feed and frame is not None:
-                    try:
-                        # Convert and publish frame with minimal processing
-                        image_msg = self.bridge.cv2_to_imgmsg(frame, encoding="bgr8")
-                        image_msg.header.stamp = timestamp.to_msg()
-                        image_msg.header.frame_id = "camera"
-                        self.image_publisher.publish(image_msg)
-                    except Exception as e:
-                        self.get_logger().error(f"Error publishing camera feed: {e}")
-
-                # Store frame for display (thread-safe)
-                with self.data_lock:
-                    self.latest_frame_for_display = frame.copy()
-
-                # LOW PRIORITY: Queue for emotion processing (can have latency)
-                if detections:
-                    try:
-                        # Non-blocking queue put - drop if queue is full to maintain low latency
-                        self.processing_queue.put_nowait((frame.copy(), detections, recognitions, timestamp))
-                    except queue.Full:
-                        # Drop oldest item and add new one
-                        try:
-                            self.processing_queue.get_nowait()
-                            self.processing_queue.put_nowait((frame.copy(), detections, recognitions, timestamp))
-                        except queue.Empty:
-                            pass
-                else:
-                    # No faces detected - update display data
-                    with self.data_lock:
-                        self.latest_face_bboxes = []
-                        
-                # Reset error counter on successful processing
-                self.consecutive_camera_errors = 0
-                
-        except RuntimeError as e:
-            # Handle specific RuntimeError that indicates communication issues
-            if "Communication exception" in str(e) or "X_LINK_ERROR" in str(e):
-                self.consecutive_camera_errors += 1
-                
-                # Throttle error logging
-                current_time = self.get_clock().now()
-                time_since_last_log = (current_time - self.last_camera_error_log_time).nanoseconds / 1e9
-                
-                if time_since_last_log >= self.camera_error_log_interval:
-                    self.get_logger().error(f"Camera communication error: {e} (consecutive errors: {self.consecutive_camera_errors})")
-                    self.last_camera_error_log_time = current_time
-                
-                # Trigger reconnection immediately on communication errors
-                if self.consecutive_camera_errors >= 2:  # Lower threshold for communication errors
-                    self.get_logger().warn("Camera communication failure detected, attempting reconnection...")
-                    self.handle_camera_disconnection()
-            else:
-                # Other RuntimeErrors
-                self.get_logger().error(f"Runtime error in camera processing: {e}")
-                self.consecutive_camera_errors += 1
-                if self.consecutive_camera_errors >= self.max_consecutive_errors:
-                    self.handle_camera_disconnection()
-        except Exception as e:
-            # Increment error counter for any other errors
-            self.consecutive_camera_errors += 1
-            
-            # Throttle error logging
-            current_time = self.get_clock().now()
-            time_since_last_log = (current_time - self.last_camera_error_log_time).nanoseconds / 1e9
-            
-            if time_since_last_log >= self.camera_error_log_interval:
-                self.get_logger().error(f"Error processing camera data: {e} (consecutive errors: {self.consecutive_camera_errors})")
-                self.last_camera_error_log_time = current_time
-            
-            # Check if we should attempt reconnection
-            if self.consecutive_camera_errors >= self.max_consecutive_errors:
-                self.get_logger().warn(f"Camera appears to be disconnected after {self.consecutive_camera_errors} consecutive errors. Attempting reconnection...")
-                self.handle_camera_disconnection()
 
     def process_emotions(self, frame, detections, recognitions, timestamp):
         """Process emotion detection (can have latency - runs in background thread)"""
+        self.person_publisher.publish(Bool(data=bool(detections)))
         try:
             # Clear face bboxes if no detections
             if not detections:
@@ -1290,9 +1156,12 @@ class CameraInteraction(Node):
             # Process all available messages
             for name, q in self.queues.items():
                 try:
-                    # Add all msgs (color frames, object detections and age/gender recognitions) to the Sync class.
-                    if q.has():
+                    # Drain every recognition result; unlike frame streams,
+                    # each sequence can produce multiple NNData messages.
+                    while q.has():
                         self.sync.add_msg(q.get(), name)
+                        if name != "recognition":
+                            break
                 except Exception as e:
                     # Individual queue error - might indicate device issue
                     self.get_logger().error(f"Error accessing queue '{name}': {e}")
@@ -1325,16 +1194,10 @@ class CameraInteraction(Node):
 
                 # LOW PRIORITY: Queue for emotion processing (can have latency)
                 if detections:
-                    try:
-                        # Non-blocking queue put - drop if queue is full to maintain low latency
-                        self.processing_queue.put_nowait((frame.copy(), detections, recognitions, timestamp))
-                    except queue.Full:
-                        # Drop oldest item and add new one
-                        try:
-                            self.processing_queue.get_nowait()
-                            self.processing_queue.put_nowait((frame.copy(), detections, recognitions, timestamp))
-                        except queue.Empty:
-                            pass
+                    enqueue_latest(
+                        self.processing_queue,
+                        (frame.copy(), detections, recognitions, timestamp),
+                    )
                 else:
                     # No faces detected - update display data
                     with self.data_lock:
@@ -1383,285 +1246,17 @@ class CameraInteraction(Node):
                 self.get_logger().warn(f"Camera appears to be disconnected after {self.consecutive_camera_errors} consecutive errors. Attempting reconnection...")
                 self.handle_camera_disconnection()
 
-    def _can_trigger_emotion_animation(self) -> bool:
-        """Check if we can trigger an emotion-based animation right now."""
-        current_time = self.get_clock().now()
-        
-        # Check if any animation is currently running
-        if self.current_animation_name:
-            self.get_logger().debug(f"Cannot trigger emotion animation: '{self.current_animation_name}' is currently running")
-            return False
-        
-        # Check if we're in a state that allows emotion animations
-        if self.current_state not in ['IDLE', 'EMOTION_REACTING']:
-            self.get_logger().debug(f"Cannot trigger emotion animation in state: {self.current_state}")
-            return False
-        
-        # Check post-animation delay (after ANY animation, not just emotion ones)
-        time_since_any_animation = (current_time - self.last_any_animation_end_time).nanoseconds / 1e9
-        if time_since_any_animation < self.post_animation_delay:
-            remaining_delay = self.post_animation_delay - time_since_any_animation
-            self.get_logger().debug(f"Post-animation delay active: {remaining_delay:.1f}s remaining")
-            return False
-        
-        # Check emotion-specific cooldown
-        time_since_last_emotion_animation = (current_time - self.last_animation_time).nanoseconds / 1e9
-        if time_since_last_emotion_animation < self.emotion_cooldown:
-            remaining_cooldown = self.emotion_cooldown - time_since_last_emotion_animation
-            self.get_logger().debug(f"Emotion cooldown active: {remaining_cooldown:.1f}s remaining")
-            return False
-        
-        # Check if there's an active goal handle
-        if self._active_goal_handle and not getattr(self._active_goal_handle, '_finished', False):
-            self.get_logger().debug("Cannot trigger emotion animation: active goal handle exists")
-            return False
-        
-        return True
-
-    def process_emotion_buffer(self):
-        """Process the emotion buffer and trigger an animation if conditions are met"""
-        current_time = self.get_clock().now()
-        
-        # Check if we've collected enough data and if the buffer duration has elapsed
-        if (len(self.emotion_buffer) > 0 and 
-                ((current_time - self.emotion_buffer_start_time).nanoseconds / 1e9) >= self.emotion_buffer_duration):
-            
-            # Early check if we can trigger animations at all
-            if not self._can_trigger_emotion_animation():
-                self.get_logger().debug("Clearing emotion buffer - cannot trigger animation right now")
-                # Reset the buffer and start time
-                self.emotion_buffer.clear()
-                self.emotion_buffer_start_time = current_time
-                return
-            
-            # Get the current elapsed time since last animation
-            time_since_last_animation = (current_time - self.last_animation_time).nanoseconds / 1e9
-            
-            # Count occurrences of each emotion in the buffer
-            emotion_counts = {}
-            valid_distances = []
-            
-            for emotion, distance, timestamp in self.emotion_buffer:
-                emotion_counts[emotion] = emotion_counts.get(emotion, 0) + 1
-                # Filter out invalid distance readings (0.00m or >4.0m likely errors)
-                if distance is not None and 0.3 < distance < 4.0:
-                    valid_distances.append(distance)
-            
-            # Calculate average distance from valid readings only
-            avg_distance = None
-            if valid_distances:
-                avg_distance = sum(valid_distances) / len(valid_distances)
-                if self.verbose:
-                    self.get_logger().debug(f"Valid distances: {len(valid_distances)}/{len(self.emotion_buffer)}, avg: {avg_distance:.2f}m")
-            
-            # Check if we have at least 3 emotion samples
-            if len(self.emotion_buffer) < 3:
-                self.get_logger().debug(f"Not enough emotion samples ({len(self.emotion_buffer)}), need at least 3")
-                # Reset buffer and start time
-                self.emotion_buffer.clear()
-                self.emotion_buffer_start_time = current_time
-                return
-            
-            # Find the most common emotion
-            if emotion_counts:
-                # Sort emotions by count (highest first)
-                sorted_emotions = sorted(emotion_counts.items(), key=lambda x: x[1], reverse=True)
-                dominant_emotion = sorted_emotions[0][0]
-                
-                # Calculate percentage of dominant emotion
-                dominant_percentage = (emotion_counts[dominant_emotion] / len(self.emotion_buffer)) * 100
-                
-                # Log buffer statistics
-                if self.verbose:
-                    self.get_logger().info(f"Buffer stats: {emotion_counts}, samples: {len(self.emotion_buffer)}")
-                
-                # Only trigger if dominant enough (using configurable threshold)
-                if dominant_percentage >= self.emotion_threshold:
-                    # Double-check we can still trigger (state might have changed)
-                    if not self._can_trigger_emotion_animation():
-                        self.get_logger().debug("Animation conditions changed during processing - skipping trigger")
-                    # Check if this emotion is too repetitive
-                    elif self._is_too_repetitive(dominant_emotion):
-                        self.get_logger().info(f"Emotion {dominant_emotion} is repetitive, but checking if we should override...")
-                        
-                        # If it's been a long time since last animation, allow it anyway
-                        if time_since_last_animation > self.emotion_cooldown * 2:
-                            self.get_logger().info(f"Overriding repetition check due to long idle time ({time_since_last_animation:.1f}s)")
-                            # Trigger the animation
-                            self.trigger_animation(dominant_emotion, avg_distance)
-                        else:
-                            self.get_logger().info(f"Skipping repetitive emotion: {dominant_emotion}")
-                    else:
-                        self.get_logger().info(f"Triggering animation for emotion: {dominant_emotion} ({dominant_percentage:.1f}%)")
-                        # Trigger the animation
-                        self.trigger_animation(dominant_emotion, avg_distance)
-                else:
-                    self.get_logger().debug(f"No dominant emotion found, highest: {dominant_emotion} ({dominant_percentage:.1f}%)")
-            
-            # Reset the buffer and start time
-            self.emotion_buffer.clear()
-            self.emotion_buffer_start_time = current_time
-
-    def _is_too_repetitive(self, emotion):
-        """Check if an emotion is being detected too repetitively"""
-        # If it's the same as the last triggered emotion, check how long ago that was
-        if emotion == self.last_emotion:
-            # But allow it if enough time has passed
-            current_time = self.get_clock().now()
-            time_since_last = (current_time - self.last_animation_time).nanoseconds / 1e9
-            if time_since_last > self.emotion_cooldown * 1.5:  # 7.5 seconds
-                return False  # Allow it after extended time
-            return True
-            
-        # If this emotion appears too frequently in our recent history
-        if len(self.recent_emotions) >= 3:  # Check last 3 animations
-            emotion_counts = {}
-            for e in self.recent_emotions:
-                emotion_counts[e] = emotion_counts.get(e, 0) + 1
-                
-            # If this emotion was ALL of our last 3 animations, skip it
-            if emotion in emotion_counts and emotion_counts[emotion] >= 3:
-                return True
-        
-        return False
-
-    def trigger_animation(self, emotion, distance=None):
-        """Trigger an animation based on detected emotion using the action system"""
-        # Update state with ROS2 time
-        self.last_emotion = emotion
-        self.last_animation_time = self.get_clock().now()
-        
-        # When triggering an animation, update display emotion tracking
-        with self.data_lock:
-            self.displayed_emotion = emotion
-            self.last_emotion_display_time = self.last_animation_time
-        
-        # Add to recent emotions history
-        self.recent_emotions.append(emotion)
-        
-        # Get corresponding animation options
-        if emotion in self.emotion_to_animation:
-            animation_options = self.emotion_to_animation[emotion]
-            # Randomly select one animation from the available options
-            animation = np.random.choice(animation_options)
-            
-            # Add speed modifier based on distance if available
-            speed_modifier = 1.0
-            if distance is not None:
-                # Closer distance = faster reaction (within reason)
-                if 0.5 <= distance <= 3.0:
-                    # Map 0.5m->1.5 (faster) and 3.0m->0.7 (slower)
-                    speed = 1.5 - ((distance - 0.5) * 0.32)
-                    speed_modifier = speed
-                
-            # Cancel any existing animation goal
-            if self._active_goal_handle:
-                self.get_logger().info("Cancelling previous emotion-triggered animation")
-                self._active_goal_handle.cancel_goal_async()
-            
-            # Notify animation command that this is an emotion trigger
-            self._notify_animation_trigger('emotion')
-            
-            # Send animation goal using action system
-            self._send_animation_goal(animation, speed_modifier, emotion)
-    
-    def _notify_animation_trigger(self, source: str):
-        """Notify the animation command server about the trigger source."""
-        try:
-            msg = String()
-            msg.data = source
-            self.animation_trigger_publisher.publish(msg)
-        except Exception as e:
-            self.get_logger().error(f"Error publishing animation trigger source: {e}")
-    
-    def _send_animation_goal(self, animation_name, speed_multiplier, trigger_emotion):
-        """Send an animation goal to the action server"""
-        if not self._animation_action_client.server_is_ready():
-            self.get_logger().warn("Animation action server not ready")
-            return
-        
-        # Create goal message
-        goal_msg = PlayAnimation.Goal()
-        goal_msg.animation_name = animation_name
-        goal_msg.speed_multiplier = speed_multiplier
-        goal_msg.allow_interruption = True  # Emotions can be interrupted
-        goal_msg.use_hardware_feedback = False
-        
-        self.get_logger().info(
-            f"Sending emotion-triggered animation: {animation_name} "
-            f"(speed: {speed_multiplier:.1f}, emotion: {trigger_emotion})"
-        )
-        
-        # Send goal asynchronously
-        send_goal_future = self._animation_action_client.send_goal_async(
-            goal_msg,
-            feedback_callback=self._animation_feedback_callback
-        )
-        
-        # Add callback for when goal is accepted/rejected
-        send_goal_future.add_done_callback(
-            lambda future: self._goal_response_callback(future, animation_name)
-        )
-    
-    def _goal_response_callback(self, future, animation_name):
-        """Handle the goal response from the action server"""
-        try:
-            goal_handle = future.result()
-            
-            if not goal_handle.accepted:
-                self.get_logger().warn(f'Animation goal rejected: {animation_name}')
-                return
-            
-            self.get_logger().debug(f'Animation goal accepted: {animation_name}')
-            self._active_goal_handle = goal_handle
-            
-            # Get the result asynchronously
-            result_future = goal_handle.get_result_async()
-            result_future.add_done_callback(
-                lambda future: self._get_result_callback(future, animation_name)
-            )
-            
-        except Exception as e:
-            self.get_logger().error(f"Error in goal response callback: {e}")
-    
-    def _get_result_callback(self, future, animation_name):
-        """Handle the result of the animation"""
-        try:
-            result = future.result().result
-            
-            if result.success:
-                self.get_logger().info(
-                    f"Emotion-triggered animation completed: {animation_name} "
-                    f"(duration: {result.actual_duration:.1f}s)"
-                )
-            else:
-                self.get_logger().warn(
-                    f"Emotion-triggered animation failed: {animation_name} - {result.message}"
-                )
-                
-            # Clear the active goal handle and update timing
-            self._active_goal_handle = None
-            self.last_any_animation_end_time = self.get_clock().now()
-            
-            # When animation ends, start the post-animation emotion timeout
-            with self.data_lock:
-                self.last_emotion_display_time = self.last_any_animation_end_time
-            
-        except Exception as e:
-            self.get_logger().error(f"Error in result callback: {e}")
-    
-    def _animation_feedback_callback(self, feedback_msg):
-        """Handle feedback from the animation action"""
-        feedback = feedback_msg.feedback
-        
-        if self.verbose:
-            self.get_logger().debug(
-                f"Animation progress: {feedback.progress*100:.1f}% "
-                f"(step {feedback.current_keyframe+1}/{feedback.total_keyframes})"
-            )
-    
     def destroy_node(self):
         """Clean up resources when the node is shut down"""
+        # Stop timer producers before workers exit so shutdown cannot enqueue
+        # new frames after the inference worker has begun stopping.
+        if hasattr(self, 'camera_retry_timer') and self.camera_retry_timer is not None:
+            self.camera_retry_timer.cancel()
+            self.camera_retry_timer = None
+        if hasattr(self, 'timer') and self.timer is not None:
+            self.timer.cancel()
+            self.timer = None
+
         # Signal threads to stop
         self.shutdown_event.set()
         
@@ -1679,14 +1274,6 @@ class CameraInteraction(Node):
             self.get_logger().info("Displaying shutdown message on framebuffer")
             self.framebuffer_display.cleanup()
         
-        # Cancel retry timer
-        if hasattr(self, 'camera_retry_timer') and self.camera_retry_timer is not None:
-            self.camera_retry_timer.cancel()
-            
-        # Cancel main timer
-        if hasattr(self, 'timer') and self.timer is not None:
-            self.timer.cancel()
-            
         # Close camera device
         if hasattr(self, 'device') and self.device is not None:
             self.get_logger().info("Shutting down camera")

@@ -1,0 +1,74 @@
+name: Simulator E2E
+on:
+  workflow_dispatch:
+  pull_request:
+    paths: ['src/**', 'roarm_ws_em1/**', 'scripts/**', 'docker/**', 'compose.simulator.yml', 'compose.physics-simulator.yml', '.github/workflows/simulator-e2e.yml']
+jobs:
+  simulator:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    strategy:
+      fail-fast: false
+      matrix:
+        continuous: ['false', 'true']
+    env:
+      LUXOPI_CONTINUOUS_ANIMATION_TIMING: ${{ matrix.continuous }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-python@v7.0.0
+        with:
+          python-version: '3.12'
+      - name: Start isolated ROS simulator
+        run: |
+          scripts/simulator.sh build simulator
+          scripts/simulator.sh --mode physics up -d --build
+          for attempt in $(seq 1 90); do
+            if curl --fail --silent http://127.0.0.1:8080/healthz; then exit 0; fi
+            sleep 2
+          done
+          scripts/simulator.sh --mode physics logs --tail 100
+          exit 1
+      - name: Native sequential scenarios
+        run: |
+          scripts/simulator.sh --mode physics exec -T simulator bash -c 'source /opt/ros/jazzy/setup.bash && source /workspace/install/setup.bash && python3 scripts/run_native_suite.py --feasible-retiming'
+      - name: Install browser test dependencies
+        run: |
+          python -m pip install -r requirements-simulator-test.txt
+          python -m playwright install --with-deps chromium
+      - name: Browser scenarios
+        run: python scripts/browser_e2e.py --url http://127.0.0.1:8080
+      - name: Measured home return and safety replacement
+        run: |
+          container_id=$(scripts/simulator.sh --mode physics ps -q simulator)
+          python scripts/home_e2e.py --container "$container_id"
+      - name: APDS gesture to completed motion
+        run: |
+          scripts/simulator.sh --mode physics exec -T simulator bash -c 'source /opt/ros/jazzy/setup.bash && source /workspace/install/setup.bash && python3 scripts/run_gesture_motion_scenarios.py' > /tmp/luxopi-gesture-motion.log
+      - name: Stale-heartbeat and critical-node recovery
+        run: |
+          container_id=$(scripts/simulator.sh --mode physics ps -q simulator)
+          python scripts/restart_e2e.py --pause-state --container "$container_id" --url http://127.0.0.1:8080 --output /tmp/luxopi-paused-health.json
+          python scripts/restart_e2e.py --container "$container_id" --url http://127.0.0.1:8080
+      - name: Collect test evidence
+        if: always()
+        run: |
+          mkdir -p artifacts
+          scripts/simulator.sh --mode physics logs --no-color > artifacts/ros.log 2>&1 || true
+          container_id=$(scripts/simulator.sh --mode physics ps --all -q simulator)
+          if [ -n "$container_id" ]; then
+            docker exec "$container_id" python3 -c 'import pathlib; print("\n".join(str(p) for p in pathlib.Path("/tmp").glob("luxopi-final-*")))' > artifacts/report-paths.txt || true
+            while IFS= read -r report_path; do
+              case "$report_path" in /tmp/luxopi-final-*) docker cp "$container_id:$report_path" artifacts/ ;; esac
+            done < artifacts/report-paths.txt
+          fi
+          for artifact in /tmp/luxopi-browser-e2e.json /tmp/luxopi-simulator-dashboard.png /tmp/luxopi-restart-e2e.json /tmp/luxopi-paused-health.json /tmp/luxopi-home-e2e.json /tmp/luxopi-gesture-motion.log; do
+            if [ -f "$artifact" ]; then cp "$artifact" artifacts/; fi
+          done
+      - uses: actions/upload-artifact@v7.0.1
+        if: always()
+        with:
+          name: simulator-e2e-continuous-${{ matrix.continuous }}
+          path: artifacts/
+      - name: Stop simulator
+        if: always()
+        run: scripts/simulator.sh --mode physics down

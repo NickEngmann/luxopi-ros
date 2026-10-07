@@ -10,6 +10,11 @@ from typing import List, Tuple, Optional
 from luxo_behaviors.animation_plugin_base import AnimationPlugin
 
 
+def _stable_uniform(plugin_name, label, low, high):
+    """Reproducible authored variation without touching global RNG state."""
+    return random.Random(f"{plugin_name}:{label}").uniform(low, high)
+
+
 class GentleSwayAnimation(AnimationPlugin):
     """Natural human swaying with micro-movements and breathing integration."""
     
@@ -33,8 +38,8 @@ class GentleSwayAnimation(AnimationPlugin):
     
     def get_keyframes(self) -> Tuple[List[List[float]], List[float]]:
         base_pos = 0.0
-        sway_amount = random.uniform(0.45, 0.65)
-        breath_lift = random.uniform(0.1, 0.15)
+        sway_amount = _stable_uniform(self.name, "variation-0", 0.45, 0.65)
+        breath_lift = _stable_uniform(self.name, "variation-1", 0.1, 0.15)
         
         keyframes = [
             [base_pos, -0.65, 1.2, 1.0, -1.5, 12.0],                          # Start at home 2
@@ -84,7 +89,7 @@ class CuriousExplorationAnimation(AnimationPlugin):
                 "Return posture", "Home"]
     
     def get_keyframes(self) -> Tuple[List[List[float]], List[float]]:
-        base_pos = random.uniform(-0.25, 0.25)
+        base_pos = _stable_uniform(self.name, "variation-2", -0.25, 0.25)
         
         keyframes = [
             [base_pos, -0.65, 1.2, 1.0, -1.5, 13.0],                    # Start at home 2
@@ -133,7 +138,7 @@ class BreathingAnimation(AnimationPlugin):
     
     def get_keyframes(self) -> Tuple[List[List[float]], List[float]]:
         base_pos = 0.0
-        sway = random.uniform(-0.05, 0.05)
+        sway = _stable_uniform(self.name, "variation-3", -0.05, 0.05)
         
         keyframes = [
             [base_pos, -0.65, 1.2, 1.0, -1.5, 10.5],                    # Rest position
@@ -231,7 +236,7 @@ class PlayfulBobAnimation(AnimationPlugin):
     
     def get_keyframes(self) -> Tuple[List[List[float]], List[float]]:
         base_pos = 0.0
-        energy = random.uniform(0.8, 1.0)  # Reduced max stretch
+        energy = _stable_uniform(self.name, "variation-4", 0.8, 1.0)  # Reduced max stretch
         
         keyframes = [
             [base_pos, -0.65, 1.2, 1.0, -1.5, 14.0],                          # Home 2
@@ -327,8 +332,8 @@ class SettlingAdjustAnimation(AnimationPlugin):
                 "Almost there", "One more shift", "Ahh perfect", "Home"]
     
     def get_keyframes(self) -> Tuple[List[List[float]], List[float]]:
-        base_adj = random.uniform(-0.4, 0.4)
-        shoulder_var = random.uniform(-0.25, 0.25)
+        base_adj = _stable_uniform(self.name, "variation-5", -0.4, 0.4)
+        shoulder_var = _stable_uniform(self.name, "variation-6", -0.25, 0.25)
         
         keyframes = [
             [0.0, -0.65, 1.2, 1.0, -1.5, 12.0],                                   # Starting position

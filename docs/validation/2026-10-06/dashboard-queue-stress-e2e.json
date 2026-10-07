@@ -1,0 +1,13 @@
+{
+  "suite": "dashboard_queue_stress_e2e",
+  "passed": true,
+  "request_count": 512,
+  "worker_count": 128,
+  "responses": {
+    "202": 512
+  },
+  "elapsed_seconds": 2.22,
+  "overload_response": false,
+  "sentinel_accepted": true,
+  "bridge_healthy_after_load": true
+}

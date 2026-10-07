@@ -1,0 +1,86 @@
+solid wedge
+  facet normal 0 0 -1
+    outer loop
+      vertex -0.075 -0.06 -0.045
+      vertex 0.075 0.06 -0.045
+      vertex 0.075 -0.06 -0.045
+    endloop
+  endfacet
+  facet normal 0 0 -1
+    outer loop
+      vertex -0.075 -0.06 -0.045
+      vertex -0.075 0.06 -0.045
+      vertex 0.075 0.06 -0.045
+    endloop
+  endfacet
+  facet normal 0 0 1
+    outer loop
+      vertex -0.075 -0.06 0.045
+      vertex 0.075 -0.06 0.045
+      vertex 0.075 0.06 0.045
+    endloop
+  endfacet
+  facet normal 0 0 1
+    outer loop
+      vertex -0.075 -0.06 0.045
+      vertex 0.075 0.06 0.045
+      vertex -0.075 0.06 0.045
+    endloop
+  endfacet
+  facet normal 0 -1 0
+    outer loop
+      vertex -0.075 -0.06 -0.045
+      vertex 0.075 -0.06 -0.045
+      vertex 0.075 -0.06 0.045
+    endloop
+  endfacet
+  facet normal 0 -1 0
+    outer loop
+      vertex -0.075 -0.06 -0.045
+      vertex 0.075 -0.06 0.045
+      vertex -0.075 -0.06 0.045
+    endloop
+  endfacet
+  facet normal 1 0 0
+    outer loop
+      vertex 0.075 -0.06 -0.045
+      vertex 0.075 0.06 -0.045
+      vertex 0.075 0.06 0.045
+    endloop
+  endfacet
+  facet normal 1 0 0
+    outer loop
+      vertex 0.075 -0.06 -0.045
+      vertex 0.075 0.06 0.045
+      vertex 0.075 -0.06 0.045
+    endloop
+  endfacet
+  facet normal 0 1 0
+    outer loop
+      vertex 0.075 0.06 -0.045
+      vertex -0.075 0.06 -0.045
+      vertex -0.075 0.06 0.045
+    endloop
+  endfacet
+  facet normal 0 1 -0
+    outer loop
+      vertex 0.075 0.06 -0.045
+      vertex -0.075 0.06 0.045
+      vertex 0.075 0.06 0.045
+    endloop
+  endfacet
+  facet normal -1 0 0
+    outer loop
+      vertex -0.075 0.06 -0.045
+      vertex -0.075 -0.06 -0.045
+      vertex -0.075 -0.06 0.045
+    endloop
+  endfacet
+  facet normal -1 0 0
+    outer loop
+      vertex -0.075 0.06 -0.045
+      vertex -0.075 -0.06 0.045
+      vertex -0.075 0.06 0.045
+    endloop
+  endfacet
+endsolid wedge

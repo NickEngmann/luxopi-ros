@@ -4,6 +4,7 @@
 import random
 import time
 import math
+from luxo_behaviors.home_sequence import HOME_STAGE_POSES
 import threading
 import rclpy
 from rclpy.action import ActionClient
@@ -12,8 +13,10 @@ import time
 from sensor_msgs.msg import JointState
 from std_msgs.msg import String, Float32, Bool
 from luxo_interfaces.srv import RequestStateTransition
+from .transition_requests import watch_transition_result
 from luxo_interfaces.msg import StateInfo
 from luxo_behaviors.state_machine import LuxoState
+from luxo_behaviors.reactive_avoidance import ReactiveAvoidance
 import numpy as np
 
 # Import shared utilities
@@ -32,7 +35,8 @@ from luxo_behaviors.command_behavior import CommandBehavior
 class BehaviorCoordinator(PettingBehavior, IdleBehavior, VoiceBehavior, CollisionBehavior, CommandBehavior):
     """Class to handle behavior coordination for the Luxo robot."""
     
-    def __init__(self, node, send_safe_joint_command_callback, publish_actual_joint_states_callback):
+    def __init__(self, node, send_safe_joint_command_callback, publish_actual_joint_states_callback,
+                 required_sensor_directions=()):
         """
         Initialize the BehaviorCoordinator system.
         
@@ -120,13 +124,26 @@ class BehaviorCoordinator(PettingBehavior, IdleBehavior, VoiceBehavior, Collisio
         self.current_joints = [0.0, 0.0, 0.0, 0.0, 0.0]  # Current joint positions
         self.target_joints = [0.0, 0.0, 0.0, 0.0, 0.0]   # Target joint positions
         self.joint_velocities = [0.0, 0.0, 0.0, 0.0, 0.0] # Current joint velocities
+        shoulder_limits = self.safety_limits.joint_limits.get('shoulder', {})
+        reactive_limits = {
+            'base_to_L1': (self.base_min_limit, self.base_max_limit),
+        }
+        if shoulder_limits:
+            reactive_limits['L1_to_L2'] = (
+                shoulder_limits['min'], shoulder_limits['max']
+            )
+        self.reactive_avoidance = ReactiveAvoidance(
+            limits=reactive_limits,
+            required_directions=required_sensor_directions,
+        )
+        self._reactive_sensor_status_seen = set()
         
         # Additional tracking variables with ROS time
         self.last_proactive_check = self.node.get_clock().now()
         
         # Two-stage home position sequence
-        self.home_position_1 = [0.5, 0.5, 1.3, 1.4, -1.5]  # Initial home position
-        self.home_position_2 = [0.5, -0.85, 1.3, 1.4, -1.5]  # Final home position
+        self.home_position_1 = list(HOME_STAGE_POSES[0])  # Initial home position
+        self.home_position_2 = list(HOME_STAGE_POSES[1])  # Final home position
         self.home_position_tolerance = 0.2  # Tolerance to determine if we're at a position
         self.home_position_stage = 1  # Track which stage of the home sequence we're in
         self.home_position_stage_change_time = self.node.get_clock().now()  # When we switched home position stages
@@ -200,7 +217,7 @@ class BehaviorCoordinator(PettingBehavior, IdleBehavior, VoiceBehavior, Collisio
         current_state = self._get_current_state()
         return current_state in states
 
-    def _transition_to_state(self, new_state):
+    def _transition_to_state(self, new_state, on_result=None, completion=False):
         """Request a state transition."""
         try:
             request = RequestStateTransition.Request()
@@ -209,12 +226,18 @@ class BehaviorCoordinator(PettingBehavior, IdleBehavior, VoiceBehavior, Collisio
             request.priority = 100  # High priority
 
             request.force = False
+            request.completion = completion
             
             future = self.request_state_transition_client.call_async(request)
-            # Fire and forget - don't wait for response
-            return True
+            # Keep the ROS executor nonblocking, but report the real response.
+            # call_async returning only means the request was queued locally.
+            return watch_transition_result(
+                future, new_state.name, self.node.get_logger(), on_result=on_result
+            )
         except Exception as e:
             self.node.get_logger().error(f"Error requesting state transition: {e}")
+            if on_result is not None:
+                on_result(False)
             return False
     
     def _can_process_voice_command(self) -> bool:
@@ -306,7 +329,8 @@ class BehaviorCoordinator(PettingBehavior, IdleBehavior, VoiceBehavior, Collisio
             
             return True
 
-    def validate_animation_keyframe(self, keyframe, animation_name=None):
+    def validate_animation_keyframe(self, keyframe, animation_name=None,
+                                    target_received_at=None):
         """
         Check if a keyframe is safe to execute given current collision status.
         
@@ -324,6 +348,31 @@ class BehaviorCoordinator(PettingBehavior, IdleBehavior, VoiceBehavior, Collisio
         
         # Validate and adjust the keyframe
         adjusted_keyframe = MovementValidator.validate_position(keyframe, self.safety_limits)
+
+        # Directional warning projection is shared with the simulator. Only the
+        # configured retreat axes move while a warning is active; all other
+        # joints hold measured pose until a fresh clear and replanned target.
+        names = (
+            'base_to_L1', 'L1_to_L2', 'L2_to_L3', 'L3_to_L4', 'L4_to_L5'
+        )
+        try:
+            decision = self.reactive_avoidance.adjust_target(
+                self.current_joints, adjusted_keyframe, names,
+                now=time.monotonic(), target_received_at=target_received_at,
+            )
+        except (TypeError, ValueError) as exc:
+            self.node.get_logger().error(f"Reactive collision projection failed closed: {exc}")
+            return False, self.current_joints.copy(), 'danger'
+
+        if decision['mode'] == 'adjust':
+            return False, MovementValidator.validate_position(
+                decision['target'], self.safety_limits
+            ), 'warning'
+        if decision['mode'].startswith('hold_'):
+            severity = 'danger' if decision['mode'] in {
+                'hold_imminent', 'hold_blocked', 'hold_no_safe_projection'
+            } else 'warning'
+            return False, self.current_joints.copy(), severity
         
         # Determine severity based on collision status
         severity = "safe"
@@ -340,6 +389,18 @@ class BehaviorCoordinator(PettingBehavior, IdleBehavior, VoiceBehavior, Collisio
             self.node.get_logger().debug(f"Animation keyframe adjusted: {reason}")
         
         return is_safe, adjusted_keyframe, severity
+
+    def update_reactive_sensor_status(self, payload):
+        """Update warning severity/coverage from one atomic classifier record."""
+        direction = payload['direction']
+        self.reactive_avoidance.update_sensor(
+            direction,
+            payload['active'],
+            time.monotonic(),
+            severity=payload['severity'],
+            valid=payload['valid'],
+        )
+        self._reactive_sensor_status_seen.add(direction)
     
     def get_animation_collision_status(self):
         """Return collision status formatted for animation feedback."""
@@ -508,7 +569,10 @@ class BehaviorCoordinator(PettingBehavior, IdleBehavior, VoiceBehavior, Collisio
                                 self.target_override_reason = "Home position stage 2"
                                 
                                 # Send command to move to stage 2
-                                self.send_safe_joint_command(home_with_variation, "Moving to home position stage 2")
+                                self.send_safe_joint_command(
+                                    home_with_variation, "Moving to home position stage 2",
+                                    target_received_at=time.monotonic(),
+                                )
                             else:
                                 self.node.get_logger().debug(f"At home position stage 1, waiting {self.home_position_stage_timeout - time_at_stage_1:.1f}s before stage 2")
                         
@@ -548,7 +612,10 @@ class BehaviorCoordinator(PettingBehavior, IdleBehavior, VoiceBehavior, Collisio
                     self.target_override_time = current_time
                     self.target_override_joints = self.current_idle_head_target.copy()
                     self.target_override_reason = "idle head variation"
-                    self.send_safe_joint_command(self.current_idle_head_target, "Idle head variation")
+                    self.send_safe_joint_command(
+                        self.current_idle_head_target, "Idle head variation",
+                        target_received_at=time.monotonic(),
+                    )
             
             # Check for extended idle timeout
             if self.check_extended_idle_timeout(current_time):
@@ -635,7 +702,10 @@ class BehaviorCoordinator(PettingBehavior, IdleBehavior, VoiceBehavior, Collisio
                     self.target_override_reason = "Reverting to home position stage 1"
                     
                     # Send command to move to home_position_1
-                    self.send_safe_joint_command(home_with_variation, "Reverting to home position stage 1")
+                    self.send_safe_joint_command(
+                        home_with_variation, "Reverting to home position stage 1",
+                        target_received_at=time.monotonic(),
+                    )
                     
                     # Log the current differences for debugging
                     self.node.get_logger().info(f"Current differences from home_position_2: {[round(d, 4) for d in differences]}")
@@ -837,7 +907,8 @@ class BehaviorCoordinator(PettingBehavior, IdleBehavior, VoiceBehavior, Collisio
             # Move to the home position - override unsafe zones in this case
             success = self.send_safe_joint_command(
                 home_with_variation, 
-                description 
+                description,
+                target_received_at=time.monotonic(),
             )
             
             # Reset collision counters and escape status
@@ -889,7 +960,9 @@ class BehaviorCoordinator(PettingBehavior, IdleBehavior, VoiceBehavior, Collisio
             self.last_movement_time = self.node.get_clock().now()
             
             # Send the command
-            success = self.send_safe_joint_command(safe_position, description)
+            success = self.send_safe_joint_command(
+                safe_position, description, target_received_at=time.monotonic()
+            )
             
             # Short delay to let the movement start
             time.sleep(0.1)  # Hardware timing delay - keep as time.sleep

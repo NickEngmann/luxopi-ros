@@ -27,6 +27,7 @@ class RoArmHardwareInterface(Node):
         
         # Collision avoidance parameters
         self.declare_parameter('enable_collision_avoidance', True)
+        self.declare_parameter('required_sensor_directions', 'front,left,right')
         self.declare_parameter('soft_limit_distance', 12.0)  # cm
         self.declare_parameter('hard_limit_distance', 8.0)   # cm
         self.declare_parameter('max_deceleration', 2.0)  # rad/s²
@@ -227,6 +228,9 @@ class RoArmHardwareInterface(Node):
                 self,  # Pass this node to the collision system
                 self.send_safe_joint_command,  # Callback to send joint commands
                 self.publish_actual_joint_states,  # Callback to publish joint states
+                required_sensor_directions=str(
+                    self.get_parameter('required_sensor_directions').value
+                ),
             )
             
             # Pass idle animation parameters to collision avoidance
@@ -320,6 +324,15 @@ class RoArmHardwareInterface(Node):
                 '/right_collision_warning',
                 self.right_collision_callback, 
                 10)
+
+            # Atomic directional severity and sensor validity feed the same
+            # ROS-free avoidance projection used by the simulator controller.
+            self.collision_sensor_status_sub = self.create_subscription(
+                String,
+                '/collision/sensor_status',
+                self.collision_sensor_status_callback,
+                10,
+            )
                 
             # Subscribe to distance measurements for more precise control
             self.front_proximity_sub = self.create_subscription(
@@ -515,6 +528,7 @@ class RoArmHardwareInterface(Node):
         self.get_logger().info("Entering USER_CONTROL state")
         # Store the position we want to maintain
         self.user_control_position = self.current_joints.copy() if hasattr(self, 'current_joints') and self.current_joints else None
+        self.user_control_target_received_at = time.monotonic()
         # Start a timer to maintain position during USER_CONTROL
         if not hasattr(self, 'user_control_timer') or self.user_control_timer is None:
             self.user_control_timer = self.create_timer(0.1, self._maintain_user_control_position)
@@ -531,7 +545,11 @@ class RoArmHardwareInterface(Node):
         """Maintain robot position during USER_CONTROL state."""
         if self.is_in_state(LuxoState.USER_CONTROL) and hasattr(self, 'user_control_position') and self.user_control_position:
             # Send the stored position to maintain it
-            self.send_safe_joint_command(self.user_control_position, "USER_CONTROL position maintenance")
+            self.send_safe_joint_command(
+                self.user_control_position,
+                "USER_CONTROL position maintenance",
+                target_received_at=getattr(self, 'user_control_target_received_at', None),
+            )
     
     def _on_enter_error(self):
         """Called when entering ERROR state."""
@@ -630,6 +648,18 @@ class RoArmHardwareInterface(Node):
         if msg.data and not self.is_in_state(LuxoState.COLLISION_AVOIDING):
             self.collision_interrupted_state = self.get_current_state()
         self.behavior_coordinator.handle_collision('right', msg.data)
+
+    def collision_sensor_status_callback(self, msg):
+        """Forward one atomic sensor record to the shared avoidance policy."""
+        if not hasattr(self, 'behavior_coordinator'):
+            return
+        try:
+            payload = json.loads(msg.data)
+            if not isinstance(payload, dict):
+                raise ValueError('status must be a JSON object')
+            self.behavior_coordinator.update_reactive_sensor_status(payload)
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            self.get_logger().warning(f"Rejected malformed collision sensor status: {exc}")
 
     def left_collision_callback(self, msg):
         if self.is_in_state(LuxoState.INITIALIZING):
@@ -1040,7 +1070,8 @@ class RoArmHardwareInterface(Node):
                 # Validate the target positions (only joint positions)
                 is_safe, adjusted_positions, severity = self.behavior_coordinator.validate_animation_keyframe(
                     target_positions[:5], 
-                    animation_name
+                    animation_name,
+                    target_received_at=time.monotonic(),
                 )
                 
                 if not is_safe:
@@ -1060,7 +1091,9 @@ class RoArmHardwareInterface(Node):
                 safe_positions = list(safe_positions) + [acceleration]
             
             # Apply collision avoidance and send command
-            self.send_safe_joint_command(safe_positions, "Joint control")
+            self.send_safe_joint_command(
+                safe_positions, "Joint control", target_received_at=time.monotonic()
+            )
             
             # Explicitly publish to joint_states to ensure our topic is active
             self.publish_actual_joint_states(self.current_joints)
@@ -1198,7 +1231,7 @@ class RoArmHardwareInterface(Node):
             
         return False, []
 
-    def send_safe_joint_command(self, positions, description=""):
+    def send_safe_joint_command(self, positions, description="", target_received_at=None):
         """Send a joint command with safety checks applied"""
         if not self.is_connected():
             return False
@@ -1225,6 +1258,24 @@ class RoArmHardwareInterface(Node):
         # Apply collision avoidance safety limits
         if self.enable_collision_avoidance:
             safe_positions = self.behavior_coordinator.apply_safety_limits(safe_positions)
+            if len(safe_positions) >= 5:
+                try:
+                    now = time.monotonic()
+                    received = target_received_at
+                    decision = self.behavior_coordinator.reactive_avoidance.adjust_target(
+                        self.current_joints[:5],
+                        safe_positions[:5],
+                        ('base_to_L1', 'L1_to_L2', 'L2_to_L3', 'L3_to_L4', 'L4_to_L5'),
+                        now=now,
+                        target_received_at=received,
+                    )
+                    safe_positions = list(safe_positions)
+                    safe_positions[:5] = decision['target']
+                except (TypeError, ValueError) as exc:
+                    self.get_logger().error(
+                        f"Reactive joint-command guard rejected target: {exc}"
+                    )
+                    safe_positions = self.current_joints.copy()
         
         try:
             # Only disable DEMA if it's active and the command is something other than regular joint control

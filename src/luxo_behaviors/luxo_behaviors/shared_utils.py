@@ -564,6 +564,74 @@ class CollisionMath:
             return current_base + np.pi
 
 
+class AnimationUtils:
+    """Utilities for animation-related operations."""
+    
+    @staticmethod
+    def interpolate_positions(start: List[float], end: List[float], 
+                             steps: int = 10) -> List[List[float]]:
+        """Generate intermediate positions between start and end."""
+        if len(start) != len(end) or steps < 2:
+            return [start, end] if len(start) == len(end) else []
+        
+        positions = []
+        for i in range(steps):
+            factor = i / (steps - 1)
+            pos = [s + (e - s) * factor for s, e in zip(start, end)]
+            positions.append(pos)
+        return positions
+    
+    @staticmethod
+    def calculate_blend_factor(current: float, target: float, 
+                              blend_speed: float = 0.1) -> float:
+        """Calculate blend factor for smooth animation transitions."""
+        if abs(current - target) < 0.001:
+            return 1.0
+        return blend_speed * (1.0 if target > current else -1.0)
+    
+    @staticmethod
+    def create_animation_sequence(poses: List[List[float]], 
+                                  transition_speed: float = 0.5) -> Dict[str, Any]:
+        """Create an animation sequence with timing information."""
+        if not poses:
+            return {'poses': [], 'durations': [], 'total_duration': 0.0}
+        
+        durations = []
+        for i in range(len(poses) - 1):
+            pos1, pos2 = poses[i], poses[i + 1]
+            if len(pos1) == len(pos2):
+                distance = math.sqrt(sum((a - b) ** 2 for a, b in zip(pos1, pos2)))
+                duration = distance / transition_speed
+                durations.append(duration)
+        
+        total_duration = sum(durations) if durations else 0.0
+        return {
+            'poses': poses,
+            'durations': durations,
+            'total_duration': total_duration
+        }
+    
+    @staticmethod
+    def calculate_animation_velocity(start_pos: List[float], end_pos: List[float],
+                                     duration: float) -> List[float]:
+        """Calculate velocity vector for animation movement."""
+        if duration <= 0 or len(start_pos) != len(end_pos):
+            return [0.0] * len(start_pos) if start_pos else []
+        
+        velocity = [(e - s) / duration for s, e in zip(start_pos, end_pos)]
+        return velocity
+    
+    @staticmethod
+    def smooth_animation_position(current: List[float], target: List[float],
+                                  alpha: float = 0.1) -> List[float]:
+        """Apply smoothing to animation position using exponential moving average."""
+        if len(current) != len(target) or alpha <= 0 or alpha > 1:
+            return target
+        
+        smoothed = [c + alpha * (t - c) for c, t in zip(current, target)]
+        return smoothed
+
+
 class MovementValidator:
     """Validates and adjusts movements for safety."""
     

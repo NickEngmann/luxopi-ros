@@ -8,8 +8,12 @@ Handles voice direction following and face detection variations.
 import random
 import time
 from typing import Optional, List, Tuple
-from std_msgs.msg import Float32, Bool
+from std_msgs.msg import Float32, Bool, String
 from luxo_behaviors.state_machine import LuxoState
+from luxo_behaviors.motion_policy import (
+    cable_safe_voice_yaw, normalize_direction_degrees,
+    voice_state_request_allowed,
+)
 import numpy as np
 
 
@@ -57,6 +61,7 @@ class VoiceBehavior:
         self.voice_influence = 0.0
         self.target_voice_angle = None
         self.voice_active = False
+        self.animation_active = False
         
         # Voice variation tracking
         self.voice_on_target_start_time = None
@@ -91,6 +96,12 @@ class VoiceBehavior:
             self.voice_active_callback,
             10
         )
+        self.animation_status_sub = self.node.create_subscription(
+            String,
+            '/roarm/current_animation',
+            self.animation_status_callback,
+            10,
+        )
         
         self.node.get_logger().info(f"Voice following enabled: {self.voice_follow_enabled}")
     
@@ -99,13 +110,21 @@ class VoiceBehavior:
         if not self.voice_follow_enabled:
             return
         
-        # Extract voice direction
-        voice_direction = msg.data  # Angle in degrees
+        # Ignore corrupt array estimates instead of sending a nonfinite or
+        # multi-turn yaw into the motion command path.
+        try:
+            voice_direction = normalize_direction_degrees(msg.data)
+        except (TypeError, ValueError, OverflowError) as exc:
+            self.node.get_logger().warning(f"Ignoring invalid voice direction: {exc}")
+            return
         current_time = self.node.get_clock().now()
         
         # Request transition to VOICE_FOLLOWING state if not already there
         current_state = self._get_current_state()
-        if current_state != LuxoState.VOICE_FOLLOWING and not self.voice_following_state_requested:
+        if (not self.animation_active
+                and current_state != LuxoState.VOICE_FOLLOWING
+                and voice_state_request_allowed(current_state)
+                and not self.voice_following_state_requested):
             self.voice_following_previous_state = current_state
             self.voice_following_state_requested = True
             self._transition_to_voice_following_state()
@@ -155,49 +174,17 @@ class VoiceBehavior:
         self.voice_influence = min(1.0, self.voice_influence + 0.8)  # Very aggressive following
         
         # Convert voice direction to target angle with intelligent wraparound
-        target_angle_rad = np.deg2rad(voice_direction)
-        target_angle = self.position_utils.normalize_angle(target_angle_rad)
-        
-        # Check if we need wraparound due to base limits
-        if target_angle > self.base_max_limit:
-            if self.enable_base_wraparound:
-                # Calculate wraparound path
-                wraparound_target = target_angle + 2 * np.pi
-                if wraparound_target >= self.base_min_limit:
-                    self.target_voice_angle = wraparound_target
-                    self.node.get_logger().info(
-                        f"Voice at {voice_direction}° beyond max limit - "
-                        f"using wraparound to {np.rad2deg(wraparound_target):.1f}°"
-                    )
-                else:
-                    # Even wraparound doesn't work, clamp to nearest reachable
-                    self.target_voice_angle = self.base_max_limit
-                    self.node.get_logger().warn(
-                        f"Voice at {voice_direction}° unreachable - clamping to max limit"
-                    )
-            else:
-                self.target_voice_angle = self.base_max_limit
-                self.node.get_logger().warn(f"Voice beyond max limit - clamping (wraparound disabled)")
-        elif target_angle < self.base_min_limit:
-            if self.enable_base_wraparound:
-                # Calculate wraparound path
-                wraparound_target = target_angle - 2 * np.pi
-                if wraparound_target <= self.base_max_limit:
-                    self.target_voice_angle = wraparound_target
-                    self.node.get_logger().info(
-                        f"Voice at {voice_direction}° beyond min limit - "
-                        f"using wraparound to {np.rad2deg(wraparound_target):.1f}°"
-                    )
-                else:
-                    self.target_voice_angle = self.base_min_limit
-                    self.node.get_logger().warn(
-                        f"Voice at {voice_direction}° unreachable - clamping to min limit"
-                    )
-            else:
-                self.target_voice_angle = self.base_min_limit
-                self.node.get_logger().warn(f"Voice beyond min limit - clamping (wraparound disabled)")
-        else:
-            self.target_voice_angle = target_angle
+        current_base = self.current_joints[0] if self.current_joints else 0.0
+        try:
+            self.target_voice_angle = cable_safe_voice_yaw(
+                current_base, voice_direction,
+                self.base_min_limit, self.base_max_limit,
+            )
+        except (TypeError, ValueError) as exc:
+            self.node.get_logger().warning(
+                f"Ignoring voice heading outside cable-safe motion bounds: {exc}"
+            )
+            return
         
         # Record this as an acted direction and update cooldown
         self.last_acted_voice_direction = voice_direction
@@ -223,6 +210,10 @@ class VoiceBehavior:
         
         # Reset completion timer since we received new voice input
         self.voice_completion_timer = current_time
+
+    def animation_status_callback(self, msg):
+        """Track accepted animation ownership before its FSM transition lands."""
+        self.animation_active = bool(msg.data.strip())
     
     def voice_active_callback(self, msg):
         """Handle voice activity status."""
@@ -337,11 +328,11 @@ class VoiceBehavior:
         """Request transition to VOICE_FOLLOWING state."""
         try:
             if hasattr(self, '_transition_to_state'):
-                success = self._transition_to_state(LuxoState.VOICE_FOLLOWING)
-                if success:
-                    self.node.get_logger().info("Successfully transitioned to VOICE_FOLLOWING state")
-                else:
-                    self.node.get_logger().warn("Failed to transition to VOICE_FOLLOWING state")
+                # State requests are asynchronous. The coordinator observes and
+                # logs the eventual service result; a returned Future is not a
+                # success boolean.
+                self._transition_to_state(LuxoState.VOICE_FOLLOWING)
+                self.node.get_logger().debug("Requested VOICE_FOLLOWING state")
             elif hasattr(self, 'request_state_transition_client'):
                 # Use the service client directly if available
                 self._request_voice_following_state_via_service()
@@ -469,7 +460,10 @@ class VoiceBehavior:
         )
         
         # Send the command with high priority
-        self.send_safe_joint_command(voice_position_with_accel, "Voice following with variation")
+        self.send_safe_joint_command(
+            voice_position_with_accel, "Voice following with variation",
+            target_received_at=time.monotonic(),
+        )
         
         # Set this as a target override to prevent other systems from interfering
         self.target_override_active = True

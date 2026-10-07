@@ -1,0 +1,60 @@
+{
+  "started_at": "2026-10-06T04:04:57.151021+00:00",
+  "runtime_commit": "a0fc5a8bdc556a81e5e3dc6353c19e2026071cb2",
+  "cases": [
+    {
+      "name": "camera_emotion_starts_real_animation",
+      "passed": true,
+      "state": "EMOTION_REACTING",
+      "animation": "sad",
+      "joint_names": [
+        "base_link_to_link1",
+        "link1_to_link2",
+        "link2_to_link3",
+        "link3_to_link4",
+        "link4_to_link5",
+        "link5_to_gripper_link"
+      ],
+      "joint_displacement_rad": 0.03144501948346022
+    },
+    {
+      "name": "raw_collision_preempts_vision_animation",
+      "passed": true,
+      "collision_state": "COLLISION_AVOIDING",
+      "terminal_action_status": 6,
+      "action_status_history": [
+        [
+          1
+        ],
+        [
+          2
+        ],
+        [
+          6
+        ]
+      ],
+      "joint_frames": 469,
+      "front_sensor_status": {
+        "direction": "front",
+        "active": true,
+        "valid": true,
+        "severity": "danger",
+        "source": "apds9960",
+        "sample_age_seconds": 0.004035911,
+        "fsr_sample_age_seconds": 0.003737688,
+        "fsr_sample_fresh": true,
+        "fsr_contact_latched": false,
+        "valid_timeout_seconds": 0.5
+      }
+    },
+    {
+      "name": "collision_clear_does_not_resume_stale_vision_goal",
+      "passed": true,
+      "state": "IDLE",
+      "avoidance_mode": "hold_replan",
+      "joint_drift_rad": 0.0
+    }
+  ],
+  "passed": true,
+  "ended_at": "2026-10-06T04:05:09.091009+00:00"
+}

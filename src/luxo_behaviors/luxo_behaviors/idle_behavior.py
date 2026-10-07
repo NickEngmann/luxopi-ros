@@ -44,6 +44,7 @@ class IdleBehavior:
         self.last_idle_head_variation_time = self.node.get_clock().now()
         self.current_idle_head_target = None
         self.idle_head_variation_active = False
+        self.home_transition_pending = False
         self.idle_base_position = [0.0, -0.55, 1.2, 1.0, 2.0]  # Standard idle position
         
         # Create action client for triggering animations
@@ -321,11 +322,20 @@ class IdleBehavior:
             )
             
             # Request state transition to RETURNING_HOME
-            if self._transition_to_state(LuxoState.RETURNING_HOME):
-                self.is_returning_to_rest = True
-                self.go_to_rest_position("Extended idle timeout")
+            if not self.home_transition_pending:
+                self.home_transition_pending = True
+
+                def after_transition(accepted):
+                    self.home_transition_pending = False
+                    if accepted:
+                        self.is_returning_to_rest = True
+                        self.go_to_rest_position("Extended idle timeout")
+                    else:
+                        self.node.get_logger().warn("Failed to transition to RETURNING_HOME state")
+
+                self._transition_to_state(
+                    LuxoState.RETURNING_HOME, on_result=after_transition
+                )
                 return True
-            else:
-                self.node.get_logger().warn("Failed to transition to RETURNING_HOME state")
         
         return False

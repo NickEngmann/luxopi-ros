@@ -1,0 +1,858 @@
+{
+  "started_at": "2026-10-07T02:53:36.869233+00:00",
+  "url": "http://127.0.0.1:8080",
+  "cases": [
+    {
+      "name": "healthy_start",
+      "passed": true,
+      "health": {
+        "healthy": true,
+        "reasons": [],
+        "state_ready": true,
+        "joint_feedback_valid": true,
+        "node_count": 14,
+        "nodes": [
+          "animation_command",
+          "collision_node",
+          "mujoco_simulator",
+          "robot_state_publisher",
+          "sim_activity_driver",
+          "sim_camera_interaction",
+          "sim_direction_node",
+          "sim_interaction_adapter",
+          "sim_motion_controller",
+          "sim_world_sensors",
+          "simulator_dashboard",
+          "speech_bridge",
+          "state_manager",
+          "watchdog"
+        ],
+        "components": {
+          "state_manager": true,
+          "animation_command": true,
+          "sim_motion_controller": true,
+          "sim_direction_node": true,
+          "speech_bridge": true,
+          "robot_state_publisher": true,
+          "simulator_dashboard": true,
+          "mujoco_simulator": true
+        },
+        "missing_required": [],
+        "state_age_seconds": 0.17448685597628355,
+        "joint_state_age_seconds": 0.007392604136839509,
+        "state_fresh": true,
+        "joint_state_fresh": true,
+        "stale_after_seconds": 3.0
+      }
+    },
+    {
+      "name": "concurrent_retry_is_idempotent",
+      "passed": true,
+      "retries": 16,
+      "duplicate_count": 15,
+      "conflicting_reuse": 409
+    },
+    {
+      "name": "distance_boundary",
+      "passed": true,
+      "side": "left",
+      "metres": 0.0,
+      "received": 0.0
+    },
+    {
+      "name": "distance_boundary",
+      "passed": true,
+      "side": "left",
+      "metres": 1.2,
+      "received": 1.2
+    },
+    {
+      "name": "distance_boundary",
+      "passed": true,
+      "side": "right",
+      "metres": 0.0,
+      "received": 0.0
+    },
+    {
+      "name": "distance_boundary",
+      "passed": true,
+      "side": "right",
+      "metres": 1.2,
+      "received": 1.2
+    },
+    {
+      "name": "doa_wrap_boundary",
+      "passed": true,
+      "degrees": 0,
+      "yaw": -359.9518127441406
+    },
+    {
+      "name": "doa_wrap_boundary",
+      "passed": true,
+      "degrees": 359,
+      "yaw": -358.5029602050781
+    },
+    {
+      "name": "doa_inactive_returns_idle",
+      "passed": true,
+      "state": "IDLE",
+      "voice_active": false
+    },
+    {
+      "name": "touch_boundary",
+      "passed": true,
+      "sensor": "head_top",
+      "value": 0
+    },
+    {
+      "name": "touch_boundary",
+      "passed": true,
+      "sensor": "head_top",
+      "value": 255
+    },
+    {
+      "name": "touch_boundary",
+      "passed": true,
+      "sensor": "head_left",
+      "value": 0
+    },
+    {
+      "name": "touch_boundary",
+      "passed": true,
+      "sensor": "head_left",
+      "value": 255
+    },
+    {
+      "name": "touch_boundary",
+      "passed": true,
+      "sensor": "head_bottom",
+      "value": 0
+    },
+    {
+      "name": "touch_boundary",
+      "passed": true,
+      "sensor": "head_bottom",
+      "value": 255
+    },
+    {
+      "name": "touch_boundary",
+      "passed": true,
+      "sensor": "head_right",
+      "value": 0
+    },
+    {
+      "name": "touch_boundary",
+      "passed": true,
+      "sensor": "head_right",
+      "value": 255
+    },
+    {
+      "name": "dual_side_collision_latch",
+      "passed": true,
+      "state": "COLLISION_AVOIDING",
+      "obstacles": {
+        "front": false,
+        "left": true,
+        "right": true
+      }
+    },
+    {
+      "name": "collision_clear_recovery",
+      "passed": true,
+      "state": "PETTING"
+    },
+    {
+      "name": "invalid_inputs_rejected",
+      "passed": true,
+      "cases": [
+        {
+          "type": "audio_direction",
+          "status": 400
+        },
+        {
+          "type": "distance",
+          "status": 400
+        },
+        {
+          "type": "distance",
+          "status": 400
+        },
+        {
+          "type": "touch",
+          "status": 400
+        },
+        {
+          "type": "proximity",
+          "status": 400
+        },
+        {
+          "type": "state_request",
+          "status": 400
+        },
+        {
+          "type": "animation",
+          "status": 400
+        },
+        {
+          "type": "brightness",
+          "status": 400
+        },
+        {
+          "type": "light_color",
+          "status": 400
+        },
+        {
+          "type": "light_control",
+          "status": 400
+        }
+      ]
+    },
+    {
+      "name": "concurrent_queue_stress",
+      "passed": true,
+      "submitted": 160,
+      "accepted": 160,
+      "backpressured": 0,
+      "audit_records": 100,
+      "queue_depth": 0
+    },
+    {
+      "name": "healthy_finish",
+      "passed": true,
+      "health": {
+        "healthy": true,
+        "reasons": [],
+        "state_ready": true,
+        "joint_feedback_valid": true,
+        "node_count": 14,
+        "nodes": [
+          "animation_command",
+          "collision_node",
+          "mujoco_simulator",
+          "robot_state_publisher",
+          "sim_activity_driver",
+          "sim_camera_interaction",
+          "sim_direction_node",
+          "sim_interaction_adapter",
+          "sim_motion_controller",
+          "sim_world_sensors",
+          "simulator_dashboard",
+          "speech_bridge",
+          "state_manager",
+          "watchdog"
+        ],
+        "components": {
+          "state_manager": true,
+          "animation_command": true,
+          "sim_motion_controller": true,
+          "sim_direction_node": true,
+          "speech_bridge": true,
+          "robot_state_publisher": true,
+          "simulator_dashboard": true,
+          "mujoco_simulator": true
+        },
+        "missing_required": [],
+        "state_age_seconds": 0.04402455594390631,
+        "joint_state_age_seconds": 0.008957989048212767,
+        "state_fresh": true,
+        "joint_state_fresh": true,
+        "stale_after_seconds": 3.0
+      },
+      "ingress": {
+        "accepted": 582,
+        "duplicates": 45,
+        "rejected": 33,
+        "queue_full": 0,
+        "queue_depth": 1,
+        "queue_capacity": 64,
+        "request_id_cache_size": 483,
+        "recent": [
+          {
+            "at_monotonic": 1123235.573,
+            "outcome": "accepted",
+            "type": "gesture",
+            "request_id": "stress-24b99fa13bf14b838692829d4f1afd2a"
+          },
+          {
+            "at_monotonic": 1123235.577,
+            "outcome": "accepted",
+            "type": "gesture",
+            "request_id": "stress-4ef7844b130d4e33afc1d3b0f479e21f"
+          },
+          {
+            "at_monotonic": 1123235.58,
+            "outcome": "accepted",
+            "type": "gesture",
+            "request_id": "stress-03f462f2d0f141aea22ca792ce15b896"
+          },
+          {
+            "at_monotonic": 1123235.581,
+            "outcome": "accepted",
+            "type": "gesture",
+            "request_id": "stress-7a98ba7a992245eca92880e5743f274f"
+          },
+          {
+            "at_monotonic": 1123235.582,
+            "outcome": "accepted",
+            "type": "gesture",
+            "request_id": "stress-fc44a775ce114a36bd71f671d840192f"
+          },
+          {
+            "at_monotonic": 1123235.584,
+            "outcome": "accepted",
+            "type": "gesture",
+            "request_id": "stress-36b774586b9b4a23a89667ced38c9a95"
+          },
+          {
+            "at_monotonic": 1123235.584,
+            "outcome": "accepted",
+            "type": "gesture",
+            "request_id": "stress-2d3772f1a2c847f391d6c5142721c295"
+          },
+          {
+            "at_monotonic": 1123235.585,
+            "outcome": "accepted",
+            "type": "gesture",
+            "request_id": "stress-3632c15f608d455f9a520ddea36a2926"
+          },
+          {
+            "at_monotonic": 1123235.585,
+            "outcome": "accepted",
+            "type": "gesture",
+            "request_id": "stress-bccbb09d873d433aa7346d6eeae60618"
+          },
+          {
+            "at_monotonic": 1123235.587,
+            "outcome": "accepted",
+            "type": "gesture",
+            "request_id": "stress-f573ab225c0848b9b660f9467bf4fce4"
+          },
+          {
+            "at_monotonic": 1123235.591,
+            "outcome": "accepted",
+            "type": "gesture",
+            "request_id": "stress-b42cb3a75de447c2b675b3fa768f1706"
+          },
+          {
+            "at_monotonic": 1123235.595,
+            "outcome": "accepted",
+            "type": "gesture",
+            "request_id": "stress-429251be48fe478c80a236c7198e58b3"
+          },
+          {
+            "at_monotonic": 1123235.596,
+            "outcome": "accepted",
+            "type": "gesture",
+            "request_id": "stress-be5baed5bb554e8d82a5c460bd0338c8"
+          },
+          {
+            "at_monotonic": 1123235.599,
+            "outcome": "accepted",
+            "type": "gesture",
+            "request_id": "stress-e11ccf5a31c54769a5e03f62dfff62f2"
+          },
+          {
+            "at_monotonic": 1123235.6,
+            "outcome": "accepted",
+            "type": "gesture",
+            "request_id": "stress-fd9e494335294dbeaa7a3102a34b4589"
+          },
+          {
+            "at_monotonic": 1123235.6,
+            "outcome": "accepted",
+            "type": "gesture",
+            "request_id": "stress-5ad06f21d8814ae0814ff5370a0e88c2"
+          },
+          {
+            "at_monotonic": 1123235.601,
+            "outcome": "accepted",
+            "type": "gesture",
+            "request_id": "stress-4bf15be6cfc447cebf2a81dc17a6b21d"
+          },
+          {
+            "at_monotonic": 1123235.601,
+            "outcome": "accepted",
+            "type": "gesture",
+            "request_id": "stress-127846d9b96444febd3870fce387f4a7"
+          },
+          {
+            "at_monotonic": 1123235.602,
+            "outcome": "accepted",
+            "type": "gesture",
+            "request_id": "stress-ada0461ab6064dffade14b3f8a938508"
+          },
+          {
+            "at_monotonic": 1123235.603,
+            "outcome": "accepted",
+            "type": "gesture",
+            "request_id": "stress-6eb9666e6aa14110af973e6f9afef286"
+          },
+          {
+            "at_monotonic": 1123235.603,
+            "outcome": "accepted",
+            "type": "gesture",
+            "request_id": "stress-e572eac3911c475989588609f61c94c6"
+          },
+          {
+            "at_monotonic": 1123235.603,
+            "outcome": "accepted",
+            "type": "gesture",
+            "request_id": "stress-99cb6b19be6742fd8789ae8722d99e06"
+          },
+          {
+            "at_monotonic": 1123235.607,
+            "outcome": "accepted",
+            "type": "gesture",
+            "request_id": "stress-2bd5eb841b5543bc84a748b26cdd2931"
+          },
+          {
+            "at_monotonic": 1123235.608,
+            "outcome": "accepted",
+            "type": "gesture",
+            "request_id": "stress-e6f810cbbac54f4aa13e7e156e6616b7"
+          },
+          {
+            "at_monotonic": 1123235.61,
+            "outcome": "accepted",
+            "type": "gesture",
+            "request_id": "stress-96387971bc5f4a83a14e38aa5b596c8a"
+          },
+          {
+            "at_monotonic": 1123235.611,
+            "outcome": "accepted",
+            "type": "gesture",
+            "request_id": "stress-f87fa3bbccf74962be5bdcc37626fc88"
+          },
+          {
+            "at_monotonic": 1123235.617,
+            "outcome": "accepted",
+            "type": "gesture",
+            "request_id": "stress-f425f7082b984857904674c7f73bcc87"
+          },
+          {
+            "at_monotonic": 1123235.621,
+            "outcome": "accepted",
+            "type": "gesture",
+            "request_id": "stress-77fd882ee004456780b0ba6b58a27c7a"
+          },
+          {
+            "at_monotonic": 1123235.623,
+            "outcome": "accepted",
+            "type": "gesture",
+            "request_id": "stress-9ab7fc688e114dbe8d77702f86db0fd2"
+          },
+          {
+            "at_monotonic": 1123235.623,
+            "outcome": "accepted",
+            "type": "gesture",
+            "request_id": "stress-49f5ab41174a4b949d00304dbb6b3fc9"
+          },
+          {
+            "at_monotonic": 1123235.624,
+            "outcome": "accepted",
+            "type": "gesture",
+            "request_id": "stress-3c7430e5cc8d470a8b340c2e755113d6"
+          },
+          {
+            "at_monotonic": 1123235.624,
+            "outcome": "accepted",
+            "type": "gesture",
+            "request_id": "stress-0a6772ecc4614498b10e97965db34928"
+          },
+          {
+            "at_monotonic": 1123235.625,
+            "outcome": "accepted",
+            "type": "gesture",
+            "request_id": "stress-cdebc1e4e6d4405695c01ec790b19b48"
+          },
+          {
+            "at_monotonic": 1123235.63,
+            "outcome": "accepted",
+            "type": "gesture",
+            "request_id": "stress-34a6a6761c734ab7a3e3760f55f37d0b"
+          },
+          {
+            "at_monotonic": 1123235.633,
+            "outcome": "accepted",
+            "type": "gesture",
+            "request_id": "stress-a8b097cd66fa431a83e94d13eea12839"
+          },
+          {
+            "at_monotonic": 1123235.637,
+            "outcome": "accepted",
+            "type": "gesture",
+            "request_id": "stress-90c53d4dd2d444028d978ce6fd1f8bdc"
+          },
+          {
+            "at_monotonic": 1123235.64,
+            "outcome": "accepted",
+            "type": "gesture",
+            "request_id": "stress-cb300c43efc74bdb9987198f9ef6aa0e"
+          },
+          {
+            "at_monotonic": 1123235.641,
+            "outcome": "accepted",
+            "type": "gesture",
+            "request_id": "stress-b7512c0ce237484d93b0f5760129fc6d"
+          },
+          {
+            "at_monotonic": 1123235.641,
+            "outcome": "accepted",
+            "type": "gesture",
+            "request_id": "stress-df97c3358ea64922b4a23fe197b4f33d"
+          },
+          {
+            "at_monotonic": 1123235.642,
+            "outcome": "accepted",
+            "type": "gesture",
+            "request_id": "stress-f94c288518dc43d5ae3c6dddeaa91fbe"
+          },
+          {
+            "at_monotonic": 1123235.642,
+            "outcome": "accepted",
+            "type": "gesture",
+            "request_id": "stress-c50a87a9e73a4fc3a260bc3849be95b3"
+          },
+          {
+            "at_monotonic": 1123235.643,
+            "outcome": "accepted",
+            "type": "gesture",
+            "request_id": "stress-648c4de2ab3842ec85a49aa3e63df8eb"
+          },
+          {
+            "at_monotonic": 1123235.643,
+            "outcome": "accepted",
+            "type": "gesture",
+            "request_id": "stress-2b77e83326044ca6a888f4dfc16ff904"
+          },
+          {
+            "at_monotonic": 1123235.644,
+            "outcome": "accepted",
+            "type": "gesture",
+            "request_id": "stress-8770016faa264503ba10ca4277b1325c"
+          },
+          {
+            "at_monotonic": 1123235.645,
+            "outcome": "accepted",
+            "type": "gesture",
+            "request_id": "stress-36034b2125d043d39a0a9ac98438c1b8"
+          },
+          {
+            "at_monotonic": 1123235.65,
+            "outcome": "accepted",
+            "type": "gesture",
+            "request_id": "stress-7ea791c06cf84240a0071f409212ce5f"
+          },
+          {
+            "at_monotonic": 1123235.65,
+            "outcome": "accepted",
+            "type": "gesture",
+            "request_id": "stress-11fdd2cd6829434db9f50b17348ffccc"
+          },
+          {
+            "at_monotonic": 1123235.652,
+            "outcome": "accepted",
+            "type": "gesture",
+            "request_id": "stress-ebb9a21a96cc48e3bfb295c2301a139d"
+          },
+          {
+            "at_monotonic": 1123235.655,
+            "outcome": "accepted",
+            "type": "gesture",
+            "request_id": "stress-6c945fde17e64022a602efd91031aebd"
+          },
+          {
+            "at_monotonic": 1123235.658,
+            "outcome": "accepted",
+            "type": "gesture",
+            "request_id": "stress-b4ba313885d24c96a90f838943f279df"
+          },
+          {
+            "at_monotonic": 1123235.66,
+            "outcome": "accepted",
+            "type": "gesture",
+            "request_id": "stress-17fb7f3f2bcb45579ae0cd8ef10cb1ec"
+          },
+          {
+            "at_monotonic": 1123235.66,
+            "outcome": "accepted",
+            "type": "gesture",
+            "request_id": "stress-310bb151615e4036973b581c4aa3e56e"
+          },
+          {
+            "at_monotonic": 1123235.661,
+            "outcome": "accepted",
+            "type": "gesture",
+            "request_id": "stress-6939975a120b46f4b894f32016c6fb06"
+          },
+          {
+            "at_monotonic": 1123235.661,
+            "outcome": "accepted",
+            "type": "gesture",
+            "request_id": "stress-3f612b42503846608492e7a0a05420c3"
+          },
+          {
+            "at_monotonic": 1123235.662,
+            "outcome": "accepted",
+            "type": "gesture",
+            "request_id": "stress-657960b3f1624b48989c5c310792ebc9"
+          },
+          {
+            "at_monotonic": 1123235.662,
+            "outcome": "accepted",
+            "type": "gesture",
+            "request_id": "stress-dcf6a5900f5742bb865f4febe3fa728e"
+          },
+          {
+            "at_monotonic": 1123235.685,
+            "outcome": "accepted",
+            "type": "gesture",
+            "request_id": "stress-e2dee70b7c4244b490d57da5c10a24bb"
+          },
+          {
+            "at_monotonic": 1123236.481,
+            "outcome": "accepted",
+            "type": "gesture",
+            "request_id": "stress-4d70f9680f3b4ed09382d27c7daf6a2d"
+          },
+          {
+            "at_monotonic": 1123236.482,
+            "outcome": "accepted",
+            "type": "gesture",
+            "request_id": "stress-fa12cec761364d268ab557e415faf2f4"
+          },
+          {
+            "at_monotonic": 1123236.483,
+            "outcome": "accepted",
+            "type": "gesture",
+            "request_id": "stress-94be2769fecd47b1b08ba31983aa7918"
+          },
+          {
+            "at_monotonic": 1123236.483,
+            "outcome": "accepted",
+            "type": "gesture",
+            "request_id": "stress-7c752beb5d994f91a986dae12480af24"
+          },
+          {
+            "at_monotonic": 1123236.486,
+            "outcome": "accepted",
+            "type": "gesture",
+            "request_id": "stress-b7fab1737ec942c79d39964259a62a24"
+          },
+          {
+            "at_monotonic": 1123236.489,
+            "outcome": "accepted",
+            "type": "gesture",
+            "request_id": "stress-f71d5be06bb8426692f0b2235d2e0848"
+          },
+          {
+            "at_monotonic": 1123236.493,
+            "outcome": "accepted",
+            "type": "gesture",
+            "request_id": "stress-4c96f15cd6714aaaa42ee7353af0f0ea"
+          },
+          {
+            "at_monotonic": 1123236.513,
+            "outcome": "accepted",
+            "type": "gesture",
+            "request_id": "stress-f30e81c32002436aab9d156d2419e189"
+          },
+          {
+            "at_monotonic": 1123236.609,
+            "outcome": "accepted",
+            "type": "gesture",
+            "request_id": "stress-1ec19be4afcf4779904ce8417b08997e"
+          },
+          {
+            "at_monotonic": 1123236.69,
+            "outcome": "accepted",
+            "type": "gesture",
+            "request_id": "stress-9ea65b5524bd419493f62e4a2a9dc2ae"
+          },
+          {
+            "at_monotonic": 1123236.691,
+            "outcome": "accepted",
+            "type": "gesture",
+            "request_id": "stress-fbfc801e133e4ef9a7d67d0873cc2c23"
+          },
+          {
+            "at_monotonic": 1123236.691,
+            "outcome": "accepted",
+            "type": "gesture",
+            "request_id": "stress-8aeb8aafabe64928978338f4531bb38f"
+          },
+          {
+            "at_monotonic": 1123236.692,
+            "outcome": "accepted",
+            "type": "gesture",
+            "request_id": "stress-7c94c4a1760042a292bcc05d0d812b8a"
+          },
+          {
+            "at_monotonic": 1123236.693,
+            "outcome": "accepted",
+            "type": "gesture",
+            "request_id": "stress-a6e094e1ba9d4f0984e6f022e7c1e278"
+          },
+          {
+            "at_monotonic": 1123236.693,
+            "outcome": "accepted",
+            "type": "gesture",
+            "request_id": "stress-f88452a8418049cdad0dcfb1c7beb52d"
+          },
+          {
+            "at_monotonic": 1123236.694,
+            "outcome": "accepted",
+            "type": "gesture",
+            "request_id": "stress-d767a33f0c8b4ded9934e887f0683136"
+          },
+          {
+            "at_monotonic": 1123236.899,
+            "outcome": "accepted",
+            "type": "gesture",
+            "request_id": "stress-e9dce92736a8441bb2472c60e973f6ad"
+          },
+          {
+            "at_monotonic": 1123236.904,
+            "outcome": "accepted",
+            "type": "gesture",
+            "request_id": "stress-bc5820a18d75404cb70a01ee2f02f816"
+          },
+          {
+            "at_monotonic": 1123236.905,
+            "outcome": "accepted",
+            "type": "gesture",
+            "request_id": "stress-6432c6cf27f24f2496c60a2908a2d11d"
+          },
+          {
+            "at_monotonic": 1123236.907,
+            "outcome": "accepted",
+            "type": "gesture",
+            "request_id": "stress-6703cef0d00349e4810eb6ec919e838c"
+          },
+          {
+            "at_monotonic": 1123236.908,
+            "outcome": "accepted",
+            "type": "gesture",
+            "request_id": "stress-f0454c92dd3c4ffaa68e6e88ac820942"
+          },
+          {
+            "at_monotonic": 1123236.913,
+            "outcome": "accepted",
+            "type": "gesture",
+            "request_id": "stress-8230f8c73b0948d89250e27253f19880"
+          },
+          {
+            "at_monotonic": 1123236.913,
+            "outcome": "accepted",
+            "type": "gesture",
+            "request_id": "stress-06156612a2e74c4d9463a8dac5f6ab2a"
+          },
+          {
+            "at_monotonic": 1123237.318,
+            "outcome": "accepted",
+            "type": "gesture",
+            "request_id": "stress-09665030d8ac4a9cbaacc99228364e26"
+          },
+          {
+            "at_monotonic": 1123237.318,
+            "outcome": "accepted",
+            "type": "gesture",
+            "request_id": "stress-d577c01ee5304363ba0272a690f7e2d9"
+          },
+          {
+            "at_monotonic": 1123237.378,
+            "outcome": "accepted",
+            "type": "voice_active"
+          },
+          {
+            "at_monotonic": 1123237.379,
+            "outcome": "accepted",
+            "type": "proximity"
+          },
+          {
+            "at_monotonic": 1123237.381,
+            "outcome": "accepted",
+            "type": "distance"
+          },
+          {
+            "at_monotonic": 1123237.382,
+            "outcome": "accepted",
+            "type": "distance"
+          },
+          {
+            "at_monotonic": 1123237.383,
+            "outcome": "accepted",
+            "type": "collision"
+          },
+          {
+            "at_monotonic": 1123237.384,
+            "outcome": "accepted",
+            "type": "collision"
+          },
+          {
+            "at_monotonic": 1123237.387,
+            "outcome": "accepted",
+            "type": "collision"
+          },
+          {
+            "at_monotonic": 1123237.39,
+            "outcome": "accepted",
+            "type": "sensor_fault"
+          },
+          {
+            "at_monotonic": 1123237.391,
+            "outcome": "accepted",
+            "type": "sensor_fault"
+          },
+          {
+            "at_monotonic": 1123237.392,
+            "outcome": "accepted",
+            "type": "sensor_fault"
+          },
+          {
+            "at_monotonic": 1123237.393,
+            "outcome": "accepted",
+            "type": "touch"
+          },
+          {
+            "at_monotonic": 1123237.394,
+            "outcome": "accepted",
+            "type": "touch"
+          },
+          {
+            "at_monotonic": 1123237.394,
+            "outcome": "accepted",
+            "type": "touch"
+          },
+          {
+            "at_monotonic": 1123237.395,
+            "outcome": "accepted",
+            "type": "touch"
+          },
+          {
+            "at_monotonic": 1123237.397,
+            "outcome": "accepted",
+            "type": "petting_zone"
+          },
+          {
+            "at_monotonic": 1123237.399,
+            "outcome": "accepted",
+            "type": "petting_zone"
+          },
+          {
+            "at_monotonic": 1123237.402,
+            "outcome": "accepted",
+            "type": "state_request"
+          },
+          {
+            "at_monotonic": 1123237.456,
+            "outcome": "accepted",
+            "type": "simulator_autonomy"
+          }
+        ]
+      }
+    }
+  ],
+  "passed": true,
+  "ended_at": "2026-10-07T02:53:42.498633+00:00"
+}

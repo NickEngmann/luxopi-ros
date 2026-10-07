@@ -1,0 +1,38 @@
+{
+  "date": "2026-10-06",
+  "backend": "mujoco",
+  "url": "http://100.69.210.33:8080",
+  "health": "healthy",
+  "page_errors": [],
+  "checks": [
+    {
+      "name": "autonomous_idle_animation_moves_mesh",
+      "animation": "playful_bob",
+      "joint_delta_rad": 0.2552210661549033,
+      "result": "passed"
+    },
+    {
+      "name": "click_latched_petting_moves_and_releases",
+      "animation": "folded_wiggle",
+      "joint_delta_rad": 0.05274707264702039,
+      "result": "passed"
+    },
+    {
+      "name": "virtual_obstacle_reaches_classifier_and_retreat",
+      "severity": "warning",
+      "avoidance_mode": "adjust",
+      "joint_delta_rad": 0.10195628348945063,
+      "release_severity": "safe",
+      "final_avoidance_mode": "clear",
+      "result": "passed"
+    },
+    {
+      "name": "synthetic_person_emotion_uses_shared_vision_reaction",
+      "emotion": "surprise",
+      "resulting_animation": "curious",
+      "result": "passed",
+      "evidence": "sim_activity_driver emitted the person/emotion cue; sim_camera_interaction reported 100% dominant emotion and sent the registered action"
+    }
+  ],
+  "limits": "Synthetic simulation controls validate ROS behavior and rendered joint motion; they are not calibrated physical obstacle or touch sensors."
+}

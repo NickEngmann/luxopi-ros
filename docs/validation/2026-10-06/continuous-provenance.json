@@ -1,0 +1,14 @@
+{
+  "runtime_commit": "123025b",
+  "runtime_commit_source_report": "/tmp/luxopi-continuous-initial-timeout-preserved/summary.json",
+  "production_source_sha256": "3fa237efa2ea61752de1826acf0bc1408d8883efff76a486512d585adf2ac8b7",
+  "source_sha256_matches_original_run": true,
+  "native_suite_summary": "/tmp/luxopi-continuous-full-final-20261006T033824Z/summary.json",
+  "native_suites_passed": 9,
+  "native_suites_total": 9,
+  "browser_report": "/tmp/luxopi-continuous-browser-e2e-final.json",
+  "browser_scenarios_passed": 31,
+  "browser_scenarios_total": 31,
+  "browser_errors": [],
+  "browser_console_errors": []
+}

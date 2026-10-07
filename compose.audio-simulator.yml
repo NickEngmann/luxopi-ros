@@ -1,0 +1,11 @@
+# Apply after compose.speech-simulator.yml; enables supplied-WAV recognition only.
+services:
+  simulator:
+    environment:
+      LUXOPI_SIM_AUDIO_DIRECTORY: /tmp/luxopi-sim-audio
+      LUXOPI_SPEECH_COMMAND: '["/opt/speech/bin/python", "/opt/luxopi-ai/local_conversation.py", "--backend", "llm", "--asr-model", "/models/moonshine/tiny", "--audio-directory", "/tmp/luxopi-sim-audio"]'
+    volumes:
+      - type: bind
+        source: ${LUXOPI_AI_CHECKOUT}/models/moonshine/tiny
+        target: /models/moonshine/tiny
+        read_only: true

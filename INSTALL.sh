@@ -1,4 +1,7 @@
 #!/bin/bash
+# Historical hardware installer. For the maintained isolated simulator use
+# compose.simulator.yml; current optional hardware Python dependencies are in
+# requirements-hardware.txt. Do not use this script to install the simulator.
 # Complete ROS2 Jazzy Installation with X11 Forwarding Setup and Tailscale Support
 # For Ubuntu 24.04 Server on Raspberry Pi
 # This script installs ROS2 Jazzy, configures X11 forwarding, and optimizes for Tailscale remote access

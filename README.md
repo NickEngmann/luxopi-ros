@@ -4,7 +4,15 @@
 
 A ROS2-based control system for the RoArm-M3 robotic arm with Luxo Jr-style animated behaviors, featuring emotion detection, collision avoidance, and interactive capabilities.
 
-![RoArm Luxo System](docs/images/roarm_luxo_overview.jpg)
+![LuxoPi simulator dashboard](docs/images/simulator-dashboard.png)
+
+## Hardware-free development
+
+The modernized ROS Jazzy simulator runs the real behavior graph and defaults to the six-axis vendor M3 model in an isolated container. From this checkout, run `scripts/simulator.sh up -d --build`, then open http://127.0.0.1:8080 or http://100.69.210.33:8080 on the tailnet. The helper also works by absolute path from another directory or an SSH session. No physical audio, camera, serial, or LED devices are mounted.
+
+See [hardware-free readiness and commissioning](docs/hardware-free-readiness.md), [simulator launch and SSH access](docs/simulator-launch.md), [readiness health](docs/simulator-health.md), [measured home return](docs/simulated-home-return.md), [behavior ownership and future Home Assistant boundary](docs/behavior-architecture.md), and [feature evidence](docs/feature-coverage.md). The optional [MuJoCo physics and virtual sensor fixture](docs/virtual-obstacle-sensors.md) exercises the vendor inertias and end-effector sensor rays. All 38 animations are retained, including listening/thinking/speaking cues. Local speech-model overlays are optional; the default conversation backend is explicitly simulated. The physical installation instructions below describe the historical hardware path and are separate from the container simulator.
+
+Optional [Home Assistant, Music Assistant, and Sendspin adapters](docs/smart-home-integrations.md) are separately packaged and disabled by default.
 
 ## Table of Contents
 - [Overview](#overview)
@@ -47,15 +55,15 @@ LuxoPi transforms a RoArm-M3 robotic arm into an interactive desk lamp character
 
 ### Software
 - **OS**: Ubuntu 24.04
-- **ROS2**: Jazzy Foxy
-- **Python**: 3.8+
+- **ROS2**: Jazzy
+- **Python**: 3.12 (Ubuntu 24.04 development and simulator target)
 
 ## Installation
 
 ### 1. Clone Repository
 ```bash
 cd ~
-git clone https://github.com/yourusername/roarm.git luxopi-ros
+git clone https://github.com/NickEngmann/luxopi-ros.git
 cd luxopi-ros
 ```
 
@@ -96,11 +104,11 @@ source install/setup.bash
 
 ### 5. Set Permissions
 ```bash
-# Serial port access
-sudo chmod 777 /dev/ttyAMA0
+# Add your user to dialout for serial access; log in again afterward.
+sudo usermod -aG dialout "$USER"
 
 # Camera access (if using OAK-D)
-sudo usermod -aG plugdev $USER
+sudo usermod -aG plugdev "$USER"
 sudo udevadm control --reload-rules && sudo udevadm trigger
 ```
 
@@ -114,9 +122,37 @@ ros2 launch luxo_behaviors luxo_system.launch.py use_hardware:=true
 
 ### Simulation Mode
 ```bash
-# Launch in simulation (no hardware required)
+# Kinematic ROS simulation (no physical device, microphone, or camera required)
 ros2 launch luxo_behaviors luxo_system.launch.py
 ```
+
+In simulation mode the browser control panel is enabled by default at
+`http://localhost:8080` (`enable_simulator_dashboard:=false` disables it). The
+panel injects bounded synthetic voice, direction, touch, gesture, proximity,
+distance, vision, and collision inputs and displays live recognized text,
+response text, state, joint positions, and sensor outputs. The Compose helper
+binds `0.0.0.0:8080` for tailnet access; use a loopback-only port override when
+accessing it exclusively through an SSH tunnel.
+
+The default simulation uses the vendor six-axis M3 description and a single
+rate-limited `/joint_states` stream. Its kinematic backend does not simulate
+contact forces. The optional MuJoCo profile includes vendor inertias and
+collision geometry; its virtual sensor fixture is separately opt-in and feeds
+the real collision classifier. Neither profile establishes physical stopping
+distances or sensor placement accuracy before robot calibration.
+
+Live microphone and OAK camera capture are hardware-only launch paths. Synthetic
+microphone frames exercise the shared direction estimator, and supplied WAV
+uploads in the optional audio/full profiles exercise actual local speech models
+without recording or playing audio. The default text conversation backend is
+explicitly simulated. The full profile also creates real Piper response WAVs
+and shows a silent speaking preview; it does not send sound to any speaker.
+
+Simulation starts the ROS-only collision classifier without I2C drivers.
+Fresh sensor warnings can redirect a target; danger, invalid required coverage,
+and stale coverage hold motion. Fresh clear evidence and a new user intent are
+required to resume after a safety hold. See the linked sensor and motion docs
+for coverage ownership, thresholds, and evidence limits.
 
 ### Full System with All Features
 ```bash
@@ -172,6 +208,22 @@ ros2 topic pub --once /roarm/animation_command std_msgs/String "data: excited 1.
 - `/roarm/animation_command` - Send animation commands
 - `/joint_states` - Current joint positions
 - `/joint_states_target` - Target joint positions
+
+#### Action Goal Preemption
+The `play_animation` action serializes animation execution. Accepting a newer
+goal requests cancellation of the previous goal, and cancellation is tracked
+per goal so the newer request cannot clear the older request's stop signal.
+Interpolation checks cancellation on each update (about every 10 ms) and stops
+publishing later target positions. This stops ROS-side trajectory updates; it
+does not claim to provide an immediate motor brake on the RoArm firmware.
+
+The cancellation tracker is ROS-independent and can be regression-tested
+without hardware:
+
+```bash
+cd src/luxo_behaviors
+python -m pytest -q tests/test_motion_control.py
+```
 
 ### Camera Interaction
 
@@ -405,8 +457,161 @@ Please read [CONTRIBUTING.md](CONTRIBUTING.md) for our code of conduct and submi
 
 This project is licensed under the MIT License - see [LICENSE](LICENSE) for details.
 
+### Camera Pipeline Checks
+
+The camera node uses one-slot, non-blocking DepthAI queues for color and
+detection frames, plus a bounded 256-message queue for per-face recognition
+outputs. The host drains all pending recognition messages each processing tick;
+the synchronizer caps incomplete frame sequences at 16 and evicts the oldest
+sequence. Emotion work is a one-frame latest-only queue. Framebuffer updates
+wait on the shutdown event instead of polling continuously, and retry callbacks
+do not sleep after reconnecting.
+
+The buffering and sequence-sync behavior has hardware-free tests:
+
+```bash
+pytest src/luxo_behaviors/test/test_camera_buffering.py
+```
+
+`dev/emotional_camera_api.py` follows the same latest-frame policy. A real OAK
+camera is still needed to validate DepthAI model throughput and image quality.
+
 ## Running Tests
 
 ```bash
 pytest
 ```
+
+### Test Framework
+- **Framework**: ament (ROS2 testing framework)
+- **Test files**: Located in `src/luxo_behaviors/test/`
+- **Test types**: flake8 (code style), copyright (license headers), pep257 (docstrings)
+- **Run all tests**: `colcon test` or `pytest`
+- **Run specific test**: `colcon test --packages-select luxo_behaviors`
+
+## Build & Run
+
+### Build System
+- **Language**: Python 3.x, C++ (ROS2 packages)
+- **Framework**: ROS2 Humble
+- **Build tool**: colcon
+- **Docker image**: ros:humble-ros-base
+
+### Installation
+```bash
+# Source ROS2 environment
+source /opt/ros/humble/setup.bash
+
+# Install Python dependencies
+pip install -r requirements.txt
+
+# Build ROS2 packages
+colcon build --symlink-install
+```
+
+### Running the Project
+```bash
+# Source the workspace
+source install/setup.bash
+
+# Run a specific node
+ros2 run <package_name> <node_name>
+
+# Example: Run behaviors
+ros2 run luxo_behaviors behaviors_node
+```
+
+### Hardware Requirements
+- RoArm-M3 robotic arm
+- DepthAI camera module (for vision)
+- Serial connection for arm control
+- SMBus for sensor communication
+
+## Dependencies
+
+### Python Packages
+- depthai==2.30.0
+- depthai-sdk==1.15.1
+- customtkinter==5.2.0
+- pyserial==3.5
+- smbus
+- blobconverter
+- certifi==2023.7.22
+- charset-normalizer==3.2.0
+- idna==3.4
+- requests==2.31.0
+- urllib3==2.0.4
+
+### ROS2 Packages
+- rclpy
+- std_msgs
+- geometry_msgs
+- sensor_msgs
+- nav_msgs
+- tf2
+- tf2_ros
+- action_msgs
+- rclpy_action
+
+## Testing
+
+### Test Commands
+```bash
+# Run all tests
+pytest
+
+# Run with verbose output
+pytest -v
+
+# Run specific test file
+pytest src/luxo_behaviors/test/test_flake8.py
+
+# Run colcon tests
+colcon test
+```
+
+### Test Coverage
+- Code style: flake8
+- Copyright headers: ament_copyright
+- Docstrings: ament_pep257
+- Functional tests: pytest with ROS2 mocking
+
+### Hardware Mocks
+- **Required**: No (software tests use mocks)
+- **Simulation**: Headless ROS kinematic target/URDF pipeline; Gazebo dynamics and contact physics are not included
+- **Mock objects**: Used for depthai camera, serial port, and arm control
+
+## Known Issues
+
+- No critical issues in current pipeline runs
+- Run the documented pytest suites for current offline and native ROS evidence
+- Hardware-dependent tests require actual RoArm-M3 setup
+
+## Notes
+
+### Architecture
+- Modular ROS2 package structure
+- Behavior-driven animation system
+- Vision-based collision avoidance
+- CustomTkinter GUI for control
+
+### Important Files
+- `src/luxo_behaviors/` - Main behavior package
+- `requirements.txt` - Python dependencies
+- `.github/workflows/test.yml` - CI test configuration
+- `setup.py` - ROS2 package configuration
+
+### Development Workflow
+1. Clone repository
+2. Source ROS2 environment
+3. Install dependencies
+4. Build with colcon
+5. Run tests
+6. Test with hardware or simulation
+
+### Contributing
+See [CONTRIBUTING.md](CONTRIBUTING.md) for code of conduct and submission process.
+
+## License
+
+This project is licensed under the MIT License - see [LICENSE](LICENSE) for details.

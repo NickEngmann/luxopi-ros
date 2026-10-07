@@ -1,0 +1,71 @@
+{
+  "started_at": "2026-10-07T01:09:30.342442+00:00",
+  "runtime_commit": "unknown",
+  "cases": [
+    {
+      "name": "warning_left_redirects_actual_joint",
+      "passed": true,
+      "axis": "base_link_to_link1",
+      "sign": -1
+    },
+    {
+      "name": "warning_right_redirects_actual_joint",
+      "passed": true,
+      "axis": "base_link_to_link1",
+      "sign": 1
+    },
+    {
+      "name": "warning_front_redirects_actual_joint",
+      "passed": true,
+      "axis": "link1_to_link2",
+      "sign": 1
+    },
+    {
+      "name": "danger_holds",
+      "passed": true,
+      "frames": 20
+    },
+    {
+      "name": "both_sides_blocked_hold",
+      "passed": true,
+      "frames": 21
+    },
+    {
+      "name": "contact_holds",
+      "passed": true,
+      "frames": 20
+    },
+    {
+      "name": "dropout_after_warning_holds",
+      "passed": true,
+      "frames": 21
+    },
+    {
+      "name": "fresh_clear_does_not_replay_old_target",
+      "passed": true,
+      "frames": 20
+    },
+    {
+      "name": "fresh_clear_new_target_replans",
+      "passed": true,
+      "state": "USER_CONTROL"
+    },
+    {
+      "name": "active_animation_warning_redirects_without_abort",
+      "passed": true,
+      "animation": "dance",
+      "axis": "base_link_to_link1",
+      "hazard": "right",
+      "retreat_sign": 1,
+      "state_during_check": "COLLISION_AVOIDING"
+    },
+    {
+      "name": "active_animation_danger_aborts",
+      "passed": true,
+      "terminal_status": 6,
+      "held_frames": 20
+    }
+  ],
+  "passed": true,
+  "ended_at": "2026-10-07T01:09:56.541926+00:00"
+}

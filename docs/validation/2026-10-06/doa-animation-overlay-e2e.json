@@ -1,0 +1,39 @@
+{
+  "results": [
+    {
+      "scenario": "audio_direction_to_motion_and_quiet",
+      "passed": true,
+      "base_before": 0.0,
+      "base_after": -0.03367880645884371,
+      "restored_state": "IDLE"
+    },
+    {
+      "scenario": "doa_uses_shortest_cable_safe_turn",
+      "passed": true,
+      "mic_angle": 170.0,
+      "target_robot_degrees": -171.26036071777344,
+      "start_degrees": 169.83094199213275,
+      "final_degrees": 179.99777748163388,
+      "cable_limits_degrees": [
+        -180.00042091829943,
+        180.00042091829943
+      ],
+      "quiet_state": "IDLE"
+    },
+    {
+      "scenario": "doa_overlays_without_interrupting_animation",
+      "passed": true,
+      "activity_quieted": true,
+      "action_status": 4,
+      "final_state": "IDLE",
+      "animation_joint_frames": 127
+    },
+    {
+      "scenario": "collision_rejects_voice",
+      "passed": true,
+      "state": "COLLISION_AVOIDING",
+      "service_denied": true
+    }
+  ],
+  "error": null
+}

@@ -1,0 +1,13 @@
+-r requirements.txt
+# Production OAK code uses the v2 XLink/Device APIs; v3 needs a separate migration.
+depthai==2.32.0.0
+blobconverter>=1.4,<2
+smbus
+adafruit-blinka
+adafruit-circuitpython-vcnl4200
+adafruit-circuitpython-vl53l4cd
+adafruit-circuitpython-ads7830
+adafruit-circuitpython-neopixel
+pyusb
+webrtcvad
+pyaudio

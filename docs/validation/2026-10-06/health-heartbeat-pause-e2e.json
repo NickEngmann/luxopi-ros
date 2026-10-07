@@ -1,0 +1,102 @@
+{
+  "started_at": "2026-10-07T00:21:25.406061+00:00",
+  "mode": "pause-state",
+  "previous_started_at": "2026-10-07T00:17:58.527654034Z",
+  "previous_restart_count": 0,
+  "passed": true,
+  "paused_container_process": {
+    "pid": 32,
+    "start_ticks": "111389436"
+  },
+  "stale_health": {
+    "healthy": false,
+    "health": {
+      "healthy": false,
+      "reasons": [
+        "stale_state"
+      ],
+      "state_ready": true,
+      "joint_feedback_valid": true,
+      "node_count": 14,
+      "nodes": [
+        "animation_command",
+        "collision_node",
+        "mujoco_simulator",
+        "robot_state_publisher",
+        "sim_activity_driver",
+        "sim_camera_interaction",
+        "sim_direction_node",
+        "sim_interaction_adapter",
+        "sim_motion_controller",
+        "sim_world_sensors",
+        "simulator_dashboard",
+        "speech_bridge",
+        "state_manager",
+        "watchdog"
+      ],
+      "components": {
+        "state_manager": true,
+        "animation_command": true,
+        "sim_motion_controller": true,
+        "sim_direction_node": true,
+        "speech_bridge": true,
+        "robot_state_publisher": true,
+        "simulator_dashboard": true,
+        "mujoco_simulator": true
+      },
+      "missing_required": [],
+      "state_age_seconds": 3.2143574790097773,
+      "joint_state_age_seconds": 0.01936763199046254,
+      "state_fresh": false,
+      "joint_state_fresh": true,
+      "stale_after_seconds": 3.0
+    }
+  },
+  "resumed_container_process": {
+    "pid": 32,
+    "start_ticks": "111389436"
+  },
+  "recovered_health": {
+    "healthy": true,
+    "health": {
+      "healthy": true,
+      "reasons": [],
+      "state_ready": true,
+      "joint_feedback_valid": true,
+      "node_count": 14,
+      "nodes": [
+        "animation_command",
+        "collision_node",
+        "mujoco_simulator",
+        "robot_state_publisher",
+        "sim_activity_driver",
+        "sim_camera_interaction",
+        "sim_direction_node",
+        "sim_interaction_adapter",
+        "sim_motion_controller",
+        "sim_world_sensors",
+        "simulator_dashboard",
+        "speech_bridge",
+        "state_manager",
+        "watchdog"
+      ],
+      "components": {
+        "state_manager": true,
+        "animation_command": true,
+        "sim_motion_controller": true,
+        "sim_direction_node": true,
+        "speech_bridge": true,
+        "robot_state_publisher": true,
+        "simulator_dashboard": true,
+        "mujoco_simulator": true
+      },
+      "missing_required": [],
+      "state_age_seconds": 0.02728182403370738,
+      "joint_state_age_seconds": 0.0066430948209017515,
+      "state_fresh": true,
+      "joint_state_fresh": true,
+      "stale_after_seconds": 3.0
+    }
+  },
+  "ended_at": "2026-10-07T00:21:28.717310+00:00"
+}

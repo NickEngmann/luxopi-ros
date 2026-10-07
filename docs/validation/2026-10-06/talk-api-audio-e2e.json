@@ -1,0 +1,209 @@
+{
+  "benchmark": "Marisol Talk API WAV -> LuxoPi local speech-to-speech pipeline and simulated DOA",
+  "source": "Each command was synthesized by Marisol /api/talk/say (WAV) and first sent through Marisol /api/talk/turn, then uploaded to LuxoPi /api/audio. DOA angle cases used the shared synthetic six-channel array, estimator, and MuJoCo motion controller.",
+  "talk_api_cases": [
+    {
+      "name": "dance",
+      "text": "Please dance.",
+      "angle": 0.0,
+      "wav_bytes": 68554,
+      "talk_turn_status": 200,
+      "talk_transcript": "Plays dance.",
+      "talk_error": null,
+      "talk_latency_seconds": 1.56
+    },
+    {
+      "name": "lamp",
+      "text": "Turn the lamp blue.",
+      "angle": 90.0,
+      "wav_bytes": 82462,
+      "talk_turn_status": 200,
+      "talk_transcript": "Turn the lamp blue.",
+      "talk_error": null,
+      "talk_latency_seconds": 1.2
+    },
+    {
+      "name": "brightness",
+      "text": "Please set brightness to fifty percent.",
+      "angle": 180.0,
+      "wav_bytes": 120690,
+      "talk_turn_status": 200,
+      "talk_transcript": "Please set brightness to fifty percent.",
+      "talk_error": null,
+      "talk_latency_seconds": 1.09
+    },
+    {
+      "name": "question",
+      "text": "Why do plants need water?",
+      "angle": 270.0,
+      "wav_bytes": 100928,
+      "talk_turn_status": 200,
+      "talk_transcript": "Why do plants need water?",
+      "talk_error": null,
+      "talk_latency_seconds": 1.4
+    }
+  ],
+  "luxopi_speech_cases": [
+    {
+      "scenario": "dance",
+      "passed": true,
+      "accepted": {
+        "accepted": true,
+        "name": "468a331b821b4cf39fde205ff5d885b3.wav"
+      },
+      "transcript": "Please dance.",
+      "response": "I'll dance for you.",
+      "elapsed_seconds": 38.081,
+      "first_transcript_seconds": 0.421,
+      "first_response_seconds": 0.636,
+      "animation_observed": true,
+      "joint_movement": true,
+      "lamp_observed": false,
+      "statuses": [
+        "idle",
+        "speaking",
+        "thinking"
+      ],
+      "final_state": "IDLE"
+    },
+    {
+      "scenario": "lamp",
+      "passed": true,
+      "accepted": {
+        "accepted": true,
+        "name": "8074e37339fa4949925afb0d43c53e73.wav"
+      },
+      "transcript": "Turn the lamp blue.",
+      "response": "I'll set the lamp to blue.",
+      "elapsed_seconds": 3.486,
+      "first_transcript_seconds": 0.524,
+      "first_response_seconds": 0.739,
+      "animation_observed": false,
+      "joint_movement": true,
+      "lamp_observed": true,
+      "statuses": [
+        "idle",
+        "speaking",
+        "thinking"
+      ],
+      "final_state": "IDLE"
+    },
+    {
+      "scenario": "brightness",
+      "passed": true,
+      "accepted": {
+        "accepted": true,
+        "name": "af52eafdff7746c1bb2766b8bc21bcf4.wav"
+      },
+      "transcript": "Please set brightness to 50%.",
+      "response": "I'll set brightness to 50 percent.",
+      "elapsed_seconds": 3.5,
+      "first_transcript_seconds": 0.65,
+      "first_response_seconds": 0.751,
+      "animation_observed": false,
+      "joint_movement": true,
+      "lamp_observed": true,
+      "statuses": [
+        "idle",
+        "speaking",
+        "thinking"
+      ],
+      "final_state": "IDLE"
+    },
+    {
+      "scenario": "question",
+      "passed": true,
+      "accepted": {
+        "accepted": true,
+        "name": "9bf110581749470fabb0a148b1823b02.wav"
+      },
+      "transcript": "Why do plants need water?",
+      "response": "Plants need water to survive and grow by providing essential nutrients and maintaining cellular functions.",
+      "elapsed_seconds": 8.744,
+      "first_transcript_seconds": 0.537,
+      "first_response_seconds": 1.817,
+      "animation_observed": false,
+      "joint_movement": true,
+      "lamp_observed": false,
+      "statuses": [
+        "idle",
+        "speaking",
+        "thinking"
+      ],
+      "final_state": "IDLE"
+    }
+  ],
+  "doa_angle_cases": [
+    {
+      "source_angle_degrees": 0.0,
+      "measured_mic_angle_degrees": 359.95854916612006,
+      "robot_target_raw_degrees": -359.9518127441406,
+      "robot_target_degrees": 0.048187255859375,
+      "base_before_degrees": -2.6633579427211903e-18,
+      "base_after_degrees": 0.004569496951580615,
+      "final_error_degrees": 0.04361775890779439,
+      "base_path_min_degrees": -2.743219958917114e-18,
+      "base_path_max_degrees": -2.743219958917114e-18,
+      "feedback_frames": 1,
+      "quiet_state": "IDLE",
+      "passed": true
+    },
+    {
+      "source_angle_degrees": 90.0,
+      "measured_mic_angle_degrees": 89.95854916612012,
+      "robot_target_raw_degrees": -97.928955078125,
+      "robot_target_degrees": -97.928955078125,
+      "base_before_degrees": 1.861009434647291e-07,
+      "base_after_degrees": -97.64054438533513,
+      "final_error_degrees": 0.28841069278986364,
+      "base_path_min_degrees": -95.36176754666481,
+      "base_path_max_degrees": 1.8398446977971833e-07,
+      "feedback_frames": 196,
+      "quiet_state": "IDLE",
+      "passed": true
+    },
+    {
+      "source_angle_degrees": 180.0,
+      "measured_mic_angle_degrees": 179.95854916612012,
+      "robot_target_raw_degrees": -179.96363830566406,
+      "robot_target_degrees": -179.96363830566406,
+      "base_before_degrees": -0.011186066182623546,
+      "base_after_degrees": -180.00025506123728,
+      "final_error_degrees": 0.03661675557323262,
+      "base_path_min_degrees": -177.4122601692158,
+      "base_path_max_degrees": 0.18339703457427156,
+      "feedback_frames": 338,
+      "quiet_state": "IDLE",
+      "passed": true
+    },
+    {
+      "source_angle_degrees": 270.0,
+      "measured_mic_angle_degrees": 269.9585491661201,
+      "robot_target_raw_degrees": -261.98974609375,
+      "robot_target_degrees": 98.01025390625,
+      "base_before_degrees": -0.14221931464292722,
+      "base_after_degrees": 97.66679816670062,
+      "final_error_degrees": 0.34345573954938263,
+      "base_path_min_degrees": -0.12127862778377754,
+      "base_path_max_degrees": 95.3921983832584,
+      "feedback_frames": 196,
+      "quiet_state": "IDLE",
+      "passed": true
+    }
+  ],
+  "summary": {
+    "talk_turn_exact_transcripts": 3,
+    "talk_turn_count": 4,
+    "luxopi_turns_passed": 4,
+    "luxopi_turn_count": 4,
+    "doa_angles_passed": 4,
+    "doa_angle_count": 4,
+    "mean_luxopi_turn_seconds": 13.453,
+    "mean_first_transcript_seconds": 0.533,
+    "mean_first_response_seconds": 0.986
+  },
+  "response_audio_played": false,
+  "physical_hardware_used": false,
+  "error": null,
+  "caveat": "Synthetic TTS and delayed-array fixtures test the software path, not human speech accuracy, physical microphone calibration, or acoustic DoA performance."
+}

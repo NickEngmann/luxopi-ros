@@ -1,4 +1,14 @@
-from MultiMsgSync import TwoStageHostSeqSync
+from pathlib import Path
+import sys
+
+try:
+    from luxo_behaviors.MultiMsgSync import TwoStageHostSeqSync
+    from luxo_behaviors.camera_queue import create_output_queues
+except ModuleNotFoundError:
+    package_root = Path(__file__).resolve().parents[1] / "src" / "luxo_behaviors"
+    sys.path.insert(0, str(package_root))
+    from luxo_behaviors.MultiMsgSync import TwoStageHostSeqSync
+    from luxo_behaviors.camera_queue import create_output_queues
 import blobconverter
 import cv2
 import depthai as dai
@@ -101,9 +111,10 @@ def create_pipeline(stereo):
         msgs[seq][name] = msg
 
         # To avoid freezing (not necessary for this ObjDet model)
-        if 15 < len(msgs):
-            node.warn(f"Removing first element! len {len(msgs)}")
-            msgs.popitem() # Remove first element
+        while len(msgs) > 15:
+            # Dicts preserve insertion order; popitem() removes the newest
+            # item, which previously kept stale frames and discarded fresh ones.
+            del msgs[next(iter(msgs))]
 
     def get_msgs():
         global msgs
@@ -128,7 +139,7 @@ def create_pipeline(stereo):
         return bb
 
     while True:
-        time.sleep(0.001) # Avoid lazy looping
+        time.sleep(0.005) # Avoid busy polling while keeping input latency low.
 
         preview = node.io['preview'].tryGet()
         if preview is not None:
@@ -137,7 +148,9 @@ def create_pipeline(stereo):
         face_dets = node.io['face_det_in'].tryGet()
         if face_dets is not None:
             # TODO: in 2.18.0.0 use face_dets.getSequenceNum()
-            passthrough = node.io['passthrough'].get()
+            passthrough = node.io['passthrough'].tryGet()
+            if passthrough is None:
+                continue
             seq = passthrough.getSequenceNum()
             add_msg(face_dets, 'dets', seq)
 
@@ -180,20 +193,21 @@ with dai.Device() as device:
     device.startPipeline(create_pipeline(stereo))
 
     sync = TwoStageHostSeqSync()
-    queues = {}
-    # Create output queues
-    for name in ["color", "detection", "recognition"]:
-        queues[name] = device.getOutputQueue(name)
+    queues = create_output_queues(device)
 
     # Create window only if showing preview
     if show_preview:
         cv2.namedWindow("Camera", cv2.WINDOW_NORMAL)
 
     while True:
+        received_any = False
         for name, q in queues.items():
             # Add all msgs (color frames, object detections and age/gender recognitions) to the Sync class.
-            if q.has():
+            while q.has():
                 sync.add_msg(q.get(), name)
+                received_any = True
+                if name != "recognition":
+                    break
 
         msgs = sync.get_msgs()
         if msgs is not None:
@@ -231,5 +245,5 @@ with dai.Device() as device:
                 
         if show_preview and cv2.waitKey(1) == ord('q'):
             break
-        elif not show_preview and cv2.waitKey(1) & 0xFF == ord('q'):  # Allow quitting with 'q' even without preview
-            break
+        elif not received_any:
+            time.sleep(0.005)

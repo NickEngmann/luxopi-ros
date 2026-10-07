@@ -1,0 +1,19 @@
+services:
+  simulator:
+    image: luxopi/physics-simulator:local
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.physics-simulator
+    environment:
+      LUXOPI_SIM_BACKEND: mujoco
+      # Keep the simulator lively in its default physics profile too. The UI's
+      # idle animation and synthetic camera/emotion paths share the real ROS
+      # action/state graph and are useful outside the speech/full profile.
+      LUXOPI_SIM_AUTONOMY: "${LUXOPI_SIM_AUTONOMY:-true}"
+      LUXOPI_SIM_IDLE_AFTER: "${LUXOPI_SIM_IDLE_AFTER:-7.0}"
+      LUXOPI_SIM_IDLE_INTERVAL: "${LUXOPI_SIM_IDLE_INTERVAL:-20.0}"
+      LUXOPI_SIM_EMOTION_INTERVAL: "${LUXOPI_SIM_EMOTION_INTERVAL:-75.0}"
+      LUXOPI_WORLD_SENSOR_FIXTURE: "${LUXOPI_WORLD_SENSOR_FIXTURE:-true}"
+      LUXOPI_WORLD_OBSTACLES_JSON: "${LUXOPI_WORLD_OBSTACLES_JSON:-}"
+      LUXOPI_SENSOR_MOUNTS_JSON: "${LUXOPI_SENSOR_MOUNTS_JSON:-}"
+      LUXOPI_JOINT_PROFILE: roarm_m3

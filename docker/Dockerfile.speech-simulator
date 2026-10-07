@@ -1,0 +1,26 @@
+# Build the simulator first with compose.simulator.yml.
+FROM luxopi/simulator:local AS runtime
+USER root
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3-venv ffmpeg sox git cmake build-essential ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+# CPU-only and non-native flags keep this portable between arm64 hosts.
+RUN git clone https://github.com/ggml-org/llama.cpp /tmp/llama.cpp \
+    && git -C /tmp/llama.cpp checkout 2ca15f5404760548c39e7b92bd43116a09414a1a \
+    && cmake -S /tmp/llama.cpp -B /tmp/llama.cpp/build \
+       -DCMAKE_BUILD_TYPE=Release -DGGML_NATIVE=OFF -DGGML_CUDA=OFF \
+       -DLLAMA_CURL=OFF -DLLAMA_BUILD_TESTS=OFF \
+    && cmake --build /tmp/llama.cpp/build --target llama-server -j 4 \
+    && mkdir -p /opt/llama \
+    && cp -a /tmp/llama.cpp/build/bin/. /opt/llama/ \
+    && rm -rf /tmp/llama.cpp
+RUN python3 -m venv /opt/speech \
+    && /opt/speech/bin/pip install --no-cache-dir requests psutil numpy piper-tts==1.8.0 moonshine-voice==0.1.5
+WORKDIR /opt/luxopi-ai
+# The named build context is explicit and never copies .git, credentials or recordings.
+COPY --from=ai local_conversation.py luxopi_assistant.py luxopi_command_behavior.py speech_process.py local_tts.py local_events.py moonshine_asr.py ./
+ENV LUXOPI_LLM_SERVER=/opt/llama/llama-server \
+    LD_LIBRARY_PATH=/opt/llama \
+    LUXOPI_LLM_MODEL=/models/LFM2.5-230M-QAD-Q4_0.gguf \
+    LUXOPI_PIPER_MODEL=/voices/en_US-amy-low.onnx
+WORKDIR /workspace
